@@ -106,7 +106,10 @@ public class AsinCandidateCollector
             foreach (var book in books.Docs.Take(3))
             {
                 ct.ThrowIfCancellationRequested();
-                if (!string.IsNullOrEmpty(book.Title) && !string.Equals(book.Title, query, StringComparison.OrdinalIgnoreCase))
+                // An exact title match is the strongest candidate, not one to discard: skipping
+                // titles equal to the query silently threw away the best result for every book
+                // whose catalogue title matches what was searched for.
+                if (!string.IsNullOrEmpty(book.Title))
                 {
                     _logger.LogInformation("OpenLibrary suggested title: {Title}", book.Title);
                     await _searchProgressReporter.BroadcastAsync($"OpenLibrary found: {book.Title}", null);
