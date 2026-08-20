@@ -112,6 +112,50 @@ internal static class NamingPatternFolderMatcher
         return false;
     }
 
+    /// <summary>
+    /// Strips folder-pattern decoration from a value that is itself a rendered folder name.
+    /// Taggers frequently write the whole rendered name into the album tag, which then reaches
+    /// search as "[Revelation Space 10] Dilation Sleep" and matches nothing. When the value parses
+    /// as the configured pattern, the bare title is returned; otherwise the value is left alone.
+    /// </summary>
+    public static string? ExtractTitle(string? value, string? folderNamingPattern)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        var pattern = GetOrBuild(folderNamingPattern);
+        if (pattern == null)
+        {
+            return value;
+        }
+
+        Match match;
+        try
+        {
+            match = pattern.Match(value);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return value;
+        }
+
+        if (!match.Success || !HasBookFolderMarker(match))
+        {
+            return value;
+        }
+
+        var title = match.Groups["Title"];
+        if (!title.Success)
+        {
+            return value;
+        }
+
+        var trimmed = title.Value.Trim();
+        return trimmed.Length > 0 ? trimmed : value;
+    }
+
     private static string Convert(string segment, bool tokensOptional)
     {
         var builder = new StringBuilder();
