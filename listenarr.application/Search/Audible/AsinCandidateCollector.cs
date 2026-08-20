@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 /*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
@@ -47,29 +48,60 @@ public class AsinCandidateCollector
     public async Task<AsinCandidateCollection> CollectCandidatesAsync(
         string query,
         bool skipOpenLibrary = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? title = null,
+        string? author = null)
     {
         var collection = new AsinCandidateCollection();
 
-        _logger.LogInformation("Collecting candidates from OpenLibrary (query='{Query}')", query);
+        // The composed query still carries its "AUTHOR:"/"TITLE:" prefixes. OpenLibrary's
+        // normalizer drops the colons, which turns the prefixes into literal search tokens and
+        // matches nothing, so prefer the fields the caller already parsed.
+        var searchTitle = !string.IsNullOrWhiteSpace(title) ? title : StripSearchPrefixes(query);
+        var searchAuthor = !string.IsNullOrWhiteSpace(author) ? author : null;
+
+        _logger.LogInformation(
+            "Collecting candidates from OpenLibrary (title='{Title}', author='{Author}')",
+            searchTitle,
+            searchAuthor);
 
         // Augment ASIN candidates with OpenLibrary suggestions
-        if (!skipOpenLibrary && !string.IsNullOrEmpty(query))
+        if (!skipOpenLibrary && !string.IsNullOrWhiteSpace(searchTitle))
         {
             ct.ThrowIfCancellationRequested();
-            await CollectOpenLibraryCandidatesAsync(query, collection, ct);
+            await CollectOpenLibraryCandidatesAsync(searchTitle, searchAuthor, collection, ct);
         }
 
         return collection;
     }
 
-    private async Task CollectOpenLibraryCandidatesAsync(string query, AsinCandidateCollection collection, CancellationToken ct = default)
+    /// <summary>
+    /// Removes "FIELD:" prefixes from a composed query so it can be used as a plain search term.
+    /// Only used when the caller did not supply already-parsed fields.
+    /// </summary>
+    private static string StripSearchPrefixes(string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return string.Empty;
+        }
+
+        var stripped = Regex.Replace(
+            query,
+            @"\b(?:ASIN|ISBN|AUTHOR|TITLE|SERIES|NARRATOR)\s*:\s*",
+            " ",
+            RegexOptions.IgnoreCase);
+
+        return Regex.Replace(stripped, @"\s{2,}", " ").Trim();
+    }
+
+    private async Task CollectOpenLibraryCandidatesAsync(string query, string? author, AsinCandidateCollection collection, CancellationToken ct = default)
     {
         try
         {
             ct.ThrowIfCancellationRequested();
             await _searchProgressReporter.BroadcastAsync($"Searching OpenLibrary for additional titles", null);
-            var books = await _openLibraryService.SearchBooksAsync(query, null, 5);
+            var books = await _openLibraryService.SearchBooksAsync(query, author, 5);
 
             foreach (var book in books.Docs.Take(3))
             {
