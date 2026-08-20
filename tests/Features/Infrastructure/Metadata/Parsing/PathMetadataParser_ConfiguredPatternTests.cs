@@ -151,6 +151,36 @@ namespace Listenarr.Tests.Features.Infrastructure.Metadata.Parsing
             Assert.Equal("2010", parsed.Year);
         }
 
+        [Theory]
+        // Taggers often write the rendered folder name into the album tag; searching for that
+        // whole string matches nothing, so it is reduced to the bare title.
+        [InlineData("[Revelation Space 10] Dilation Sleep", "Dilation Sleep")]
+        [InlineData("[Known Space 00.0] Beclaimed in Hell", "Beclaimed in Hell")]
+        [InlineData("[Radicalized] Radicalized", "Radicalized")]
+        [InlineData("[Enderverse 07.5][Ender's Saga 1.1] A War Of Gifts {Scott Brick} (2007)", "A War Of Gifts")]
+        [InlineData("Revolt in 2100 {Eric Michael Summerer} (2009)", "Revolt in 2100")]
+        public void ExtractTitle_StripsRenderedFolderDecoration(string tagValue, string expected)
+        {
+            Assert.Equal(expected, NamingPatternFolderMatcher.ExtractTitle(tagValue, BracketPattern));
+        }
+
+        [Theory]
+        // A plain title carries no pattern markers and must be returned untouched.
+        [InlineData("Dilation Sleep")]
+        [InlineData("The Garden of Rama")]
+        [InlineData("Harry Potter and the Sorcerer's Stone")]
+        public void ExtractTitle_LeavesUndecoratedTitlesAlone(string tagValue)
+        {
+            Assert.Equal(tagValue, NamingPatternFolderMatcher.ExtractTitle(tagValue, BracketPattern));
+        }
+
+        [Fact]
+        public void ExtractTitle_WithoutConfiguredPattern_ReturnsInputUnchanged()
+        {
+            const string value = "[Revelation Space 10] Dilation Sleep";
+            Assert.Equal(value, NamingPatternFolderMatcher.ExtractTitle(value, null));
+        }
+
         [Fact]
         public void MalformedPattern_DoesNotBreakScanning()
         {
