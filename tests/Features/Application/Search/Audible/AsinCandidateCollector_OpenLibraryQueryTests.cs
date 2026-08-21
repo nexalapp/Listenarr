@@ -17,6 +17,8 @@
  */
 using Microsoft.Extensions.Logging.Abstractions;
 
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Application.Search.Audible
 {
     /// <summary>
@@ -24,7 +26,10 @@ namespace Listenarr.Tests.Features.Application.Search.Audible
     /// strips punctuation, so those prefixes become literal search tokens and match nothing -
     /// which silently disables the OpenLibrary fallback for books with no Audible edition.
     /// </summary>
-    public class AsinCandidateCollector_OpenLibraryQueryTests
+    [Trait("Area", "Search")]
+    [Trait("Name", "AsinCandidateCollector_OpenLibraryQueryTests")]
+    [Trait("Category", "AsinCandidateCollector")]
+    public class AsinCandidateCollector_OpenLibraryQueryTests : BaseTests
     {
         private static (AsinCandidateCollector Collector, Mock<IOpenLibraryService> Service) Create()
         {
