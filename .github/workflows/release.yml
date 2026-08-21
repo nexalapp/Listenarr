@@ -154,9 +154,9 @@ jobs:
         docker.io/therobbiedavis/listenarr:stable
         docker.io/therobbiedavis/listenarr:latest
         docker.io/therobbiedavis/listenarr:${{ needs.release-build.outputs.version }}
-        ghcr.io/listenarrs/listenarr:stable
-        ghcr.io/listenarrs/listenarr:latest
-        ghcr.io/listenarrs/listenarr:${{ needs.release-build.outputs.version }}
+        ghcr.io/${{ github.repository_owner }}/listenarr:stable
+        ghcr.io/${{ github.repository_owner }}/listenarr:latest
+        ghcr.io/${{ github.repository_owner }}/listenarr:${{ needs.release-build.outputs.version }}
         atcr.io/therobbiedavis.com/listenarr:stable
         atcr.io/therobbiedavis.com/listenarr:latest
         atcr.io/therobbiedavis.com/listenarr:${{ needs.release-build.outputs.version }}

@@ -81,14 +81,17 @@ on:
         default: ""
 
     secrets:
+      # Optional: forks publish to GHCR only, using the built-in GITHUB_TOKEN.
+      # A missing secret is passed through as an empty string, the matching
+      # login step fails under continue-on-error, and its push step is skipped.
       DOCKERHUB_USERNAME:
-        required: true
+        required: false
       DOCKERHUB_TOKEN:
-        required: true
+        required: false
       ATCR_USERNAME:
-        required: true
+        required: false
       ATCR_TOKEN:
-        required: true
+        required: false
       LISTENARR_DISCORD_WEBHOOK_URL:
         required: false
 
