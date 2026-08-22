@@ -15,13 +15,18 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Infrastructure.Metadata.Parsing
 {
     /// <summary>
     /// Scanning should read back the layout the renamer writes, so folder parsing is driven by the
     /// configured folder naming pattern rather than a fixed convention.
     /// </summary>
-    public class PathMetadataParser_ConfiguredPatternTests
+    [Trait("Area", "Metadata")]
+    [Trait("Name", "PathMetadataParser_ConfiguredPatternTests")]
+    [Trait("Category", "PathMetadataParser")]
+    public class PathMetadataParser_ConfiguredPatternTests : BaseTests
     {
         private const string BracketPattern =
             "{Author}/[{Series} {SeriesNumber}] {Title} {{Narrator}} ({Year})";
