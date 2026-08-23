@@ -262,6 +262,16 @@
         >
           <PhInfo />
         </button>
+        <button
+          v-if="isAuthorCollection"
+          class="toolbar-btn"
+          :class="{ active: groupBySeries }"
+          @click="toggleSeriesGrouping"
+          :aria-pressed="groupBySeries"
+          :title="groupBySeries ? 'Showing books grouped by series' : 'Showing books as one list'"
+        >
+          <PhStack />
+        </button>
         <span class="count-badge" v-if="audiobooks.length > 0">
           {{ audiobooks.length }} book{{ audiobooks.length !== 1 ? 's' : '' }}
         </span>
@@ -838,6 +848,7 @@ import {
   PhTrash,
   PhUser,
   PhDownloadSimple,
+  PhStack,
   PhCaretLeft,
   PhCaretRight,
   PhStar,
@@ -930,6 +941,8 @@ const isMetadataCollection = computed(() => isAuthorCollection.value || isSeries
 
 const viewMode = ref<'grid' | 'list'>('grid')
 const showItemDetails = ref(false)
+// Session-only, like the view mode and detail toggles beside it.
+const groupBySeries = ref(true)
 const searchQuery = ref('')
 const sortKey = ref('title')
 const currentPage = ref(1)
@@ -1583,7 +1596,7 @@ const shouldShowAvailabilitySections = computed(
 )
 // An author's page is easier to read grouped by series than as one flat list,
 // since most authors write in a handful of series plus some standalones.
-const isSeriesGroupedView = computed(() => isAuthorCollection.value)
+const isSeriesGroupedView = computed(() => isAuthorCollection.value && groupBySeries.value)
 
 const shouldShowSectionHeaders = computed(
   () => isSeriesGroupedView.value || shouldShowAvailabilitySections.value,
@@ -1738,6 +1751,10 @@ const toggleViewMode = () => {
 
 const toggleItemDetails = () => {
   showItemDetails.value = !showItemDetails.value
+}
+
+const toggleSeriesGrouping = () => {
+  groupBySeries.value = !groupBySeries.value
 }
 
 const showBulkEditModal = ref(false)
