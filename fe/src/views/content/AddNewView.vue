@@ -350,56 +350,6 @@
       </div>
     </div>
 
-    <!-- Series entities: follow a series without owning any of its books -->
-    <div v-if="seriesEntityResults.length > 0" class="search-results series-entity-results">
-      <h2>Series Found</h2>
-      <p class="series-entity-help">
-        Monitoring a series adds any books you are missing and checks daily for new ones. You do not
-        need to own a book from the series first.
-      </p>
-      <div class="series-entity-grid">
-        <div
-          v-for="item in seriesEntityResults"
-          :key="seriesEntityKey(item)"
-          class="series-entity-card"
-        >
-          <img
-            v-if="item.image"
-            :src="item.image"
-            :alt="item.name"
-            class="series-entity-image"
-            loading="lazy"
-            decoding="async"
-            @error="handleImageError"
-          />
-          <div class="series-entity-body">
-            <h3 class="series-entity-name">{{ item.name }}</h3>
-            <p v-if="item.description" class="series-entity-description">
-              {{ safeText(item.description) }}
-            </p>
-            <button
-              class="btn btn-secondary btn-sm series-entity-monitor"
-              :class="{ active: !!monitoredSeriesIds[seriesEntityKey(item)] }"
-              :disabled="seriesMonitorBusy[seriesEntityKey(item)]"
-              :title="
-                monitoredSeriesIds[seriesEntityKey(item)]
-                  ? 'Stop monitoring this series'
-                  : 'Monitor this series and add any books you are missing'
-              "
-              @click="toggleSeriesMonitor(item)"
-            >
-              <PhArrowClockwise v-if="seriesMonitorBusy[seriesEntityKey(item)]" class="ph-spin" />
-              <component
-                v-else
-                :is="monitoredSeriesIds[seriesEntityKey(item)] ? PhEye : PhEyeSlash"
-              />
-              {{ monitoredSeriesIds[seriesEntityKey(item)] ? 'Monitoring' : 'Monitor Series' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Results Section -->
     <div v-if="hasResults" class="search-results">
       <!-- ASIN Results -->
@@ -753,7 +703,72 @@
               <p v-if="book.searchResult?.subtitle" class="result-subtitle">
                 {{ safeText(book.searchResult.subtitle) }}
               </p>
-              <p class="result-author">by {{ formatAuthors(book) }}</p>
+              <p class="result-author">
+                by
+                <span
+                  v-for="(authorName, i) in authorNamesFor(book)"
+                  :key="authorName"
+                  class="entity-chip"
+                >
+                  <button
+                    type="button"
+                    class="entity-link"
+                    @click="openCollection('author', authorName)"
+                  >
+                    {{ authorName }}
+                  </button>
+                  <button
+                    type="button"
+                    class="follow-btn"
+                    :class="{ following: isFollowed('author', authorName) }"
+                    :disabled="isFollowBusy('author', authorName)"
+                    :title="
+                      isFollowed('author', authorName)
+                        ? `Stop following ${authorName}`
+                        : `Follow ${authorName} and add any books you are missing`
+                    "
+                    @click="toggleFollow('author', authorName)"
+                  >
+                    <PhArrowClockwise v-if="isFollowBusy('author', authorName)" class="ph-spin" />
+                    <component v-else :is="isFollowed('author', authorName) ? PhEye : PhEyeSlash" />
+                    {{ isFollowed('author', authorName) ? 'Following' : 'Follow' }}
+                  </button>
+                  <span v-if="i < authorNamesFor(book).length - 1">, </span>
+                </span>
+                <span v-if="authorNamesFor(book).length === 0">{{ formatAuthors(book) }}</span>
+              </p>
+
+              <div v-if="seriesNamesFor(book).length > 0" class="result-series-follow">
+                <span
+                  v-for="seriesName in seriesNamesFor(book)"
+                  :key="seriesName"
+                  class="entity-chip"
+                >
+                  <button
+                    type="button"
+                    class="entity-link"
+                    @click="openCollection('series', seriesName)"
+                  >
+                    {{ seriesName }}
+                  </button>
+                  <button
+                    type="button"
+                    class="follow-btn"
+                    :class="{ following: isFollowed('series', seriesName) }"
+                    :disabled="isFollowBusy('series', seriesName)"
+                    :title="
+                      isFollowed('series', seriesName)
+                        ? `Stop following ${seriesName}`
+                        : `Follow ${seriesName} and add any books you are missing`
+                    "
+                    @click="toggleFollow('series', seriesName)"
+                  >
+                    <PhArrowClockwise v-if="isFollowBusy('series', seriesName)" class="ph-spin" />
+                    <component v-else :is="isFollowed('series', seriesName) ? PhEye : PhEyeSlash" />
+                    {{ isFollowed('series', seriesName) ? 'Following' : 'Follow' }}
+                  </button>
+                </span>
+              </div>
 
               <!-- Audiobook metadata from enriched results -->
               <p v-if="book.searchResult?.narrator" class="result-narrator">
@@ -1040,7 +1055,8 @@ import type {
   AudibleNarrator,
   AudibleGenre,
   AudibleSearchResult,
-  AudibleSeriesSearchItem,
+  MonitorAuthorResponse,
+  MonitorSeriesResponse,
 } from '@/types'
 import { apiService } from '@/services/api'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -1313,96 +1329,148 @@ const emptyStateTitleMessage = computed(() => {
 // Pagination / candidate limits for advanced results
 const resultsPerPage = ref<number>(50)
 
-// ─── Series entities (monitorable) ──────────────────────────────────────────
-// A series search returns books; these are the series themselves, so a series can
-// be followed without already owning one of its books.
-const seriesEntityResults = ref<AudibleSeriesSearchItem[]>([])
-const seriesEntitiesLoading = ref(false)
-const monitoredSeriesIds = ref<Record<string, number>>({})
-const seriesMonitorBusy = ref<Record<string, boolean>>({})
+// ─── Follow authors and series from any result ──────────────────────────────
+// Follow buttons live on the result cards so an author or series can be followed
+// from any search, rather than only when the library already contains one of
+// their books. Monitoring status is a local database read, so it is safe to
+// resolve one per distinct name.
+type FollowKind = 'author' | 'series'
 
-function seriesEntityKey(item: AudibleSeriesSearchItem): string {
-  return item.asin || item.name.toLowerCase()
+const followedIds = ref<Record<string, number>>({})
+const followBusy = ref<Record<string, boolean>>({})
+
+function followKey(kind: FollowKind, name: string): string {
+  return `${kind}:${name.trim().toLowerCase()}`
 }
 
-async function loadSeriesEntities(name: string): Promise<void> {
-  const trimmed = name.trim()
-  seriesEntityResults.value = []
-  if (!trimmed) return
+function isFollowed(kind: FollowKind, name: string): boolean {
+  return !!followedIds.value[followKey(kind, name)]
+}
 
-  seriesEntitiesLoading.value = true
-  try {
-    const region = normalizeSearchRegion(searchLanguage.value)
-    const response = await apiService.searchAudibleSeries(trimmed, region)
-    seriesEntityResults.value = response ?? []
-    await refreshSeriesMonitorState()
-  } catch (e) {
-    // A failed series lookup must not take the book results down with it.
-    logger.warn('Series entity lookup failed', e)
-    seriesEntityResults.value = []
-  } finally {
-    seriesEntitiesLoading.value = false
+function isFollowBusy(kind: FollowKind, name: string): boolean {
+  return !!followBusy.value[followKey(kind, name)]
+}
+
+function authorNamesFor(book: TitleSearchResult): string[] {
+  const raw = Array.isArray(book.author_name)
+    ? book.author_name
+    : typeof book.author_name === 'string'
+      ? [book.author_name]
+      : [book.searchResult?.artist ?? '']
+  return dedupeNames(raw)
+}
+
+function seriesNamesFor(book: TitleSearchResult): string[] {
+  const list = Array.isArray(book.searchResult?.seriesList) ? book.searchResult.seriesList : []
+  const single = typeof book.searchResult?.series === 'string' ? [book.searchResult.series] : []
+  return dedupeNames([...list, ...single] as unknown[])
+}
+
+function dedupeNames(values: unknown[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (!trimmed || trimmed.toLowerCase() === 'unknown author') continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(trimmed)
   }
+  return out
 }
 
-async function refreshSeriesMonitorState(): Promise<void> {
+async function refreshFollowStates(books: TitleSearchResult[]): Promise<void> {
+  const wanted = new Map<string, { kind: FollowKind; name: string }>()
+  for (const book of books) {
+    for (const name of authorNamesFor(book))
+      wanted.set(followKey('author', name), { kind: 'author', name })
+    for (const name of seriesNamesFor(book))
+      wanted.set(followKey('series', name), { kind: 'series', name })
+  }
+  if (wanted.size === 0) return
+
   const region = normalizeSearchRegion(searchLanguage.value)
-  const next: Record<string, number> = {}
+  const resolved: Record<string, number> = {}
   await Promise.all(
-    seriesEntityResults.value.map(async (item) => {
+    Array.from(wanted.entries()).map(async ([key, entry]) => {
       try {
-        const status = await apiService.getSeriesMonitoringStatus(item.name, region, 'all')
-        if (status.isMonitored && status.monitoredSeries) {
-          next[seriesEntityKey(item)] = status.monitoredSeries.id
+        if (entry.kind === 'author') {
+          const status = await apiService.getAuthorMonitoringStatus(entry.name, region, 'all')
+          if (status.isMonitored && status.monitoredAuthor)
+            resolved[key] = status.monitoredAuthor.id
+        } else {
+          const status = await apiService.getSeriesMonitoringStatus(entry.name, region, 'all')
+          if (status.isMonitored && status.monitoredSeries)
+            resolved[key] = status.monitoredSeries.id
         }
       } catch {
-        /* unknown state reads as not monitored */
+        /* unknown state reads as not followed */
       }
     }),
   )
-  monitoredSeriesIds.value = next
+  followedIds.value = { ...followedIds.value, ...resolved }
 }
 
-async function toggleSeriesMonitor(item: AudibleSeriesSearchItem): Promise<void> {
-  const key = seriesEntityKey(item)
-  if (seriesMonitorBusy.value[key]) return
-  seriesMonitorBusy.value = { ...seriesMonitorBusy.value, [key]: true }
+async function toggleFollow(kind: FollowKind, name: string): Promise<void> {
+  const key = followKey(kind, name)
+  if (followBusy.value[key]) return
+  followBusy.value = { ...followBusy.value, [key]: true }
 
   try {
-    const existingId = monitoredSeriesIds.value[key]
+    const region = normalizeSearchRegion(searchLanguage.value)
+    const existingId = followedIds.value[key]
+
     if (existingId) {
-      await apiService.unmonitorSeries(existingId)
-      const remaining = { ...monitoredSeriesIds.value }
+      if (kind === 'author') await apiService.unmonitorAuthor(existingId)
+      else await apiService.unmonitorSeries(existingId)
+      const remaining = { ...followedIds.value }
       delete remaining[key]
-      monitoredSeriesIds.value = remaining
-      toast.success('Series unmonitored', `"${item.name}" will no longer be checked for new books.`)
+      followedIds.value = remaining
+      toast.success(`Unfollowed ${kind}`, `"${name}" will no longer be checked for new books.`)
       return
     }
 
-    const response = await apiService.monitorSeries({
-      name: item.name,
-      asin: item.asin ?? undefined,
-      region: normalizeSearchRegion(searchLanguage.value),
-      language: 'all',
-    })
-    monitoredSeriesIds.value = {
-      ...monitoredSeriesIds.value,
-      [key]: response.monitoredSeries.id,
-    }
+    const response =
+      kind === 'author'
+        ? await apiService.monitorAuthor({ name, region, language: 'all' })
+        : await apiService.monitorSeries({ name, region, language: 'all' })
+    const id =
+      kind === 'author'
+        ? (response as MonitorAuthorResponse).monitoredAuthor.id
+        : (response as MonitorSeriesResponse).monitoredSeries.id
+    followedIds.value = { ...followedIds.value, [key]: id }
+
+    const added = response.addedCount ?? 0
     toast.success(
-      'Series monitored',
-      response.addedCount > 0
-        ? `Added ${response.addedCount} audiobook${response.addedCount === 1 ? '' : 's'} from the series catalog.`
-        : 'No new audiobooks needed to be added from the series catalog.',
+      `Following ${name}`,
+      added > 0
+        ? `Added ${added} audiobook${added === 1 ? '' : 's'} you were missing.`
+        : 'No new audiobooks needed to be added.',
     )
   } catch (e) {
-    toast.error('Could not update monitoring', e instanceof Error ? e.message : String(e))
+    toast.error('Could not update following', e instanceof Error ? e.message : String(e))
   } finally {
-    const stillBusy = { ...seriesMonitorBusy.value }
+    const stillBusy = { ...followBusy.value }
     delete stillBusy[key]
-    seriesMonitorBusy.value = stillBusy
+    followBusy.value = stillBusy
   }
 }
+
+function openCollection(kind: FollowKind, name: string): void {
+  router.push(`/collection/${kind}/${encodeURIComponent(name)}`)
+}
+
+// Watching the results covers every path that populates them - fresh searches,
+// pagination, and restore-from-cache - rather than each call site individually.
+watch(
+  titleResults,
+  (books) => {
+    if (books.length > 0) void refreshFollowStates(books)
+  },
+  { immediate: true },
+)
 const currentAdvancedPage = ref<number>(1)
 
 const totalPages = computed(() =>
@@ -2000,11 +2068,7 @@ const performAdvancedSearch = async () => {
             pagination: { page: 1, limit: resultsPerPage.value },
           }
           if (languageFilter) seriesSearchParams.language = languageFilter
-          // Run alongside the book search so the series itself can be monitored even when
-          // the catalog returns nothing the user wants to add right now.
-          const seriesEntitiesPromise = loadSeriesEntities(seriesName)
           const resp = await apiService.advancedSearch(seriesSearchParams)
-          await seriesEntitiesPromise
           // backend returns enriched SearchResult objects
           await handleAdvancedSearchResults(resp as Partial<SearchResult>[])
         } catch (e) {
@@ -4258,67 +4322,61 @@ select.form-input:focus {
 }
 
 /* Results */
-.series-entity-help {
-  margin: 0 0 0.75rem;
-  font-size: 0.82rem;
-  opacity: 0.75;
-}
-
-.series-entity-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-}
-
-.series-entity-card {
-  display: flex;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-  border-radius: 8px;
-  background: var(--card-bg, rgba(255, 255, 255, 0.03));
-}
-
-.series-entity-image {
-  width: 72px;
-  height: 72px;
-  object-fit: cover;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.series-entity-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.series-entity-name {
-  margin: 0;
-  font-size: 0.95rem;
-}
-
-.series-entity-description {
-  margin: 0;
-  font-size: 0.78rem;
-  opacity: 0.75;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.series-entity-monitor {
-  align-self: flex-start;
-  display: flex;
+.entity-chip {
+  display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  margin-right: 0.4rem;
 }
 
-.series-entity-monitor.active {
+.entity-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
   color: var(--accent-color, #3b82f6);
+  cursor: pointer;
+  text-align: left;
+}
+
+.entity-link:hover {
+  text-decoration: underline;
+}
+
+.follow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.follow-btn:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.follow-btn:disabled {
+  cursor: default;
+}
+
+.follow-btn.following {
+  color: var(--accent-color, #3b82f6);
+  border-color: var(--accent-color, #3b82f6);
+  opacity: 1;
+}
+
+.result-series-follow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.3rem 0;
+  font-size: 0.85rem;
 }
 
 .search-results h2 {
