@@ -175,6 +175,24 @@
             <span v-if="seriesHeroAsin" class="author-hero-asin"> ASIN {{ seriesHeroAsin }} </span>
           </div>
 
+          <div v-if="seriesAuthors.length > 0" class="meta-info series-hero-authors">
+            <PhUser />
+            <span
+              v-for="(authorName, i) in seriesAuthors"
+              :key="authorName"
+              class="series-hero-author"
+            >
+              <button
+                type="button"
+                class="series-hero-author-link"
+                :title="`Browse audiobooks by ${authorName}`"
+                @click="openAuthorCollection(authorName)"
+              >
+                {{ authorName }}</button
+              ><span v-if="i < seriesAuthors.length - 1">,</span>
+            </span>
+          </div>
+
           <div class="status-badges author-hero-badges">
             <Pill
               interactive
@@ -299,7 +317,7 @@
               "
             >
               <PhArrowClockwise v-if="authorMonitoringBusy" class="spin-icon" />
-              <component v-else :is="isCurrentAuthorMonitored ? PhEye : PhPlus" />
+              <component v-else :is="isCurrentAuthorMonitored ? PhEye : PhEyeSlash" />
               {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Monitor Author' }}
             </button>
           </div>
@@ -326,7 +344,7 @@
               "
             >
               <PhArrowClockwise v-if="seriesMonitoringBusy" class="spin-icon" />
-              <component v-else :is="isCurrentSeriesMonitored ? PhEye : PhPlus" />
+              <component v-else :is="isCurrentSeriesMonitored ? PhEye : PhEyeSlash" />
               {{ isCurrentSeriesMonitored ? 'Monitoring Series' : 'Monitor Series' }}
             </button>
           </div>
@@ -380,7 +398,7 @@
 
         <template v-for="section in paginatedAudiobookSections" :key="`list-${section.key}`">
           <div
-            v-if="shouldShowAvailabilitySections && section.items.length > 0"
+            v-if="shouldShowSectionHeaders && section.items.length > 0"
             class="list-section-header"
             :class="`is-${section.key}`"
           >
@@ -536,7 +554,7 @@
           class="collection-section"
         >
           <div
-            v-if="shouldShowAvailabilitySections && section.items.length > 0"
+            v-if="shouldShowSectionHeaders && section.items.length > 0"
             class="collection-section-header"
             :class="`is-${section.key}`"
           >
@@ -792,6 +810,7 @@ import {
   PhWarningCircle,
   PhPencil,
   PhTrash,
+  PhUser,
   PhCaretLeft,
   PhCaretRight,
   PhStar,
@@ -855,7 +874,9 @@ type RemoteCatalogBook = AuthorCatalogBook | SeriesCatalogBook
 type CollectionStatus = AudiobookStatus | 'not-added'
 
 interface AvailabilitySection {
-  key: 'in-library' | 'not-added' | 'all'
+  // 'in-library' | 'not-added' | 'all', or 'series-<name>' when an author's
+  // collection is grouped by series.
+  key: string
   title: string
   count: number
   items: CollectionDisplayItem[]
@@ -1337,6 +1358,25 @@ const authorNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
 const seriesLibraryCount = computed(() => totalAddedAudiobooks.value.length)
 const seriesNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
 const seriesVisibleBookCount = computed(() => audiobooks.value.length)
+
+// A series is usually one author, but collaborations and anthologies are common
+// enough that this reads from the books rather than assuming a single name.
+const seriesAuthors = computed(() => {
+  const seen = new Map<string, string>()
+  for (const book of audiobooks.value) {
+    for (const author of book.authors || []) {
+      const trimmed = (author || '').trim()
+      if (!trimmed) continue
+      const key = trimmed.toLowerCase()
+      if (!seen.has(key)) seen.set(key, trimmed)
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b))
+})
+
+function openAuthorCollection(authorName: string): void {
+  router.push(`/collection/author/${encodeURIComponent(authorName)}`)
+}
 const seriesCatalogTotalCount = computed(
   () =>
     seriesCatalog.value?.totalBooks ??
@@ -1456,7 +1496,63 @@ const shouldShowAvailabilitySections = computed(
     totalAddedAudiobooks.value.length > 0 &&
     totalNotAddedAudiobooks.value.length > 0,
 )
+// An author's page is easier to read grouped by series than as one flat list,
+// since most authors write in a handful of series plus some standalones.
+const isSeriesGroupedView = computed(() => isAuthorCollection.value)
+
+const shouldShowSectionHeaders = computed(
+  () => isSeriesGroupedView.value || shouldShowAvailabilitySections.value,
+)
+
+const STANDALONE_GROUP = 'Standalone'
+
+function seriesGroupTitle(book: CollectionDisplayItem): string {
+  return (book.series || '').trim() || STANDALONE_GROUP
+}
+
+function seriesPositionValue(value: string | undefined): number {
+  const parsed = Number.parseFloat(String(value ?? ''))
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY
+}
+
+const seriesGroupTotals = computed(() => {
+  const totals = new Map<string, number>()
+  for (const book of audiobooks.value) {
+    const key = seriesGroupTitle(book).toLowerCase()
+    totals.set(key, (totals.get(key) ?? 0) + 1)
+  }
+  return totals
+})
+
 const paginatedAudiobookSections = computed<AvailabilitySection[]>(() => {
+  if (isSeriesGroupedView.value) {
+    const groups = new Map<string, { title: string; items: CollectionDisplayItem[] }>()
+    for (const book of paginatedAudiobooks.value) {
+      const title = seriesGroupTitle(book)
+      const key = title.toLowerCase()
+      if (!groups.has(key)) groups.set(key, { title, items: [] })
+      groups.get(key)!.items.push(book)
+    }
+
+    return [...groups.entries()]
+      .sort(([, a], [, b]) => {
+        // Standalones last: they are the leftovers, not a series in their own right.
+        if (a.title === STANDALONE_GROUP) return 1
+        if (b.title === STANDALONE_GROUP) return -1
+        return a.title.localeCompare(b.title)
+      })
+      .map(([key, group]) => ({
+        key: `series-${key}`,
+        title: group.title,
+        // Counted across the whole collection, not just this page, so the number
+        // does not shrink as the user pages through.
+        count: seriesGroupTotals.value.get(key) ?? group.items.length,
+        items: [...group.items].sort(
+          (a, b) => seriesPositionValue(a.seriesNumber) - seriesPositionValue(b.seriesNumber),
+        ),
+      }))
+  }
+
   if (!shouldShowAvailabilitySections.value) {
     return [
       {
@@ -3375,6 +3471,24 @@ defineExpose({
 }
 
 .collection-section-header,
+.series-hero-authors {
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.series-hero-author-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-color, #3b82f6);
+  cursor: pointer;
+}
+
+.series-hero-author-link:hover {
+  text-decoration: underline;
+}
+
 .list-section-header {
   display: flex;
   align-items: center;

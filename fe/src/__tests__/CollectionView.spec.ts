@@ -1036,10 +1036,12 @@ describe('CollectionView', () => {
     const collectionCards = wrapper.findAll('.collection-card')
     expect(collectionCards).toHaveLength(2)
     expect(wrapper.findAll('.collection-card.not-in-library')).toHaveLength(1)
+    // Author collections group by series; these fixtures carry no series, so both
+    // books land in the single Standalone group. Availability is still shown per
+    // card by the monitored badge and the add button asserted below.
     const gridSectionHeaders = wrapper.findAll('.collection-section-header')
-    expect(gridSectionHeaders).toHaveLength(2)
-    expect(gridSectionHeaders[0]?.text()).toContain('In Library')
-    expect(gridSectionHeaders[1]?.text()).toContain('Not Added')
+    expect(gridSectionHeaders).toHaveLength(1)
+    expect(gridSectionHeaders[0]?.text()).toContain('Standalone')
     expect(wrapper.findAll('.add-btn-small')).toHaveLength(1)
     expect(wrapper.text()).toContain('Manacled')
     expect(wrapper.text()).toContain('Let the Dark In')
@@ -1050,9 +1052,79 @@ describe('CollectionView', () => {
     await flushPromises()
 
     const listSectionHeaders = wrapper.findAll('.list-section-header')
-    expect(listSectionHeaders).toHaveLength(2)
-    expect(listSectionHeaders[0]?.text()).toContain('In Library')
-    expect(listSectionHeaders[1]?.text()).toContain('Not Added')
+    expect(listSectionHeaders).toHaveLength(1)
+    expect(listSectionHeaders[0]?.text()).toContain('Standalone')
+  })
+
+  it('groups an author collection by series, with standalones last', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    mockGetAuthorCatalog.mockResolvedValue({
+      author: { asin: 'AUTHOR777', name: 'Grouped Author' },
+      totalBooks: 3,
+      books: [
+        {
+          asin: 'B00SOLO',
+          title: 'A Standalone Tale',
+          authors: ['Grouped Author'],
+          language: 'english',
+          metadataSource: 'Audible',
+        },
+        {
+          asin: 'B00SER2',
+          title: 'Second Of Series',
+          authors: ['Grouped Author'],
+          series: 'Zephyr Cycle',
+          seriesNumber: '2',
+          language: 'english',
+          metadataSource: 'Audible',
+        },
+        {
+          asin: 'B00SER1',
+          title: 'First Of Series',
+          authors: ['Grouped Author'],
+          series: 'Zephyr Cycle',
+          seriesNumber: '1',
+          language: 'english',
+          metadataSource: 'Audible',
+        },
+      ],
+    })
+
+    mockGetLibrary.mockResolvedValue([])
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push('/collection/author/Grouped%20Author')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+
+    await flushPromises()
+
+    const headers = wrapper.findAll('.collection-section-header')
+    expect(headers).toHaveLength(2)
+    expect(headers[0]?.text()).toContain('Zephyr Cycle')
+    // Standalones are the leftovers, so they sort after real series.
+    expect(headers[1]?.text()).toContain('Standalone')
+
+    const sections = wrapper.findAll('.collection-section')
+    const seriesTitles = sections[0]?.findAll('.collection-card').map((c) => c.text()) ?? []
+    expect(seriesTitles).toHaveLength(2)
+    // Ordered by position within the series, not by catalogue order.
+    expect(seriesTitles[0]).toContain('First Of Series')
+    expect(seriesTitles[1]).toContain('Second Of Series')
   })
 
   it('filters remote not-added author books by language while keeping library books visible', async () => {
