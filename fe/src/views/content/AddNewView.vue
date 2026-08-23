@@ -44,6 +44,7 @@
               >
               <p class="search-help">
                 Enter an ASIN (e.g., B08G9PRS1K) or search by title and author.<br />
+                Use <strong>Advanced</strong> to search by series, narrator, or ISBN.
               </p>
             </div>
             <form
@@ -192,6 +193,9 @@
                     class="form-input"
                     @keydown.enter.prevent="performAdvancedSearch"
                   />
+                  <div class="form-hint">
+                    <div>Returns matching series you can follow, plus the books in them.</div>
+                  </div>
                 </div>
               </div>
 
@@ -349,6 +353,10 @@
     <!-- Series entities: follow a series without owning any of its books -->
     <div v-if="seriesEntityResults.length > 0" class="search-results series-entity-results">
       <h2>Series Found</h2>
+      <p class="series-entity-help">
+        Monitoring a series adds any books you are missing and checks daily for new ones. You do not
+        need to own a book from the series first.
+      </p>
       <div class="series-entity-grid">
         <div
           v-for="item in seriesEntityResults"
@@ -4250,6 +4258,12 @@ select.form-input:focus {
 }
 
 /* Results */
+.series-entity-help {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
 .series-entity-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
