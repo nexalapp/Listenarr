@@ -112,6 +112,18 @@
           <PhCheckSquare />
           Select All
         </button>
+        <button
+          class="toolbar-btn"
+          :disabled="isReloading"
+          :title="metadataReloadTitle"
+          @click="onReloadMetadata"
+        >
+          <PhArrowClockwise v-if="isReloading" class="spin-icon" />
+          <PhDownloadSimple v-else />
+          {{
+            isReloading ? `Reloading ${progressLabel}` : `Reload Metadata (${metadataReloadCount})`
+          }}
+        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn edit-btn" @click="showBulkEdit">
           <PhPencil />
           Edit Selected
@@ -793,6 +805,7 @@ import {
   PhGridFour,
   PhList,
   PhArrowClockwise,
+  PhDownloadSimple,
   PhPencil,
   PhTrash,
   PhCheckSquare,
@@ -814,6 +827,7 @@ import {
 } from '@phosphor-icons/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
+import { useMetadataReload } from '@/composables/useMetadataReload'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useDownloadsStore } from '@/stores/downloads'
@@ -1191,6 +1205,31 @@ const filteredAndSortedAudiobooks = computed(() => {
 })
 
 const audiobooks = computed(() => filteredAndSortedAudiobooks.value)
+
+const { isReloading, progressLabel, requestReload } = useMetadataReload()
+
+// With nothing selected the action covers every book currently listed, matching
+// the collection views so the button means the same thing on both.
+const metadataReloadTargets = computed(() =>
+  (selectedCount.value > 0
+    ? audiobooks.value.filter((book) => libraryStore.isSelected(book.id))
+    : audiobooks.value
+  ).map((book) => ({ id: book.id, title: book.title })),
+)
+
+const metadataReloadCount = computed(() => metadataReloadTargets.value.length)
+
+const metadataReloadTitle = computed(() =>
+  selectedCount.value > 0
+    ? `Reload metadata for the ${metadataReloadCount.value} selected audiobooks`
+    : `Reload metadata for all ${metadataReloadCount.value} listed audiobooks` +
+      ' - one provider request each, so this can be slow',
+)
+
+async function onReloadMetadata() {
+  await requestReload(metadataReloadTargets.value)
+  await libraryStore.fetchLibrary()
+}
 
 // Reactive map of fetched author cover overrides (keyed by author name)
 const authorCoverOverrides = reactive<Record<string, string>>({})

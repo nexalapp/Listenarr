@@ -281,6 +281,18 @@
           <PhCheckSquare />
           Select All
         </button>
+        <button
+          class="toolbar-btn"
+          :disabled="isReloading"
+          :title="metadataReloadTitle"
+          @click="onReloadMetadata"
+        >
+          <PhArrowClockwise v-if="isReloading" class="spin-icon" />
+          <PhDownloadSimple v-else />
+          {{
+            isReloading ? `Reloading ${progressLabel}` : `Reload Metadata (${metadataReloadCount})`
+          }}
+        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn edit-btn" @click="showBulkEdit">
           <PhPencil />
           Edit Selected
@@ -811,6 +823,7 @@ import {
   PhPencil,
   PhTrash,
   PhUser,
+  PhDownloadSimple,
   PhCaretLeft,
   PhCaretRight,
   PhStar,
@@ -822,6 +835,7 @@ import {
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
+import { useMetadataReload } from '@/composables/useMetadataReload'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
@@ -1367,6 +1381,31 @@ const seriesVisibleBookCount = computed(() => audiobooks.value.length)
 
 // A series is usually one author, but collaborations and anthologies are common
 // enough that this reads from the books rather than assuming a single name.
+const { isReloading, progressLabel, requestReload } = useMetadataReload()
+
+// With nothing selected the action covers everything on the page, matching the
+// other bulk controls but defaulting to the whole collection rather than nothing.
+const metadataReloadTargets = computed(() =>
+  (selectedCount.value > 0
+    ? audiobooks.value.filter((book) => book.inLibrary && libraryStore.isSelected(book.id))
+    : audiobooks.value.filter((book) => book.inLibrary)
+  ).map((book) => ({ id: book.id, title: book.title })),
+)
+
+const metadataReloadCount = computed(() => metadataReloadTargets.value.length)
+
+const metadataReloadTitle = computed(() =>
+  selectedCount.value > 0
+    ? `Reload metadata for the ${metadataReloadCount.value} selected audiobooks`
+    : `Reload metadata for all ${metadataReloadCount.value} audiobooks in this collection` +
+      ' - one provider request each, so this can be slow',
+)
+
+async function onReloadMetadata() {
+  await requestReload(metadataReloadTargets.value)
+  await loadCollectionData(true)
+}
+
 const seriesAuthors = computed(() => {
   const seen = new Map<string, string>()
   for (const book of audiobooks.value) {
