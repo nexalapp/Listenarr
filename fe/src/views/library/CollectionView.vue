@@ -3563,7 +3563,6 @@ defineExpose({
   gap: 0.85rem;
 }
 
-.collection-section-header,
 .series-hero-authors {
   gap: 0.35rem;
   flex-wrap: wrap;
@@ -3582,6 +3581,7 @@ defineExpose({
   text-decoration: underline;
 }
 
+.collection-section-header,
 .list-section-header {
   display: flex;
   align-items: center;
