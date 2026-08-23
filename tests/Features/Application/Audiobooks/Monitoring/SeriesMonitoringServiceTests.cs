@@ -29,62 +29,6 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
         private readonly Mock<IImageCacheService> _imageCacheService = new();
 
         [Fact]
-        public async Task MonitorSeriesAsync_LocalisedTitleAtSamePosition_IsNotAddedAgain()
-        {
-            // Given a library copy of book one under its US title.
-            Init(services => services
-                .WithSingleton(_seriesCatalogService.Object)
-                .WithSingleton(_libraryAddService.Object));
-
-            await _audiobookRepository.AddAsync(new AudiobookBuilder()
-                .WithTitle("Harry Potter and the Sorcerer's Stone")
-                .WithAuthor("J.K. Rowling")
-                .WithSeries("Harry Potter")
-                .WithSeriesNumber("1")
-                .WithMonitored()
-                .Build());
-
-            // Audible lists the UK edition as its own product: different ASIN, different ISBN
-            // and a localised title, so ASIN, ISBN and title all miss.
-            _seriesCatalogService
-                .Setup(service => service.GetCatalogAsync(
-                    "Harry Potter",
-                    "us",
-                    500,
-                    null,
-                    true,
-                    It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new SeriesCatalogFetchResultBuilder()
-                    .WithSeries("Harry Potter", "SERIESHP")
-                    .WithBook(new AudibleSearchResultBuilder()
-                        .WithAsin("B0F14XST77")
-                        .WithTitle("Harry Potter and the Philosopher's Stone")
-                        .WithAuthor("J.K. Rowling")
-                        .WithLanguage("english")
-                        .WithSeries("Harry Potter", "1")
-                        .Build())
-                    .Build());
-
-            var service = _provider.GetRequiredService<ISeriesMonitoringService>();
-
-            // When
-            var result = await service.MonitorSeriesAsync(new MonitorSeriesRequest
-            {
-                Name = "Harry Potter",
-                Region = "us",
-                Language = "english"
-            });
-
-            // Then the owned book is recognised rather than added a second time.
-            Assert.True(result.SyncResult.Succeeded);
-            Assert.Equal(0, result.SyncResult.AddedCount);
-            Assert.Equal(1, result.SyncResult.ExistingCount);
-            _libraryAddService.Verify(
-                s => s.AddToLibraryAsync(It.IsAny<LibraryAddOperationRequest>(), It.IsAny<CancellationToken>()),
-                Times.Never);
-        }
-
-        [Fact]
         public async Task MonitorSeriesAsync_PersistsSeriesAndAddsOnlyMissingBooksForSelectedLanguage()
         {
             // Given

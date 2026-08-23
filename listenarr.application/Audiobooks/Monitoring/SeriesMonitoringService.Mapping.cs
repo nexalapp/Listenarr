@@ -86,67 +86,8 @@ namespace Listenarr.Application.Audiobooks.Monitoring
                 return null;
             }
 
-            var titleMatch = libraryBooks.FirstOrDefault(candidate =>
-                BuildTitleAuthorKey(candidate.Title, candidate.Authors) == titleAuthorKey);
-            if (titleMatch != null)
-            {
-                return titleMatch;
-            }
-
-            // Audible lists regional editions of the same book as separate products, and
-            // localises some titles - "Sorcerer's Stone" in the US, "Philosopher's Stone" in
-            // the UK. Those differ by ASIN, ISBN and title, so every rung above misses and the
-            // edition already owned looks missing. Position within a series is stable across
-            // editions, so fall back to series + position + author.
-            var seriesPositionKey = BuildSeriesPositionKey(
-                book.Series?.FirstOrDefault()?.Name,
-                book.Series?.FirstOrDefault()?.Position,
-                (book.Authors ?? new List<AudibleAuthor>())
-                    .Select(author => author.Name)
-                    .Where(author => !string.IsNullOrWhiteSpace(author))
-                    .Cast<string>()
-                    .ToList());
-
-            if (string.IsNullOrWhiteSpace(seriesPositionKey))
-            {
-                return null;
-            }
-
             return libraryBooks.FirstOrDefault(candidate =>
-                BuildSeriesPositionKey(candidate.Series, candidate.SeriesNumber, candidate.Authors)
-                    == seriesPositionKey);
-        }
-
-        /// <summary>
-        /// Identity for a book by where it sits in a series rather than what it is called.
-        /// </summary>
-        /// <remarks>
-        /// Deliberately the last rung. Two distinct products can share a position - an abridged
-        /// and unabridged reading, say - so this only runs once ASIN, ISBN and title have all
-        /// failed, where the alternative is reporting an owned book as missing.
-        /// </remarks>
-        private static string BuildSeriesPositionKey(
-            string? seriesName,
-            string? position,
-            IEnumerable<string>? authors)
-        {
-            var normalizedSeries = NormalizeSeriesName(seriesName);
-            var normalizedPosition = (position ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(normalizedSeries) || string.IsNullOrWhiteSpace(normalizedPosition))
-            {
-                return string.Empty;
-            }
-
-            var normalizedAuthors = string.Join(
-                "|",
-                (authors ?? Enumerable.Empty<string>())
-                    .Select(NormalizeSeriesName)
-                    .Where(author => !string.IsNullOrWhiteSpace(author))
-                    .OrderBy(author => author));
-
-            return string.IsNullOrWhiteSpace(normalizedAuthors)
-                ? string.Empty
-                : $"{normalizedSeries}#{normalizedPosition}::{normalizedAuthors}";
+                BuildTitleAuthorKey(candidate.Title, candidate.Authors) == titleAuthorKey);
         }
 
         private static bool ShouldIncludeBookForLanguage(AudibleSearchResult book, string preferredLanguage)

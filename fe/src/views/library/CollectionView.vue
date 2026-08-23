@@ -981,26 +981,6 @@ function buildTitleAuthorKey(title: string | undefined, authors: string[] | unde
   return `${normalizeCollectionText(title)}::${normalizeAuthorKey(authors)}`
 }
 
-/**
- * Identity for a book by its position in a series rather than its title.
- *
- * Audible lists regional editions as separate products and localises some titles
- * ("Sorcerer's Stone" vs "Philosopher's Stone"), so those differ by ASIN, ISBN and
- * title at once. Position within a series survives that, so it is used only after
- * the stronger rungs miss.
- */
-function buildSeriesPositionKey(
-  seriesName: string | undefined,
-  position: string | number | undefined,
-  authors: string[] | undefined,
-): string {
-  const normalizedSeries = normalizeCollectionText(seriesName)
-  const normalizedPosition = String(position ?? '').trim()
-  const normalizedAuthors = normalizeAuthorKey(authors)
-  if (!normalizedSeries || !normalizedPosition || !normalizedAuthors) return ''
-  return `${normalizedSeries}#${normalizedPosition}::${normalizedAuthors}`
-}
-
 function createSyntheticId(seed: string): number {
   let hash = 0
   for (let index = 0; index < seed.length; index += 1) {
@@ -1152,18 +1132,8 @@ function findLibraryMatch(
 
   const titleAuthorKey = buildTitleAuthorKey(book.title, book.authors)
   if (titleAuthorKey) {
-    const titleMatch = libraryBooks.find(
-      (candidate) => buildTitleAuthorKey(candidate.title, candidate.authors) === titleAuthorKey,
-    )
-    if (titleMatch) return titleMatch
-  }
-
-  const seriesPositionKey = buildSeriesPositionKey(book.series, book.seriesNumber, book.authors)
-  if (seriesPositionKey) {
     return libraryBooks.find(
-      (candidate) =>
-        buildSeriesPositionKey(candidate.series, candidate.seriesNumber, candidate.authors) ===
-        seriesPositionKey,
+      (candidate) => buildTitleAuthorKey(candidate.title, candidate.authors) === titleAuthorKey,
     )
   }
 
