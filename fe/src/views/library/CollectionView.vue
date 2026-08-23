@@ -410,7 +410,16 @@
             class="list-section-header"
             :class="`is-${section.key}`"
           >
-            <span class="section-title">{{ section.title }}</span>
+            <button
+              v-if="isNavigableSeriesSection(section)"
+              type="button"
+              class="section-title section-title-link"
+              :title="`Open the ${section.title} series`"
+              @click="openSeriesCollection(section.title)"
+            >
+              {{ section.title }}
+            </button>
+            <span v-else class="section-title">{{ section.title }}</span>
             <span class="section-count">{{ section.count }}</span>
           </div>
 
@@ -566,7 +575,16 @@
             class="collection-section-header"
             :class="`is-${section.key}`"
           >
-            <span class="section-title">{{ section.title }}</span>
+            <button
+              v-if="isNavigableSeriesSection(section)"
+              type="button"
+              class="section-title section-title-link"
+              :title="`Open the ${section.title} series`"
+              @click="openSeriesCollection(section.title)"
+            >
+              {{ section.title }}
+            </button>
+            <span v-else class="section-title">{{ section.title }}</span>
             <span class="section-count">{{ section.count }}</span>
           </div>
 
@@ -1431,6 +1449,18 @@ const seriesAuthors = computed(() => {
 
 function openAuthorCollection(authorName: string): void {
   router.push(`/collection/author/${encodeURIComponent(authorName)}`)
+}
+
+function openSeriesCollection(seriesName: string): void {
+  router.push(`/collection/series/${encodeURIComponent(seriesName)}`)
+}
+
+/**
+ * A series group heading links to that series, but "Standalone" is a bucket for
+ * books belonging to no series, so it has no page to open.
+ */
+function isNavigableSeriesSection(section: AvailabilitySection): boolean {
+  return section.key.startsWith('series-') && section.title !== STANDALONE_GROUP
 }
 const seriesCatalogTotalCount = computed(
   () =>
@@ -3606,6 +3636,20 @@ defineExpose({
   flex: 1;
   height: 1px;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02));
+}
+
+.section-title-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.section-title-link:hover {
+  color: var(--accent-color, #3b82f6);
+  text-decoration: underline;
 }
 
 .section-title {
