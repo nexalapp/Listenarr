@@ -791,8 +791,10 @@
                 "
                 class="result-series"
               >
-                <span
-                  class="series-badge"
+                <button
+                  type="button"
+                  class="series-badge series-badge-link"
+                  @click="openCollection('series', seriesNamesFor(book)[0] as string)"
                   :title="
                     Array.isArray(book.searchResult?.seriesList) &&
                     book.searchResult.seriesList.some(
@@ -819,7 +821,7 @@
                   }}<span v-if="book.searchResult?.seriesNumber">
                     #{{ book.searchResult.seriesNumber }}</span
                   >
-                </span>
+                </button>
                 <button
                   v-for="seriesName in seriesNamesFor(book)"
                   :key="seriesName"
@@ -1367,7 +1369,17 @@ function authorNamesFor(book: TitleSearchResult): string[] {
 function seriesNamesFor(book: TitleSearchResult): string[] {
   const list = Array.isArray(book.searchResult?.seriesList) ? book.searchResult.seriesList : []
   const single = typeof book.searchResult?.series === 'string' ? [book.searchResult.series] : []
-  return dedupeNames([...list, ...single] as unknown[])
+  return dedupeNames([...list, ...single] as unknown[]).map(stripSeriesPosition)
+}
+
+/**
+ * Series entries often carry this book's position, e.g. "Harry Potter #1". The
+ * position belongs to the book, not the series, so it must not reach a
+ * collection route or a monitoring request - monitoring "Harry Potter #1" would
+ * register a series that does not exist.
+ */
+function stripSeriesPosition(name: string): string {
+  return name.replace(/\s*#\s*[\d.]+\s*$/, '').trim()
 }
 
 function narratorNamesFor(book: TitleSearchResult): string[] {
