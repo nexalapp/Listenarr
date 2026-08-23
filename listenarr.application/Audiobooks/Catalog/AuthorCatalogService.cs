@@ -122,7 +122,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 };
             }
 
-            await EnrichSeriesMembershipsAsync(allBooks, normalizedRegion, cancellationToken);
+            await EnrichFromSeriesCatalogsAsync(
+                allBooks,
+                seenKeys,
+                normalizedName,
+                author.Asin,
+                normalizedRegion,
+                cancellationToken);
 
             await PersistCatalogAsync(
                 cachedEntry,
@@ -335,8 +341,11 @@ namespace Listenarr.Application.Audiobooks.Catalog
         /// than one per book - and the series catalogue is exactly the missing information:
         /// which ASINs belong to that series, and at what position.
         /// </remarks>
-        private async Task EnrichSeriesMembershipsAsync(
+        private async Task EnrichFromSeriesCatalogsAsync(
             List<AudibleSearchResult> books,
+            HashSet<string> seenKeys,
+            string author,
+            string? authorAsin,
             string region,
             CancellationToken cancellationToken)
         {
@@ -354,6 +363,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
             }
 
             var membershipsByAsin = new Dictionary<string, Dictionary<string, string?>>(
+                StringComparer.OrdinalIgnoreCase);
+            var seriesBooksByAsin = new Dictionary<string, AudibleSearchResult>(
                 StringComparer.OrdinalIgnoreCase);
 
             foreach (var seriesName in seriesNames)
@@ -387,6 +398,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                         }
 
                         forAsin[seriesName] = position;
+                        seriesBooksByAsin[seriesBook.Asin] = seriesBook;
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -422,6 +434,31 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 }
 
                 book.Series = existing;
+            }
+
+            // An author's page lists everything that author wrote, so a book the author
+            // search omitted but a series catalogue contains still belongs here - otherwise
+            // the same series shows a different set depending on which page you open it from.
+            // Series can carry other authors' work, so only author-matched books are added.
+            foreach (var entry in seriesBooksByAsin)
+            {
+                if (books.Any(existing => string.Equals(existing.Asin, entry.Key, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                if (!AudibleAuthorCatalogMatcher.MatchesTarget(entry.Value, author, authorAsin))
+                {
+                    continue;
+                }
+
+                var key = BuildAuthorCatalogBookKey(entry.Value);
+                if (!seenKeys.Add(key))
+                {
+                    continue;
+                }
+
+                books.Add(entry.Value);
             }
         }
     }
