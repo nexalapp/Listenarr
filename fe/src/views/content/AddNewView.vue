@@ -44,7 +44,7 @@
               >
               <p class="search-help">
                 Enter an ASIN (e.g., B08G9PRS1K) or search by title and author.<br />
-                Use <strong>Advanced</strong> to search by series or ISBN.
+                Use <strong>Advanced</strong> to search by series, narrator, or ISBN.
               </p>
             </div>
             <form
@@ -181,6 +181,21 @@
                     class="form-input"
                     @keydown.enter.prevent="performAdvancedSearch"
                   />
+                </div>
+                <div class="form-group">
+                  <label for="adv-narrator">Narrator</label>
+                  <input
+                    id="adv-narrator"
+                    aria-label="Narrator"
+                    v-model="advancedSearchParams.narrator"
+                    type="text"
+                    placeholder="e.g., Stephen Fry"
+                    class="form-input"
+                    @keydown.enter.prevent="performAdvancedSearch"
+                  />
+                  <div class="form-hint">
+                    <div>Searches Audible's narrator field, not just the title text.</div>
+                  </div>
                 </div>
                 <div class="form-group">
                   <label for="adv-series">Series</label>
@@ -2062,13 +2077,15 @@ const performAdvancedSearch = async () => {
       series?: string
       isbn?: string
       asin?: string
+      narrator?: string
     }
     const hasAny = Boolean(
       (p.title && p.title.trim()) ||
       (p.author && p.author.trim()) ||
       (p.series && p.series.trim()) ||
       (p.isbn && p.isbn.trim()) ||
-      (p.asin && p.asin.trim()),
+      (p.asin && p.asin.trim()) ||
+      (p.narrator && p.narrator.trim()),
     )
     if (!hasAny) {
       advancedSearchError.value = 'Please enter a search term'
@@ -2090,6 +2107,7 @@ const performAdvancedSearch = async () => {
       if (p.author && p.author.trim()) params.author = p.author.trim()
       if (p.isbn && p.isbn.trim()) params.isbn = p.isbn.trim()
       if (p.asin && p.asin.trim()) params.asin = p.asin.trim()
+      if (p.narrator && p.narrator.trim()) params.narrator = p.narrator.trim()
       params.region = searchLanguage.value
       if (languageFilter) params.language = languageFilter
 
