@@ -713,7 +713,16 @@
             </div>
             <div class="result-info">
               <h3>
-                {{ safeText(book.title) }}
+                <button
+                  v-if="libraryIdFor(book) !== null"
+                  type="button"
+                  class="entity-link result-title-link"
+                  title="Open this audiobook in your library"
+                  @click="openAudiobook(libraryIdFor(book) as number)"
+                >
+                  {{ safeText(book.title) }}
+                </button>
+                <template v-else>{{ safeText(book.title) }}</template>
               </h3>
               <p v-if="book.searchResult?.subtitle" class="result-subtitle">
                 {{ safeText(book.searchResult.subtitle) }}
@@ -1508,6 +1517,19 @@ async function toggleMonitor(kind: MonitorKind, name: string): Promise<void> {
     delete stillBusy[key]
     monitorBusy.value = stillBusy
   }
+}
+
+function libraryIdFor(book: TitleSearchResult): number | null {
+  const asin = getAsin(book)
+  if (!asin) return null
+  const match = libraryStore.audiobooks.find(
+    (a) => typeof a.asin === 'string' && a.asin.toLowerCase() === asin.toLowerCase(),
+  )
+  return match ? match.id : null
+}
+
+function openAudiobook(id: number): void {
+  router.push(`/audiobooks/${id}`)
 }
 
 function openCollection(kind: MonitorKind | 'narrator', name: string): void {
@@ -4377,6 +4399,15 @@ select.form-input:focus {
 }
 
 /* Results */
+.result-title-link {
+  font: inherit;
+  color: inherit;
+}
+
+.result-title-link:hover {
+  color: var(--accent-color, #3b82f6);
+}
+
 .entity-chip {
   display: inline-flex;
   align-items: center;
