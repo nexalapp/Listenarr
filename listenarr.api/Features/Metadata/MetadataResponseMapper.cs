@@ -40,6 +40,14 @@ namespace Listenarr.Api.Features.Metadata
                 Genres = MapNames(book.Genres, genre => genre.Name),
                 Series = primarySeries?.Name,
                 SeriesNumber = primarySeries?.Position,
+                SeriesMemberships = (book.Series ?? new List<AudibleSeries>())
+                    .Where(series => !string.IsNullOrWhiteSpace(series.Name))
+                    .Select(series => new MetadataController.AuthorCatalogSeriesMembership
+                    {
+                        Name = series.Name,
+                        Position = series.Position
+                    })
+                    .ToList(),
                 PublishedDate = book.ReleaseDate,
                 Isbn = book.Isbn,
                 Link = book.Link,

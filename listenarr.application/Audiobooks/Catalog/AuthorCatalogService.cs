@@ -122,6 +122,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 };
             }
 
+            await EnrichSeriesMembershipsAsync(allBooks, normalizedRegion, cancellationToken);
+
             await PersistCatalogAsync(
                 cachedEntry,
                 normalizedName,
@@ -318,5 +320,109 @@ namespace Listenarr.Application.Audiobooks.Catalog
             }
         }
 
+
+        /// <summary>
+        /// Fills in the series a book belongs to but the author catalogue did not report.
+        /// </summary>
+        /// <remarks>
+        /// Audible's author search returns a single series membership per product, and which
+        /// one varies: the Harry Potter novels come back under "Harry Potter" for books 1, 2
+        /// and 7 but "Wizarding World Collection" for 3 to 6, so a series is split across
+        /// groups and each half looks incomplete. The product endpoint reports both, but that
+        /// is one request per book.
+        ///
+        /// Fetching each distinct series once is far cheaper - a handful of requests rather
+        /// than one per book - and the series catalogue is exactly the missing information:
+        /// which ASINs belong to that series, and at what position.
+        /// </remarks>
+        private async Task EnrichSeriesMembershipsAsync(
+            List<AudibleSearchResult> books,
+            string region,
+            CancellationToken cancellationToken)
+        {
+            var seriesNames = books
+                .SelectMany(book => book.Series ?? new List<AudibleSeries>())
+                .Select(series => series.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (seriesNames.Count == 0)
+            {
+                return;
+            }
+
+            var membershipsByAsin = new Dictionary<string, Dictionary<string, string?>>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var seriesName in seriesNames)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    var lookup = await _audibleService.LookupSeriesAsync(seriesName, region);
+                    if (string.IsNullOrWhiteSpace(lookup?.Asin))
+                    {
+                        continue;
+                    }
+
+                    var seriesBooks = await _audibleService.GetTypedBooksBySeriesAsinAsync(lookup.Asin, region);
+                    foreach (var seriesBook in seriesBooks ?? new List<AudibleSearchResult>())
+                    {
+                        if (string.IsNullOrWhiteSpace(seriesBook.Asin))
+                        {
+                            continue;
+                        }
+
+                        var position = (seriesBook.Series ?? new List<AudibleSeries>())
+                            .FirstOrDefault(entry => string.Equals(entry.Name?.Trim(), seriesName, StringComparison.OrdinalIgnoreCase))
+                            ?.Position;
+
+                        if (!membershipsByAsin.TryGetValue(seriesBook.Asin, out var forAsin))
+                        {
+                            forAsin = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                            membershipsByAsin[seriesBook.Asin] = forAsin;
+                        }
+
+                        forAsin[seriesName] = position;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    // A series that cannot be resolved contributes no memberships; the
+                    // catalogue is still worth returning.
+                    _logger.LogWarning(
+                        ex,
+                        "Failed to resolve series {Series} while enriching author catalog memberships",
+                        LogRedaction.SanitizeText(seriesName));
+                }
+            }
+
+            foreach (var book in books)
+            {
+                if (string.IsNullOrWhiteSpace(book.Asin) ||
+                    !membershipsByAsin.TryGetValue(book.Asin, out var discovered))
+                {
+                    continue;
+                }
+
+                var existing = book.Series ?? new List<AudibleSeries>();
+                var known = new HashSet<string>(
+                    existing.Select(series => series.Name?.Trim() ?? string.Empty),
+                    StringComparer.OrdinalIgnoreCase);
+
+                foreach (var entry in discovered)
+                {
+                    if (known.Add(entry.Key))
+                    {
+                        existing.Add(new AudibleSeries { Name = entry.Key, Position = entry.Value });
+                    }
+                }
+
+                book.Series = existing;
+            }
+        }
     }
 }

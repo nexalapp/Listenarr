@@ -54,6 +54,13 @@ namespace Listenarr.Domain.Audiobooks
         public string Name { get; set; } = string.Empty;
     }
 
+    public class CachedAuthorCatalogSeries
+    {
+        public string? Name { get; set; }
+
+        public string? Position { get; set; }
+    }
+
     public class CachedAuthorCatalogBook
     {
         public string? Asin { get; set; }
@@ -79,6 +86,15 @@ namespace Listenarr.Domain.Audiobooks
         public string? Series { get; set; }
 
         public string? SeriesNumber { get; set; }
+
+        /// <summary>
+        /// Every series this book belongs to, not just the primary one.
+        /// </summary>
+        /// <remarks>
+        /// Audible lists a book under more than one series, so caching only the first
+        /// membership splits a series across groups and makes each look incomplete.
+        /// </remarks>
+        public List<CachedAuthorCatalogSeries>? SeriesMemberships { get; set; } = new();
 
         public string? PublishedDate { get; set; }
 

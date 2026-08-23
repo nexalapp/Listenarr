@@ -533,6 +533,11 @@ export interface AudibleBookMetadata {
   qualityProfileId?: number
 }
 
+export interface AuthorCatalogSeriesMembership {
+  name?: string
+  position?: string
+}
+
 export interface AuthorCatalogBook {
   asin?: string
   title: string
@@ -546,6 +551,8 @@ export interface AuthorCatalogBook {
   genres?: string[]
   series?: string
   seriesNumber?: string
+  /** Every series this book belongs to; `series` is only the primary one. */
+  seriesMemberships?: AuthorCatalogSeriesMembership[]
   publishedDate?: string
   isbn?: string
   link?: string

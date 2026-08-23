@@ -178,20 +178,35 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     .Where(genre => !string.IsNullOrWhiteSpace(genre))
                     .Select(genre => new AudibleGenre { Name = genre })
                     .ToList(),
-                Series = string.IsNullOrWhiteSpace(book.Series)
-                    ? null
-                    : new List<AudibleSeries>
-                    {
-                        new()
-                        {
-                            Name = book.Series,
-                            Position = book.SeriesNumber
-                        }
-                    },
+                Series = BuildSeriesFromCache(book),
                 ReleaseDate = book.PublishedDate,
                 Isbn = book.Isbn,
                 Link = book.Link
             };
+        }
+
+        /// <summary>
+        /// Prefers the full membership list, falling back to the flat Series/SeriesNumber
+        /// pair so entries cached before memberships existed still resolve.
+        /// </summary>
+        private static List<AudibleSeries>? BuildSeriesFromCache(CachedAuthorCatalogBook book)
+        {
+            var memberships = (book.SeriesMemberships ?? new List<CachedAuthorCatalogSeries>())
+                .Where(series => !string.IsNullOrWhiteSpace(series.Name))
+                .Select(series => new AudibleSeries { Name = series.Name, Position = series.Position })
+                .ToList();
+
+            if (memberships.Count > 0)
+            {
+                return memberships;
+            }
+
+            return string.IsNullOrWhiteSpace(book.Series)
+                ? null
+                : new List<AudibleSeries>
+                {
+                    new() { Name = book.Series, Position = book.SeriesNumber }
+                };
         }
 
         public static CachedAuthorCatalogBook MapCachedCatalogBook(AudibleSearchResult book)
@@ -225,6 +240,14 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     .ToList(),
                 Series = primarySeries?.Name,
                 SeriesNumber = primarySeries?.Position,
+                SeriesMemberships = (book.Series ?? new List<AudibleSeries>())
+                    .Where(series => !string.IsNullOrWhiteSpace(series.Name))
+                    .Select(series => new CachedAuthorCatalogSeries
+                    {
+                        Name = series.Name,
+                        Position = series.Position
+                    })
+                    .ToList(),
                 PublishedDate = book.ReleaseDate,
                 Isbn = book.Isbn,
                 Link = book.Link,

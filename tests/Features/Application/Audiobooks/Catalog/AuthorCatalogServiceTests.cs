@@ -249,5 +249,51 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Catalog
                     entry.CatalogBooks[0].Title == "The Way of Kings")),
                 Times.Once);
         }
+
+        [Fact]
+        public void MapCachedCatalogBook_RoundTripsEverySeriesMembership()
+        {
+            var book = new AudibleSearchResult
+            {
+                Asin = "B017V4JA2Q",
+                Title = "Harry Potter and the Prisoner of Azkaban",
+                Series = new List<AudibleSeries>
+                {
+                    new() { Name = "Harry Potter", Position = "3" },
+                    new() { Name = "Wizarding World Collection", Position = "3" }
+                }
+            };
+
+            var cached = AuthorCatalogMapping.MapCachedCatalogBook(book);
+            var restored = AuthorCatalogMapping.MapCachedCatalogBook(cached);
+
+            // Collapsing to the first membership is what split a series across groups and
+            // made each half look incomplete.
+            Assert.Equal(2, cached.SeriesMemberships!.Count);
+            Assert.Equal(2, restored.Series!.Count);
+            Assert.Contains(restored.Series, series => series.Name == "Harry Potter" && series.Position == "3");
+            Assert.Contains(restored.Series, series => series.Name == "Wizarding World Collection");
+        }
+
+        [Fact]
+        public void MapCachedCatalogBook_EntryCachedBeforeMembershipsExisted_StillResolves()
+        {
+            // Rows written by an earlier version carry only the flat pair and no membership
+            // list; they must keep working rather than losing their series entirely.
+            var legacy = new CachedAuthorCatalogBook
+            {
+                Asin = "LEGACY1",
+                Title = "Cached Before Memberships",
+                Series = "Mistborn",
+                SeriesNumber = "1",
+                SeriesMemberships = null
+            };
+
+            var restored = AuthorCatalogMapping.MapCachedCatalogBook(legacy);
+
+            var series = Assert.Single(restored.Series!);
+            Assert.Equal("Mistborn", series.Name);
+            Assert.Equal("1", series.Position);
+        }
     }
 }

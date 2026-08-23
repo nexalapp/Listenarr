@@ -69,6 +69,13 @@ namespace Listenarr.Api.Features.Metadata
             public string? Image { get; set; }
         }
 
+        public sealed class AuthorCatalogSeriesMembership
+        {
+            public string? Name { get; set; }
+
+            public string? Position { get; set; }
+        }
+
         public sealed class AuthorCatalogBookItem
         {
             public string? Asin { get; set; }
@@ -83,6 +90,18 @@ namespace Listenarr.Api.Features.Metadata
             public List<string> Genres { get; set; } = new();
             public string? Series { get; set; }
             public string? SeriesNumber { get; set; }
+
+            /// <summary>
+            /// Every series this book belongs to, not just the first.
+            /// </summary>
+            /// <remarks>
+            /// Audible lists a book under more than one series - the Harry Potter novels
+            /// appear under both "Harry Potter" and "Wizarding World Collection". Collapsing
+            /// to the first membership splits a series across groups and makes each one look
+            /// incomplete, and can pair one series' name with another's position.
+            /// Series and SeriesNumber are retained as the primary membership.
+            /// </remarks>
+            public List<AuthorCatalogSeriesMembership> SeriesMemberships { get; set; } = new();
             public string? PublishedDate { get; set; }
             public string? Isbn { get; set; }
             public string? Link { get; set; }

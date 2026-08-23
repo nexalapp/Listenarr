@@ -1095,6 +1095,12 @@ function buildCatalogMetadata(book: RemoteCatalogBook): AudibleBookMetadata {
     genres: book.genres || [],
     series: book.series,
     seriesNumber: book.seriesNumber,
+    seriesMemberships: ('seriesMemberships' in book ? book.seriesMemberships : undefined)?.map(
+      (membership) => ({
+        seriesName: membership.name ?? '',
+        seriesNumber: membership.position ?? undefined,
+      }),
+    ),
     publishedDate: book.publishedDate,
     publishYear,
     isbn: book.isbn,
@@ -1506,8 +1512,36 @@ const shouldShowSectionHeaders = computed(
 
 const STANDALONE_GROUP = 'Standalone'
 
-function seriesGroupTitle(book: CollectionDisplayItem): string {
-  return (book.series || '').trim() || STANDALONE_GROUP
+/**
+ * Every series a book belongs to, with its position in each.
+ *
+ * Audible lists a book under more than one series - the Harry Potter novels appear
+ * under both "Harry Potter" and "Wizarding World Collection" - so grouping on the
+ * primary membership alone splits a series across groups and makes each look
+ * incomplete. It can also pair one series' name with another's position.
+ */
+function seriesMembershipsFor(book: CollectionDisplayItem): { title: string; position?: string }[] {
+  const memberships = (book.seriesMemberships || [])
+    .map((membership) => ({
+      title: (membership.seriesName || '').trim(),
+      position: membership.seriesNumber,
+    }))
+    .filter((membership) => membership.title.length > 0)
+
+  if (memberships.length > 0) {
+    const seen = new Set<string>()
+    return memberships.filter((membership) => {
+      const key = membership.title.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  const primary = (book.series || '').trim()
+  return primary
+    ? [{ title: primary, position: book.seriesNumber }]
+    : [{ title: STANDALONE_GROUP, position: undefined }]
 }
 
 function seriesPositionValue(value: string | undefined): number {
@@ -1518,20 +1552,28 @@ function seriesPositionValue(value: string | undefined): number {
 const seriesGroupTotals = computed(() => {
   const totals = new Map<string, number>()
   for (const book of audiobooks.value) {
-    const key = seriesGroupTitle(book).toLowerCase()
-    totals.set(key, (totals.get(key) ?? 0) + 1)
+    for (const membership of seriesMembershipsFor(book)) {
+      const key = membership.title.toLowerCase()
+      totals.set(key, (totals.get(key) ?? 0) + 1)
+    }
   }
   return totals
 })
 
 const paginatedAudiobookSections = computed<AvailabilitySection[]>(() => {
   if (isSeriesGroupedView.value) {
-    const groups = new Map<string, { title: string; items: CollectionDisplayItem[] }>()
+    const groups = new Map<
+      string,
+      { title: string; items: { book: CollectionDisplayItem; position?: string }[] }
+    >()
     for (const book of paginatedAudiobooks.value) {
-      const title = seriesGroupTitle(book)
-      const key = title.toLowerCase()
-      if (!groups.has(key)) groups.set(key, { title, items: [] })
-      groups.get(key)!.items.push(book)
+      // A book legitimately appears under each series it belongs to. The position
+      // shown is the one for that series, not the primary membership's.
+      for (const membership of seriesMembershipsFor(book)) {
+        const key = membership.title.toLowerCase()
+        if (!groups.has(key)) groups.set(key, { title: membership.title, items: [] })
+        groups.get(key)!.items.push({ book, position: membership.position })
+      }
     }
 
     return [...groups.entries()]
@@ -1547,9 +1589,9 @@ const paginatedAudiobookSections = computed<AvailabilitySection[]>(() => {
         // Counted across the whole collection, not just this page, so the number
         // does not shrink as the user pages through.
         count: seriesGroupTotals.value.get(key) ?? group.items.length,
-        items: [...group.items].sort(
-          (a, b) => seriesPositionValue(a.seriesNumber) - seriesPositionValue(b.seriesNumber),
-        ),
+        items: [...group.items]
+          .sort((a, b) => seriesPositionValue(a.position) - seriesPositionValue(b.position))
+          .map((entry) => entry.book),
       }))
   }
 
