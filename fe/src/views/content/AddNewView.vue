@@ -18,7 +18,7 @@
 <template>
   <div class="add-new-view">
     <div class="page-header">
-      <h1><PhPlusCircle /> Add New Audiobook</h1>
+      <h1><PhPlusCircle /> Add Audiobooks &amp; Series</h1>
     </div>
 
     <!-- Unified Search -->
