@@ -42,6 +42,7 @@ import type {
   SearchSortDirection,
   AudibleSearchResponse,
   AudibleBookMetadata,
+  AudibleSeriesSearchItem,
   AuthorCatalogResponse,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
@@ -370,9 +371,12 @@ class ApiService {
   }
 
   // Audible series helpers (proxied through backend)
-  async searchAudibleSeries(name: string, region: string = 'us'): Promise<unknown> {
+  async searchAudibleSeries(
+    name: string,
+    region: string = 'us',
+  ): Promise<AudibleSeriesSearchItem[]> {
     const params = new URLSearchParams({ name, region })
-    return this.request<unknown>(`/search/audible/series?${params}`)
+    return this.request<AudibleSeriesSearchItem[]>(`/search/audible/series?${params}`)
   }
 
   async getAudibleSeriesBooks(seriesAsin: string, region: string = 'us'): Promise<unknown> {
@@ -569,6 +573,7 @@ class ApiService {
     isbn?: string
     series?: string
     asin?: string
+    narrator?: string
     region?: string
     language?: string
     pagination?: { page?: number; limit?: number }
@@ -583,6 +588,7 @@ class ApiService {
     if (params.isbn) (body as Record<string, unknown>).isbn = params.isbn
     if (params.series) (body as Record<string, unknown>).series = params.series
     if (params.asin) (body as Record<string, unknown>).asin = params.asin
+    if (params.narrator) (body as Record<string, unknown>).narrator = params.narrator
     const region =
       params.region || (params.language ? getRegionFromLanguage(params.language) : undefined)
     if (region) (body as Record<string, unknown>).region = region

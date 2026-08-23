@@ -50,8 +50,17 @@
           </div>
 
           <div class="status-badges author-hero-badges">
-            <Pill :variant="isCurrentAuthorMonitored ? 'primary' : 'default'">
-              <component :is="isCurrentAuthorMonitored ? PhEye : PhEyeSlash" />
+            <Pill
+              interactive
+              :variant="isCurrentAuthorMonitored ? 'primary' : 'default'"
+              :disabled="authorMonitoringBusy || authorMetadataRefreshBusy"
+              :title="
+                isCurrentAuthorMonitored ? 'Stop monitoring this author' : 'Monitor this author'
+              "
+              @click="toggleAuthorMonitoring"
+            >
+              <PhArrowClockwise v-if="authorMonitoringBusy" class="spin-icon" />
+              <component v-else :is="isCurrentAuthorMonitored ? PhEye : PhEyeSlash" />
               {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Not Monitored' }}
             </Pill>
             <Pill variant="success"> {{ authorLibraryCount }} in library </Pill>
@@ -167,8 +176,17 @@
           </div>
 
           <div class="status-badges author-hero-badges">
-            <Pill :variant="isCurrentSeriesMonitored ? 'primary' : 'default'">
-              <component :is="isCurrentSeriesMonitored ? PhEye : PhEyeSlash" />
+            <Pill
+              interactive
+              :variant="isCurrentSeriesMonitored ? 'primary' : 'default'"
+              :disabled="seriesMonitoringBusy || seriesMetadataRefreshBusy"
+              :title="
+                isCurrentSeriesMonitored ? 'Stop monitoring this series' : 'Monitor this series'
+              "
+              @click="toggleSeriesMonitoring"
+            >
+              <PhArrowClockwise v-if="seriesMonitoringBusy" class="spin-icon" />
+              <component v-else :is="isCurrentSeriesMonitored ? PhEye : PhEyeSlash" />
               {{ isCurrentSeriesMonitored ? 'Monitoring Series' : 'Not Monitored' }}
             </Pill>
             <Pill variant="success"> {{ seriesLibraryCount }} in library </Pill>
@@ -3716,9 +3734,11 @@ defineExpose({
 }
 
 .monitored-badge.unmonitored {
-  background-color: rgba(231, 76, 60, 0.2);
-  border-color: rgba(231, 76, 60, 0.4);
-  color: #e74c3c;
+  /* Neutral, not red: an unmonitored book is a state, not a destructive action.
+     Red is reserved for delete so the two do not read as the same severity. */
+  background-color: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text-muted);
 }
 
 .monitored-badge i {
@@ -3923,7 +3943,8 @@ defineExpose({
 
 .series-bottom-title {
   font-size: 12px;
-  color: #fff;
+  /* Sits on the card surface, not on the cover art, so it must follow the theme. */
+  color: var(--text-color);
   margin: 0 0 4px 0;
   font-weight: 500;
   text-align: center;
@@ -3931,14 +3952,14 @@ defineExpose({
 
 .series-bottom-author {
   font-size: 11px;
-  color: #bfcad6;
+  color: var(--text-muted);
   margin: 0 0 2px 0;
   text-align: center;
 }
 
 .series-bottom-meta {
   font-size: 11px;
-  color: #bfcad6;
+  color: var(--text-muted);
   margin: 0;
   text-align: center;
 }
@@ -4213,9 +4234,11 @@ defineExpose({
 }
 
 .monitored-badge.unmonitored {
-  background-color: rgba(231, 76, 60, 0.2);
-  border-color: rgba(231, 76, 60, 0.4);
-  color: #e74c3c;
+  /* Neutral, not red: an unmonitored book is a state, not a destructive action.
+     Red is reserved for delete so the two do not read as the same severity. */
+  background-color: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text-muted);
 }
 
 .monitored-badge i {
@@ -4224,8 +4247,11 @@ defineExpose({
 }
 
 .monitored-badge.unmonitored {
-  background: rgba(244, 67, 54, 0.9);
-  color: #fff;
+  /* Neutral, not red: an unmonitored or not-yet-added book is a state, not a
+     destructive action. Red stays reserved for delete. */
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text-muted);
 }
 
 .grid-bottom-details {
