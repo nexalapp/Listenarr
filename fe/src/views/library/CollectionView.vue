@@ -281,18 +281,6 @@
           <PhCheckSquare />
           Select All
         </button>
-        <button
-          class="toolbar-btn"
-          :disabled="isReloading"
-          :title="metadataReloadTitle"
-          @click="onReloadMetadata"
-        >
-          <PhArrowClockwise v-if="isReloading" class="spin-icon" />
-          <PhDownloadSimple v-else />
-          {{
-            isReloading ? `Reloading ${progressLabel}` : `Reload Metadata (${metadataReloadCount})`
-          }}
-        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn edit-btn" @click="showBulkEdit">
           <PhPencil />
           Edit Selected
@@ -311,13 +299,17 @@
           <div class="author-monitoring-actions">
             <button
               class="toolbar-btn author-refresh-btn"
-              :disabled="authorMetadataRefreshBusy"
-              @click="refreshAuthorMetadata"
-              title="Refresh author metadata"
+              :disabled="authorMetadataRefreshBusy || isReloading"
+              :title="metadataReloadTitle"
+              @click="onReloadMetadata"
             >
-              <PhArrowClockwise v-if="authorMetadataRefreshBusy" class="spin-icon" />
-              <PhArrowClockwise v-else />
-              Refresh Author Metadata
+              <PhArrowClockwise v-if="authorMetadataRefreshBusy || isReloading" class="spin-icon" />
+              <PhDownloadSimple v-else />
+              {{
+                isReloading
+                  ? `Reloading ${progressLabel}`
+                  : `Reload Metadata (${metadataReloadCount})`
+              }}
             </button>
             <button
               class="toolbar-btn author-monitor-btn"
@@ -338,13 +330,17 @@
           <div class="author-monitoring-actions">
             <button
               class="toolbar-btn author-refresh-btn"
-              :disabled="seriesMetadataRefreshBusy"
-              @click="refreshSeriesMetadata"
-              title="Refresh series metadata"
+              :disabled="seriesMetadataRefreshBusy || isReloading"
+              :title="metadataReloadTitle"
+              @click="onReloadMetadata"
             >
-              <PhArrowClockwise v-if="seriesMetadataRefreshBusy" class="spin-icon" />
-              <PhArrowClockwise v-else />
-              Refresh Series Metadata
+              <PhArrowClockwise v-if="seriesMetadataRefreshBusy || isReloading" class="spin-icon" />
+              <PhDownloadSimple v-else />
+              {{
+                isReloading
+                  ? `Reloading ${progressLabel}`
+                  : `Reload Metadata (${metadataReloadCount})`
+              }}
             </button>
             <button
               class="toolbar-btn author-monitor-btn"
@@ -1401,9 +1397,23 @@ const metadataReloadTitle = computed(() =>
       ' - one provider request each, so this can be slow',
 )
 
+/**
+ * Reloads metadata for the listed books and for the author or series itself.
+ *
+ * These were two buttons - "Reload Metadata" and "Refresh Author/Series
+ * Metadata" - a distinction without a difference to anyone looking at the page.
+ * "Refresh" now means re-reading what Listenarr already holds; "Reload" means
+ * going back to the metadata provider.
+ */
 async function onReloadMetadata() {
   await requestReload(metadataReloadTargets.value)
-  await loadCollectionData(true)
+  if (isAuthorCollection.value) {
+    await refreshAuthorMetadata()
+  } else if (isSeriesCollection.value) {
+    await refreshSeriesMetadata()
+  } else {
+    await loadCollectionData(true)
+  }
 }
 
 const seriesAuthors = computed(() => {
@@ -2070,8 +2080,10 @@ async function confirmBulkDelete() {
 }
 
 const refreshLibrary = async () => {
+  // Local only: re-reads what Listenarr already holds. Going back to the
+  // provider is Reload Metadata, which costs a request per book.
   libraryStore.clearSelection()
-  await loadCollectionData(true)
+  await loadCollectionData(false)
 }
 
 async function refreshAuthorMetadata() {
