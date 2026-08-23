@@ -346,6 +346,52 @@
       </div>
     </div>
 
+    <!-- Series entities: follow a series without owning any of its books -->
+    <div v-if="seriesEntityResults.length > 0" class="search-results series-entity-results">
+      <h2>Series Found</h2>
+      <div class="series-entity-grid">
+        <div
+          v-for="item in seriesEntityResults"
+          :key="seriesEntityKey(item)"
+          class="series-entity-card"
+        >
+          <img
+            v-if="item.image"
+            :src="item.image"
+            :alt="item.name"
+            class="series-entity-image"
+            loading="lazy"
+            decoding="async"
+            @error="handleImageError"
+          />
+          <div class="series-entity-body">
+            <h3 class="series-entity-name">{{ item.name }}</h3>
+            <p v-if="item.description" class="series-entity-description">
+              {{ safeText(item.description) }}
+            </p>
+            <button
+              class="btn btn-secondary btn-sm series-entity-monitor"
+              :class="{ active: !!monitoredSeriesIds[seriesEntityKey(item)] }"
+              :disabled="seriesMonitorBusy[seriesEntityKey(item)]"
+              :title="
+                monitoredSeriesIds[seriesEntityKey(item)]
+                  ? 'Stop monitoring this series'
+                  : 'Monitor this series and add any books you are missing'
+              "
+              @click="toggleSeriesMonitor(item)"
+            >
+              <PhArrowClockwise v-if="seriesMonitorBusy[seriesEntityKey(item)]" class="ph-spin" />
+              <component
+                v-else
+                :is="monitoredSeriesIds[seriesEntityKey(item)] ? PhEye : PhEyeSlash"
+              />
+              {{ monitoredSeriesIds[seriesEntityKey(item)] ? 'Monitoring' : 'Monitor Series' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Results Section -->
     <div v-if="hasResults" class="search-results">
       <!-- ASIN Results -->
@@ -974,6 +1020,8 @@ import {
   PhScissors,
   PhCaretLeft,
   PhCaretRight,
+  PhEye,
+  PhEyeSlash,
 } from '@phosphor-icons/vue'
 import { useRoute, useRouter } from 'vue-router'
 import type {
@@ -984,6 +1032,7 @@ import type {
   AudibleNarrator,
   AudibleGenre,
   AudibleSearchResult,
+  AudibleSeriesSearchItem,
 } from '@/types'
 import { apiService } from '@/services/api'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -1255,6 +1304,97 @@ const emptyStateTitleMessage = computed(() => {
 
 // Pagination / candidate limits for advanced results
 const resultsPerPage = ref<number>(50)
+
+// ─── Series entities (monitorable) ──────────────────────────────────────────
+// A series search returns books; these are the series themselves, so a series can
+// be followed without already owning one of its books.
+const seriesEntityResults = ref<AudibleSeriesSearchItem[]>([])
+const seriesEntitiesLoading = ref(false)
+const monitoredSeriesIds = ref<Record<string, number>>({})
+const seriesMonitorBusy = ref<Record<string, boolean>>({})
+
+function seriesEntityKey(item: AudibleSeriesSearchItem): string {
+  return item.asin || item.name.toLowerCase()
+}
+
+async function loadSeriesEntities(name: string): Promise<void> {
+  const trimmed = name.trim()
+  seriesEntityResults.value = []
+  if (!trimmed) return
+
+  seriesEntitiesLoading.value = true
+  try {
+    const region = normalizeSearchRegion(searchLanguage.value)
+    const response = await apiService.searchAudibleSeries(trimmed, region)
+    seriesEntityResults.value = response ?? []
+    await refreshSeriesMonitorState()
+  } catch (e) {
+    // A failed series lookup must not take the book results down with it.
+    logger.warn('Series entity lookup failed', e)
+    seriesEntityResults.value = []
+  } finally {
+    seriesEntitiesLoading.value = false
+  }
+}
+
+async function refreshSeriesMonitorState(): Promise<void> {
+  const region = normalizeSearchRegion(searchLanguage.value)
+  const next: Record<string, number> = {}
+  await Promise.all(
+    seriesEntityResults.value.map(async (item) => {
+      try {
+        const status = await apiService.getSeriesMonitoringStatus(item.name, region, 'all')
+        if (status.isMonitored && status.monitoredSeries) {
+          next[seriesEntityKey(item)] = status.monitoredSeries.id
+        }
+      } catch {
+        /* unknown state reads as not monitored */
+      }
+    }),
+  )
+  monitoredSeriesIds.value = next
+}
+
+async function toggleSeriesMonitor(item: AudibleSeriesSearchItem): Promise<void> {
+  const key = seriesEntityKey(item)
+  if (seriesMonitorBusy.value[key]) return
+  seriesMonitorBusy.value = { ...seriesMonitorBusy.value, [key]: true }
+
+  try {
+    const existingId = monitoredSeriesIds.value[key]
+    if (existingId) {
+      await apiService.unmonitorSeries(existingId)
+      const remaining = { ...monitoredSeriesIds.value }
+      delete remaining[key]
+      monitoredSeriesIds.value = remaining
+      toast.success('Series unmonitored', `"${item.name}" will no longer be checked for new books.`)
+      return
+    }
+
+    const response = await apiService.monitorSeries({
+      name: item.name,
+      asin: item.asin ?? undefined,
+      region: normalizeSearchRegion(searchLanguage.value),
+      language: 'all',
+    })
+    monitoredSeriesIds.value = {
+      ...monitoredSeriesIds.value,
+      [key]: response.monitoredSeries.id,
+    }
+    toast.success(
+      'Series monitored',
+      response.addedCount > 0
+        ? `Added ${response.addedCount} audiobook${response.addedCount === 1 ? '' : 's'} from the series catalog.`
+        : 'No new audiobooks needed to be added from the series catalog.',
+    )
+  } catch (e) {
+    toast.error('Could not update monitoring', e instanceof Error ? e.message : String(e))
+  } finally {
+    const stillBusy = { ...seriesMonitorBusy.value }
+    delete stillBusy[key]
+    seriesMonitorBusy.value = stillBusy
+  }
+}
 const currentAdvancedPage = ref<number>(1)
 
 const totalPages = computed(() =>
@@ -1852,7 +1992,11 @@ const performAdvancedSearch = async () => {
             pagination: { page: 1, limit: resultsPerPage.value },
           }
           if (languageFilter) seriesSearchParams.language = languageFilter
+          // Run alongside the book search so the series itself can be monitored even when
+          // the catalog returns nothing the user wants to add right now.
+          const seriesEntitiesPromise = loadSeriesEntities(seriesName)
           const resp = await apiService.advancedSearch(seriesSearchParams)
+          await seriesEntitiesPromise
           // backend returns enriched SearchResult objects
           await handleAdvancedSearchResults(resp as Partial<SearchResult>[])
         } catch (e) {
@@ -4106,6 +4250,63 @@ select.form-input:focus {
 }
 
 /* Results */
+.series-entity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.series-entity-card {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+}
+
+.series-entity-image {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.series-entity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.series-entity-name {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.series-entity-description {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.75;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.series-entity-monitor {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.series-entity-monitor.active {
+  color: var(--accent-color, #3b82f6);
+}
+
 .search-results h2 {
   color: white;
   margin-bottom: 1.5rem;
