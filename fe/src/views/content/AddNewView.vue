@@ -719,7 +719,7 @@
                   </button>
                   <button
                     type="button"
-                    class="follow-btn"
+                    class="series-badge follow-badge"
                     :class="{ following: isFollowed('author', authorName) }"
                     :disabled="isFollowBusy('author', authorName)"
                     :title="
@@ -737,38 +737,6 @@
                 </span>
                 <span v-if="authorNamesFor(book).length === 0">{{ formatAuthors(book) }}</span>
               </p>
-
-              <div v-if="seriesNamesFor(book).length > 0" class="result-series-follow">
-                <span
-                  v-for="seriesName in seriesNamesFor(book)"
-                  :key="seriesName"
-                  class="entity-chip"
-                >
-                  <button
-                    type="button"
-                    class="entity-link"
-                    @click="openCollection('series', seriesName)"
-                  >
-                    {{ seriesName }}
-                  </button>
-                  <button
-                    type="button"
-                    class="follow-btn"
-                    :class="{ following: isFollowed('series', seriesName) }"
-                    :disabled="isFollowBusy('series', seriesName)"
-                    :title="
-                      isFollowed('series', seriesName)
-                        ? `Stop following ${seriesName}`
-                        : `Follow ${seriesName} and add any books you are missing`
-                    "
-                    @click="toggleFollow('series', seriesName)"
-                  >
-                    <PhArrowClockwise v-if="isFollowBusy('series', seriesName)" class="ph-spin" />
-                    <component v-else :is="isFollowed('series', seriesName) ? PhEye : PhEyeSlash" />
-                    {{ isFollowed('series', seriesName) ? 'Following' : 'Follow' }}
-                  </button>
-                </span>
-              </div>
 
               <!-- Audiobook metadata from enriched results -->
               <p v-if="book.searchResult?.narrator" class="result-narrator">
@@ -834,6 +802,24 @@
                     #{{ book.searchResult.seriesNumber }}</span
                   >
                 </span>
+                <button
+                  v-for="seriesName in seriesNamesFor(book)"
+                  :key="seriesName"
+                  type="button"
+                  class="series-badge follow-badge"
+                  :class="{ following: isFollowed('series', seriesName) }"
+                  :disabled="isFollowBusy('series', seriesName)"
+                  :title="
+                    isFollowed('series', seriesName)
+                      ? `Stop following ${seriesName}`
+                      : `Follow ${seriesName} and add any books you are missing`
+                  "
+                  @click="toggleFollow('series', seriesName)"
+                >
+                  <PhArrowClockwise v-if="isFollowBusy('series', seriesName)" class="ph-spin" />
+                  <component v-else :is="isFollowed('series', seriesName) ? PhEye : PhEyeSlash" />
+                  {{ isFollowed('series', seriesName) ? 'Following' : 'Follow' }}
+                </button>
               </div>
 
               <!-- Metadata badges -->
@@ -4343,40 +4329,20 @@ select.form-input:focus {
   text-decoration: underline;
 }
 
-.follow-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  font-size: 0.7rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 999px;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
-  background: transparent;
-  color: inherit;
+.follow-badge {
+  border: 1px solid transparent;
   cursor: pointer;
-  opacity: 0.7;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
 }
 
-.follow-btn:hover:not(:disabled) {
-  opacity: 1;
-}
-
-.follow-btn:disabled {
+.follow-badge:disabled {
   cursor: default;
 }
 
-.follow-btn.following {
+.follow-badge.following {
   color: var(--accent-color, #3b82f6);
   border-color: var(--accent-color, #3b82f6);
-  opacity: 1;
-}
-
-.result-series-follow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0.3rem 0;
-  font-size: 0.85rem;
 }
 
 .search-results h2 {
