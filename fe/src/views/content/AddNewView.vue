@@ -194,7 +194,7 @@
                     @keydown.enter.prevent="performAdvancedSearch"
                   />
                   <div class="form-hint">
-                    <div>Returns matching series you can follow, plus the books in them.</div>
+                    <div>Returns matching series you can monitor, plus the books in them.</div>
                   </div>
                 </div>
               </div>
@@ -719,19 +719,22 @@
                   </button>
                   <button
                     type="button"
-                    class="series-badge follow-badge"
-                    :class="{ following: isFollowed('author', authorName) }"
-                    :disabled="isFollowBusy('author', authorName)"
+                    class="series-badge monitor-badge"
+                    :class="{ monitoring: isMonitored('author', authorName) }"
+                    :disabled="isMonitorBusy('author', authorName)"
                     :title="
-                      isFollowed('author', authorName)
-                        ? `Stop following ${authorName}`
-                        : `Follow ${authorName} and add any books you are missing`
+                      isMonitored('author', authorName)
+                        ? `Stop monitoring ${authorName}`
+                        : `Monitor ${authorName} and add any books you are missing`
                     "
-                    @click="toggleFollow('author', authorName)"
+                    @click="toggleMonitor('author', authorName)"
                   >
-                    <PhArrowClockwise v-if="isFollowBusy('author', authorName)" class="ph-spin" />
-                    <component v-else :is="isFollowed('author', authorName) ? PhEye : PhEyeSlash" />
-                    {{ isFollowed('author', authorName) ? 'Following' : 'Follow' }}
+                    <PhArrowClockwise v-if="isMonitorBusy('author', authorName)" class="ph-spin" />
+                    <component
+                      v-else
+                      :is="isMonitored('author', authorName) ? PhEye : PhEyeSlash"
+                    />
+                    {{ isMonitored('author', authorName) ? 'Monitoring' : 'Monitor' }}
                   </button>
                   <span v-if="i < authorNamesFor(book).length - 1">, </span>
                 </span>
@@ -806,19 +809,19 @@
                   v-for="seriesName in seriesNamesFor(book)"
                   :key="seriesName"
                   type="button"
-                  class="series-badge follow-badge"
-                  :class="{ following: isFollowed('series', seriesName) }"
-                  :disabled="isFollowBusy('series', seriesName)"
+                  class="series-badge monitor-badge"
+                  :class="{ monitoring: isMonitored('series', seriesName) }"
+                  :disabled="isMonitorBusy('series', seriesName)"
                   :title="
-                    isFollowed('series', seriesName)
-                      ? `Stop following ${seriesName}`
-                      : `Follow ${seriesName} and add any books you are missing`
+                    isMonitored('series', seriesName)
+                      ? `Stop monitoring ${seriesName}`
+                      : `Monitor ${seriesName} and add any books you are missing`
                   "
-                  @click="toggleFollow('series', seriesName)"
+                  @click="toggleMonitor('series', seriesName)"
                 >
-                  <PhArrowClockwise v-if="isFollowBusy('series', seriesName)" class="ph-spin" />
-                  <component v-else :is="isFollowed('series', seriesName) ? PhEye : PhEyeSlash" />
-                  {{ isFollowed('series', seriesName) ? 'Following' : 'Follow' }}
+                  <PhArrowClockwise v-if="isMonitorBusy('series', seriesName)" class="ph-spin" />
+                  <component v-else :is="isMonitored('series', seriesName) ? PhEye : PhEyeSlash" />
+                  {{ isMonitored('series', seriesName) ? 'Monitoring' : 'Monitor' }}
                 </button>
               </div>
 
@@ -1315,26 +1318,26 @@ const emptyStateTitleMessage = computed(() => {
 // Pagination / candidate limits for advanced results
 const resultsPerPage = ref<number>(50)
 
-// ─── Follow authors and series from any result ──────────────────────────────
-// Follow buttons live on the result cards so an author or series can be followed
+// ─── Monitor authors and series from any result ─────────────────────────────
+// Monitor toggles live on the result cards so an author or series can be monitored
 // from any search, rather than only when the library already contains one of
 // their books. Monitoring status is a local database read, so it is safe to
 // resolve one per distinct name.
-type FollowKind = 'author' | 'series'
+type MonitorKind = 'author' | 'series'
 
-const followedIds = ref<Record<string, number>>({})
-const followBusy = ref<Record<string, boolean>>({})
+const monitoredIds = ref<Record<string, number>>({})
+const monitorBusy = ref<Record<string, boolean>>({})
 
-function followKey(kind: FollowKind, name: string): string {
+function monitorKey(kind: MonitorKind, name: string): string {
   return `${kind}:${name.trim().toLowerCase()}`
 }
 
-function isFollowed(kind: FollowKind, name: string): boolean {
-  return !!followedIds.value[followKey(kind, name)]
+function isMonitored(kind: MonitorKind, name: string): boolean {
+  return !!monitoredIds.value[monitorKey(kind, name)]
 }
 
-function isFollowBusy(kind: FollowKind, name: string): boolean {
-  return !!followBusy.value[followKey(kind, name)]
+function isMonitorBusy(kind: MonitorKind, name: string): boolean {
+  return !!monitorBusy.value[monitorKey(kind, name)]
 }
 
 function authorNamesFor(book: TitleSearchResult): string[] {
@@ -1367,13 +1370,13 @@ function dedupeNames(values: unknown[]): string[] {
   return out
 }
 
-async function refreshFollowStates(books: TitleSearchResult[]): Promise<void> {
-  const wanted = new Map<string, { kind: FollowKind; name: string }>()
+async function refreshMonitorStates(books: TitleSearchResult[]): Promise<void> {
+  const wanted = new Map<string, { kind: MonitorKind; name: string }>()
   for (const book of books) {
     for (const name of authorNamesFor(book))
-      wanted.set(followKey('author', name), { kind: 'author', name })
+      wanted.set(monitorKey('author', name), { kind: 'author', name })
     for (const name of seriesNamesFor(book))
-      wanted.set(followKey('series', name), { kind: 'series', name })
+      wanted.set(monitorKey('series', name), { kind: 'series', name })
   }
   if (wanted.size === 0) return
 
@@ -1392,29 +1395,32 @@ async function refreshFollowStates(books: TitleSearchResult[]): Promise<void> {
             resolved[key] = status.monitoredSeries.id
         }
       } catch {
-        /* unknown state reads as not followed */
+        /* unknown state reads as not monitored */
       }
     }),
   )
-  followedIds.value = { ...followedIds.value, ...resolved }
+  monitoredIds.value = { ...monitoredIds.value, ...resolved }
 }
 
-async function toggleFollow(kind: FollowKind, name: string): Promise<void> {
-  const key = followKey(kind, name)
-  if (followBusy.value[key]) return
-  followBusy.value = { ...followBusy.value, [key]: true }
+async function toggleMonitor(kind: MonitorKind, name: string): Promise<void> {
+  const key = monitorKey(kind, name)
+  if (monitorBusy.value[key]) return
+  monitorBusy.value = { ...monitorBusy.value, [key]: true }
 
   try {
     const region = normalizeSearchRegion(searchLanguage.value)
-    const existingId = followedIds.value[key]
+    const existingId = monitoredIds.value[key]
 
     if (existingId) {
       if (kind === 'author') await apiService.unmonitorAuthor(existingId)
       else await apiService.unmonitorSeries(existingId)
-      const remaining = { ...followedIds.value }
+      const remaining = { ...monitoredIds.value }
       delete remaining[key]
-      followedIds.value = remaining
-      toast.success(`Unfollowed ${kind}`, `"${name}" will no longer be checked for new books.`)
+      monitoredIds.value = remaining
+      toast.success(
+        `Stopped monitoring ${name}`,
+        `"${name}" will no longer be checked for new books.`,
+      )
       return
     }
 
@@ -1426,25 +1432,25 @@ async function toggleFollow(kind: FollowKind, name: string): Promise<void> {
       kind === 'author'
         ? (response as MonitorAuthorResponse).monitoredAuthor.id
         : (response as MonitorSeriesResponse).monitoredSeries.id
-    followedIds.value = { ...followedIds.value, [key]: id }
+    monitoredIds.value = { ...monitoredIds.value, [key]: id }
 
     const added = response.addedCount ?? 0
     toast.success(
-      `Following ${name}`,
+      `Monitoring ${name}`,
       added > 0
         ? `Added ${added} audiobook${added === 1 ? '' : 's'} you were missing.`
         : 'No new audiobooks needed to be added.',
     )
   } catch (e) {
-    toast.error('Could not update following', e instanceof Error ? e.message : String(e))
+    toast.error('Could not update monitoring', e instanceof Error ? e.message : String(e))
   } finally {
-    const stillBusy = { ...followBusy.value }
+    const stillBusy = { ...monitorBusy.value }
     delete stillBusy[key]
-    followBusy.value = stillBusy
+    monitorBusy.value = stillBusy
   }
 }
 
-function openCollection(kind: FollowKind, name: string): void {
+function openCollection(kind: MonitorKind, name: string): void {
   router.push(`/collection/${kind}/${encodeURIComponent(name)}`)
 }
 
@@ -1453,7 +1459,7 @@ function openCollection(kind: FollowKind, name: string): void {
 watch(
   titleResults,
   (books) => {
-    if (books.length > 0) void refreshFollowStates(books)
+    if (books.length > 0) void refreshMonitorStates(books)
   },
   { immediate: true },
 )
@@ -4329,18 +4335,18 @@ select.form-input:focus {
   text-decoration: underline;
 }
 
-.follow-badge {
+.monitor-badge {
   border: 1px solid transparent;
   cursor: pointer;
   font-size: 0.78rem;
   padding: 0.2rem 0.55rem;
 }
 
-.follow-badge:disabled {
+.monitor-badge:disabled {
   cursor: default;
 }
 
-.follow-badge.following {
+.monitor-badge.monitoring {
   color: var(--accent-color, #3b82f6);
   border-color: var(--accent-color, #3b82f6);
 }
