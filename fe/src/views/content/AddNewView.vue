@@ -44,7 +44,7 @@
               >
               <p class="search-help">
                 Enter an ASIN (e.g., B08G9PRS1K) or search by title and author.<br />
-                Use <strong>Advanced</strong> to search by series, narrator, or ISBN.
+                Use <strong>Advanced</strong> to search by series or ISBN.
               </p>
             </div>
             <form
@@ -742,8 +742,23 @@
               </p>
 
               <!-- Audiobook metadata from enriched results -->
-              <p v-if="book.searchResult?.narrator" class="result-narrator">
-                Narrated by {{ book.searchResult.narrator }}
+              <p v-if="narratorNamesFor(book).length > 0" class="result-narrator">
+                Narrated by
+                <span
+                  v-for="(narratorName, i) in narratorNamesFor(book)"
+                  :key="narratorName"
+                  class="entity-chip"
+                >
+                  <button
+                    type="button"
+                    class="entity-link"
+                    :title="`Browse audiobooks narrated by ${narratorName}`"
+                    @click="openCollection('narrator', narratorName)"
+                  >
+                    {{ narratorName }}
+                  </button>
+                  <span v-if="i < narratorNamesFor(book).length - 1">,</span>
+                </span>
               </p>
 
               <div class="result-stats">
@@ -1355,12 +1370,30 @@ function seriesNamesFor(book: TitleSearchResult): string[] {
   return dedupeNames([...list, ...single] as unknown[])
 }
 
+function narratorNamesFor(book: TitleSearchResult): string[] {
+  const list = Array.isArray(book.searchResult?.narrators) ? book.searchResult.narrators : []
+  if (list.length > 0) return dedupeNames(list as unknown[])
+  // Enriched results often carry a single pre-joined string instead of an array.
+  const joined = typeof book.searchResult?.narrator === 'string' ? book.searchResult.narrator : ''
+  return dedupeNames(joined.split(','))
+}
+
 function dedupeNames(values: unknown[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const value of values) {
-    if (typeof value !== 'string') continue
-    const trimmed = value.trim()
+    // Providers return either bare strings or { name } objects depending on the
+    // endpoint, so accept both rather than silently dropping the object form.
+    const raw =
+      typeof value === 'string'
+        ? value
+        : value &&
+            typeof value === 'object' &&
+            typeof (value as { name?: unknown }).name === 'string'
+          ? (value as { name: string }).name
+          : null
+    if (raw === null) continue
+    const trimmed = raw.trim()
     if (!trimmed || trimmed.toLowerCase() === 'unknown author') continue
     const key = trimmed.toLowerCase()
     if (seen.has(key)) continue
@@ -1450,7 +1483,7 @@ async function toggleMonitor(kind: MonitorKind, name: string): Promise<void> {
   }
 }
 
-function openCollection(kind: MonitorKind, name: string): void {
+function openCollection(kind: MonitorKind | 'narrator', name: string): void {
   router.push(`/collection/${kind}/${encodeURIComponent(name)}`)
 }
 
@@ -4460,11 +4493,9 @@ select.form-input:focus {
   margin: 0;
   font-style: italic;
   font-size: 0.9rem;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  /* Full-cast titles list a dozen narrators; wrapping beats hiding all but the first. */
+  display: block;
+  overflow-wrap: anywhere;
 }
 
 .result-stats {
