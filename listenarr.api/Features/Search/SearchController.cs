@@ -237,55 +237,6 @@ namespace Listenarr.Api.Features.Search
         }
 
         /// <summary>
-        /// Search for audiobook series by name using the Audible catalog provider.
-        /// </summary>
-        /// <param name="name">Series name to search for.</param>
-        /// <param name="region">Audible marketplace region (default: us).</param>
-        [HttpGet("audible/series")]
-        [ProducesResponseType(typeof(List<AudibleSeriesSearchItem>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<ActionResult<List<AudibleSeriesSearchItem>>> SearchAudibleSeries([FromQuery] string name, [FromQuery] string region = "us")
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(name)) return BadRequest("name query parameter is required");
-                var res = await _audibleService.SearchSeriesByNameAsync(name, region);
-                if (res == null) return NotFound();
-
-                // SearchSeriesByNameAsync is declared as object? for historical reasons but always
-                // yields SeriesLookupItem values; project them so callers get a stable contract
-                // rather than having to reverse-engineer the provider's shape.
-                if (res is not IEnumerable<SeriesLookupItem> items)
-                {
-                    _logger.LogWarning(
-                        "Audible series search returned an unexpected shape ({Type}) for name {Name}",
-                        res.GetType().Name,
-                        LogRedaction.SanitizeText(name));
-                    return Ok(new List<AudibleSeriesSearchItem>());
-                }
-
-                // Shape is unchanged (a bare array); only the element type is now declared.
-                return Ok(items
-                    .Where(item => !string.IsNullOrWhiteSpace(item.Name))
-                    .Select(item => new AudibleSeriesSearchItem
-                    {
-                        Asin = item.Asin,
-                        Name = item.Name!,
-                        Region = item.Region,
-                        Description = item.Description,
-                        Image = item.Image
-                    })
-                    .ToList());
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogError(ex, "Error proxying Audible series search for name {Name}", name);
-                return StatusCode(500, "Internal server error");
-            }
-        }
-
-        /// <summary>
         /// Get all books in a series by the series ASIN.
         /// </summary>
         /// <param name="asin">Audible series ASIN.</param>
