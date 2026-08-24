@@ -534,13 +534,31 @@
                 <PhStar />
                 {{ getQualityProfileName(audiobook.qualityProfileId) }}
               </div>
-              <div
+              <component
+                :is="audiobook.inLibrary ? 'button' : 'div'"
+                :type="audiobook.inLibrary ? 'button' : undefined"
                 class="monitored-badge"
-                :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+                :class="{
+                  unmonitored: !audiobook.inLibrary || !audiobook.monitored,
+                  interactive: audiobook.inLibrary,
+                }"
+                :disabled="audiobook.inLibrary ? monitorBusyIds.has(audiobook.id) : undefined"
+                :title="
+                  audiobook.inLibrary
+                    ? audiobook.monitored
+                      ? 'Stop monitoring this book'
+                      : 'Monitor this book'
+                    : undefined
+                "
+                @click.stop="audiobook.inLibrary ? toggleAudiobookMonitored(audiobook) : undefined"
               >
-                <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
+                <PhArrowClockwise v-if="monitorBusyIds.has(audiobook.id)" class="spin-icon" />
+                <component
+                  v-else
+                  :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash"
+                />
                 {{ getMonitoringLabel(audiobook) }}
-              </div>
+              </component>
             </div>
 
             <div class="list-actions">
@@ -662,15 +680,33 @@
                     <PhStar />
                     {{ getQualityProfileName(audiobook.qualityProfileId) }}
                   </div>
-                  <div
+                  <component
+                    :is="audiobook.inLibrary ? 'button' : 'div'"
+                    :type="audiobook.inLibrary ? 'button' : undefined"
                     class="monitored-badge"
-                    :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+                    :class="{
+                      unmonitored: !audiobook.inLibrary || !audiobook.monitored,
+                      interactive: audiobook.inLibrary,
+                    }"
+                    :disabled="audiobook.inLibrary ? monitorBusyIds.has(audiobook.id) : undefined"
+                    :title="
+                      audiobook.inLibrary
+                        ? audiobook.monitored
+                          ? 'Stop monitoring this book'
+                          : 'Monitor this book'
+                        : undefined
+                    "
+                    @click.stop="
+                      audiobook.inLibrary ? toggleAudiobookMonitored(audiobook) : undefined
+                    "
                   >
+                    <PhArrowClockwise v-if="monitorBusyIds.has(audiobook.id)" class="spin-icon" />
                     <component
+                      v-else
                       :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash"
                     />
                     {{ getMonitoringLabel(audiobook) }}
-                  </div>
+                  </component>
                 </div>
               </div>
               <!-- Bottom placard (only show when item details are enabled) -->
@@ -1462,6 +1498,36 @@ const seriesAuthors = computed(() => {
 
 function openAuthorCollection(authorName: string): void {
   router.push(`/collection/author/${encodeURIComponent(authorName)}`)
+}
+
+const monitorBusyIds = ref(new Set<number>())
+
+/**
+ * Toggles monitoring for one book from its badge.
+ *
+ * The badge already showed the state with the same eye icons used for authors
+ * and series; it just was not a control. Kept distinct from the delete button
+ * beside it, which is destructive and stays red.
+ */
+async function toggleAudiobookMonitored(audiobook: CollectionDisplayItem): Promise<void> {
+  if (!audiobook.inLibrary || monitorBusyIds.value.has(audiobook.id)) return
+
+  const next = !audiobook.monitored
+  monitorBusyIds.value = new Set(monitorBusyIds.value).add(audiobook.id)
+  try {
+    await apiService.updateAudiobook(audiobook.id, { monitored: next })
+    audiobook.monitored = next
+    toast.success(
+      next ? 'Monitoring book' : 'Stopped monitoring',
+      `"${audiobook.title}" ${next ? 'will be searched for' : 'will no longer be searched for'}.`,
+    )
+  } catch (e) {
+    toast.error('Could not update monitoring', e instanceof Error ? e.message : String(e))
+  } finally {
+    const remaining = new Set(monitorBusyIds.value)
+    remaining.delete(audiobook.id)
+    monitorBusyIds.value = remaining
+  }
 }
 
 function openSeriesCollection(seriesName: string): void {
@@ -3999,6 +4065,22 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+
+button.monitored-badge {
+  font: inherit;
+}
+
+.monitored-badge.interactive {
+  cursor: pointer;
+}
+
+.monitored-badge.interactive:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.monitored-badge.interactive:disabled {
+  cursor: default;
 }
 
 .monitored-badge.unmonitored {
