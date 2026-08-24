@@ -571,7 +571,17 @@
                 <PhPencil />
               </button>
               <button
-                v-if="audiobook.inLibrary"
+                v-if="audiobook.inLibrary && !hasFileOnDisk(audiobook)"
+                class="action-btn search-btn-small"
+                :disabled="searchBusyIds.has(audiobook.id)"
+                @click.stop="searchForAudiobook(audiobook)"
+                title="Search for this book now"
+              >
+                <PhArrowClockwise v-if="searchBusyIds.has(audiobook.id)" class="spin-icon" />
+                <PhMagnifyingGlass v-else />
+              </button>
+              <button
+                v-if="audiobook.inLibrary && hasFileOnDisk(audiobook)"
                 class="action-btn delete-btn-small"
                 @click.stop="deleteAudiobook(audiobook)"
                 title="Delete"
@@ -579,7 +589,7 @@
                 <PhTrash />
               </button>
               <button
-                v-else
+                v-if="!audiobook.inLibrary"
                 class="action-btn add-btn-small"
                 @click.stop="openAddToLibrary(audiobook)"
                 title="Add to Library"
@@ -730,7 +740,17 @@
                   <PhPencil />
                 </button>
                 <button
-                  v-if="audiobook.inLibrary"
+                  v-if="audiobook.inLibrary && !hasFileOnDisk(audiobook)"
+                  class="action-btn search-btn-small"
+                  :disabled="searchBusyIds.has(audiobook.id)"
+                  @click.stop="searchForAudiobook(audiobook)"
+                  title="Search for this book now"
+                >
+                  <PhArrowClockwise v-if="searchBusyIds.has(audiobook.id)" class="spin-icon" />
+                  <PhMagnifyingGlass v-else />
+                </button>
+                <button
+                  v-if="audiobook.inLibrary && hasFileOnDisk(audiobook)"
                   class="action-btn delete-btn-small"
                   @click.stop="deleteAudiobook(audiobook)"
                   title="Delete"
@@ -738,7 +758,7 @@
                   <PhTrash />
                 </button>
                 <button
-                  v-else
+                  v-if="!audiobook.inLibrary"
                   class="action-btn add-btn-small"
                   @click.stop="openAddToLibrary(audiobook)"
                   title="Add to Library"
@@ -885,6 +905,7 @@ import {
   PhUser,
   PhDownloadSimple,
   PhStack,
+  PhMagnifyingGlass,
   PhCaretLeft,
   PhCaretRight,
   PhStar,
@@ -1501,6 +1522,38 @@ function openAuthorCollection(authorName: string): void {
 }
 
 const monitorBusyIds = ref(new Set<number>())
+const searchBusyIds = ref(new Set<number>())
+
+/**
+ * A monitored book with no file has nothing to delete, so it offers a search
+ * instead. Deleting such a row only removes a wanted entry, and while its author
+ * or series stays monitored the next sync adds it straight back.
+ */
+function hasFileOnDisk(audiobook: CollectionDisplayItem): boolean {
+  return !!audiobook.filePath || (audiobook.files?.length ?? 0) > 0
+}
+
+async function searchForAudiobook(audiobook: CollectionDisplayItem): Promise<void> {
+  if (searchBusyIds.value.has(audiobook.id)) return
+  searchBusyIds.value = new Set(searchBusyIds.value).add(audiobook.id)
+  try {
+    const result = await apiService.searchAndDownload(audiobook.id)
+    if (result.success) {
+      toast.success(
+        'Search started',
+        `Found "${audiobook.title}" on ${result.indexerUsed ?? 'an indexer'}; downloading.`,
+      )
+    } else {
+      toast.warning('Nothing found', result.message || `No release found for "${audiobook.title}".`)
+    }
+  } catch (e) {
+    toast.error('Search failed', e instanceof Error ? e.message : String(e))
+  } finally {
+    const remaining = new Set(searchBusyIds.value)
+    remaining.delete(audiobook.id)
+    searchBusyIds.value = remaining
+  }
+}
 
 /**
  * Toggles monitoring for one book from its badge.
