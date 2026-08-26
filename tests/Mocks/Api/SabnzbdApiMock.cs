@@ -15,10 +15,12 @@ namespace Listenarr.Tests.Mocks.Api
         public System.Net.HttpStatusCode HistoryStatusCode { get; set; } = System.Net.HttpStatusCode.OK;
         public string? HistoryResponseOverride { get; set; }
         public List<Uri> RemovalRequests { get; } = [];
+        public List<Uri> AddFileRequests { get; } = [];
 
         public SabnzbdApiMock()
         {
             AddRoute("api", ProcessRequest, HttpMethod.Get);
+            AddRoute("api", ProcessRequest, HttpMethod.Post);
         }
 
         public async Task<HttpResponseMessage> GetHistory(HttpRequestMessage request, CancellationToken ct)
@@ -108,6 +110,17 @@ namespace Listenarr.Tests.Mocks.Api
             """);
         }
 
+        public async Task<HttpResponseMessage> AddFile(HttpRequestMessage request, CancellationToken ct)
+        {
+            AddFileRequests.Add(request.RequestUri!);
+            return MockUtils.GetCannedResponse("""
+            {
+                "status": true,
+                "nzo_ids": ["SABnzbd_nzo_addfile_test"]
+            }
+            """);
+        }
+
         public async Task<HttpResponseMessage> ProcessRequest(HttpRequestMessage request, CancellationToken ct)
         {
             var query = HttpUtility.ParseQueryString(request.RequestUri.Query);
@@ -120,6 +133,10 @@ namespace Listenarr.Tests.Mocks.Api
             else if (string.Equals("get_cats", mode))
             {
                 return await GetCats(request, ct);
+            }
+            else if (string.Equals("addfile", mode))
+            {
+                return await AddFile(request, ct);
             }
             else if (string.Equals("history", mode))
             {
