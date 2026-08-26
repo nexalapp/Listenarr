@@ -328,6 +328,7 @@ export interface RootFolder {
   canChangePath?: boolean
   canReadFilesystem?: boolean
   canScanFilesystem?: boolean
+  canPublishNewFiles?: boolean
   canMutateFilesystem?: boolean
   confirmationToken?: string | null
   activeRelocation?: RootFolderPathChangeResult | null
@@ -1091,6 +1092,11 @@ export interface ManualImportResult {
   error?: string
   skipped?: boolean
   skipReason?: string
+  requestedAction?: string
+  effectiveAction?: string
+  sourceDisposition?: string
+  warningCode?: string
+  warning?: string
 }
 
 // Audible API Types
