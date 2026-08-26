@@ -23,28 +23,21 @@ internal sealed partial class PinnedDirectoryCreation
                 asynchronous);
         }
 
-        // Tag libraries rewrite a container in place: they parse the existing box or frame
-        // structure through the same stream they then write back to, so a write-only handle
-        // fails while still reading. The pinning is unaffected by the wider access mode — the
-        // handle is still opened relative to the pinned parent, still refuses to follow a
-        // link, and is still checked against the validated file object below.
-        internal FileStream OpenIndependentReadWriteStream(int bufferSize, bool asynchronous)
+        internal FileStream OpenIndependentWriteStream(int bufferSize, bool asynchronous)
         {
             ThrowIfDisposed();
             var handle = OperatingSystem.IsWindows()
                 ? OpenRelativeFileForWriteWindows(
                     _parentHandle,
                     _fileName,
-                    FullPath,
-                    readable: true)
+                    FullPath)
                 : OpenRelativeFileForWriteUnix(
                     _parentHandle,
                     _fileName,
-                    FullPath,
-                    readable: true);
+                    FullPath);
             return OpenVerifiedIndependentStream(
                 handle,
-                FileAccess.ReadWrite,
+                FileAccess.Write,
                 bufferSize,
                 asynchronous);
         }
