@@ -4200,6 +4200,22 @@ button.monitored-badge {
   background-color: rgba(39, 174, 96, 1);
 }
 
+.search-btn-small {
+  /* Same neutral slate as the unmonitored badge: searching for a missing file is
+     a routine action, not a destructive or additive one. */
+  background-color: rgba(148, 163, 184, 0.9);
+  border-color: rgba(100, 116, 139, 0.5);
+}
+
+.search-btn-small:hover:not(:disabled) {
+  background-color: rgba(100, 116, 139, 1);
+}
+
+.search-btn-small:disabled {
+  background-color: rgba(148, 163, 184, 0.5);
+  cursor: default;
+}
+
 .loading-state,
 .empty-state,
 .error-state {
