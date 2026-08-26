@@ -11,13 +11,16 @@ namespace Listenarr.Tests.Mocks.Api
         public static readonly string REMOTE_PATH = FileUtils.GetAbsolutePath("downloads", "completed");
 
         public string contentPath = FileUtils.GetAbsolutePath("completed", "Book.m4b");
+        public List<string> Categories { get; set; } = ["*", "Default"];
         public System.Net.HttpStatusCode HistoryStatusCode { get; set; } = System.Net.HttpStatusCode.OK;
         public string? HistoryResponseOverride { get; set; }
         public List<Uri> RemovalRequests { get; } = [];
+        public List<Uri> AddFileRequests { get; } = [];
 
         public SabnzbdApiMock()
         {
             AddRoute("api", ProcessRequest, HttpMethod.Get);
+            AddRoute("api", ProcessRequest, HttpMethod.Post);
         }
 
         public async Task<HttpResponseMessage> GetHistory(HttpRequestMessage request, CancellationToken ct)
@@ -92,11 +95,28 @@ namespace Listenarr.Tests.Mocks.Api
             return MockUtils.GetCannedResponse(response);
         }
 
+        public async Task<HttpResponseMessage> GetCats(HttpRequestMessage request, CancellationToken ct)
+        {
+            var quoted = Categories.Select(category => $"\"{category}\"");
+            return MockUtils.GetCannedResponse($$"""{"categories": [{{string.Join(", ", quoted)}}]}""");
+        }
+
         public async Task<HttpResponseMessage> GetVersion(HttpRequestMessage request, CancellationToken ct)
         {
             return MockUtils.GetCannedResponse("""
             {
                 "version": "4.4.1"
+            }
+            """);
+        }
+
+        public async Task<HttpResponseMessage> AddFile(HttpRequestMessage request, CancellationToken ct)
+        {
+            AddFileRequests.Add(request.RequestUri!);
+            return MockUtils.GetCannedResponse("""
+            {
+                "status": true,
+                "nzo_ids": ["SABnzbd_nzo_addfile_test"]
             }
             """);
         }
@@ -109,6 +129,14 @@ namespace Listenarr.Tests.Mocks.Api
             if (string.Equals("version", mode))
             {
                 return await GetVersion(request, ct);
+            }
+            else if (string.Equals("get_cats", mode))
+            {
+                return await GetCats(request, ct);
+            }
+            else if (string.Equals("addfile", mode))
+            {
+                return await AddFile(request, ct);
             }
             else if (string.Equals("history", mode))
             {

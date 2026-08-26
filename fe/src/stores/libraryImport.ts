@@ -21,7 +21,12 @@ import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
-import type { SearchResult, AudibleBookMetadata, UnmatchedFileItem } from '@/types'
+import type {
+  SearchResult,
+  AudibleBookMetadata,
+  AudiobookSeriesMembership,
+  UnmatchedFileItem,
+} from '@/types'
 
 export interface LibraryImportItem {
   id: string // = fullPath (unique key)
@@ -45,6 +50,8 @@ export interface LibraryImportItem {
   // Selection
   selected: boolean
 }
+
+const ASIN_PATTERN = /^[A-Z0-9]{10}$/i
 
 function extractFolderName(relativePath: string): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
@@ -102,11 +109,29 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
       ? result.authors.map((a) => a.name ?? '').filter(Boolean)
       : []
 
-  // series may come back as AudibleSeries[] from the search endpoint
+  // series may come back as AudibleSeries[] from the search endpoint. A book can belong to
+  // more than one series (Audnexus seriesPrimary/seriesSecondary), so every entry becomes a
+  // membership; the scalar fields below stay populated from the primary for older consumers.
   const seriesRaw = result.series as unknown
-  const seriesItem = Array.isArray(seriesRaw)
-    ? (seriesRaw as Array<{ name?: string; asin?: string; position?: string }>)[0]
-    : null
+  const seriesEntries = Array.isArray(seriesRaw)
+    ? (seriesRaw as Array<{ name?: string; asin?: string; position?: string }>)
+    : []
+  const seriesMemberships: AudiobookSeriesMembership[] = seriesEntries
+    .filter((entry) => (entry?.name ?? '').trim().length > 0)
+    .map((entry, index) => {
+      const asin = entry.asin?.trim()
+      return {
+        seriesName: (entry.name ?? '').trim(),
+        seriesNumber: entry.position?.trim() || undefined,
+        // The search fallback branch fills `asin` with the series *name* when the ASIN
+        // re-fetch fails, so only keep a value that actually looks like an ASIN. Until now
+        // that bogus value was discarded anyway; a membership would persist it.
+        seriesAsin: asin && ASIN_PATTERN.test(asin) ? asin : undefined,
+        isPrimary: index === 0,
+        sortOrder: index,
+      }
+    })
+  const seriesItem = seriesEntries[0] ?? null
   const series = seriesItem?.name ?? (typeof seriesRaw === 'string' ? seriesRaw : undefined)
   const seriesNumber = seriesItem?.position ?? result.seriesNumber
   const seriesAsin = seriesItem?.asin ?? result.seriesAsin
@@ -119,6 +144,7 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
     series,
     seriesNumber,
     seriesAsin,
+    ...(seriesMemberships.length > 0 ? { seriesMemberships } : {}),
     description: result.description,
     publisher: result.publisher,
     language: result.language,
@@ -422,7 +448,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
     items.value[id] = { ...item, isSearching: true }
     try {
-      const isAsin = /^[A-Z0-9]{10}$/i.test(query.trim())
+      const isAsin = ASIN_PATTERN.test(query.trim())
       const results = await apiService.advancedSearch(
         isAsin ? { asin: query.trim(), cap: 5 } : { title: query, cap: 5 },
       )
@@ -506,9 +532,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
   async function importSelected(
     rootFolderPath: string,
-  ): Promise<{ imported: number; errors: string[] }> {
+  ): Promise<{ imported: number; errors: string[]; warnings: string[] }> {
     const toImport = itemList.value.filter((i) => i.selected && i.selectedMatch)
     importErrors.value = []
+    const warnings: string[] = []
     let imported = 0
 
     for (const item of toImport) {
@@ -574,6 +601,12 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
           )
         }
 
+        for (const result of importResult.results ?? []) {
+          if (result.success && result.warning && !warnings.includes(result.warning)) {
+            warnings.push(result.warning)
+          }
+        }
+
         // Remove imported item from store only after the backend confirms every
         // source file represented by this book row was registered successfully.
         const updated = { ...items.value }
@@ -588,7 +621,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       }
     }
 
-    return { imported, errors: importErrors.value }
+    return { imported, errors: importErrors.value, warnings }
   }
 
   return {

@@ -65,7 +65,9 @@ internal sealed class PinnedAudiobookFileRegistrationLease :
                 "Pinned path-only registration leases do not authorize metadata writes.");
         }
 
-        return _file.OpenIndependentWriteStream(
+        // Read+write, because the only consumer is a tag library that parses the container it
+        // is about to rewrite through this same stream.
+        return _file.OpenIndependentReadWriteStream(
             bufferSize: 128 * 1024,
             asynchronous: false);
     }
@@ -186,7 +188,9 @@ internal sealed class PinnedAudiobookFileRegistrationLease :
 
     internal static PinnedAudiobookFileRegistrationLease CreatePinnedPathOnly(
         PinnedDirectoryCreation.PinnedFileEntry file,
-        string publicPath)
+        string publicPath,
+        Func<int, bool>? commitRegistration = null,
+        Func<bool>? completePublication = null)
     {
         ArgumentNullException.ThrowIfNull(file);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicPath);
@@ -230,8 +234,8 @@ internal sealed class PinnedAudiobookFileRegistrationLease :
                 hasDurablePhysicalObjectIdentity: false,
                 sourcePhysicalObjectIdentity: null,
                 prepareCleanupRecovery: null,
-                completePublication: null,
-                commitRegistration: null);
+                completePublication,
+                commitRegistration);
             stableHandle = null;
             return result;
         }

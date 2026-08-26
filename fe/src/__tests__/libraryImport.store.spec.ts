@@ -101,7 +101,20 @@ describe('library import store', () => {
     }
 
     store.action = 'move'
-    await store.importSelected('D:\\library')
+    startManualImport.mockResolvedValueOnce({
+      importedCount: 3,
+      totalCount: 3,
+      results: [
+        {
+          success: true,
+          sourcePath: 'C:\\incoming\\Part 1.mp3',
+          destinationPath: 'D:\\library\\Ordered Book\\Part 1.mp3',
+          warning: 'The source file was retained because durable identity is unavailable.',
+        },
+      ],
+    })
+
+    const result = await store.importSelected('D:\\library')
 
     expect(addToLibrary).toHaveBeenCalledTimes(1)
     expect(startManualImport).toHaveBeenCalledTimes(1)
@@ -117,6 +130,9 @@ describe('library import store', () => {
         { fullPath: 'C:\\incoming\\Part 10.mp3', matchedAudiobookId: 42 },
       ],
     })
+    expect(result.warnings).toEqual([
+      'The source file was retained because durable identity is unavailable.',
+    ])
   })
 
   it('registers files in place using the discovered book folder and backend success result', async () => {
@@ -176,7 +192,7 @@ describe('library import store', () => {
         },
       ],
     })
-    expect(result).toEqual({ imported: 1, errors: [] })
+    expect(result).toEqual({ imported: 1, errors: [], warnings: [] })
     expect(store.itemList).toHaveLength(0)
   })
 
@@ -441,5 +457,104 @@ describe('library import store', () => {
     expect(item?.hasSearched).toBe(false)
     expect(store.hasUnprocessedItems).toBe(true)
     expect(store.failedCount).toBe(1)
+  })
+
+  it('carries every series membership of a multi-series match into the add request', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    // A book can legitimately belong to more than one series. Audnexus returns these as
+    // seriesPrimary/seriesSecondary and the backend builds one membership per entry, so the
+    // import path has to send both rather than keeping only the first.
+    store.items = {
+      '/incoming/Two Series/Book.m4b': {
+        id: '/incoming/Two Series/Book.m4b',
+        fullPath: '/incoming/Two Series/Book.m4b',
+        sourceFiles: ['/incoming/Two Series/Book.m4b'],
+        folderPath: '/incoming/Two Series',
+        relativePath: 'Two Series',
+        folderName: 'Two Series',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: {
+          title: 'Two Series Book',
+          authors: [{ name: 'Author' }],
+          series: [
+            { asin: 'B01E633FQM', name: 'First Series', position: '0' },
+            { asin: 'B01F5TL5K4', name: 'Second Series', position: '7' },
+          ],
+        } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+    store.action = 'none'
+
+    await store.importSelected('')
+
+    const metadata = addToLibrary.mock.calls[0][0]
+    expect(metadata.seriesMemberships).toEqual([
+      {
+        seriesName: 'First Series',
+        seriesNumber: '0',
+        seriesAsin: 'B01E633FQM',
+        isPrimary: true,
+        sortOrder: 0,
+      },
+      {
+        seriesName: 'Second Series',
+        seriesNumber: '7',
+        seriesAsin: 'B01F5TL5K4',
+        isPrimary: false,
+        sortOrder: 1,
+      },
+    ])
+    // The primary is still mirrored onto the legacy scalars.
+    expect(metadata.series).toBe('First Series')
+    expect(metadata.seriesNumber).toBe('0')
+  })
+
+  it('drops a series asin that is really the series name', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    // When the search endpoint cannot re-fetch the book by ASIN it synthesizes a single
+    // series entry whose `asin` is a copy of the series name. That must not be persisted
+    // as a series ASIN.
+    store.items = {
+      '/incoming/Fallback/Book.m4b': {
+        id: '/incoming/Fallback/Book.m4b',
+        fullPath: '/incoming/Fallback/Book.m4b',
+        sourceFiles: ['/incoming/Fallback/Book.m4b'],
+        folderPath: '/incoming/Fallback',
+        relativePath: 'Fallback',
+        folderName: 'Fallback',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: {
+          title: 'Fallback Book',
+          authors: [{ name: 'Author' }],
+          series: [{ asin: 'Some Series', name: 'Some Series', position: '2' }],
+        } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+    store.action = 'none'
+
+    await store.importSelected('')
+
+    const metadata = addToLibrary.mock.calls[0][0]
+    expect(metadata.seriesMemberships).toEqual([
+      {
+        seriesName: 'Some Series',
+        seriesNumber: '2',
+        seriesAsin: undefined,
+        isPrimary: true,
+        sortOrder: 0,
+      },
+    ])
   })
 })
