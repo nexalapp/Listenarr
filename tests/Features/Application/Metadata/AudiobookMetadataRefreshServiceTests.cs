@@ -15,9 +15,13 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Application.Metadata
 {
-    public class AudiobookMetadataRefreshServiceTests
+    [Trait("Name", "AudiobookMetadataRefreshServiceTests")]
+    [Trait("Category", "Application")]
+    public class AudiobookMetadataRefreshServiceTests : BaseTests
     {
         [Fact]
         public void FillMissingFields_FillsEmptyFields_WithoutOverwritingExisting()

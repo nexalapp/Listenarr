@@ -15,11 +15,13 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Sabnzbd
 {
     [Trait("Name", "SabnzbdResponseMapperTests")]
     [Trait("Category", "SabnzbdResponseMapper")]
-    public sealed class SabnzbdResponseMapperTests
+    public sealed class SabnzbdResponseMapperTests : BaseTests
     {
         /// <summary>
         /// Regression test for https://github.com/Listenarrs/Listenarr/issues/839

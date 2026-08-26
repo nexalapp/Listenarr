@@ -18,9 +18,13 @@
 using System.Text.Json;
 using Listenarr.Infrastructure.Ffmpeg.Metadata;
 
+using Listenarr.Tests.Common;
+
 namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Metadata
 {
-    public class FfprobeTagMetadataMapperTests
+    [Trait("Name", "FfprobeTagMetadataMapperTests")]
+    [Trait("Category", "Infrastructure")]
+    public class FfprobeTagMetadataMapperTests : BaseTests
     {
         private static JsonElement TagsFrom(string json)
         {

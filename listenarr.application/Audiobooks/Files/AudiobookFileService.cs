@@ -471,33 +471,5 @@ namespace Listenarr.Application.Audiobooks.Files
             }
         }
 
-        private static string ResolveAbsolutePath(string? path) =>
-            string.IsNullOrWhiteSpace(path)
-                ? string.Empty
-                : FileSystemPathIdentity.ResolveNativeAbsolutePath(path);
-
-        private void LogClaimRejection(
-            int audiobookId,
-            string path,
-            AudiobookFileClaimResult claim)
-        {
-            var sanitizedPath = LogRedaction.SanitizeFilePath(path);
-            if (claim.Outcome == AudiobookFileClaimOutcome.AlreadyOwnedByAudiobook)
-            {
-                logger.LogDebug(
-                    "AudiobookFile already exists for audiobook {AudiobookId} at path {Path}",
-                    audiobookId,
-                    sanitizedPath);
-                return;
-            }
-
-            logger.LogWarning(
-                "Audiobook file ownership claim rejected for audiobook {AudiobookId} at {Path}: {Outcome}. {Reason}",
-                audiobookId,
-                sanitizedPath,
-                claim.Outcome,
-                claim.Reason);
-        }
-
     }
 }
