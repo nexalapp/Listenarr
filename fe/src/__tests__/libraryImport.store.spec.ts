@@ -26,6 +26,7 @@ const advancedSearch = vi.fn()
 const scanUnmatchedFiles = vi.fn()
 const getUnmatchedResults = vi.fn()
 const getSavedUnmatchedFiles = vi.fn()
+const getEmbeddedFileMetadata = vi.fn()
 let unmatchedScanHandler:
   | ((payload: { jobId: string; error?: string }) => void | Promise<void>)
   | null = null
@@ -40,6 +41,7 @@ vi.mock('@/services/api', () => ({
     scanUnmatchedFiles,
     getUnmatchedResults,
     getSavedUnmatchedFiles,
+    getEmbeddedFileMetadata,
   },
 }))
 
@@ -556,5 +558,93 @@ describe('library import store', () => {
         sortOrder: 0,
       },
     ])
+  })
+
+  it('imports a file-metadata book unmonitored even when the page is set to monitor all', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    // A book matched from its own tags has no ASIN, so an indexer query cannot identify a
+    // release for it. Monitoring it would park it in Wanted forever, so the page-level
+    // Monitor setting must not apply to this path.
+    store.monitor = 'all'
+    store.action = 'none'
+    store.rootFolderId = 2
+
+    const fileMetadata = {
+      title: 'Chronicles of Narnia Intro',
+      authors: ['C. S. Lewis'],
+      narrators: ['Kenneth Branagh'],
+      imageUrl: 'config/cache/images/temp/embedded-abc.jpg',
+      isbn: [],
+    }
+    getEmbeddedFileMetadata.mockResolvedValue(fileMetadata)
+    addToLibrary.mockResolvedValue({ audiobook: { id: 71 } })
+    startManualImport.mockResolvedValue({ importedCount: 1, results: [{ success: true }] })
+
+    const path = '/incoming/Narnia/intro.m4b'
+    store.items = {
+      [path]: {
+        id: path,
+        fullPath: path,
+        sourceFiles: [path],
+        folderPath: '/incoming/Narnia',
+        relativePath: 'Narnia',
+        folderName: 'Narnia',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: null,
+        fileMetadata: null,
+        hasSearched: true,
+        searchFailed: false,
+        isSearching: false,
+        selected: false,
+      },
+    }
+
+    const applied = await store.useFileMetadata(path)
+    expect(applied).toEqual(fileMetadata)
+    expect(getEmbeddedFileMetadata).toHaveBeenCalledWith(2, path)
+    expect(store.items[path]?.selected).toBe(true)
+
+    const result = await store.importSelected('')
+
+    expect(result.imported).toBe(1)
+    const [sentMetadata, options] = addToLibrary.mock.calls[0]
+    expect(sentMetadata).toEqual(fileMetadata)
+    expect(options.monitored).toBe(false)
+    // There is no catalogue result to send, and sending a fabricated one would make the
+    // backend treat this as a matched book.
+    expect(options.searchResult).toBeUndefined()
+  })
+
+  it('clears file metadata along with the match so the row can be searched again', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    const path = '/incoming/Book/book.m4b'
+    store.items = {
+      [path]: {
+        id: path,
+        fullPath: path,
+        sourceFiles: [path],
+        folderPath: '/incoming/Book',
+        relativePath: 'Book',
+        folderName: 'Book',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: null,
+        fileMetadata: { title: 'From File', isbn: [] },
+        hasSearched: true,
+        searchFailed: false,
+        isSearching: false,
+        selected: true,
+      },
+    }
+
+    store.clearMatch(path)
+
+    expect(store.items[path]?.fileMetadata).toBeNull()
+    expect(store.items[path]?.selected).toBe(false)
   })
 })

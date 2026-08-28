@@ -992,6 +992,19 @@ class ApiService {
     return this.request<{ message?: string }>(`/rootfolders/${id}${qs}`, { method: 'DELETE' })
   }
 
+  /**
+   * Reads the metadata an audiobook file carries inside it (tags plus embedded cover
+   * art), for a book no metadata provider can match. The result is the same shape
+   * addToLibrary accepts, so it can be edited and submitted unchanged.
+   */
+  async getEmbeddedFileMetadata(rootFolderId: number, path: string): Promise<AudibleBookMetadata> {
+    const response = await this.request<{ metadata: AudibleBookMetadata }>(
+      `/rootfolders/${rootFolderId}/embedded-metadata`,
+      { method: 'POST', body: JSON.stringify({ path }) },
+    )
+    return response.metadata
+  }
+
   async scanUnmatchedFiles(rootFolderId: number): Promise<{ jobId: string }> {
     return this.request<{ jobId: string }>(`/rootfolders/${rootFolderId}/scan-unmatched`, {
       method: 'POST',

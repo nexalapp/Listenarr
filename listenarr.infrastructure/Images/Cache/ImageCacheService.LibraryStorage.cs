@@ -34,6 +34,32 @@ namespace Listenarr.Infrastructure.Images.Cache
                 if (!File.Exists(tempPath))
                 {
                     _logger.LogWarning("Temp cached image not found for {Identifier}", LogRedaction.SanitizeText(identifier));
+                    // The source may already be a file this cache holds under a different
+                    // identifier — cover art extracted from an audiobook file is keyed by the
+                    // file, not by an ASIN the book does not have. Promote that file directly
+                    // rather than trying to download a local path as though it were a URL.
+                    if (TryResolveCachedSourcePath(imageUrl, out var cachedSourcePath))
+                    {
+                        Directory.CreateDirectory(_libraryImagePath);
+                        if (!TryValidateCacheMove(
+                                cachedSourcePath,
+                                _tempCachePath,
+                                libraryPath,
+                                _libraryImagePath,
+                                identifier,
+                                out var validatedSource,
+                                out var validatedTarget))
+                        {
+                            return null;
+                        }
+
+                        File.Move(validatedSource, validatedTarget, overwrite: true);
+                        _logger.LogInformation(
+                            "Promoted cached image to library storage for {Identifier}",
+                            LogRedaction.SanitizeText(identifier));
+                        return GetRelativePath(validatedTarget);
+                    }
+
                     // If imageUrl provided, attempt to download to temp cache using the identifier
                     if (!string.IsNullOrWhiteSpace(imageUrl))
                     {
@@ -324,6 +350,39 @@ namespace Listenarr.Infrastructure.Images.Cache
         private string GetImagePath(string identifier, string basePath)
         {
             return _pathResolver.GetImagePath(identifier, basePath);
+        }
+
+        /// <summary>
+        /// Resolves a relative cache path (as returned by this service) back to a file
+        /// inside the temp cache. Anything that is not such a path — a real URL, an
+        /// absolute path, a traversal attempt — is rejected.
+        /// </summary>
+        private bool TryResolveCachedSourcePath(string? imageUrl, out string resolvedPath)
+        {
+            resolvedPath = string.Empty;
+            if (string.IsNullOrWhiteSpace(imageUrl)
+                || Uri.TryCreate(imageUrl, UriKind.Absolute, out _))
+            {
+                return false;
+            }
+
+            var candidate = Path.Combine(_contentRootPath, imageUrl.TrimStart('/', '\\'));
+            if (!FileSystemSafety.TryValidateMutationTarget(
+                    candidate,
+                    [_tempCachePath],
+                    out var safePath,
+                    out _))
+            {
+                return false;
+            }
+
+            if (!File.Exists(safePath))
+            {
+                return false;
+            }
+
+            resolvedPath = safePath;
+            return true;
         }
 
         private string GetRelativePath(string fullPath)
