@@ -61,41 +61,6 @@
               : ''
           }}
         </span>
-        <div class="group-dropdown" v-if="audiobooks.length > 0">
-          <button class="toolbar-btn group-btn" @click="showGroupMenu = !showGroupMenu">
-            <PhBook v-if="groupBy === 'books'" />
-            <PhUser v-else-if="groupBy === 'authors'" />
-            <PhBooks v-else />
-            {{ groupBy === 'books' ? 'Books' : groupBy === 'authors' ? 'Authors' : 'Series' }}
-            <PhCaretDown />
-          </button>
-          <div v-if="showGroupMenu" class="group-menu">
-            <button
-              class="menu-item"
-              :class="{ active: groupBy === 'books' }"
-              @click="setGroupBy('books')"
-            >
-              <PhBook />
-              Books
-            </button>
-            <button
-              class="menu-item"
-              :class="{ active: groupBy === 'authors' }"
-              @click="setGroupBy('authors')"
-            >
-              <PhUser />
-              Authors
-            </button>
-            <button
-              class="menu-item"
-              :class="{ active: groupBy === 'series' }"
-              @click="setGroupBy('series')"
-            >
-              <PhBooks />
-              Series
-            </button>
-          </div>
-        </div>
         <button class="toolbar-btn" @click="refreshLibrary">
           <PhArrowClockwise />
           Refresh
@@ -796,7 +761,6 @@ import {
   PhPencil,
   PhTrash,
   PhCheckSquare,
-  PhBook,
   PhGear,
   PhPlus,
   PhStar,
@@ -805,7 +769,6 @@ import {
   PhSpinner,
   PhWarningCircle,
   PhInfo,
-  PhCaretDown,
   PhBookOpen,
   PhX,
   PhUser,
@@ -1317,7 +1280,6 @@ const GROUP_BY_MODES = ['books', 'authors', 'series'] as const
 type GroupByMode = (typeof GROUP_BY_MODES)[number]
 const DEFAULT_VISIBLE_RANGE_END = 20
 const groupBy = ref<'books' | 'authors' | 'series'>('books')
-const showGroupMenu = ref(false)
 
 function normalizeGroupBy(value: unknown): GroupByMode | null {
   return typeof value === 'string' && GROUP_BY_MODES.includes(value as GroupByMode)
@@ -1839,13 +1801,6 @@ function getAudiobookStatus(audiobook: Audiobook): AudiobookStatus {
 
 // Native loading="lazy" handles all image loading automatically - no custom code needed
 
-function handleClickOutside(event: Event) {
-  const target = event.target as HTMLElement
-  if (!target.closest('.group-dropdown')) {
-    showGroupMenu.value = false
-  }
-}
-
 let resizeObserver: ResizeObserver | null = null
 let stopVisibleRangeWatch: (() => void) | null = null
 let stopViewModeWatch: (() => void) | null = null
@@ -1911,7 +1866,6 @@ async function initializeVirtualScroller() {
 }
 
 onMounted(async () => {
-  document.addEventListener('click', handleClickOutside)
   await Promise.all([
     libraryStore.fetchLibrary(),
     configStore.loadApplicationSettings(),
@@ -1962,7 +1916,6 @@ onUnmounted(() => {
   try {
     authorCardObserver?.disconnect()
   } catch {}
-  document.removeEventListener('click', handleClickOutside)
 })
 
 async function loadQualityProfiles() {
@@ -2019,7 +1972,6 @@ function resetVirtualScroller() {
 async function setGroupBy(mode: GroupByMode) {
   const changed = mode !== groupBy.value
   groupBy.value = mode
-  showGroupMenu.value = false
   if (changed) {
     resetVirtualScroller()
   }
@@ -2706,67 +2658,10 @@ defineExpose({
   }
 }
 
-.group-dropdown {
-  position: relative;
-}
-
-.group-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 @media (max-width: 768px) {
   .group-btn {
     gap: 0.2rem;
   }
-}
-
-.group-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  background: #2a2a2a;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  z-index: 1100;
-  min-width: 180px;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  color: var(--text-color);
-  cursor: pointer;
-  font-size: 12px;
-  transition: background-color 0.15s;
-  width: 100%;
-  border: none;
-  background: transparent;
-  text-align: left;
-}
-
-.menu-item:hover {
-  background-color: rgba(255, 255, 255, 0.18);
-  color: #fff;
-}
-
-.menu-item.active {
-  background-color: rgba(33, 150, 243, 0.1);
-  color: #fff;
-}
-
-.menu-item:first-child {
-  border-radius: 6px;
-}
-
-.menu-item:last-child {
-  border-radius: 6px;
 }
 
 .grouped-view {
