@@ -8,6 +8,8 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Infrastructure.Search.NzbKing;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Search;
@@ -31,6 +33,10 @@ internal static class SearchRegistrationExtensions
     public static IServiceCollection AddSearchInfrastructure(this IServiceCollection services)
     {
         services.AddScoped<IIndexerRepository, EfIndexerRepository>();
+        services.AddScoped<INzbKingLedgerRepository, EfNzbKingLedgerRepository>();
+        services.AddScoped<INzbKingTokenBudget, NzbKingTokenBudget>();
+        services.AddScoped<NzbKingApiClient>();
+        services.TryAddSingleton(TimeProvider.System);
         return services;
     }
 }
