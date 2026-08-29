@@ -90,6 +90,42 @@ override with `LISTENARR_DEV_LIBRARY`.
 Before pushing, note the hooks: pre-commit runs formatting and layering checks,
 pre-push runs `dotnet format --verify-no-changes`, `vue-tsc`, and `vitest`.
 
+### The Docker dev environment cannot register files
+
+The dev stack bind-mounts the library from macOS through Docker Desktop's file
+sharing, which fabricates inode numbers rather than passing the real ones through.
+Three consequences, all expected and none worth debugging as app bugs:
+
+- **The root folder needs re-confirming after every container restart.** The
+  recorded device+inode no longer matches, so the identity interlock refuses to
+  scan and the API returns `409 root_folder_scan_unavailable`. Fix it in
+  Settings → Root Folders with the shield button.
+- **It stays `Limited` / `MutationSemanticsUnproven` after confirming.** Reading
+  and scanning work; `canMutateFilesystem` stays false, so renaming and moving
+  are refused.
+- **No audiobook ever gets a registered file.** Registration binds a file to a
+  durable physical identity that this mount cannot supply, so books show the red
+  "no file" bar even after a successful import. This is not caused by the import
+  path — every book in a dev database shows it.
+
+Whether unraid's `/mnt/user` (shfs, also FUSE) behaves the same way over a real
+Linux bind mount is **untested and is the highest-value unknown before deploying**.
+Import one book there and check whether its `files` array is non-empty.
+
+### Running the backend suite
+
+`dotnet test` on a macOS host is worthless: the platform gate fails ~690
+filesystem tests regardless of the change under test. Running it in the Linux dev
+container against a bind-mounted worktree is worse — it produces a different set of
+failures and then hangs.
+
+**Push the branch and read `run-tests.yml` on `ubuntu-24.04` instead.** That is the
+only trustworthy backend signal, and it is what gates a merge.
+
+`backend-tests-windows` is red on `canary` for reasons unrelated to any current
+change (upstream PRs #843 and #871, both merged deliberately because their failures
+are Windows-only). Do not treat it as a regression; gate on `unit-tests`.
+
 New test classes must inherit `BaseTests` and carry `[Trait("Name", "<exact
 class name>")]` plus a non-empty `[Trait("Category", …)]`, enforced by
 `BackendArchitectureTests.TestClasses_FollowRepositoryConventions`. Existing
