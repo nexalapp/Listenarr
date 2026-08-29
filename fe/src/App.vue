@@ -246,20 +246,14 @@
         <nav class="sidebar-nav" @click.capture="onNavCapture">
           <div class="nav-section">
             <RouterLink
-              :to="{ path: '/audiobooks', query: { group: 'books' } }"
+              to="/books"
               class="nav-item"
-              :class="{
-                'router-link-active':
-                  route.name === 'home' ||
-                  route.name === 'audiobooks' ||
-                  pendingNavPath?.startsWith('/audiobooks') ||
-                  pendingNavPath === '/',
-              }"
-              @mouseenter="onPrimaryNavMouseEnter('home', 'audiobooks')"
+              :class="{ 'router-link-active': libraryNavActive }"
+              @mouseenter="onPrimaryNavMouseEnter('books', 'audiobooks')"
               @mouseleave="onNavMouseLeave('audiobooks')"
-              @focus="onPrimaryNavFocus('home', 'audiobooks')"
+              @focus="onPrimaryNavFocus('books', 'audiobooks')"
               @blur="onNavBlur('audiobooks')"
-              @touchstart.passive="preload('home')"
+              @touchstart.passive="preload('books')"
               @click="onPrimaryNavClick('audiobooks')"
             >
               <PhBooks />
@@ -273,35 +267,30 @@
               @focusin="onNavFocus('audiobooks')"
               @focusout="onNavBlur('audiobooks')"
               :class="{
-                open:
-                  hoverNav === 'audiobooks' ||
-                  persistentNav === 'audiobooks' ||
-                  route.path.startsWith('/audiobooks') ||
-                  route.name === 'home' ||
-                  route.name === 'audiobooks',
+                open: hoverNav === 'audiobooks' || persistentNav === 'audiobooks' || isLibraryRoute,
               }"
             >
               <RouterLink
-                :to="{ path: '/audiobooks', query: { group: 'books' } }"
+                to="/books"
                 class="nav-subitem"
                 @click="closeMobileMenu"
-                :class="{ active: route.query.group === 'books' }"
+                :class="{ active: route.path === '/books' }"
               >
                 <span>Books</span>
               </RouterLink>
               <RouterLink
-                :to="{ path: '/audiobooks', query: { group: 'authors' } }"
+                to="/authors"
                 class="nav-subitem"
                 @click="closeMobileMenu"
-                :class="{ active: route.query.group === 'authors' }"
+                :class="{ active: route.path === '/authors' }"
               >
                 <span>Authors</span>
               </RouterLink>
               <RouterLink
-                :to="{ path: '/audiobooks', query: { group: 'series' } }"
+                to="/series"
                 class="nav-subitem"
                 @click="closeMobileMenu"
-                :class="{ active: route.query.group === 'series' }"
+                :class="{ active: route.path === '/series' }"
               >
                 <span>Series</span>
               </RouterLink>
@@ -1626,6 +1615,15 @@ const hideLayout = computed(() => {
   const meta = route.meta as Record<string, unknown> | undefined
   return !!(meta && meta.hideLayout)
 })
+
+// The library section: its three groupings plus a book's detail page. Drives
+// both the parent nav item's active state and whether the sub-nav stays open.
+const LIBRARY_PATHS = ['/books', '/authors', '/series']
+const isLibraryPath = (path: string) => LIBRARY_PATHS.includes(path) || path.startsWith('/books/')
+const isLibraryRoute = computed(() => isLibraryPath(route.path))
+const libraryNavActive = computed(
+  () => isLibraryRoute.value || isLibraryPath(pendingNavPath.value ?? ''),
+)
 
 const refreshSecurityWarningBannerPreference = () => {
   const nextValue = getSecurityWarningBannerHiddenPreference()

@@ -2139,7 +2139,7 @@ const handleRowClick = (audiobook: CollectionDisplayItem) => {
   }
 
   if (audiobook.inLibrary) {
-    router.push(`/audiobooks/${audiobook.id}`)
+    router.push(`/books/${audiobook.id}`)
     return
   }
 

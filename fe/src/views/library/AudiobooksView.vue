@@ -1274,12 +1274,13 @@ async function ensureAuthorCover(authorName: string) {
   }
 }
 
-// Grouping mode
-const GROUP_BY_KEY = 'listenarr.groupBy'
+// Grouping mode. The route is the single source of truth: /books, /authors and
+// /series each declare their grouping in route meta, so the URL always states
+// what is on screen and each grouping gets its own history entry.
 const GROUP_BY_MODES = ['books', 'authors', 'series'] as const
 type GroupByMode = (typeof GROUP_BY_MODES)[number]
 const DEFAULT_VISIBLE_RANGE_END = 20
-const groupBy = ref<'books' | 'authors' | 'series'>('books')
+const groupBy = ref<GroupByMode>(normalizeGroupBy(route.meta.libraryGroup) ?? 'books')
 
 function normalizeGroupBy(value: unknown): GroupByMode | null {
   return typeof value === 'string' && GROUP_BY_MODES.includes(value as GroupByMode)
@@ -1287,31 +1288,7 @@ function normalizeGroupBy(value: unknown): GroupByMode | null {
     : null
 }
 
-// --- GroupBy and SortKey Initialization ---
-try {
-  // Start with any stored preference
-  const stored = localStorage.getItem(GROUP_BY_KEY)
-  const storedGroup = normalizeGroupBy(stored)
-  if (storedGroup) {
-    groupBy.value = storedGroup
-  }
-  const initialGroup = normalizeGroupBy(route.query.group)
-  if (initialGroup && initialGroup !== groupBy.value) {
-    groupBy.value = initialGroup
-  }
-  // No need to set sortKey/order here; handled per-group below
-  if (!initialGroup) {
-    router.replace({ path: '/audiobooks', query: { group: groupBy.value } })
-  } else if (route.query.group !== initialGroup) {
-    router.replace({ path: '/audiobooks', query: { ...(route.query || {}), group: initialGroup } })
-  }
-} catch {}
-
 watch(groupBy, (v) => {
-  try {
-    localStorage.setItem(GROUP_BY_KEY, v)
-  } catch {}
-
   // Ensure selected sort key is valid for the new grouping; reset to sensible defaults if needed
   const allowed = sortOptions.value.map((o) => o.value)
   const groupSort = sortState[v]
@@ -1649,16 +1626,15 @@ watch(showItemDetails, async () => {
 })
 
 watch(
-  () => route.query.group,
+  () => route.meta.libraryGroup,
   (g) => {
     try {
       const mode = normalizeGroupBy(g) ?? 'books'
-      // If the route changed the group, use setGroupBy so we run the same DOM/update/observer logic
+      // Run setGroupBy so a route change goes through the same DOM/observer logic
+      // as the toolbar dropdown.
       if (mode !== groupBy.value) {
         // fire-and-forget async to avoid blocking the router navigation
         void setGroupBy(mode)
-      } else if (g !== mode) {
-        void router.replace({ path: '/audiobooks', query: { ...(route.query || {}), group: mode } })
       }
     } catch {}
   },
@@ -1940,7 +1916,7 @@ function openStatusDetails(audiobook: Audiobook) {
   try {
     // Navigate to audiobook detail page and open the history tab (legacy "downloads" intent)
     void router.push({
-      path: `/audiobooks/${audiobook.id}`,
+      path: `/books/${audiobook.id}`,
       query: { tab: 'history' },
       hash: '#history',
     })
@@ -1954,7 +1930,7 @@ function openStatusDetails(audiobook: Audiobook) {
 }
 
 function navigateToDetail(id: number) {
-  router.push(`/audiobooks/${id}`)
+  router.push(`/books/${id}`)
 }
 
 function toggleViewMode() {
@@ -1990,13 +1966,6 @@ async function setGroupBy(mode: GroupByMode) {
       metadata: { mode },
     })
   }
-  try {
-    // update route query so sidebar subnav and URL stay in sync
-    router.replace({ path: '/audiobooks', query: { ...(route.query || {}), group: mode } })
-  } catch (err) {
-    logger.debug('Failed to update route query for group:', err)
-  }
-
   // Ensure DOM settles and recalc visible range for the virtual scroller
   try {
     await nextTick()

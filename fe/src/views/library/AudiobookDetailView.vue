@@ -1375,7 +1375,7 @@ async function loadIdentifiersForDetail() {
 }
 
 function goBack() {
-  router.push('/audiobooks')
+  router.push('/books')
 }
 
 function goToAuthorCollection(author: string | undefined | null) {
@@ -1592,7 +1592,7 @@ async function executeDelete() {
         toast.success('Audiobook deleted', 'The audiobook was removed from the library.')
       }
       // Navigate back to library after successful deletion
-      router.push('/audiobooks')
+      router.push('/books')
     } else if (success === false) {
       const toast = useToast()
       toast.error('Delete failed', libraryStore.error || 'Failed to delete audiobook')

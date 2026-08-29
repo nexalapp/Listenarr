@@ -517,7 +517,7 @@ const goToday = () => {
 }
 
 const navigateToDetail = (id: number) => {
-  void router.push(`/audiobooks/${id}`)
+  void router.push(`/books/${id}`)
 }
 
 const formatDate = (date: Date): string => {

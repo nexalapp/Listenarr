@@ -1529,7 +1529,7 @@ function libraryIdFor(book: TitleSearchResult): number | null {
 }
 
 function openAudiobook(id: number): void {
-  router.push(`/audiobooks/${id}`)
+  router.push(`/books/${id}`)
 }
 
 function openCollection(kind: MonitorKind | 'narrator', name: string): void {

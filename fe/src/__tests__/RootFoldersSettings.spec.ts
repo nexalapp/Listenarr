@@ -197,7 +197,7 @@ describe('RootFoldersSettings', () => {
     expect(wrapper.get('.relocation-affected summary').text()).toContain(
       '14 audiobooks need attention',
     )
-    expect(wrapper.get('a[href="/audiobooks/32"]').text()).toBe('Audiobook #32')
+    expect(wrapper.get('a[href="/books/32"]').text()).toBe('Audiobook #32')
     expect(wrapper.text()).toContain('Tracked file paths collide at this destination.')
     expect(wrapper.text()).not.toContain('Case-sensitive file paths collide')
     expect(
