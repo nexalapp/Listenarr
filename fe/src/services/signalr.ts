@@ -34,6 +34,10 @@ import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 const API_SUFFIX_REGEX = /\/api(?:\/v\d+(?:\.\d+)?)?$/i
 const KNOWN_APP_ROUTE_PREFIXES = [
   '/library-import',
+  '/books',
+  '/authors',
+  '/series',
+  // Retained so the base URL still resolves under the pre-/books library paths.
   '/audiobooks',
   '/collection',
   '/add-new',

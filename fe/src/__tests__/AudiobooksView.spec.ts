@@ -71,10 +71,15 @@ describe('AudiobooksView', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -147,10 +152,15 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -240,10 +250,15 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -315,10 +330,15 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -419,10 +439,15 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -467,10 +492,15 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -520,7 +550,7 @@ describe('AudiobooksView Grouping', () => {
     expect(wrapper.text()).toContain('Visible Book')
   })
 
-  it('route query group parameter overrides stored preference on initial load', async () => {
+  it('takes its grouping from the route and re-groups when the route changes', async () => {
     if (
       typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
     ) {
@@ -540,14 +570,29 @@ describe('AudiobooksView Grouping', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        { path: '/', name: 'home', redirect: { name: 'books' } },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+        {
+          path: '/authors',
+          name: 'authors',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'authors' },
+        },
+        {
+          path: '/series',
+          name: 'series',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'series' },
+        },
       ],
     })
-    // Simulate previous preference saved as 'series'
-    localStorage.setItem('listenarr.groupBy', 'series')
-    // Navigate to audiobooks with explicit group=books in URL
-    await router.push({ path: '/audiobooks', query: { group: 'books' } })
+    // Start on a non-default grouping so the assertion cannot pass by accident.
+    await router.push('/series')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -577,8 +622,14 @@ describe('AudiobooksView Grouping', () => {
     })
     await new Promise((r) => setTimeout(r, 0))
 
-    // Expect the component to use the route query 'books' despite stored 'series'
-    expect((wrapper.vm as unknown as { groupBy: string }).groupBy).toBe('books')
+    expect(getVm(wrapper).groupBy).toBe('series')
+
+    // Navigating is what changes the grouping; there is no other source of truth.
+    await router.push('/authors')
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(getVm(wrapper).groupBy).toBe('authors')
   })
 
   it('resets the virtual range when returning to books grouping', async () => {
@@ -602,10 +653,22 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+        {
+          path: '/authors',
+          name: 'authors',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'authors' },
+        },
       ],
     })
-    await router.push({ path: '/audiobooks', query: { group: 'authors' } })
+    // Start grouped by authors so switching back to books is a real change.
+    await router.push('/authors')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -662,10 +725,15 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
@@ -738,10 +806,15 @@ describe('AudiobooksView Grouping', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
       ],
     })
-    await router.push('/audiobooks')
+    await router.push('/books')
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()

@@ -20,30 +20,68 @@ import { useAuthStore } from '@/stores/auth'
 import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
 import { setRouter } from '@/services/routerInstance'
+import type { RouteLocationGeneric } from 'vue-router'
 import type { StartupConfig } from '@/types'
 
 // Module-level cache/promise for startup config to avoid repeated requests during rapid navigation
 // Use a promise so concurrent navigations share the same inflight request instead of issuing many
 // Module-level cache moved to services/startupConfigCache
 
+// The library's three groupings. Each is its own route rather than a query
+// parameter, so a grouping is linkable, bookmarkable, and gets its own history
+// entry. `libraryGroup` in a route's meta is the single source of truth that
+// AudiobooksView reads to decide what it is rendering.
+const LIBRARY_GROUPS = ['books', 'authors', 'series'] as const
+type LibraryGroup = (typeof LIBRARY_GROUPS)[number]
+
+const normalizeLibraryGroup = (value: unknown): LibraryGroup =>
+  typeof value === 'string' && (LIBRARY_GROUPS as readonly string[]).includes(value)
+    ? (value as LibraryGroup)
+    : 'books'
+
 const routes = [
   {
     path: '/',
     name: 'home',
-    component: () => import('../views/library/AudiobooksView.vue'),
-    meta: { requiresAuth: true },
+    redirect: { name: 'books' },
   },
   {
-    path: '/audiobooks',
-    name: 'audiobooks',
+    path: '/books',
+    name: 'books',
     component: () => import('../views/library/AudiobooksView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, libraryGroup: 'books' },
   },
   {
-    path: '/audiobooks/:id',
+    path: '/authors',
+    name: 'authors',
+    component: () => import('../views/library/AudiobooksView.vue'),
+    meta: { requiresAuth: true, libraryGroup: 'authors' },
+  },
+  {
+    path: '/series',
+    name: 'series',
+    component: () => import('../views/library/AudiobooksView.vue'),
+    meta: { requiresAuth: true, libraryGroup: 'series' },
+  },
+  {
+    path: '/books/:id',
     name: 'audiobook-detail',
     component: () => import('../views/library/AudiobookDetailView.vue'),
     meta: { requiresAuth: true },
+  },
+  // Back-compat: the library lived at /audiobooks?group=<mode> before the three
+  // groupings became routes. Existing links, bookmarks and the browser's own
+  // history still resolve.
+  {
+    path: '/audiobooks',
+    redirect: (to: RouteLocationGeneric) => {
+      const { group, ...query } = to.query
+      return { path: `/${normalizeLibraryGroup(group)}`, query }
+    },
+  },
+  {
+    path: '/audiobooks/:id',
+    redirect: (to: RouteLocationGeneric) => ({ path: `/books/${to.params.id}` }),
   },
   {
     path: '/collection/:type/:name',
@@ -126,24 +164,32 @@ const redactStartupConfigForLog = (
 // Preload helper: given a route name or path, trigger the route's lazy component import
 // without navigating. Returns the import promise or a resolved promise when not found.
 export function preloadRoute(nameOrPath: string) {
+  // Redirect-only records carry no component, so read it defensively.
+  const lazyComponentOf = (record: unknown): (() => Promise<unknown>) | null => {
+    const component = (record as { component?: unknown } | undefined)?.component
+    return typeof component === 'function' ? (component as () => Promise<unknown>) : null
+  }
+
   // try by name first
-  const byName = routes.find((r) => r.name === nameOrPath)
-  if (byName && typeof byName.component === 'function') {
+  const byName = lazyComponentOf(routes.find((r) => r.name === nameOrPath))
+  if (byName) {
     try {
-      return (byName.component as unknown as () => Promise<unknown>)()
+      return byName()
     } catch {
       return Promise.resolve()
     }
   }
   // try by path
-  const byPath = routes.find(
-    (r) =>
-      r.path === nameOrPath ||
-      r.path === (nameOrPath.startsWith('/') ? nameOrPath : `/${nameOrPath}`),
+  const byPath = lazyComponentOf(
+    routes.find(
+      (r) =>
+        r.path === nameOrPath ||
+        r.path === (nameOrPath.startsWith('/') ? nameOrPath : `/${nameOrPath}`),
+    ),
   )
-  if (byPath && typeof byPath.component === 'function') {
+  if (byPath) {
     try {
-      return (byPath.component as unknown as () => Promise<unknown>)()
+      return byPath()
     } catch {
       return Promise.resolve()
     }

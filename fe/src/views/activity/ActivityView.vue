@@ -91,7 +91,7 @@
               <div class="title-cell">
                 <RouterLink
                   v-if="item.audiobookId"
-                  :to="`/audiobooks/${item.audiobookId}`"
+                  :to="`/books/${item.audiobookId}`"
                   class="title-link"
                   >{{ getDisplayTitle(item) }}</RouterLink
                 >

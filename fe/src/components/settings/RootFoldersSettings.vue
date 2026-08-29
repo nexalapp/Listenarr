@@ -309,7 +309,7 @@
                     class="relocation-audiobook-item"
                   >
                     <div class="relocation-audiobook-row">
-                      <a :href="`/audiobooks/${audiobookId}`" class="relocation-audiobook-link">
+                      <a :href="`/books/${audiobookId}`" class="relocation-audiobook-link">
                         Audiobook #{{ audiobookId }}
                       </a>
                       <span class="relocation-audiobook-reason">
