@@ -58,6 +58,8 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<IMoveSourcePlanService>(serviceProvider =>
             serviceProvider.GetRequiredService<MoveSourceManifestService>());
         services.AddScoped<IAuthorCatalogService, AuthorCatalogService>();
+        services.AddScoped<IEmbeddedFileMetadataService, EmbeddedFileMetadataService>();
+        services.AddSingleton<IEmbeddedCoverExtractor, TagLibEmbeddedCoverExtractor>();
         services.AddScoped<ISeriesCatalogService, SeriesCatalogService>();
         services.AddScoped<ILibraryDestinationMutationGuard, LibraryDestinationMutationGuard>();
         services.AddScoped<ILibraryAddService, LibraryAddService>();

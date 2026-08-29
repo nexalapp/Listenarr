@@ -68,9 +68,21 @@ public partial class LibraryAddService
             return prepared.FallbackImageUrl;
         }
 
-        return await TryMoveImageAsync(prepared.ImageKey, sourceImageUrl: null)
+        // A cover extracted from an audiobook file is already sitting in this cache under
+        // a key derived from the file, so there is nothing to download and the move has to
+        // be told where the bytes are. Only a relative cache path is forwarded; an external
+        // URL keeps the previous behaviour of relying on the temp copy made above.
+        var localSource = IsLocalCachePath(prepared.FallbackImageUrl)
+            ? prepared.FallbackImageUrl
+            : null;
+
+        return await TryMoveImageAsync(prepared.ImageKey, localSource)
             ?? prepared.FallbackImageUrl;
     }
+
+    private static bool IsLocalCachePath(string? imageUrl) =>
+        !string.IsNullOrWhiteSpace(imageUrl)
+        && !Uri.TryCreate(imageUrl, UriKind.Absolute, out _);
 
     private async Task<string?> TryMoveImageAsync(string imageKey, string? sourceImageUrl)
     {

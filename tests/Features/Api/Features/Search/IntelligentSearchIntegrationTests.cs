@@ -165,6 +165,11 @@ namespace Listenarr.Tests.Features.Api.Features.Search
     // Test image cache that avoids external network calls
     internal class TestImageCacheService : IImageCacheService
     {
+        public Task<string?> CacheImageBytesAsync(byte[] imageBytes, string identifier, string? mediaType)
+        {
+            return Task.FromResult<string?>("cache/images/test.jpg");
+        }
+
         public Task<string?> DownloadAndCacheImageAsync(string imageUrl, string identifier)
         {
             // Return a deterministic, non-network path used by tests

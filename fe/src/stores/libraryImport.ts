@@ -44,6 +44,10 @@ export interface LibraryImportItem {
   fileCount: number
   // Match state
   selectedMatch: SearchResult | null
+  // Metadata read out of the file itself, used when no catalogue match exists.
+  // A book imported this way is never monitored: the file is already on disk and
+  // it has no ASIN for an indexer query, so monitoring would strand it in Wanted.
+  fileMetadata: AudibleBookMetadata | null
   hasSearched: boolean // true once auto-search completed and returned an answer
   searchFailed: boolean // true when the lookup errored (rate limit, network) - not "no match"
   isSearching: boolean // currently in-flight
@@ -96,6 +100,7 @@ function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
     format: item.format,
     fileCount: item.fileCount,
     selectedMatch: null,
+    fileMetadata: null,
     hasSearched: false,
     searchFailed: false,
     isSearching: false,
@@ -180,7 +185,9 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const hasUnprocessedItems = computed(() => itemList.value.some((i) => !i.hasSearched))
   const processedCount = computed(() => itemList.value.filter((i) => i.hasSearched).length)
   const failedCount = computed(() => itemList.value.filter((i) => i.searchFailed).length)
-  const matchedCount = computed(() => itemList.value.filter((i) => i.selectedMatch).length)
+  const matchedCount = computed(
+    () => itemList.value.filter((i) => i.selectedMatch || i.fileMetadata).length,
+  )
 
   // ─── Scan ─────────────────────────────────────────────────────────────────
 
@@ -477,8 +484,37 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   function clearMatch(id: string) {
     const item = items.value[id]
     if (!item) return
-    items.value[id] = { ...item, selectedMatch: null, selected: false }
+    items.value[id] = { ...item, selectedMatch: null, fileMetadata: null, selected: false }
     _persistMatches()
+  }
+
+  /**
+   * Reads the book's own tags and cover art and uses them in place of a catalogue
+   * match. This is the fallback for a book no provider knows about; the file is the
+   * only source of truth left.
+   */
+  async function useFileMetadata(id: string): Promise<AudibleBookMetadata | null> {
+    const item = items.value[id]
+    if (!item || !rootFolderId.value) return null
+
+    items.value[id] = { ...item, isSearching: true }
+    try {
+      const metadata = await apiService.getEmbeddedFileMetadata(rootFolderId.value, item.fullPath)
+      items.value[id] = {
+        ...items.value[id],
+        isSearching: false,
+        hasSearched: true,
+        searchFailed: false,
+        fileMetadata: metadata,
+        selectedMatch: null,
+        selected: true,
+      }
+      _persistMatches()
+      return metadata
+    } catch {
+      items.value[id] = { ...items.value[id], isSearching: false }
+      return null
+    }
   }
 
   // ─── Selection ────────────────────────────────────────────────────────────
@@ -491,11 +527,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   }
 
   function toggleSelectAll() {
-    const allSelected = itemList.value.filter((i) => i.selectedMatch).every((i) => i.selected)
-    for (const item of itemList.value) {
-      if (item.selectedMatch) {
-        items.value[item.id] = { ...item, selected: !allSelected }
-      }
+    const importable = itemList.value.filter((i) => i.selectedMatch || i.fileMetadata)
+    const allSelected = importable.every((i) => i.selected)
+    for (const item of importable) {
+      items.value[item.id] = { ...item, selected: !allSelected }
     }
     _persistMatches()
   }
@@ -533,26 +568,31 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   async function importSelected(
     rootFolderPath: string,
   ): Promise<{ imported: number; errors: string[]; warnings: string[] }> {
-    const toImport = itemList.value.filter((i) => i.selected && i.selectedMatch)
+    const toImport = itemList.value.filter((i) => i.selected && (i.selectedMatch || i.fileMetadata))
     importErrors.value = []
     const warnings: string[] = []
     let imported = 0
 
     for (const item of toImport) {
-      const match = item.selectedMatch!
+      const match = item.selectedMatch
       try {
         let audiobookId: number
         try {
-          const metadata = await _enrichMetadata(match)
-          const sanitizedMatch = {
-            ...match,
-            genres: normalizeGenres(match.genres),
-            series: Array.isArray(match.series)
-              ? ((match.series as Array<{ name?: string }>)[0]?.name ?? undefined)
-              : match.series,
-          }
+          // A file-metadata import has no catalogue match to enrich or send, and is
+          // never monitored: the book is already on disk, and without an ASIN an
+          // automatic search cannot identify a release for it.
+          const metadata = match ? await _enrichMetadata(match) : item.fileMetadata!
+          const sanitizedMatch = match
+            ? {
+                ...match,
+                genres: normalizeGenres(match.genres),
+                series: Array.isArray(match.series)
+                  ? ((match.series as Array<{ name?: string }>)[0]?.name ?? undefined)
+                  : match.series,
+              }
+            : undefined
           const { audiobook } = await apiService.addToLibrary(metadata, {
-            monitored: monitor.value != 'none',
+            monitored: match ? monitor.value != 'none' : false,
             destinationPath: action.value === 'none' ? item.folderPath : rootFolderPath,
             searchResult: sanitizedMatch,
           })
@@ -654,6 +694,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     searchItem,
     selectMatch,
     clearMatch,
+    useFileMetadata,
     toggleSelect,
     toggleSelectAll,
     importSelected,

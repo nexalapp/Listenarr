@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Listenarr.Infrastructure.Ffmpeg.Metadata
@@ -37,6 +38,55 @@ namespace Listenarr.Infrastructure.Ffmpeg.Metadata
             {
                 metadata.Isbn = GetTag(tags, "ISBN", "isbn");
             }
+
+            ApplyDescriptiveTags(metadata, tags);
+        }
+
+        /// <summary>
+        /// Reads the descriptive tags an audiobook file carries beyond the basic music
+        /// fields. These are what a manual import falls back on when no catalogue match
+        /// exists, so the file itself has to supply the blurb, narrator and series.
+        /// </summary>
+        private static void ApplyDescriptiveTags(AudioMetadata metadata, JsonElement tags)
+        {
+            metadata.Genre = FirstNonEmpty(metadata.Genre, GetTag(tags, "genre", "GENRE"));
+
+            // "description" is the atom Plex and Prologue read; "comment" carries the same
+            // blurb in most taggers and is the more common of the two in the wild.
+            metadata.Description ??= GetTag(tags, "description", "DESCRIPTION", "comment", "COMMENT");
+            metadata.Subtitle ??= GetTag(tags, "subtitle", "SUBTITLE", "TIT3");
+
+            // Audiobook taggers put the narrator in the composer field: there is no
+            // narrator atom, and the reader is the closest analogue to a composer.
+            metadata.Narrator ??= GetTag(tags, "composer", "COMPOSER", "narrator", "NARRATOR");
+            metadata.Publisher ??= GetTag(tags, "publisher", "PUBLISHER", "label", "LABEL");
+            metadata.Language ??= GetTag(tags, "language", "LANGUAGE");
+
+            metadata.Series ??= GetTag(tags, "SERIES", "series", "show", "SHOW");
+            metadata.SeriesPosition ??= ParseSeriesPosition(
+                GetTag(tags, "SERIES-PART", "series-part", "SERIES_PART", "MOVEMENT", "movement"));
+        }
+
+        /// <summary>
+        /// A series position is written as a decimal string that always uses '.' as its
+        /// separator, so it is parsed with the invariant culture rather than the server's.
+        /// Non-numeric positions ("1-4" for an omnibus) have no decimal form and are left
+        /// unset rather than being coerced into a wrong number.
+        /// </summary>
+        private static decimal? ParseSeriesPosition(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            return decimal.TryParse(
+                raw.Trim(),
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var parsed)
+                ? parsed
+                : null;
         }
 
         private static string FirstNonEmpty(params string?[] candidates)
