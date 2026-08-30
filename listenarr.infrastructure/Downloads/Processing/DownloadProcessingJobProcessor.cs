@@ -312,8 +312,11 @@ namespace Listenarr.Infrastructure.Downloads.Processing
 
                 if (results.Any(result => !result.Success))
                 {
+                    // Name what actually failed. Pointing at "the log entries" asks the
+                    // operator to read a job log the UI does not expose, and this reason is
+                    // what the blocked import shows them.
                     await FailImportAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, "Unable to import at least one file for the job (see the log entries)", cancellationToken);
+                        correlationId, DescribeFailedImports(results), cancellationToken);
                     return;
                 }
 
@@ -469,6 +472,29 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             {
                 yield return $"Gave up after {job.RetryCount} of {job.MaxRetries} attempts";
             }
+        }
+
+
+        /// <summary>
+        /// Turns the failed import results into one reason an operator can act on, rather
+        /// than a count of failures and a pointer to a log they cannot open.
+        /// </summary>
+        internal static string DescribeFailedImports(IReadOnlyCollection<ImportResult> results)
+        {
+            var reasons = results
+                .Where(result => !result.Success && !string.IsNullOrWhiteSpace(result.Message))
+                .Select(result => result.Message!.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Take(3)
+                .ToList();
+
+            var failed = results.Count(result => !result.Success);
+            if (reasons.Count == 0)
+            {
+                return $"Unable to import {failed} of {results.Count} file(s); the import reported no reason";
+            }
+
+            return $"Unable to import {failed} of {results.Count} file(s): {string.Join("; ", reasons)}";
         }
 
     }

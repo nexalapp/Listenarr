@@ -51,11 +51,15 @@ restart() {
     # Needed after structural C# edits: hot reload cannot apply deleted fields or
     # types and dotnet watch halts with ENC0033 rather than rebuilding.
     #
-    # "up -d" rather than "restart": restart reuses the existing container, so a
-    # changed mount or environment variable is silently ignored and you debug a
-    # container that never picked the change up. up recreates only when the config
-    # actually changed, so it is no slower in the common case.
+    # Both commands are needed, for different reasons. "up -d" applies compose
+    # changes: plain restart reuses the existing container, so a changed mount or
+    # environment variable is silently ignored and you debug a container that never
+    # picked it up. But "up -d" leaves an unchanged container running untouched,
+    # which is no use when the point is to bounce a dotnet watch that has wedged --
+    # so restart follows it. When up recreates the container, restart is a no-op
+    # against a freshly started one.
     docker compose -f "$COMPOSE_FILE" up -d
+    docker compose -f "$COMPOSE_FILE" restart
     wait_for_api
 }
 
