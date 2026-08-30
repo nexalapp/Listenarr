@@ -250,7 +250,11 @@ namespace Listenarr.Application.Search.AbookLink
 
                 if (line.StartsWith("Code:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var inline = line[5..].Trim();
+                    // The forum renders a copy button beside the label, which collapses
+                    // onto the same line as "Code:" once markup is stripped. Taking the
+                    // rest of the line verbatim yields "[Copy]" as the search string - a
+                    // value that resolves to some unrelated release rather than failing.
+                    var inline = StripCopyLabel(line[5..]);
                     var value = inline.Length > 0 ? inline : NextValue(lines, i);
 
                     if (value is { Length: > 0 })
@@ -284,15 +288,20 @@ namespace Listenarr.Application.Search.AbookLink
         {
             for (var i = from + 1; i < lines.Length; i++)
             {
-                var candidate = lines[i].Trim();
+                var candidate = StripCopyLabel(lines[i]);
                 if (candidate.Length == 0) continue;
-                if (candidate.Equals("[Copy]", StringComparison.OrdinalIgnoreCase)) continue;
                 if (IsSearchLabel(candidate) || IsPasswordLabel(candidate)) return null;
                 return candidate;
             }
 
             return null;
         }
+
+        /// <summary>
+        /// Removes the copy-button label, wherever it lands relative to the value.
+        /// </summary>
+        private static string StripCopyLabel(string line) =>
+            line.Replace("[Copy]", string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 
         private static bool IsSearchLabel(string line) =>
             line.Equals("Search:", StringComparison.OrdinalIgnoreCase)

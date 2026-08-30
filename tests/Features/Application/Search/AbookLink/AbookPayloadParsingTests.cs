@@ -84,6 +84,33 @@ public sealed class AbookPayloadParsingTests : BaseTests
     }
 
     [Fact]
+    public void TheCopyButtonLabelIsNeverMistakenForTheValue()
+    {
+        // The forum renders the copy button beside the label, so stripping markup puts
+        // "Code: [Copy]" on one line. Taking the rest of that line resolved to an
+        // unrelated release instead of failing visibly - the worst kind of wrong.
+        var sameLine = AbookPostParser.Parse(
+            $"{Identity}\nHidden content:\nSearch:\nCode: [Copy]\nTHETOKEN\n");
+
+        Assert.Equal("THETOKEN", sameLine.SearchString);
+
+        var trailing = AbookPostParser.Parse(
+            $"{Identity}\nHidden content:\nSearch:\nCode:\n[Copy]\nTHETOKEN\n");
+
+        Assert.Equal("THETOKEN", trailing.SearchString);
+    }
+
+    [Fact]
+    public void ACopyLabelBesideThePasswordIsAlsoStripped()
+    {
+        var post = AbookPostParser.Parse(
+            $"{Identity}\nHidden content:\nSearch:\nCode: [Copy]\nTHETOKEN\nPassword:\nCode: [Copy]\nSECRET\n");
+
+        Assert.Equal("THETOKEN", post.SearchString);
+        Assert.Equal("SECRET", post.Password);
+    }
+
+    [Fact]
     public void NoHiddenBlockLeavesTheGrabBlockedRatherThanGuessing()
     {
         var post = AbookPostParser.Parse($"{Identity}\nYou must thank this post to see the content.\n");
