@@ -104,6 +104,7 @@ internal static class DownloadRegistrationExtensions
         services.AddScoped<INzbFileDownloader, NzbFileDownloader>();
         services.AddScoped<MyAnonamouseTorrentPreparationService>();
         services.AddSingleton<IDirectDownloadSourcePolicy, InternetArchiveDirectDownloadSourcePolicy>();
+        services.AddScoped<IDownloadSourceResolver, AbookLinkSourceResolver>();
         services.AddScoped<IDownloadSourceResolver, MyAnonamouseSourceResolver>();
         services.AddScoped<IDownloadSourceResolver, GenericTorrentSourceResolver>();
         services.AddScoped<IDownloadSourceResolver, GenericUsenetSourceResolver>();
