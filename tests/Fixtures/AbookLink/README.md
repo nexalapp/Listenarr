@@ -60,7 +60,14 @@ Title prefixes that are not releases: `[REQUEST]`, `[FILLED]`, `[Reading Order]`
 | Format field | `Media Format:` · `File Type:` (`M4B \| NMR`) · `Source Format:` |
 | File count | `Total Files:` · `Number of Files:` |
 | Duration field | `Duration:` in General · `Total Duration:` in File Information |
-| Genre | trailing `Genre:` line after the description · absent |
+| Genre | trailing `Genre:` line · `Genre (but may be multi):` label · absent |
+| Series+position | separate fields · **one combined `Series & Position:` field** · only inside `Title:` |
+| File type | `49 MP3s` — the file **count is inside the format string** |
+| Archive | `Compressed with: Winrar` — the post says it is a RAR, which is what the password unlocks |
+| Password value | opaque random string · **ordinary word** (`Ecthelion7`) — no format check is possible |
+| Heading rule | `===` runs vary in length; never match on a fixed count |
+| Archive payload | bare `Code:` with **no label at all**, referencing the old domain `abook.ws` |
+| Archive encoding | mojibake `?` / `??` where dashes and bullets were — affects title splitting too |
 
 ## The search string is mutable
 
@@ -77,6 +84,15 @@ Replies also carry defect reports the user would want to see before grabbing
 (*"After chapter 105 the rest of chapters are corrupt"*). A post with replies deserves a
 flag in the UI.
 
+## A resolver miss is not always permanent
+
+zaster379, topic 99894: *"I post my uploads immediately. It may be several hours before
+complete on the indexing sites."*
+
+So "not found" on Binsearch/NZBKing may simply mean the release has not propagated yet.
+The UI must distinguish **not indexed yet** (worth retrying later) from **not found**
+(needs a manual NZB), or a freshly posted book looks permanently broken.
+
 ## Fixture index
 
 | File | Poster | Era | Why it is here |
@@ -84,6 +100,8 @@ flag in the UI.
 | `degaussed-mistborn-mp3.txt` | degaussed | 2025 | `Series Name`/`Series Position`, `Tags`, HH:MM:SS duration, size with no unit, search with no password |
 | `stalkerama-misfit-m4b.txt` | stalkerama | 2026 | `Series`/`Book Number`, Audible link, `Release Date`, `Chapters`, search **and** password |
 | `arif-taxman-no-fileinfo.txt` | Arif | 2020 | No File Information section at all; `Series Position: Book 1`; MD5-style search plus trailing newsgroup prose |
+| `postbot-spot-archive-with-payload.txt` | PostBot | 2017 | `[SPOT]` payload revealed: rendered old-forum HTML with `Read by:`/`Media:`/`Synopsis:`, an unlabelled `Code:` holding an `abook.ws` subject, and mojibake separators throughout |
 | `postbot-spot-archive.txt` | PostBot | 2015 | `[SPOT]` archive import — no NFO block whatsoever; `Subject:`/`Poster:`/`Date:` instead |
+| `zaster379-resonance-combined-series.txt` | zaster379 | 2024 | `Series & Position:` combined; `Genre (but may be multi):`; `File Type: 49 MP3s`; `Compressed with: Winrar`; `Publication Date:`; no `Total Size`; word-style password; note that indexing lags posting |
 | `chev-labyrinth-filetype.txt` | Chev | 2025 | `File Type:`/`Number of Files:`/`Total Duration:` inside File Information; `Audiobook Release:`; trailing `Genre:`; replies reporting corruption and a **replaced search code** |
 | `3josh-czarzakian-media-info.txt` | 3josh | 2020 | `Media Information` section with Source/Encoded fields; no series fields (series is inside `Title:`); `Audiobook Copyright:`; duration as `8 hours, 55 minutes, 26 seconds`; `Search for:` holding a **full subject line**; prose instructions describing a **multi-part collection** that must be assembled with Select All + Create NZB |
