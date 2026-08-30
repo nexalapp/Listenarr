@@ -784,6 +784,10 @@ class ApiService {
     return normalizeQueueSnapshot(response)
   }
 
+  async retryImport(downloadId: string): Promise<void> {
+    await this.request(`/downloads/${downloadId}/retry-import`, { method: 'POST' })
+  }
+
   async removeFromQueue(
     downloadId: string,
     downloadClientId?: string,

@@ -163,6 +163,10 @@ export interface Download {
   metadata: Record<string, unknown>
   // Optional link to an audiobook record when the download was queued for a specific audiobook
   audiobookId?: number
+  // Why an import stopped, and what it tried, for a download in ImportBlocked
+  importBlockReason?: string
+  importBlockMessages?: string[]
+  importAttempts?: number
 }
 
 export interface QueueItem {
@@ -186,6 +190,8 @@ export interface QueueItem {
   downloadClientType: string
   addedAt: string
   errorMessage?: string
+  // Set when a blocked import can be retried from the activity row
+  canRetryImport?: boolean
   isStaleSnapshot?: boolean
   snapshotState?: string
   snapshotFailureReason?: string

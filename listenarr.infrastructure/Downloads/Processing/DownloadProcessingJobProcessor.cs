@@ -132,10 +132,19 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     return;
                 }
 
-                await downloadService.UpdateAsync(
-                    download.Blocked(
-                        "Unable to import the download",
-                        $"See the log of job {job.Id} for more information"));
+                // Carry the reason itself, not a pointer to a job id the operator has
+                // no way to look up. This message is the whole of what the UI can
+                // show them about why the import stopped.
+                var blocked = download.Blocked(
+                    "Unable to import the download",
+                    job.ErrorMessage ?? $"See the log of job {job.Id} for more information");
+
+                foreach (var entry in DescribeAttempts(job))
+                {
+                    blocked.AddBlockMessage(entry);
+                }
+
+                await downloadService.UpdateAsync(blocked);
             }
         }
 
@@ -444,5 +453,23 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     correlationId, $"Unable to commit import finalization: {exception.Message}", cancellationToken);
             }
         }
+
+        /// <summary>
+        /// Summarise what the job actually tried, so a blocked import explains itself
+        /// without the operator needing access to the job log.
+        /// </summary>
+        private static IEnumerable<string> DescribeAttempts(DownloadProcessingJob job)
+        {
+            if (!string.IsNullOrWhiteSpace(job.SourcePath))
+            {
+                yield return $"Looked for files in {job.SourcePath}";
+            }
+
+            if (job.RetryCount > 0)
+            {
+                yield return $"Gave up after {job.RetryCount} of {job.MaxRetries} attempts";
+            }
+        }
+
     }
 }

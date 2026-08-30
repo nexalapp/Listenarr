@@ -137,8 +137,20 @@
               >
                 Cached
               </span>
+              <p v-if="item.errorMessage" class="status-detail" :title="item.errorMessage">
+                {{ item.errorMessage }}
+              </p>
             </div>
             <div class="col-actions">
+              <button
+                v-if="item.canRetryImport"
+                class="btn-icon"
+                :disabled="retryingImportId === item.id"
+                @click="retryImport(item)"
+                title="Retry import"
+              >
+                <PhArrowClockwise />
+              </button>
               <button
                 v-if="item.canRemove"
                 class="btn-icon btn-danger-icon"
@@ -465,6 +477,12 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   }
   const status = statusMap[download.status] ?? 'downloading'
 
+  // A blocked import is the one state where the operator has to act, so the row
+  // has to say why. Lead with the reason, then what it tried.
+  const blockDetail = [download.importBlockReason, ...(download.importBlockMessages ?? [])]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(' — ')
+
   const clientName = (download as unknown as Record<string, unknown>)['downloadClientName'] as
     | string
     | undefined
@@ -486,6 +504,8 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
     addedAt: download.startedAt,
     canPause: false,
     canRemove: true,
+    errorMessage: blockDetail || download.errorMessage,
+    canRetryImport: status === 'importblocked',
   }
 }
 
@@ -532,17 +552,27 @@ const allActivityItems = computed(() => {
   // 'Downloading' must not override its 'completed' — these are the states the
   // client has no knowledge of at all, because they are ours.
   const ourPostTransferStates = new Set(['importpending', 'importblocked', 'processing'])
-  const stillOurWork = new Map<string, string>()
+  const stillOurWork = new Map<string, QueueItem>()
   for (const download of [...activeDownloadsList, ...failedDownloadsList]) {
-    const status = convertDownloadToQueueItem(download).status
-    if (ourPostTransferStates.has(status)) {
-      stillOurWork.set(download.id, status)
+    const converted = convertDownloadToQueueItem(download)
+    if (ourPostTransferStates.has(converted.status)) {
+      stillOurWork.set(download.id, converted)
     }
   }
 
   const queueItems = queue.value.map((item) => {
-    const ourStatus = stillOurWork.get(item.id)
-    return ourStatus && item.status === 'completed' ? { ...item, status: ourStatus } : item
+    const ours = stillOurWork.get(item.id)
+    if (!ours || item.status !== 'completed') return item
+
+    // Keep the client's transfer figures, take our post-transfer state and the
+    // detail that goes with it — without the reason and the retry, the row tells
+    // the operator something is wrong but nothing about what or what to do.
+    return {
+      ...item,
+      status: ours.status,
+      errorMessage: ours.errorMessage ?? item.errorMessage,
+      canRetryImport: ours.canRetryImport,
+    }
   })
   const trackedQueueIds = new Set(queueItems.map((item) => item.id))
 
@@ -650,6 +680,23 @@ const filteredQueue = computed(() => {
     )
   })
 })
+
+const retryingImportId = ref<string | null>(null)
+
+const retryImport = async (item: QueueItem) => {
+  retryingImportId.value = item.id
+  try {
+    await apiService.retryImport(item.id)
+    await refreshQueue()
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'ActivityView',
+      operation: 'retryImport',
+    })
+  } finally {
+    retryingImportId.value = null
+  }
+}
 
 const refreshQueue = async () => {
   loading.value = true
@@ -1105,6 +1152,14 @@ onUnmounted(() => {
 }
 
 /* Status badges */
+.status-detail {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-secondary, #9aa0a6);
+  overflow-wrap: anywhere;
+}
+
 .status-badge {
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
