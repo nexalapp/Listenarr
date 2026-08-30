@@ -46,6 +46,7 @@ namespace Listenarr.Api.Features.AbookLink
         public int HitCount { get; set; }
         public int Inspected { get; set; }
         public double SuccessRate { get; set; }
+        public double IdentificationRate { get; set; }
         public string Report { get; set; } = string.Empty;
         public List<AbookCandidateResponse> Candidates { get; set; } = new();
     }
@@ -99,6 +100,18 @@ namespace Listenarr.Api.Features.AbookLink
             return Ok(Map(q, result));
         }
 
+        /// <summary>
+        /// Reports what abook.link replies to a sign-in. For diagnosing a login that does
+        /// not take; returns only the forum's own answer, never the credentials.
+        /// </summary>
+        [HttpGet("diagnose-login")]
+        [ProducesResponseType(typeof(Dictionary<string, string>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<IReadOnlyDictionary<string, string>>> DiagnoseLogin(
+            CancellationToken cancellationToken = default)
+        {
+            return Ok(await _browser.DiagnoseLoginAsync(cancellationToken));
+        }
+
         /// <summary>Parses one topic without revealing its payload.</summary>
         [HttpGet("topic/{topicId:int}")]
         [ProducesResponseType(typeof(AbookCandidateResponse), StatusCodes.Status200OK)]
@@ -122,6 +135,7 @@ namespace Listenarr.Api.Features.AbookLink
             HitCount = result.HitCount,
             Inspected = result.Candidates.Count,
             SuccessRate = result.Report.SuccessRate,
+            IdentificationRate = result.Report.IdentificationRate,
             Report = result.Report.Summarise(),
             Candidates = result.Candidates.Select(Map).ToList()
         };

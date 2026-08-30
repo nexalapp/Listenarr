@@ -68,6 +68,20 @@ public sealed class SmfLoginFormTests : BaseTests
     }
 
     [Fact]
+    public void VerificationDemandsThePositiveSignalNotMerelyTheAbsenceOfALoginForm()
+    {
+        // An interstitial with neither marker must not be read as a successful login -
+        // that is exactly how a failed sign-in got reported as success.
+        const string interstitial = "<html><body>Redirecting...</body></html>";
+
+        Assert.True(SmfLoginForm.IsSignedIn(interstitial));
+        Assert.False(SmfLoginForm.IsDefinitelySignedIn(interstitial));
+
+        Assert.True(SmfLoginForm.IsDefinitelySignedIn(
+            """<a href="index.php?action=logout;a=b">Logout</a>"""));
+    }
+
+    [Fact]
     public void MalformedMarkupYieldsNoFieldsRatherThanThrowing()
     {
         Assert.Empty(SmfLoginForm.ReadHiddenFields(null));

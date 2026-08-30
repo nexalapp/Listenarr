@@ -81,7 +81,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                     continue;
                 }
 
-                var post = AbookPostParser.Parse(topic.Body ?? string.Empty, hit.Title);
+                var post = AbookPostParser.Parse(AbookPostHtml.ToText(topic.Body), hit.Title);
                 report.Add(hit.TopicId.ToString(), post);
                 candidates.Add(new AbookCandidate(hit.TopicId, hit.Title, post));
             }
@@ -104,12 +104,72 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                 return Failed(topic.Reason ?? "abook.link topic could not be read.");
             }
 
-            var post = AbookPostParser.Parse(topic.Body ?? string.Empty, AbookTopicTitleOf(topic.Body));
+            var post = AbookPostParser.Parse(AbookPostHtml.ToText(topic.Body), AbookTopicTitleOf(topic.Body));
             var report = new AbookParseReport();
             report.Add(topicId.ToString(), post);
 
             return new AbookBrowseResult(true, 1,
                 [new AbookCandidate(topicId, post.Title ?? string.Empty, post)], report, null);
+        }
+
+        public async Task<IReadOnlyDictionary<string, string>> DiagnoseLoginAsync(CancellationToken ct = default)
+        {
+            var credentials = await ResolveCredentialsAsync(ct);
+            if (credentials is null)
+            {
+                return new Dictionary<string, string> { ["result"] = "no abook.link source is configured" };
+            }
+
+            var report = new Dictionary<string, string>(await _session.DiagnoseAsync(credentials, ct), StringComparer.Ordinal);
+
+            // Exercise the real client path too: the diagnostic probes use a different
+            // HttpClient, so a session that works there can still fail here.
+            var signIn = await _session.GetCookieAsync(credentials, forceRefresh: false, ct);
+            if (signIn.Succeeded && signIn.Cookie is { Length: > 0 })
+            {
+                var viaClient = await _client.SearchAsync(signIn.Cookie, "mistborn", ct);
+                report["client.succeeded"] = viaClient.Succeeded ? "yes" : "no";
+                report["client.signedIn"] = viaClient.SignedIn ? "yes" : "no";
+                report["client.reason"] = viaClient.Reason ?? "(none)";
+                report["client.bytes"] = (viaClient.Body?.Length ?? 0).ToString();
+                report["client.hasLoginForm"] =
+                    viaClient.Body?.Contains("action=login2", StringComparison.OrdinalIgnoreCase) == true ? "yes" : "no";
+
+                // What the result links actually look like, so the parser is written
+                // against the markup rather than against a guess at it.
+                var body = viaClient.Body ?? string.Empty;
+                var anchors = System.Text.RegularExpressions.Regex
+                    .Matches(body, "<a[^>]+href=\"[^\"]*topic[^\"]*\"[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    .Select(m => m.Value)
+                    .Take(4)
+                    .ToList();
+                report["client.topicAnchorCount"] = System.Text.RegularExpressions.Regex
+                    .Matches(body, "topic=", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count.ToString();
+                report["client.topicAnchors"] = anchors.Count > 0
+                    ? string.Join(" || ", anchors)
+                    : "(none)";
+                var text = System.Text.RegularExpressions.Regex.Replace(body, "<[^>]+>", " ");
+                text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+                report["client.textExcerpt"] = text.Length > 500 ? text[..500] : text;
+
+                var idx = body.IndexOf("topic=", StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    var start = Math.Max(0, idx - 300);
+                    var len = Math.Min(700, body.Length - start);
+                    report["client.rawAroundTopic"] = body.Substring(start, len);
+                }
+
+                var second = body.IndexOf("topic=", Math.Min(body.Length, idx + 400), StringComparison.OrdinalIgnoreCase);
+                if (second >= 0)
+                {
+                    var start = Math.Max(0, second - 250);
+                    var len = Math.Min(600, body.Length - start);
+                    report["client.rawAroundTopic2"] = body.Substring(start, len);
+                }
+            }
+
+            return report;
         }
 
         private static string? AbookTopicTitleOf(string? body)

@@ -45,5 +45,11 @@ namespace Listenarr.Application.Search.Contracts
         Task<AbookBrowseResult> SearchAsync(string query, int inspect, CancellationToken ct = default);
 
         Task<AbookBrowseResult> GetTopicAsync(int topicId, CancellationToken ct = default);
+
+        /// <summary>
+        /// Reports what the forum replies to a sign-in, for diagnosing a login that does
+        /// not take. Never returns the credentials themselves.
+        /// </summary>
+        Task<IReadOnlyDictionary<string, string>> DiagnoseLoginAsync(CancellationToken ct = default);
     }
 }

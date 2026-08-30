@@ -110,6 +110,18 @@ namespace Listenarr.Application.Search.AbookLink
         }
 
         /// <summary>
+        /// The strict signal: this page positively shows a signed-in member.
+        ///
+        /// <see cref="IsSignedIn"/> is deliberately lenient because the site's tools
+        /// render no navigation, but that leniency must not be used to decide whether a
+        /// login worked — an interstitial with neither marker would read as success.
+        /// Verification fetches the forum index, which always renders navigation, so it
+        /// can demand the positive signal.
+        /// </summary>
+        public static bool IsDefinitelySignedIn(string? html) =>
+            html is { Length: > 0 } && html.Contains("action=logout", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
         /// Reproduces SMF's client-side password hash:
         /// <c>sha1(sha1(lowercase(username) + password) + salt)</c>.
         /// </summary>

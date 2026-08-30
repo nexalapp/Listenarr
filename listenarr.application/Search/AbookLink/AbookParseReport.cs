@@ -62,6 +62,16 @@ namespace Listenarr.Application.Search.AbookLink
         public int Complete => Count(AbookParseOutcome.Complete);
 
         /// <summary>
+        /// Posts whose book we could identify, whether or not a payload was visible.
+        ///
+        /// This is the measure that means anything while searching: a payload is gated
+        /// behind a "thanks" that only a deliberate grab posts, so during search every
+        /// post legitimately lacks one and a completion rate reads as nought per cent
+        /// however well the parsing went.
+        /// </summary>
+        public int Identified => Complete + Count(AbookParseOutcome.MissingSearchString);
+
+        /// <summary>
         /// Share of posts fully understood, excluding those that were never releases.
         /// Requests and archive imports are correctly-classified skips, not failures, and
         /// counting them would make the parser look worse the more junk the forum holds.
@@ -70,10 +80,30 @@ namespace Listenarr.Application.Search.AbookLink
         {
             get
             {
-                var eligible = Total - Count(AbookParseOutcome.NotARelease) - Count(AbookParseOutcome.ArchiveSpot);
+                var eligible = Eligible;
                 return eligible <= 0 ? 1d : (double)Complete / eligible;
             }
         }
+
+        /// <summary>
+        /// Share of posts we could identify. The meaningful figure for a search, where no
+        /// payload is expected to be visible.
+        /// </summary>
+        public double IdentificationRate
+        {
+            get
+            {
+                var eligible = Eligible;
+                return eligible <= 0 ? 1d : (double)Identified / eligible;
+            }
+        }
+
+        /// <summary>
+        /// Posts that could have been understood. Requests and archive imports are
+        /// correctly-classified skips, not failures.
+        /// </summary>
+        private int Eligible =>
+            Total - Count(AbookParseOutcome.NotARelease) - Count(AbookParseOutcome.ArchiveSpot);
 
         public int Count(AbookParseOutcome outcome) => _outcomes.GetValueOrDefault(outcome);
 
@@ -116,7 +146,8 @@ namespace Listenarr.Application.Search.AbookLink
         public string Summarise()
         {
             var text = new StringBuilder();
-            text.AppendLine($"Parsed {Total} posts — {SuccessRate:P1} complete");
+            text.AppendLine(
+                $"Parsed {Total} posts — {IdentificationRate:P1} identified, {SuccessRate:P1} grabbable");
 
             foreach (var outcome in Enum.GetValues<AbookParseOutcome>())
             {

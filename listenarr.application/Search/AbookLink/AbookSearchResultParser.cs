@@ -28,18 +28,42 @@ namespace Listenarr.Application.Search.AbookLink
     /// <summary>
     /// Reads abook.link's fuzzy search results.
     ///
-    /// Results link to <c>index.php?topic=&lt;id&gt;&amp;r=&lt;relevance&gt;</c>. Only the
-    /// topic id is kept; relevance is the site's own ranking and Listenarr scores matches
-    /// against the wanted book itself.
+    /// The tool writes its anchors with single quotes, and the page carries a topic link
+    /// that is not a result — a "submit feedback" link in its header. Parsing is therefore
+    /// scoped to the results container rather than taking every topic link on the page,
+    /// and accepts either quote style.
     /// </summary>
     public static partial class AbookSearchResultParser
     {
-        [GeneratedRegex(@"<a[^>]*href=""[^""]*index\.php\?topic=(\d+)(?:[^""]*)""[^>]*>(.*?)</a>",
+        [GeneratedRegex(@"<div[^>]*class\s*=\s*[""']search_results[""'][^>]*>(.*)$",
+            RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+        private static partial Regex ResultsContainer();
+
+        [GeneratedRegex(@"<a[^>]*href\s*=\s*[""'][^""']*index\.php\?topic=(\d+)[^""']*[""'][^>]*>(.*?)</a>",
             RegexOptions.Singleline | RegexOptions.IgnoreCase)]
         private static partial Regex ResultLink();
 
+        [GeneratedRegex(@"([\d,]+)\s+Results?\b", RegexOptions.IgnoreCase)]
+        private static partial Regex ResultCount();
+
         [GeneratedRegex(@"<[^>]+>")]
         private static partial Regex Tag();
+
+        /// <summary>
+        /// Total the tool reports, which may exceed what one page lists.
+        /// </summary>
+        public static int? ParseTotalResults(string? html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return null;
+            }
+
+            var match = ResultCount().Match(html);
+            return match.Success && int.TryParse(match.Groups[1].Value.Replace(",", string.Empty), out var total)
+                ? total
+                : null;
+        }
 
         public static IReadOnlyList<AbookSearchHit> Parse(string? html)
         {
@@ -48,10 +72,15 @@ namespace Listenarr.Application.Search.AbookLink
                 return [];
             }
 
+            // Outside the results container the page links its own feedback topic, which
+            // would otherwise be returned as a result.
+            var container = ResultsContainer().Match(html);
+            var scope = container.Success ? container.Groups[1].Value : html;
+
             var hits = new List<AbookSearchHit>();
             var seen = new HashSet<int>();
 
-            foreach (Match match in ResultLink().Matches(html))
+            foreach (Match match in ResultLink().Matches(scope))
             {
                 if (!int.TryParse(match.Groups[1].Value, out var topicId) || !seen.Add(topicId))
                 {

@@ -102,6 +102,134 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             return signIn;
         }
 
+        /// <summary>
+        /// Reports what the forum replies to a sign-in, for diagnosing a login that does
+        /// not take. Returns only what the forum said - status, redirect target and which
+        /// markers its response carried - never the credentials.
+        /// </summary>
+        public async Task<IReadOnlyDictionary<string, string>> DiagnoseAsync(
+            AbookCredentials credentials,
+            CancellationToken ct = default)
+        {
+            var report = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            try
+            {
+                using var formRequest = new HttpRequestMessage(HttpMethod.Get, LoginUrl);
+                formRequest.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+                using var formResponse = await _httpClient.SendAsync(formRequest, ct);
+                var loginHtml = await formResponse.Content.ReadAsStringAsync(ct);
+
+                var hidden = SmfLoginForm.ReadHiddenFields(loginHtml);
+                var salt = SmfLoginForm.ReadPasswordHashSalt(loginHtml);
+                var action = SmfLoginForm.ReadLoginAction(loginHtml);
+
+                report["loginPageStatus"] = ((int)formResponse.StatusCode).ToString();
+                report["loginPageSetCookie"] = CollectCookies(formResponse).Length > 0 ? "yes" : "no";
+                report["hiddenFields"] = string.Join(",", hidden.Keys);
+                report["hashSaltFound"] = salt is { Length: > 0 } ? "yes" : "no";
+                report["formAction"] = action ?? "(not found)";
+
+                if (!credentials.CanSignIn)
+                {
+                    report["result"] = "no credentials configured";
+                    return report;
+                }
+
+                var fields = new Dictionary<string, string>(hidden, StringComparer.Ordinal)
+                {
+                    ["user"] = credentials.Username!,
+                    ["cookielength"] = CookieLength
+                };
+
+                if (salt is { Length: > 0 })
+                {
+                    fields["hash_passwrd"] = SmfLoginForm.HashPassword(credentials.Username!, credentials.Password!, salt);
+                    fields["passwd"] = string.Empty;
+                    report["passwordMode"] = "hashed";
+                }
+                else
+                {
+                    fields["passwd"] = credentials.Password!;
+                    fields.Remove("hash_passwrd");
+                    report["passwordMode"] = "plain";
+                }
+
+                using var loginRequest = new HttpRequestMessage(HttpMethod.Post, action ?? LoginPostUrl)
+                {
+                    Content = new FormUrlEncodedContent(fields)
+                };
+                loginRequest.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+                loginRequest.Headers.TryAddWithoutValidation("Referer", LoginUrl);
+                loginRequest.Headers.TryAddWithoutValidation("Cookie", CollectCookies(formResponse));
+
+                using var loginResponse = await _httpClient.SendAsync(loginRequest, ct);
+                var body = await loginResponse.Content.ReadAsStringAsync(ct);
+
+                report["loginStatus"] = ((int)loginResponse.StatusCode).ToString();
+                report["loginLocation"] = loginResponse.Headers.Location?.ToString() ?? "(none)";
+                report["loginSetCookie"] = CollectCookies(loginResponse).Length > 0 ? "yes" : "no";
+                report["bodyHasLoginForm"] = body.Contains("action=login2", StringComparison.OrdinalIgnoreCase) ? "yes" : "no";
+                report["bodyHasLogoutLink"] = body.Contains("action=logout", StringComparison.OrdinalIgnoreCase) ? "yes" : "no";
+                report["bodyLooksLikeBadCredentials"] = SmfLoginForm.LooksLikeBadCredentials(body) ? "yes" : "no";
+                report["bodyLength"] = body.Length.ToString();
+
+                // A short excerpt of visible text so an unexpected message from the forum
+                // is legible. Stripped of markup and capped; credentials are never echoed.
+                var text = System.Text.RegularExpressions.Regex.Replace(body, "<[^>]+>", " ");
+                text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+                report["bodyExcerpt"] = text.Length > 400 ? text[..400] : text;
+
+                var cookie = MergeCookies(CollectCookies(formResponse), CollectCookies(loginResponse));
+                report["verifiedSignedIn"] = await IsAuthenticatedAsync(cookie, ct) ? "yes" : "no";
+                report["cookieNames"] = string.Join(",", cookie
+                    .Split(';', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(part => part.Split('=', 2)[0].Trim()));
+
+                // Probe the pages the browser actually uses, because a session that
+                // authenticates on the forum index has still been rejected elsewhere.
+                await ProbeAsync(report, "forumIndex", "https://abook.link/book/index.php", cookie, ct);
+                await ProbeAsync(report, "fuzzySearch",
+                    "https://abook.link/book/tools/search_abook.php?search=mistborn", cookie, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                report["error"] = ex.Message;
+            }
+
+            return report;
+        }
+
+        private async Task ProbeAsync(
+            Dictionary<string, string> report,
+            string label,
+            string url,
+            string cookie,
+            CancellationToken ct)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.TryAddWithoutValidation("Cookie", cookie);
+                request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+
+                using var response = await _httpClient.SendAsync(request, ct);
+                var body = await response.Content.ReadAsStringAsync(ct);
+
+                report[$"{label}.status"] = ((int)response.StatusCode).ToString();
+                report[$"{label}.location"] = response.Headers.Location?.ToString() ?? "(none)";
+                report[$"{label}.bytes"] = body.Length.ToString();
+                report[$"{label}.hasLoginForm"] =
+                    body.Contains("action=login2", StringComparison.OrdinalIgnoreCase) ? "yes" : "no";
+                report[$"{label}.hasLogoutLink"] =
+                    body.Contains("action=logout", StringComparison.OrdinalIgnoreCase) ? "yes" : "no";
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                report[$"{label}.error"] = ex.Message;
+            }
+        }
+
         /// <summary>Drops a cached cookie the forum has stopped accepting.</summary>
         public static void Invalidate(AbookCredentials credentials)
         {
@@ -230,7 +358,9 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                 request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
 
                 using var response = await _httpClient.SendAsync(request, ct);
-                return SmfLoginForm.IsSignedIn(await response.Content.ReadAsStringAsync(ct));
+                // The forum index always renders navigation, so demand the positive
+                // signal rather than the lenient one used for the site's tool pages.
+                return SmfLoginForm.IsDefinitelySignedIn(await response.Content.ReadAsStringAsync(ct));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

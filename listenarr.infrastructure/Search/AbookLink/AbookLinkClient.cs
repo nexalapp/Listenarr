@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.RegularExpressions;
+using Listenarr.Application.Search.AbookLink;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 
@@ -44,6 +45,12 @@ namespace Listenarr.Infrastructure.Search.AbookLink
     public partial class AbookLinkClient
     {
         private const string BaseUrl = "https://abook.link/book/";
+
+        // The forum answers a request without a browser user-agent with its logged-out
+        // page, session cookie or not - so omitting this reads exactly like an expired
+        // session. The MyAnonamouse provider sets one for the same reason.
+        private const string UserAgent =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
         private const string FuzzySearchPath = "https://abook.link/book/tools/search_abook.php";
 
         [GeneratedRegex(@"action=thank;msg=(\d+);member=(\d+)", RegexOptions.IgnoreCase)]
@@ -119,6 +126,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                     {
                         var request = new HttpRequestMessage(HttpMethod.Get, target);
                         request.Headers.TryAddWithoutValidation("Cookie", sessionCookie);
+                        request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
                         return request;
                     },
                     uri, _httpClient, _logger, cancellationToken: ct);
@@ -132,7 +140,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                     }
 
                     var body = await response.Content.ReadAsStringAsync(ct);
-                    var signedIn = IsSignedIn(body);
+                    var signedIn = SmfLoginForm.IsSignedIn(body);
 
                     return new AbookResponse(signedIn, body, signedIn,
                         signedIn ? null : "The abook.link session has expired. Sign in again and update the cookie.");
@@ -145,11 +153,5 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             }
         }
 
-        /// <summary>
-        /// A logged-out SMF page still returns 200, so the status code cannot be trusted.
-        /// The logout link is only rendered for a signed-in member.
-        /// </summary>
-        private static bool IsSignedIn(string body) =>
-            body.Contains("action=logout", StringComparison.OrdinalIgnoreCase);
     }
 }
