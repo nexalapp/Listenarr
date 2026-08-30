@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Search.AbookLink;
+using Listenarr.Application.Search.NzbKing;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Search.AbookLink
@@ -33,6 +34,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         private readonly AbookLinkSession _session;
         private readonly IIndexerRepository _indexers;
         private readonly ISecretProtector _secrets;
+        private readonly INzbKingTokenBudget _budget;
         private readonly ILogger<AbookLinkBrowser> _logger;
 
         public AbookLinkBrowser(
@@ -40,12 +42,14 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             AbookLinkSession session,
             IIndexerRepository indexers,
             ISecretProtector secrets,
+            INzbKingTokenBudget budget,
             ILogger<AbookLinkBrowser> logger)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _indexers = indexers ?? throw new ArgumentNullException(nameof(indexers));
             _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
+            _budget = budget ?? throw new ArgumentNullException(nameof(budget));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -170,6 +174,20 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             }
 
             return report;
+        }
+
+        public async Task<NzbKingKeyStatus?> GetNzbKingStatusAsync(CancellationToken ct = default)
+        {
+            foreach (var indexer in await _indexers.GetAllAsync(ct))
+            {
+                var key = NzbKingSettings.TryGetApiKey(indexer.AdditionalSettings);
+                if (key is { Length: > 0 })
+                {
+                    return await _budget.GetStatusAsync(key, ct);
+                }
+            }
+
+            return null;
         }
 
         private static string? AbookTopicTitleOf(string? body)

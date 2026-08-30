@@ -51,5 +51,10 @@ namespace Listenarr.Application.Search.Contracts
         /// not take. Never returns the credentials themselves.
         /// </summary>
         Task<IReadOnlyDictionary<string, string>> DiagnoseLoginAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// Current state of the configured NZBKing key, or null when none is configured.
+        /// </summary>
+        Task<NzbKingKeyStatus?> GetNzbKingStatusAsync(CancellationToken ct = default);
     }
 }

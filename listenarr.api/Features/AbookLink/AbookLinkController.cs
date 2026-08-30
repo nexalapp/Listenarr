@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Search.NzbKing;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.AbookLink
@@ -61,6 +62,19 @@ namespace Listenarr.Api.Features.AbookLink
         public bool HasPassword { get; set; }
         public AbookCandidateResponse? Book { get; set; }
         public List<AbookResolverAttemptResponse> Attempts { get; set; } = new();
+    }
+
+    public sealed class NzbKingStatusResponse
+    {
+        public bool Configured { get; set; }
+        public int EstimatedBalance { get; set; }
+        public int MaxTokens { get; set; }
+        public int ReserveFloor { get; set; }
+        public int Spendable { get; set; }
+        public DateTime? NextRefillAt { get; set; }
+        public DateTime? LastSuccessfulUseAt { get; set; }
+        public bool KeyDeleted { get; set; }
+        public string Summary { get; set; } = string.Empty;
     }
 
     public sealed class AbookSendResponse
@@ -244,6 +258,51 @@ namespace Listenarr.Api.Features.AbookLink
                     Detail = attempt.Detail,
                     CandidateCount = attempt.Candidates?.Count ?? 0
                 }).ToList() ?? []
+            });
+        }
+
+        /// <summary>
+        /// How much of the NZBKing allowance is left.
+        ///
+        /// The balance is an estimate: NZBKing exposes no way to read the real figure, so
+        /// this is what Listenarr has counted. It can drift, which is why spending stops
+        /// short of empty rather than at it.
+        /// </summary>
+        [HttpGet("nzbking-status")]
+        [ProducesResponseType(typeof(NzbKingStatusResponse), StatusCodes.Status200OK)]
+        public async Task<ActionResult<NzbKingStatusResponse>> NzbKingStatus(
+            CancellationToken cancellationToken = default)
+        {
+            var status = await _browser.GetNzbKingStatusAsync(cancellationToken);
+
+            if (status is null)
+            {
+                return Ok(new NzbKingStatusResponse
+                {
+                    Configured = false,
+                    MaxTokens = NzbKingTokenPolicy.MaxTokens,
+                    ReserveFloor = NzbKingTokenPolicy.ReserveFloor,
+                    Summary = "No NZBKing key is configured, or it has not been used yet."
+                });
+            }
+
+            var spendable = Math.Max(0, status.EstimatedBalance - NzbKingTokenPolicy.ReserveFloor);
+
+            return Ok(new NzbKingStatusResponse
+            {
+                Configured = true,
+                EstimatedBalance = status.EstimatedBalance,
+                MaxTokens = NzbKingTokenPolicy.MaxTokens,
+                ReserveFloor = NzbKingTokenPolicy.ReserveFloor,
+                Spendable = spendable,
+                NextRefillAt = status.NextRefillAt,
+                LastSuccessfulUseAt = status.LastSuccessfulUseAt,
+                KeyDeleted = status.KeyDeleted,
+                Summary = status.KeyDeleted
+                    ? "The key has been deleted by NZBKing. Request a new one and save it against the source."
+                    : $"About {status.EstimatedBalance} of {NzbKingTokenPolicy.MaxTokens} tokens left, "
+                      + $"{spendable} of them spendable before the reserve of {NzbKingTokenPolicy.ReserveFloor}. "
+                      + $"One returns every hour; next at {status.NextRefillAt:u}."
             });
         }
 
