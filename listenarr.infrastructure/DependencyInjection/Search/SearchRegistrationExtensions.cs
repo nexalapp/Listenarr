@@ -9,6 +9,7 @@
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Search.AbookLink;
+using Listenarr.Infrastructure.Search.Providers.AbookLink;
 using Listenarr.Infrastructure.Search.Nzb;
 using Listenarr.Infrastructure.Search.NzbKing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -23,6 +24,7 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
         services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
+        services.AddScoped<IIndexerSearchProvider, AbookLinkSearchProvider>();
         services.AddScoped<IMyAnonamouseConnectionTester, MyAnonamouseConnectionTester>();
         services.AddScoped<IndexerAdditionalSettingsParser>();
         services.AddScoped<IndexerSearchWorkflow>();
