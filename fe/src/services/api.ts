@@ -63,6 +63,8 @@ import type {
   RenamePreview,
   RenameOperation,
   RenameResult,
+  NzbKingStatus,
+  NzbKingLedger,
 } from '@/types'
 import { getStartupConfigCached, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -782,6 +784,18 @@ class ApiService {
   async getQueue(): Promise<QueueSnapshot> {
     const response = await this.request<QueueSnapshot | QueueItem[]>('/download/queue')
     return normalizeQueueSnapshot(response)
+  }
+
+  async getNzbKingStatus(): Promise<NzbKingStatus> {
+    return this.request<NzbKingStatus>('/abook/nzbking-status')
+  }
+
+  async getNzbKingLedger(limit = 25): Promise<NzbKingLedger> {
+    return this.request<NzbKingLedger>(`/abook/nzbking-ledger?limit=${limit}`)
+  }
+
+  async diagnoseAbookLogin(): Promise<Record<string, string>> {
+    return this.request<Record<string, string>>('/abook/diagnose-login')
   }
 
   async retryImport(downloadId: string): Promise<void> {

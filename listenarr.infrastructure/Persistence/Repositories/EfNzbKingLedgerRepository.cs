@@ -163,6 +163,25 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToListAsync(ct);
         }
 
+        public async Task<List<NzbKingApiAccess>> GetRecentAccessAsync(
+            string fingerprint,
+            int limit,
+            CancellationToken ct = default)
+        {
+            if (limit <= 0)
+            {
+                return [];
+            }
+
+            return await _db.NzbKingApiAccesses
+                .AsNoTracking()
+                .Where(access => access.KeyFingerprint == fingerprint)
+                .OrderByDescending(access => access.AttemptedAt)
+                .ThenByDescending(access => access.Id)
+                .Take(limit)
+                .ToListAsync(ct);
+        }
+
         private async Task<int> LogAsync(
             string fingerprint,
             NzbKingAccessPurpose purpose,

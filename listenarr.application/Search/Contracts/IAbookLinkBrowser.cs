@@ -56,5 +56,13 @@ namespace Listenarr.Application.Search.Contracts
         /// Current state of the configured NZBKing key, or null when none is configured.
         /// </summary>
         Task<NzbKingKeyStatus?> GetNzbKingStatusAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// The most recent NZBKing access attempts for the configured key, newest first.
+        /// Refusals are included: they are what the budget did to protect the key.
+        /// </summary>
+        Task<IReadOnlyList<NzbKingApiAccess>> GetNzbKingLedgerAsync(
+            int limit,
+            CancellationToken ct = default);
     }
 }

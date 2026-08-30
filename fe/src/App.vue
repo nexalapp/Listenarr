@@ -146,6 +146,15 @@
             <span class="notification-badge" v-if="notificationCount > 0">{{
               notificationCount
             }}</span>
+            <!-- Reaching zero deletes the NZBKing key, and only a person solving a
+                 CAPTCHA can replace it. That is worth a standing mark on the bell;
+                 a healthy balance is not, so nothing shows the rest of the time. -->
+            <span
+              v-else-if="nzbKingTokens.needsAttention"
+              class="notification-badge attention"
+              :title="nzbKingTokens.status?.summary"
+              >!</span
+            >
           </button>
           <div v-if="notificationsOpen" class="notification-dropdown" role="menu">
             <div class="dropdown-header">
@@ -154,6 +163,9 @@
                 Clear
               </button>
             </div>
+            <!-- Standing state sits above the event list, next to the toasts this same
+                 budget raises when it spends or refuses. -->
+            <NzbKingTokenWidget />
             <ul class="notification-list">
               <li v-for="item in visibleNotifications" :key="item.id" class="notification-item">
                 <div class="notif-icon">
@@ -562,6 +574,8 @@ import ConfirmDialog from '@/components/feedback/ConfirmDialog.vue'
 import { useConfirmService } from '@/composables/confirmService'
 import { useNotification } from '@/composables/useNotification'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useNzbKingTokensStore } from '@/stores/nzbKingTokens'
+import NzbKingTokenWidget from '@/components/domain/nzbking/NzbKingTokenWidget.vue'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore } from '@/stores/moveJobs'
 import { useLibraryDeleteOperationsStore } from '@/stores/libraryDeleteOperations'
@@ -868,6 +882,8 @@ const activityCount = computed(() => {
 })
 
 // Notification dropdown state
+const nzbKingTokens = useNzbKingTokensStore()
+
 const notificationsOpen = vueRef2(false)
 const notificationRef = vueRef<HTMLElement | null>(null)
 const handleNotificationDocumentClick = (e: MouseEvent) => {
@@ -2181,6 +2197,13 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   align-items: center;
   justify-content: center;
   z-index: 10;
+}
+
+/* Distinct from the count badge: this one means something needs doing, not that
+   something happened. */
+.notification-badge.attention {
+  background-color: #e03131;
+  font-weight: 700;
 }
 
 /* Page transition: new view fades in; old view leaves instantly to avoid blank flash */

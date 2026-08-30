@@ -77,6 +77,26 @@ namespace Listenarr.Api.Features.AbookLink
         public DateTime? LastSuccessfulUseAt { get; set; }
         public bool KeyDeleted { get; set; }
         public string Summary { get; set; } = string.Empty;
+
+        /// <summary>Attempts in the last 24 hours, so the widget can say what has been happening.</summary>
+        public int SpentRecently { get; set; }
+        public int RefusedRecently { get; set; }
+    }
+
+    public sealed class NzbKingAccessResponse
+    {
+        public DateTime AttemptedAt { get; set; }
+        public string Purpose { get; set; } = string.Empty;
+        public string Outcome { get; set; } = string.Empty;
+        public string? Query { get; set; }
+        public int? HttpStatus { get; set; }
+        public int BalanceAfter { get; set; }
+    }
+
+    public sealed class NzbKingLedgerResponse
+    {
+        public bool Configured { get; set; }
+        public List<NzbKingAccessResponse> Entries { get; set; } = new();
     }
 
     public sealed class AbookSendResponse
@@ -120,6 +140,9 @@ namespace Listenarr.Api.Features.AbookLink
     public class AbookLinkController : ControllerBase
     {
         private const int DefaultInspect = 10;
+
+        /// <summary>How far back the ledger is read for display and tallies.</summary>
+        private const int RecentAccessLimit = 100;
 
         private readonly IAbookLinkBrowser _browser;
         private readonly IAbookGrabResolver _grabs;
@@ -290,9 +313,20 @@ namespace Listenarr.Api.Features.AbookLink
 
             var spendable = Math.Max(0, status.EstimatedBalance - NzbKingTokenPolicy.ReserveFloor);
 
+            // A day's worth of attempts is the useful window: refills are hourly, so
+            // anything older has already been earned back.
+            var since = DateTime.UtcNow.AddDays(-1);
+            var recent = await _browser.GetNzbKingLedgerAsync(RecentAccessLimit, cancellationToken);
+            var spentRecently = recent.Count(a =>
+                a.AttemptedAt >= since && a.Outcome == NzbKingAccessOutcome.Spent);
+            var refusedRecently = recent.Count(a =>
+                a.AttemptedAt >= since && a.Outcome == NzbKingAccessOutcome.DeniedByBudget);
+
             return Ok(new NzbKingStatusResponse
             {
                 Configured = true,
+                SpentRecently = spentRecently,
+                RefusedRecently = refusedRecently,
                 EstimatedBalance = status.EstimatedBalance,
                 MaxTokens = NzbKingTokenPolicy.MaxTokens,
                 ReserveFloor = NzbKingTokenPolicy.ReserveFloor,
@@ -305,6 +339,36 @@ namespace Listenarr.Api.Features.AbookLink
                     : $"About {status.EstimatedBalance} of {NzbKingTokenPolicy.MaxTokens} tokens left, "
                       + $"{spendable} of them spendable before the reserve of {NzbKingTokenPolicy.ReserveFloor}. "
                       + $"One returns every hour; next at {status.NextRefillAt:u}."
+            });
+        }
+
+        /// <summary>
+        /// The recent NZBKing access log, refusals included.
+        ///
+        /// The refusals matter most: they are the budget declining to spend rather than a
+        /// grab failing for some other reason, and nothing else records that distinction.
+        /// </summary>
+        [HttpGet("nzbking-ledger")]
+        [ProducesResponseType(typeof(NzbKingLedgerResponse), StatusCodes.Status200OK)]
+        public async Task<ActionResult<NzbKingLedgerResponse>> NzbKingLedger(
+            [FromQuery] int limit = 25,
+            CancellationToken cancellationToken = default)
+        {
+            var entries = await _browser.GetNzbKingLedgerAsync(
+                Math.Clamp(limit, 1, RecentAccessLimit), cancellationToken);
+
+            return Ok(new NzbKingLedgerResponse
+            {
+                Configured = entries.Count > 0,
+                Entries = [.. entries.Select(entry => new NzbKingAccessResponse
+                {
+                    AttemptedAt = entry.AttemptedAt,
+                    Purpose = entry.Purpose.ToString(),
+                    Outcome = entry.Outcome.ToString(),
+                    Query = entry.Query,
+                    HttpStatus = entry.HttpStatus,
+                    BalanceAfter = entry.BalanceAfter
+                })]
             });
         }
 

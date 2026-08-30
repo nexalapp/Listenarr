@@ -35,6 +35,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         private readonly IIndexerRepository _indexers;
         private readonly ISecretProtector _secrets;
         private readonly INzbKingTokenBudget _budget;
+        private readonly INzbKingLedgerRepository _ledger;
         private readonly ILogger<AbookLinkBrowser> _logger;
 
         public AbookLinkBrowser(
@@ -43,6 +44,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             IIndexerRepository indexers,
             ISecretProtector secrets,
             INzbKingTokenBudget budget,
+            INzbKingLedgerRepository ledger,
             ILogger<AbookLinkBrowser> logger)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
@@ -50,6 +52,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             _indexers = indexers ?? throw new ArgumentNullException(nameof(indexers));
             _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
             _budget = budget ?? throw new ArgumentNullException(nameof(budget));
+            _ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -188,6 +191,23 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             }
 
             return null;
+        }
+
+        public async Task<IReadOnlyList<NzbKingApiAccess>> GetNzbKingLedgerAsync(
+            int limit,
+            CancellationToken ct = default)
+        {
+            foreach (var indexer in await _indexers.GetAllAsync(ct))
+            {
+                var key = NzbKingSettings.TryGetApiKey(indexer.AdditionalSettings);
+                if (key is { Length: > 0 }
+                    && NzbKingKeyFingerprint.Compute(key) is { Length: > 0 } fingerprint)
+                {
+                    return await _ledger.GetRecentAccessAsync(fingerprint, limit, ct);
+                }
+            }
+
+            return [];
         }
 
         private static string? AbookTopicTitleOf(string? body)

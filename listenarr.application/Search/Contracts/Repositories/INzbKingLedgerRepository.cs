@@ -69,5 +69,17 @@ namespace Listenarr.Application.Search.Contracts.Repositories
         /// Live keys idle long enough to risk deletion for inactivity.
         /// </summary>
         Task<List<NzbKingKeyState>> GetKeysDueForKeepaliveAsync(DateTime now, CancellationToken ct = default);
+
+        /// <summary>
+        /// The most recent attempts against a key, newest first, refusals included.
+        ///
+        /// A refused attempt is the most interesting row in the ledger: it is the budget
+        /// protecting the key, and the only record that a grab was turned down rather
+        /// than failing for some other reason.
+        /// </summary>
+        Task<List<NzbKingApiAccess>> GetRecentAccessAsync(
+            string fingerprint,
+            int limit,
+            CancellationToken ct = default);
     }
 }
