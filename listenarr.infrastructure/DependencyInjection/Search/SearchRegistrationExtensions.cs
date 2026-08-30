@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Infrastructure.Search.AbookLink;
 using Listenarr.Infrastructure.Search.Nzb;
 using Listenarr.Infrastructure.Search.NzbKing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -43,6 +44,9 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<INzbResolver, BinsearchResolver>();
         services.AddScoped<INzbResolver, NzbKingResolver>();
         services.AddScoped<INzbResolverChain, NzbResolverChain>();
+
+        services.AddScoped<AbookLinkClient>();
+        services.AddScoped<IAbookLinkBrowser, AbookLinkBrowser>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
