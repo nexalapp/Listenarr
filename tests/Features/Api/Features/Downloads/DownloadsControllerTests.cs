@@ -283,6 +283,67 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
 
         [Fact]
         [Trait("Method", "RetryBlockedImport")]
+        [Trait("Scenario", "RetryBlockedImportRequeuesTheFailedJob")]
+        public async Task RetryBlockedImport_FailedJob_IsRequeuedSoTheImportActuallyRuns()
+        {
+            // Unblocking the download on its own left the job Failed with its retries
+            // spent, so nothing picked the work back up: the download sat in
+            // ImportPending for good while the endpoint reported "Import retry queued".
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("d-retry-job")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-1))
+                .WithDownloadClientConfiguration(_client)
+                .WithBlockedStatus("RepeatedFailure")
+                .WithImportAttempts(3)
+                .WithBlockMessage("still failing")
+                .Build());
+
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+            job.RetryCount = job.MaxRetries;
+            job.ScheduleRetry("No importable files found");
+            await _downloadProcessingJobRepository.UpdateAsync(job);
+
+            Assert.Equal(ProcessingJobStatus.Failed, job.Status);
+
+            var controller = MockUtils.CreateDownloadsController(_provider);
+            var ok = Assert.IsType<OkObjectResult>(await controller.RetryBlockedImport("d-retry-job"));
+
+            var requeued = ok.Value!.GetType().GetProperty("jobsRequeued")?.GetValue(ok.Value);
+            Assert.Equal(1, requeued is int count ? count : Convert.ToInt32(requeued));
+            Assert.True((bool)ok.Value.GetType().GetProperty("retryQueued")!.GetValue(ok.Value)!);
+
+            var reloaded = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(reloaded);
+            Assert.Equal(ProcessingJobStatus.Pending, reloaded!.Status);
+            Assert.Equal(0, reloaded.RetryCount);
+        }
+
+        [Fact]
+        [Trait("Method", "RetryBlockedImport")]
+        [Trait("Scenario", "RetryBlockedImportReportsWhenNothingWasRequeued")]
+        public async Task RetryBlockedImport_NoJobOnRecord_SaysNothingWasRequeued()
+        {
+            await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithId("d-retry-nojob")
+                .WithStartDate(DateTime.UtcNow.AddMinutes(-1))
+                .WithDownloadClientConfiguration(_client)
+                .WithBlockedStatus("RepeatedFailure")
+                .WithImportAttempts(3)
+                .WithBlockMessage("still failing")
+                .Build());
+
+            var controller = MockUtils.CreateDownloadsController(_provider);
+            var ok = Assert.IsType<OkObjectResult>(await controller.RetryBlockedImport("d-retry-nojob"));
+
+            Assert.False((bool)ok.Value!.GetType().GetProperty("retryQueued")!.GetValue(ok.Value)!);
+            var message = ok.Value.GetType().GetProperty("message")?.GetValue(ok.Value)?.ToString();
+            Assert.Contains("nothing was requeued", message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        [Trait("Method", "RetryBlockedImport")]
         [Trait("Scenario", "RetryBlockedImportRejectsNonBlockedStatus")]
         public async Task RetryBlockedImport_NonBlocked_ReturnsBadRequest()
         {

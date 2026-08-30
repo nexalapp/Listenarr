@@ -41,6 +41,9 @@ type ActivityViewVm = {
   removeFromQueue: (item: ActivityItem) => Promise<void> | void
   confirmRemove: () => Promise<void>
   retryImport: (item: ActivityItem) => Promise<void>
+  openBlockDetails: (item: ActivityItem) => void
+  blockDetailsItem: ActivityItem | null
+  blockDetailLines: string[]
 }
 
 const mockSignalR = () => {
@@ -274,10 +277,24 @@ describe('ActivityView', () => {
     expect(row?.errorMessage).toContain('No importable files found')
     expect(row?.errorMessage).toContain('/downloads/x')
     expect(row?.canRetryImport).toBe(true)
+
+    // The row is a single fixed-height line, so the reason is one click away
+    // rather than clipped into the status column.
+    expect(wrapper.text()).not.toContain('No importable files found')
+    vm.openBlockDetails(row!)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.blockDetailLines).toEqual([
+      'Unable to import the download',
+      'No importable files found',
+      'Looked for files in /downloads/x',
+    ])
     expect(wrapper.text()).toContain('No importable files found')
+    expect(wrapper.text()).toContain('Looked for files in /downloads/x')
 
     await vm.retryImport(row!)
     expect(api.retryImport).toHaveBeenCalledWith('dl-3')
+    expect(vm.blockDetailsItem).toBeNull()
   })
 
   it('keeps the block reason and retry when a queue snapshot shadows the record', async () => {

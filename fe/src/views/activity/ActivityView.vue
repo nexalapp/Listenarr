@@ -127,7 +127,16 @@
               <span v-else class="muted">-</span>
             </div>
             <div class="col-status">
-              <span :class="['status-badge', item.status]">
+              <button
+                v-if="item.errorMessage"
+                :class="['status-badge', item.status, 'status-badge-actionable']"
+                :title="`${formatStatus(item.status)} — click for details`"
+                @click="openBlockDetails(item)"
+              >
+                {{ formatStatus(item.status) }}
+                <PhInfo class="status-badge-hint" />
+              </button>
+              <span v-else :class="['status-badge', item.status]">
                 {{ formatStatus(item.status) }}
               </span>
               <span
@@ -137,20 +146,8 @@
               >
                 Cached
               </span>
-              <p v-if="item.errorMessage" class="status-detail" :title="item.errorMessage">
-                {{ item.errorMessage }}
-              </p>
             </div>
             <div class="col-actions">
-              <button
-                v-if="item.canRetryImport"
-                class="btn-icon"
-                :disabled="retryingImportId === item.id"
-                @click="retryImport(item)"
-                title="Retry import"
-              >
-                <PhArrowClockwise />
-              </button>
               <button
                 v-if="item.canRemove"
                 class="btn-icon btn-danger-icon"
@@ -182,6 +179,54 @@
 
     <!-- Loading State -->
     <LoadingState v-if="loading && queue.length === 0" message="Loading queue..." />
+
+    <!-- Import Block Details Modal -->
+    <div v-if="blockDetailsItem" class="modal-overlay" @click="blockDetailsItem = null">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>
+            <PhWarningCircle />
+            {{ formatStatus(blockDetailsItem.status) }}
+          </h3>
+          <button class="modal-close" @click="blockDetailsItem = null">
+            <PhX />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="remove-item-info">
+            <strong>{{ getDisplayTitle(blockDetailsItem) }}</strong>
+            <div class="item-details">
+              <span v-if="blockDetailsItem.downloadClient">
+                <PhDesktop />
+                {{ blockDetailsItem.downloadClient }}
+              </span>
+            </div>
+          </div>
+          <ul class="block-reason-list">
+            <li v-for="(line, index) in blockDetailLines" :key="index">{{ line }}</li>
+          </ul>
+          <p class="warning-text">
+            <PhInfo />
+            Retrying re-runs the import against the same files. If the path is not reachable from
+            Listenarr, add a remote path mapping for this client in Settings first.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="blockDetailsItem = null">Close</button>
+          <button
+            v-if="blockDetailsItem.canRetryImport"
+            class="btn btn-primary"
+            :disabled="retryingImportId === blockDetailsItem.id"
+            @click="retryImport(blockDetailsItem)"
+          >
+            <component
+              :is="retryingImportId === blockDetailsItem.id ? PhSpinner : PhArrowClockwise"
+            />
+            {{ retryingImportId === blockDetailsItem.id ? 'Retrying...' : 'Retry Import' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Remove Confirmation Modal -->
     <div v-if="showRemoveModal" class="modal-overlay" @click="showRemoveModal = false">
@@ -682,11 +727,26 @@ const filteredQueue = computed(() => {
 })
 
 const retryingImportId = ref<string | null>(null)
+const blockDetailsItem = ref<QueueItem | null>(null)
+
+// The row is a single fixed-height line, so the reason lives here where it has
+// room to wrap and sit next to the action it calls for.
+const blockDetailLines = computed(() =>
+  (blockDetailsItem.value?.errorMessage ?? '')
+    .split(' — ')
+    .map((line) => line.trim())
+    .filter(Boolean),
+)
+
+const openBlockDetails = (item: QueueItem) => {
+  blockDetailsItem.value = item
+}
 
 const retryImport = async (item: QueueItem) => {
   retryingImportId.value = item.id
   try {
     await apiService.retryImport(item.id)
+    blockDetailsItem.value = null
     await refreshQueue()
   } catch (err) {
     errorTracking.captureException(err as Error, {
@@ -1152,11 +1212,32 @@ onUnmounted(() => {
 }
 
 /* Status badges */
-.status-detail {
-  margin: 0.25rem 0 0;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--text-secondary, #9aa0a6);
+.status-badge-actionable {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-badge-actionable:hover,
+.status-badge-actionable:focus-visible {
+  filter: brightness(1.25);
+}
+
+.status-badge-hint {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.block-reason-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
