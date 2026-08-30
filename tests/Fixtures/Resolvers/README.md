@@ -25,8 +25,12 @@ No key, no CAPTCHA. JSON, so no HTML parsing.
 | Purpose | Request |
 |---|---|
 | Search | `GET https://nzbindex.nl/api/search?q=<term>&size=<n>` |
+| Download one NZB | `GET https://nzbindex.nl/download/<id>.nzb` |
 | Groups | `GET https://nzbindex.nl/api/groups` |
 | Session | `GET https://nzbindex.nl/api/auth/session` |
+
+The download path has no `/api` prefix and the `.nzb` suffix is required —
+`/api/download/<id>`, `/api/nzb/<id>` and `/api/nzb?ids=<id>` all 404.
 
 `size` is required in practice: without it the response comes back with
 `page.size: 0` and an empty `content` array rather than a default page.
@@ -49,9 +53,13 @@ No key, no CAPTCHA. JSON, so no HTML parsing.
 spent rather than at extraction. `size` is bytes and `posted` is epoch seconds, so neither
 needs the unit-guessing the abook.link NFO does.
 
-**Its NZB download endpoint is not known.** `/api/download/<id>`, `/api/nzb/<id>` and
-`/api/nzb?ids=<id>` all 404. Rather than guess further, retrieval currently goes through
-Binsearch, which is verified and indexes the same articles.
+The search page also exposes filters worth using rather than reimplementing: poster,
+groups, min/max size, min/max age, sort order, and a **Complete collections** toggle that
+does server-side what our own `complete` check would do client-side.
+
+Its **bulk** download (Select all + Download) is JS-driven, so its request shape was not
+captured. Multi-part assembly therefore goes through Binsearch's `/nzb`, which is
+verified and takes the same ids base64-encoded.
 
 ## Binsearch — verified
 
