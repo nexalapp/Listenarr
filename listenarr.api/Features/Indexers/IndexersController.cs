@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Api.Attributes;
+using Listenarr.Application.Search.AbookLink;
 using Listenarr.Api.Dtos;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -31,6 +32,7 @@ namespace Listenarr.Api.Features.Indexers
         private readonly IIndexerRepository _indexerRepository;
         private readonly ILogger<IndexersController> _logger;
         private readonly IConfigurationService _configurationService;
+        private readonly ISecretProtector _secretProtector;
         private readonly IndexerTestWorkflow _indexerTestWorkflow;
         private readonly ProwlarrIndexerImportWorkflow _prowlarrImportWorkflow;
         private readonly IndexerDebugSearchWorkflow _debugSearchWorkflow;
@@ -41,6 +43,7 @@ namespace Listenarr.Api.Features.Indexers
             ILogger<IndexersController> logger,
             HttpClient httpClient,
             IConfigurationService configurationService,
+            ISecretProtector secretProtector,
             IndexerTestWorkflow? indexerTestWorkflow = null,
             ProwlarrIndexerImportWorkflow? prowlarrImportWorkflow = null,
             IndexerDebugSearchWorkflow? debugSearchWorkflow = null)
@@ -48,6 +51,7 @@ namespace Listenarr.Api.Features.Indexers
             _indexerRepository = indexerRepository;
             _logger = logger;
             _configurationService = configurationService;
+            _secretProtector = secretProtector;
             _indexerTestWorkflow = indexerTestWorkflow ?? new IndexerTestWorkflow(
                 indexerRepository,
                 httpClient,
@@ -217,6 +221,8 @@ namespace Listenarr.Api.Features.Indexers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Indexer indexer)
         {
+            indexer.AdditionalSettings = AbookSecretProtection.Protect(
+                indexer.AdditionalSettings, _secretProtector.Protect, _secretProtector.Unprotect);
             indexer.CreatedAt = DateTime.UtcNow;
             indexer.UpdatedAt = DateTime.UtcNow;
 
@@ -294,7 +300,10 @@ namespace Listenarr.Api.Features.Indexers
             existing.MinimumAge = indexer.MinimumAge;
             existing.Retention = indexer.Retention;
             existing.MaximumSize = indexer.MaximumSize;
-            existing.AdditionalSettings = ApiResponseRedactor.MergeAdditionalSettings(existing.AdditionalSettings, indexer.AdditionalSettings);
+            existing.AdditionalSettings = AbookSecretProtection.Protect(
+                ApiResponseRedactor.MergeAdditionalSettings(existing.AdditionalSettings, indexer.AdditionalSettings),
+                _secretProtector.Protect,
+                _secretProtector.Unprotect);
             existing.UpdatedAt = DateTime.UtcNow;
 
             await _indexerRepository.UpdateAsync(existing);

@@ -30,28 +30,36 @@ namespace Listenarr.Infrastructure.Search.AbookLink
     public class AbookLinkBrowser : IAbookLinkBrowser
     {
         private readonly AbookLinkClient _client;
+        private readonly AbookLinkSession _session;
         private readonly IIndexerRepository _indexers;
+        private readonly ISecretProtector _secrets;
         private readonly ILogger<AbookLinkBrowser> _logger;
 
         public AbookLinkBrowser(
             AbookLinkClient client,
+            AbookLinkSession session,
             IIndexerRepository indexers,
+            ISecretProtector secrets,
             ILogger<AbookLinkBrowser> logger)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
+            _session = session ?? throw new ArgumentNullException(nameof(session));
             _indexers = indexers ?? throw new ArgumentNullException(nameof(indexers));
+            _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task<AbookBrowseResult> SearchAsync(string query, int inspect, CancellationToken ct = default)
         {
-            var cookie = await ResolveCookieAsync(ct);
-            if (cookie is null)
+            var credentials = await ResolveCredentialsAsync(ct);
+            if (credentials is null || !credentials.HasAnything)
             {
-                return Failed("No abook.link source is configured with a session cookie.");
+                return Failed("No abook.link source is configured. Add a username and password in its settings.");
             }
 
-            var response = await _client.SearchAsync(cookie, query, ct);
+            var response = await WithSessionAsync(credentials,
+                cookie => _client.SearchAsync(cookie, query, ct), ct);
+
             if (!response.Succeeded)
             {
                 return Failed(response.Reason ?? "abook.link search failed.");
@@ -65,7 +73,8 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             {
                 ct.ThrowIfCancellationRequested();
 
-                var topic = await _client.GetTopicAsync(cookie, hit.TopicId, ct);
+                var topic = await WithSessionAsync(credentials,
+                    cookie => _client.GetTopicAsync(cookie, hit.TopicId, ct), ct);
                 if (!topic.Succeeded)
                 {
                     _logger.LogDebug("Could not read topic {TopicId}: {Reason}", hit.TopicId, topic.Reason);
@@ -82,13 +91,14 @@ namespace Listenarr.Infrastructure.Search.AbookLink
 
         public async Task<AbookBrowseResult> GetTopicAsync(int topicId, CancellationToken ct = default)
         {
-            var cookie = await ResolveCookieAsync(ct);
-            if (cookie is null)
+            var credentials = await ResolveCredentialsAsync(ct);
+            if (credentials is null || !credentials.HasAnything)
             {
-                return Failed("No abook.link source is configured with a session cookie.");
+                return Failed("No abook.link source is configured. Add a username and password in its settings.");
             }
 
-            var topic = await _client.GetTopicAsync(cookie, topicId, ct);
+            var topic = await WithSessionAsync(credentials,
+                cookie => _client.GetTopicAsync(cookie, topicId, ct), ct);
             if (!topic.Succeeded)
             {
                 return Failed(topic.Reason ?? "abook.link topic could not be read.");
@@ -131,14 +141,45 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             return separator >= 0 ? title[(separator + 3)..] : title;
         }
 
-        private async Task<string?> ResolveCookieAsync(CancellationToken ct)
+        /// <summary>
+        /// Runs a request with a session, signing in again once if the forum shows a
+        /// logged-out page. An expired session then recovers by itself rather than
+        /// surfacing as a failure the operator has to act on.
+        /// </summary>
+        private async Task<AbookResponse> WithSessionAsync(
+            AbookCredentials credentials,
+            Func<string, Task<AbookResponse>> request,
+            CancellationToken ct)
+        {
+            var signIn = await _session.GetCookieAsync(credentials, forceRefresh: false, ct);
+            if (!signIn.Succeeded || signIn.Cookie is null)
+            {
+                return new AbookResponse(false, null, false, signIn.Reason);
+            }
+
+            var response = await request(signIn.Cookie);
+            if (response.SignedIn || !credentials.CanSignIn)
+            {
+                return response;
+            }
+
+            _logger.LogInformation("abook.link session expired; signing in again");
+            AbookLinkSession.Invalidate(credentials);
+
+            var renewed = await _session.GetCookieAsync(credentials, forceRefresh: true, ct);
+            return renewed.Succeeded && renewed.Cookie is not null
+                ? await request(renewed.Cookie)
+                : new AbookResponse(false, null, false, renewed.Reason);
+        }
+
+        private async Task<AbookCredentials?> ResolveCredentialsAsync(CancellationToken ct)
         {
             foreach (var indexer in await _indexers.GetAllAsync(ct))
             {
-                var cookie = AbookLinkSettings.TryGetSessionCookie(indexer.AdditionalSettings);
-                if (cookie is { Length: > 0 })
+                var credentials = AbookLinkSettings.Read(indexer.AdditionalSettings, _secrets.Unprotect);
+                if (credentials.HasAnything)
                 {
-                    return cookie;
+                    return credentials;
                 }
             }
 

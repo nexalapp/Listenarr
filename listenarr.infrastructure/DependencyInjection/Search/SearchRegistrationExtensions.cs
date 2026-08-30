@@ -46,6 +46,7 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<INzbResolverChain, NzbResolverChain>();
 
         services.AddScoped<AbookLinkClient>();
+        services.AddScoped<AbookLinkSession>();
         services.AddScoped<IAbookLinkBrowser, AbookLinkBrowser>();
         services.TryAddSingleton(TimeProvider.System);
         return services;

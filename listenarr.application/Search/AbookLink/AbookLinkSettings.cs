@@ -19,21 +19,76 @@ using System.Text.Json;
 
 namespace Listenarr.Application.Search.AbookLink
 {
+    /// <summary>What an abook.link source is configured with.</summary>
+    /// <param name="Username">Forum account name.</param>
+    /// <param name="Password">Forum password, decrypted and ready to use.</param>
+    /// <param name="SessionCookie">
+    /// A cookie supplied directly, for anyone who would rather not store a password.
+    /// Used in preference to logging in when present.
+    /// </param>
+    public sealed record AbookCredentials(string? Username, string? Password, string? SessionCookie)
+    {
+        public bool CanSignIn => Username is { Length: > 0 } && Password is { Length: > 0 };
+
+        public bool HasAnything => CanSignIn || SessionCookie is { Length: > 0 };
+    }
+
     /// <summary>
     /// Reads abook.link configuration from an indexer's AdditionalSettings JSON.
+    ///
+    /// Two ways in: a username and password, which Listenarr uses to sign in and keep a
+    /// session; or a session cookie pasted directly, for anyone who would rather the
+    /// application never held their password. The cookie wins when both are present.
+    ///
+    /// Both secret property names contain a substring
+    /// <c>ApiResponseRedactor.IsSensitiveKey</c> matches, so neither is ever echoed back
+    /// over the API, and its merge step restores the stored value when a redacted
+    /// placeholder is saved.
     /// </summary>
     public static class AbookLinkSettings
     {
-        /// <summary>
-        /// Property holding the forum session cookie.
-        ///
-        /// A session value rather than a password, following the MyAnonamouse precedent —
-        /// Listenarr never needs to hold forum credentials. The name contains "cookie" so
-        /// ApiResponseRedactor.IsSensitiveKey redacts it from API responses automatically.
-        /// </summary>
+        public const string UsernameProperty = "abook_username";
+        public const string PasswordProperty = "abook_password";
         public const string SessionCookieProperty = "abook_session_cookie";
 
-        public static string? TryGetSessionCookie(string? additionalSettings)
+        /// <summary>
+        /// Reads the credentials. <paramref name="unprotect"/> decrypts the stored
+        /// password; a value that fails to decrypt is treated as absent rather than passed
+        /// through, since sending ciphertext as a password would just fail confusingly.
+        /// </summary>
+        public static AbookCredentials Read(string? additionalSettings, Func<string, string>? unprotect = null)
+        {
+            var username = ReadProperty(additionalSettings, UsernameProperty);
+            var cookie = ReadProperty(additionalSettings, SessionCookieProperty);
+            var stored = ReadProperty(additionalSettings, PasswordProperty);
+
+            string? password = null;
+            if (stored is { Length: > 0 })
+            {
+                if (unprotect is null)
+                {
+                    password = stored;
+                }
+                else
+                {
+                    try
+                    {
+                        password = unprotect(stored);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        password = null;
+                    }
+                }
+            }
+
+            return new AbookCredentials(username, password, cookie);
+        }
+
+        public static string? TryGetSessionCookie(string? additionalSettings) =>
+            ReadProperty(additionalSettings, SessionCookieProperty);
+
+        private static string? ReadProperty(string? additionalSettings, string property)
         {
             if (string.IsNullOrWhiteSpace(additionalSettings))
             {
@@ -44,14 +99,14 @@ namespace Listenarr.Application.Search.AbookLink
             {
                 using var document = JsonDocument.Parse(additionalSettings);
                 if (document.RootElement.ValueKind != JsonValueKind.Object
-                    || !document.RootElement.TryGetProperty(SessionCookieProperty, out var value)
+                    || !document.RootElement.TryGetProperty(property, out var value)
                     || value.ValueKind != JsonValueKind.String)
                 {
                     return null;
                 }
 
-                var cookie = value.GetString();
-                return string.IsNullOrWhiteSpace(cookie) ? null : cookie.Trim();
+                var text = value.GetString();
+                return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
             }
             catch (JsonException)
             {

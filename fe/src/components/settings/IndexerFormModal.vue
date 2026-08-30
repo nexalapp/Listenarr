@@ -56,6 +56,7 @@
                 <option value="Torznab">Torznab</option>
                 <option value="MyAnonamouse">MyAnonamouse</option>
                 <option value="InternetArchive">Internet Archive</option>
+                <option value="AbookLink">abook.link</option>
                 <option value="Custom">Custom</option>
               </select>
             </FormRow>
@@ -84,6 +85,51 @@
             </FormRow>
 
             <!-- MyAnonamouse Authentication & Options -->
+            <div v-if="formData.implementation === 'AbookLink'" class="form-section">
+              <h4>abook.link Settings</h4>
+              <FormRow label="Username *" labelFor="abook-username">
+                <input
+                  id="abook-username"
+                  v-model="abookUsername"
+                  type="text"
+                  autocomplete="off"
+                  :required="formData.implementation === 'AbookLink'"
+                  placeholder="Your abook.link forum username"
+                />
+              </FormRow>
+              <FormRow label="Password *" labelFor="abook-password">
+                <input
+                  id="abook-password"
+                  v-model="abookPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  :required="formData.implementation === 'AbookLink'"
+                  placeholder="Your abook.link forum password"
+                />
+              </FormRow>
+              <small class="info-text">
+                <PhInfo />
+                Listenarr signs in once and keeps the session, so it only needs your password when
+                the session expires. It is encrypted before it is stored and is never sent back to
+                this page.
+              </small>
+              <FormRow label="NZBKing API key" labelFor="abook-nzbking-key">
+                <input
+                  id="abook-nzbking-key"
+                  v-model="abookNzbKingApiKey"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Optional"
+                />
+              </FormRow>
+              <small class="info-text">
+                <PhInfo />
+                Optional. Releases are looked up on NZBIndex and Binsearch first, which are free.
+                NZBKing is only asked when those have nothing, and it allows about 100 lookups
+                before it needs a new key.
+              </small>
+            </div>
+
             <div v-if="formData.implementation === 'MyAnonamouse'" class="form-section">
               <h4>MyAnonamouse Settings</h4>
               <FormRow label="MAM ID *" labelFor="mam-id">
@@ -338,6 +384,12 @@ const mamEnrichTopResults = ref(3)
 // Internet Archive collection field
 const iaCollection = ref('librivoxaudio')
 
+// abook.link credentials. The password is write-only: the API redacts it, so an
+// untouched field must not overwrite what is stored.
+const abookUsername = ref('')
+const abookPassword = ref('')
+const abookNzbKingApiKey = ref('')
+
 const defaultFormData = {
   name: '',
   type: 'Torrent',
@@ -378,6 +430,19 @@ const buildIndexerPayload = (): IndexerPayload => {
     }
     payload.additionalSettings = JSON.stringify({ mam_id: mamId.value, mam_options: mamOpts })
     payload.apiKey = ''
+  } else if (payload.implementation === 'AbookLink') {
+    payload.additionalSettings = JSON.stringify({
+      abook_username: abookUsername.value,
+      abook_password: abookPassword.value,
+      nzbking_api_key: abookNzbKingApiKey.value || undefined,
+    })
+    payload.apiKey = ''
+    payload.url = 'https://abook.link'
+    payload.categories = ''
+    // Interactive only by default: automatic search would poll every wanted book,
+    // and each grab posts a public thanks on the configured forum account.
+    payload.enableRss = false
+    payload.enableAutomaticSearch = false
   } else if (payload.implementation === 'InternetArchive') {
     payload.additionalSettings = JSON.stringify({ collection: iaCollection.value })
     payload.apiKey = ''
@@ -452,6 +517,21 @@ watch(
         }
       }
 
+      // Parse abook.link settings from additionalSettings
+      if (newIndexer.implementation === 'AbookLink' && newIndexer.additionalSettings) {
+        try {
+          const settings = JSON.parse(newIndexer.additionalSettings)
+          abookUsername.value = settings.abook_username || ''
+          // Left blank on purpose: the API returns a redacted placeholder, and showing
+          // it would invite saving the placeholder over the real password.
+          abookPassword.value = ''
+          abookNzbKingApiKey.value = ''
+        } catch (e) {
+          console.error('Failed to parse abook.link settings:', e)
+          abookUsername.value = ''
+        }
+      }
+
       // Parse Internet Archive collection from additionalSettings
       if (newIndexer.implementation === 'InternetArchive' && newIndexer.additionalSettings) {
         try {
@@ -466,6 +546,9 @@ watch(
       formData.value = { ...defaultFormData }
       mamId.value = ''
       iaCollection.value = 'librivoxaudio'
+      abookUsername.value = ''
+      abookPassword.value = ''
+      abookNzbKingApiKey.value = ''
     }
   },
   { immediate: true },
@@ -480,7 +563,10 @@ watch(
       formData.value.type = 'Usenet'
     }
     // MyAnonamouse is torrent only
-    else if (newImplementation === 'MyAnonamouse') {
+    else if (newImplementation === 'AbookLink') {
+      formData.value.type = 'Usenet'
+      formData.value.url = 'https://abook.link'
+    } else if (newImplementation === 'MyAnonamouse') {
       formData.value.type = 'Torrent'
       // Set default URL for MyAnonamouse
       formData.value.url = 'https://www.myanonamouse.net'

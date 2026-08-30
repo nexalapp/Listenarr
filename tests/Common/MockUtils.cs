@@ -154,7 +154,8 @@ namespace Listenarr.Tests.Common
                 provider.GetRequiredService<IIndexerRepository>(),
                 provider.GetRequiredService<ILogger<IndexersController>>(),
                 new HttpClient(handler),
-                provider.GetRequiredService<IConfigurationService>());
+                provider.GetRequiredService<IConfigurationService>(),
+                provider.GetRequiredService<ISecretProtector>());
         }
     }
 }
