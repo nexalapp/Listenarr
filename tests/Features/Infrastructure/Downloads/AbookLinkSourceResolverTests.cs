@@ -14,8 +14,11 @@ public sealed class AbookLinkSourceResolverTests : BaseTests
             Mock.Of<INzbFileDownloader>(),
             Mock.Of<ILogger<AbookLinkSourceResolver>>());
 
-    private static TrustedDownloadCandidate Candidate(string implementation) => new(
-        Id: "abook:1",
+    private static TrustedDownloadCandidate Candidate(
+        string implementation,
+        string id = "abook:119599",
+        string releaseId = "abook:119599") => new(
+        Id: id,
         Title: "A Book",
         Artist: "An Author",
         Album: "A Book",
@@ -26,7 +29,7 @@ public sealed class AbookLinkSourceResolverTests : BaseTests
         Seeders: 0,
         SourceDescriptor: new DownloadSourceDescriptor(
             Protocol: DownloadProtocol.Usenet,
-            Locators: [new DownloadSourceLocator(DownloadSourceLocatorKind.ReleaseId, "1")],
+            Locators: [new DownloadSourceLocator(DownloadSourceLocatorKind.ReleaseId, releaseId)],
             IndexerId: 1,
             IndexerImplementation: implementation,
             FileName: null));
@@ -41,8 +44,29 @@ public sealed class AbookLinkSourceResolverTests : BaseTests
     [Fact]
     public void ItLeavesOtherSourcesAlone()
     {
-        Assert.False(Resolver().CanResolve(Candidate("Newznab")));
-        Assert.False(Resolver().CanResolve(Candidate("MyAnonamouse")));
+        Assert.False(Resolver().CanResolve(Candidate("Newznab", id: "abc", releaseId: "abc")));
+        Assert.False(Resolver().CanResolve(Candidate("MyAnonamouse", id: "123", releaseId: "123")));
+    }
+
+    [Fact]
+    public void ItClaimsByIdPrefixWhenTheImplementationNameDidNotSurvive()
+    {
+        // The implementation name has to round trip through a search response and an
+        // encrypted download reference. When it did not, the generic usenet resolver took
+        // the candidate and rejected it for having no NZB locator - the failure seen the
+        // first time a result was grabbed from the interactive list.
+        var candidate = Candidate(implementation: string.Empty);
+
+        Assert.True(Resolver().CanResolve(candidate));
+        Assert.Equal(119599, AbookLinkSourceResolver.TryReadTopicId(candidate));
+    }
+
+    [Fact]
+    public void ThePrefixIsStrippedFromTheTopicId()
+    {
+        // Results are identified as abook:<topicId>, so parsing the id as a bare number
+        // fails - which it did, silently, behind the claiming bug.
+        Assert.Equal(119599, AbookLinkSourceResolver.TryReadTopicId(Candidate("AbookLink")));
     }
 
     [Fact]

@@ -72,6 +72,8 @@ namespace Listenarr.Api.Features.Downloads
         [HttpPost("send")]
         public async Task<ActionResult<string>> SendToDownloadClient([FromBody] SendDownloadRequest request)
         {
+            var protocol = DownloadProtocol.Unknown;
+
             try
             {
                 _logger.LogInformation("=== SendToDownloadClient RECEIVED REQUEST ===");
@@ -83,6 +85,7 @@ namespace Listenarr.Api.Features.Downloads
                 }
 
                 var candidate = _downloadReferenceService.Read(request.DownloadReference);
+                protocol = candidate.SourceDescriptor.Protocol;
                 _logger.LogInformation("Title: {Title}", LogRedaction.SanitizeText(candidate.Title));
                 _logger.LogInformation("Protocol: {Protocol}", candidate.SourceDescriptor.Protocol);
                 _logger.LogInformation("Source: {Source}", LogRedaction.SanitizeText(candidate.Source));
@@ -112,7 +115,10 @@ namespace Listenarr.Api.Features.Downloads
                 _logger.LogWarning(ex, "Download client submission failed");
                 return StatusCode(StatusCodes.Status502BadGateway, new
                 {
-                    message = "Failed to send torrent to download client",
+                    // Named for the protocol rather than assuming torrent: this text
+                    // reached an operator as "failed to send torrent" for a usenet grab,
+                    // and sent the diagnosis in the wrong direction.
+                    message = $"Failed to send {protocol.ToString().ToLowerInvariant()} to download client",
                     error = ex.Message
                 });
             }

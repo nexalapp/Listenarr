@@ -32,6 +32,9 @@ namespace Listenarr.Infrastructure.Downloads.Submission
     /// </summary>
     public sealed class AbookLinkSourceResolver : IDownloadSourceResolver
     {
+        /// <summary>How abook.link search results identify themselves.</summary>
+        internal const string IdPrefix = "abook:";
+
         private readonly IAbookGrabResolver _grabs;
         private readonly INzbFileDownloader _downloader;
         private readonly ILogger<AbookLinkSourceResolver> _logger;
@@ -52,23 +55,29 @@ namespace Listenarr.Infrastructure.Downloads.Submission
         /// </summary>
         public int Priority => 90;
 
+        /// <summary>
+        /// Claims a candidate either by its indexer implementation or by the prefix on its
+        /// release id.
+        ///
+        /// The id prefix is the reliable half: the implementation name has to survive a
+        /// round trip through a search response and an encrypted download reference, and
+        /// when it does not the generic usenet resolver picks the candidate up and rejects
+        /// it for having no NZB locator - which is what happened the first time a result
+        /// was grabbed from the interactive list.
+        /// </summary>
         public bool CanResolve(TrustedDownloadCandidate candidate)
             => string.Equals(
-                candidate.SourceDescriptor.IndexerImplementation,
-                "AbookLink",
-                StringComparison.OrdinalIgnoreCase);
+                   candidate.SourceDescriptor.IndexerImplementation,
+                   "AbookLink",
+                   StringComparison.OrdinalIgnoreCase)
+               || TryReadTopicId(candidate) is not null;
 
         public async Task<PreparedDownloadSubmission> ResolveAsync(
             TrustedDownloadCandidate candidate,
             string? provisionalDownloadId,
             CancellationToken cancellationToken)
         {
-            var reference = candidate.SourceDescriptor.Locators
-                .FirstOrDefault(locator => locator.Kind == DownloadSourceLocatorKind.ReleaseId)?.Value
-                ?? candidate.SourceDescriptor.Locators
-                    .FirstOrDefault(locator => locator.Kind == DownloadSourceLocatorKind.NzbUrl)?.Value;
-
-            if (!int.TryParse(reference, out var topicId))
+            if (TryReadTopicId(candidate) is not { } topicId)
             {
                 throw new DownloadClientSubmissionException(
                     "This abook.link result carries no topic reference, so there is nothing to grab.");
@@ -105,6 +114,36 @@ namespace Listenarr.Infrastructure.Downloads.Submission
                 bytes,
                 $"{SanitizeFileName(candidate.Title)}.nzb",
                 grab.Password);
+        }
+
+        /// <summary>
+        /// Reads the topic id from the candidate. Search results are identified as
+        /// <c>abook:&lt;topicId&gt;</c>, which is what makes them recognisable here without
+        /// relying on any other field.
+        /// </summary>
+        internal static int? TryReadTopicId(TrustedDownloadCandidate candidate)
+        {
+            foreach (var value in candidate.SourceDescriptor.Locators
+                         .Where(locator => locator.Kind == DownloadSourceLocatorKind.ReleaseId)
+                         .Select(locator => locator.Value)
+                         .Append(candidate.Id))
+            {
+                if (value is not { Length: > 0 })
+                {
+                    continue;
+                }
+
+                var text = value.StartsWith(IdPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? value[IdPrefix.Length..]
+                    : null;
+
+                if (text is not null && int.TryParse(text, out var topicId))
+                {
+                    return topicId;
+                }
+            }
+
+            return null;
         }
 
         private static string SanitizeFileName(string value)
