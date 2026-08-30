@@ -1,0 +1,74 @@
+# Real abook.link topic titles, captured from board listings, search results and
+# related-topic panels. Unlabelled on purpose: the harness scores how often the parser
+# extracts a usable author and title, which is the metric we care about. Correctness
+# against hand-labelled values is asserted separately in AbookTopicTitleTests.
+#
+# Lines starting with # are comments.
+
+Stephanie Foxe - Cursed World 05 - Misfit Alpha (2021)
+Stephanie Foxe - Cursed World 04 - Misfit Hunt (2020)
+Stephanie Foxe - Cursed World Box Set: Books 1-3 (2020)
+Actus - Morcster Chef - Morcster Chef: A LitRPG Complete Series Bundle (2024)
+Sierra Simone - Thornchapel 04 - Door of Bruises (2021)
+Sierra Simone - Thornchapel 01 - A Lesson in Thorns (2019)
+Robert Bevan - Caverns and Creatures 10 - Critical Failures X (2025)
+Michelle Kulwicki - The Labyrinth of Waking Dreams (2026)
+Mark Henwick - Bite Back 08 - Snake Eyes (2025)
+L.B. August - In the Shadows (2026)
+Jamie Davis - Broken Throne 01 - The Charm Runner (2019)
+April Genevieve Tucholke - Between 02 - Between the Spark and the Burn (2022)
+Leena Kazak - Between Tides & Thunder (2026)
+Marilyn Ross - Dark Shadows 05 - The Curse of Collinwood (2019)
+T. Kingfisher - Swordheart 02 - Daggerbound (2026)
+Suzanne Wright - Black Willow Witch (2025)
+Brandon Sanderson - Mistborn 03 - The Hero of Ages (2008) (64k)
+Brandon Sanderson - The Mistborn Saga Book 7 - The Lost Metal (2022)
+Brandon Sanderson, Peter Orullian - Strata Wars Book 1: Songs of the Dead (2026)
+Steph Marie, Bobbie Rayne - Brotherhood of Ormarr 03 - Eeli (2026)
+Ann-Katrin Byrde - Second Chances 01 - Mating of Convenience (2019)
+E. B. Sledge - With the Old Breed: At Peleliu and Okinawa (2010)
+W. Henry Sledge - The Old Breed... The Complete Story Revealed: A Father, a Son, and How WWII in the Pacific Shaped Their Lives (2025)
+Michael Stanislawski - Zionism: A Very Short Introduction (2026)
+Siang Lu - Ghost Cities (2026)
+Nicholas P. Money - Microbiology: A Very Short Introduction (2026)
+Rowland White - Mosquito (2023)
+Guy Walters - Stealing Hitler's Rocket (2026)
+Al Murray - Arnhem: Black Tuesday: The Classic World War II Battle Told As Never Before (2024)
+Philip K. Dick - The Broken Bubble (2026)
+Lena Gibson - Train Hoppers 01 - Switching Tracks_Out of the Trash (2024)
+Landon Bunderson - Hairy God (2026)
+Robert Bryndza - The Coco Pinchard Boxset (2024)
+E.L. Westbury - Drowning in Paper Flowers (2026)
+Chanel Cleeton - An Infinite Love Story (2026)
+Fred Provenza - Nourishment (2022)
+Aaron Renfroe - Resonance Cycle 02 - Theater of War (2023)
+Aaron Renfroe - Father of Constructs Book 2 - Master of Steel (2024)
+Rachel Ford - Time Traveling Taxman Book 1 - T-Rexes and Tax Law (2019)
+A.G. Riddle - Labyrinth (2025)
+Buddy Levy - Labyrinth of Ice (2019)
+Fuyumi Ono - The Twelve Kingdoms 03 - Sea of Wind, Shore of the Labyrinth (2026)
+Robert Evert - The Riddle in Stone 01 - Riddle in Stone (2013)
+Always RollsAOne - A Soldier's Life 3 - The Shimmering Labyrinth (2025)
+Troy Osgood - Sky Realms Online Book 1 - Sky Realms Online: Grayhold: A LitRPG Adventure (2019)
+adastra339 - Speedrunning the Multiverse Series Book 3 - Speedrunning the Multiverse 3 (2024)
+Kait Nolan - Misfit Inn 01 - When You Got A Good Thing (2021)
+Stephanie J.L. Seed - Colour of Shadows 01 - Princess Cursed (2019)
+Arthur Stone - Alpha LitRPG Book 1 - Alpha Zero (2021)
+Talia Hibbert - Get a Life, Chloe Brown: A Novel (2019) The Brown Sisters #01
+Rachel Aaron - Part-Time Gods (2019) Detroit Free Zone (DFZ), Book 2
+Bruce X Brown - Czarzakian Multiverse Online 01 - Lost Portals (2019) {Price}
+Michael Buckley - Finniverse - Finn and the Time-Traveling Pajamas (2021)
+Ross Welford - Time Traveling with a Hamster (2016)
+Will Iredale - Churchill’s Pirates (2026)
+The Economist Audio Edition
+[SPOT] Charles Lewis Fontenay - Rebels of the Red Planet (2014)
+[SPOT] Annelise Ryan ? Mattie Winston COZY Mystery 07 ? Stiff Competition (2016)
+[SPOT] John Foxe ? Foxe?s Book of Martyrs (1563) aka Actes and Monuments
+[SPOT] Daniel Schinhofen - Alpha World 03 - Alpha Company (2017)
+[SPOT] [Spotted] Brandon Sanderson - Mistborn, 05 - Shadows of Self
+[SPOT] Dale Brown - (Patrick McLanahan-21) (2017) Price of Duty
+[REQUEST] Stephanie Foxe - Cursed World 05 - Misfit Alpha (2021)
+[REQUEST] Robert Bevan - Critical Failures X (2025)
+[FILLED] S.A. Cosby - Blacktop Wasteland (2020)
+[FILLED] Ann-Katrin Byrde - Second Chances #1 - Mating of Convenience (2019)
+[Reading Order] Mark Henwick - Bite Back
