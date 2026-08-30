@@ -63,6 +63,22 @@ namespace Listenarr.Api.Features.AbookLink
         public List<AbookResolverAttemptResponse> Attempts { get; set; } = new();
     }
 
+    public sealed class AbookSendResponse
+    {
+        public int TopicId { get; set; }
+        public bool Succeeded { get; set; }
+        public string Stage { get; set; } = string.Empty;
+        public string Detail { get; set; } = string.Empty;
+        public bool Thanked { get; set; }
+        public bool Sent { get; set; }
+        public string? ClientName { get; set; }
+        public string? DownloadId { get; set; }
+        public bool PasswordSent { get; set; }
+        public string? SendDetail { get; set; }
+        public AbookCandidateResponse? Book { get; set; }
+        public List<AbookResolverAttemptResponse> Attempts { get; set; } = new();
+    }
+
     public sealed class AbookSearchResponse
     {
         public string Query { get; set; } = string.Empty;
@@ -91,15 +107,18 @@ namespace Listenarr.Api.Features.AbookLink
 
         private readonly IAbookLinkBrowser _browser;
         private readonly IAbookGrabResolver _grabs;
+        private readonly IAbookGrabDispatcher _dispatcher;
         private readonly ILogger<AbookLinkController> _logger;
 
         public AbookLinkController(
             IAbookLinkBrowser browser,
             IAbookGrabResolver grabs,
+            IAbookGrabDispatcher dispatcher,
             ILogger<AbookLinkController> logger)
         {
             _browser = browser;
             _grabs = grabs;
+            _dispatcher = dispatcher;
             _logger = logger;
         }
 
@@ -174,6 +193,50 @@ namespace Listenarr.Api.Features.AbookLink
                 HasPassword = result.Password is { Length: > 0 },
                 Book = result.Post is null ? null : Map(new AbookCandidate(topicId, string.Empty, result.Post)),
                 Attempts = result.Resolution?.Attempts.Select(attempt => new AbookResolverAttemptResponse
+                {
+                    Resolver = attempt.Resolver,
+                    Succeeded = attempt.Succeeded,
+                    Failure = attempt.Failure?.ToString(),
+                    Detail = attempt.Detail,
+                    CandidateCount = attempt.Candidates?.Count ?? 0
+                }).ToList() ?? []
+            });
+        }
+
+        /// <summary>
+        /// Resolves a topic and queues it on a download client.
+        ///
+        /// Posts a thanks to abook.link and starts a download, so it is deliberately a
+        /// separate call from resolve: seeing what a grab would do should not require
+        /// doing it.
+        /// </summary>
+        [HttpPost("grab/{topicId:int}")]
+        [ProducesResponseType(typeof(AbookSendResponse), StatusCodes.Status200OK)]
+        public async Task<ActionResult<AbookSendResponse>> Grab(
+            int topicId,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await _dispatcher.GrabAsync(topicId, cancellationToken);
+            var grab = result.Grab;
+
+            _logger.LogInformation(
+                "abook.link grab for topic {TopicId}: stage {Stage}, sent {Sent}",
+                topicId, grab.Stage, result.Sent);
+
+            return Ok(new AbookSendResponse
+            {
+                TopicId = grab.TopicId,
+                Succeeded = grab.Succeeded && result.Sent,
+                Stage = result.Sent ? "Queued" : grab.Stage,
+                Detail = result.SendDetail ?? grab.Detail,
+                Thanked = grab.Thanked,
+                Sent = result.Sent,
+                ClientName = result.ClientName,
+                DownloadId = result.DownloadId,
+                PasswordSent = result.PasswordSent,
+                SendDetail = result.SendDetail,
+                Book = grab.Post is null ? null : Map(new AbookCandidate(topicId, string.Empty, grab.Post)),
+                Attempts = grab.Resolution?.Attempts.Select(attempt => new AbookResolverAttemptResponse
                 {
                     Resolver = attempt.Resolver,
                     Succeeded = attempt.Succeeded,

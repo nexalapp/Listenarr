@@ -20,7 +20,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
 {
     internal static class SabnzbdAddRequestPlanner
     {
-        public static Dictionary<string, string> BuildQueryParams(DownloadClientConfiguration client, SearchResult result, string nzbUrl)
+        public static Dictionary<string, string> BuildQueryParams(
+            DownloadClientConfiguration client,
+            SearchResult result,
+            string nzbUrl,
+            string? password = null)
         {
             var queryParams = new Dictionary<string, string>
             {
@@ -29,6 +33,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
                 { "output", "json" },
                 { "nzbname", result.Title }
             };
+
+            // SABnzbd takes the archive password as its own parameter. Encoding it in
+            // nzbname as name{{password}} also works but puts the password in the queue
+            // display and in logs.
+            if (password is { Length: > 0 })
+            {
+                queryParams["password"] = password;
+            }
 
             if (client.Settings != null && client.Settings.TryGetValue("recentPriority", out var priorityObj))
             {
@@ -52,7 +64,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
 
         public static Dictionary<string, string> BuildFileQueryParams(
             DownloadClientConfiguration client,
-            string title)
+            string title,
+            string? password = null)
         {
             var queryParams = new Dictionary<string, string>
             {
@@ -61,6 +74,11 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
                 ["nzbname"] = title,
                 ["cat"] = ResolveCategory(client)
             };
+
+            if (password is { Length: > 0 })
+            {
+                queryParams["password"] = password;
+            }
 
             if (client.Settings != null &&
                 client.Settings.TryGetValue("recentPriority", out var priorityValue))

@@ -45,7 +45,26 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 
             var nzbContentBase64 = Convert.ToBase64String(submission.NzbBytes);
             var nzbFileName = submission.FileName;
-            var ppParams = Array.Empty<Dictionary<string, object>>();
+
+            // NZBGet takes an archive password as a post-processing parameter. The
+            // alternative convention encodes it in the filename as name{{password}}, which
+            // both mangles the name shown in the queue and leaks the password into logs.
+            var ppParams = submission.Password is { Length: > 0 } password
+                ? new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["Name"] = "*Unpack:Password",
+                        ["Value"] = password
+                    }
+                }
+                : Array.Empty<Dictionary<string, object>>();
+
+            if (submission.Password is { Length: > 0 })
+            {
+                logger.LogInformation("Submitting '{Title}' to NZBGet with an archive password",
+                    LogRedaction.SanitizeText(submission.Title));
+            }
 
             try
             {

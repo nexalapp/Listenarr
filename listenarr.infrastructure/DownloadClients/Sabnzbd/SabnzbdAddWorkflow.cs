@@ -36,7 +36,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Sabnzbd
                 logger.LogInformation("Sending prepared NZB to SABnzbd: {Title} from {Source}", LogRedaction.SanitizeText(usenet.Title), LogRedaction.SanitizeText(usenet.Source));
 
                 var sensitiveValues = requestBuilder.BuildSensitiveValues(requestContext);
-                var queryParams = SabnzbdAddRequestPlanner.BuildFileQueryParams(client, usenet.Title);
+                var queryParams = SabnzbdAddRequestPlanner.BuildFileQueryParams(client, usenet.Title, usenet.Password);
                 var requestUrl = requestBuilder.BuildUrl(requestContext, queryParams);
 
                 logger.LogDebug("SABnzbd request URL: {Url}", LogRedaction.RedactText(requestUrl, sensitiveValues));

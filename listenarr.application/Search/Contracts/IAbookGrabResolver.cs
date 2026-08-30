@@ -57,4 +57,21 @@ namespace Listenarr.Application.Search.Contracts
     {
         Task<AbookGrabResult> ResolveAsync(int topicId, CancellationToken ct = default);
     }
+
+    /// <summary>What happened when a resolved release was handed to a download client.</summary>
+    public sealed record AbookSendResult(
+        AbookGrabResult Grab,
+        bool Sent,
+        string? ClientName,
+        string? DownloadId,
+        bool PasswordSent,
+        string? SendDetail);
+
+    /// <summary>
+    /// Resolves a topic and queues it on a download client.
+    /// </summary>
+    public interface IAbookGrabDispatcher
+    {
+        Task<AbookSendResult> GrabAsync(int topicId, CancellationToken ct = default);
+    }
 }

@@ -58,6 +58,8 @@ internal static class SearchRegistrationExtensions
             });
         services.AddScoped<IAbookLinkBrowser, AbookLinkBrowser>();
         services.AddScoped<IAbookGrabResolver, AbookGrabResolver>();
+        services.AddScoped<AbookDownloadDispatcher>();
+        services.AddScoped<IAbookGrabDispatcher, AbookGrabDispatcher>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
