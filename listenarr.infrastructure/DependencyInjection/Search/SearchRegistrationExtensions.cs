@@ -46,7 +46,16 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<INzbResolverChain, NzbResolverChain>();
 
         services.AddScoped<AbookLinkClient>();
-        services.AddScoped<AbookLinkSession>();
+        // Its own client: the session cookie is issued on the login redirect, and a
+        // client that follows redirects discards those headers before they can be read.
+        services.AddHttpClient<AbookLinkSession>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+                UseCookies = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.All,
+                UseProxy = false
+            });
         services.AddScoped<IAbookLinkBrowser, AbookLinkBrowser>();
         services.TryAddSingleton(TimeProvider.System);
         return services;

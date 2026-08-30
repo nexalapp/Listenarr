@@ -44,6 +44,11 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         // Ask the forum for a long-lived session so signing in stays rare.
         private const string CookieLength = "3153600";
 
+        // Some forum stacks reject requests without a browser user-agent outright; the
+        // MyAnonamouse provider sets one for the same reason.
+        private const string UserAgent =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+
         private static readonly ConcurrentDictionary<string, string> Cookies = new(StringComparer.Ordinal);
 
         private readonly HttpClient _httpClient;
@@ -113,6 +118,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                 // SMF randomises the session token's field name per installation, so the
                 // login page is read first and every hidden field carried across.
                 using var formRequest = new HttpRequestMessage(HttpMethod.Get, LoginUrl);
+                formRequest.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
                 using var formResponse = await _httpClient.SendAsync(formRequest, ct);
 
                 if (!formResponse.IsSuccessStatusCode)
@@ -125,16 +131,38 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                 var fields = new Dictionary<string, string>(SmfLoginForm.ReadHiddenFields(loginHtml), StringComparer.Ordinal)
                 {
                     ["user"] = credentials.Username!,
-                    ["passwd"] = credentials.Password!,
                     ["cookielength"] = CookieLength
                 };
 
+                // SMF hashes the password in the browser and posts hash_passwrd instead of
+                // passwd. Some forums accept the plaintext fallback and this one does not,
+                // so do what the browser does: send the hash and blank the plain field.
+                var salt = SmfLoginForm.ReadPasswordHashSalt(loginHtml);
+                if (salt is { Length: > 0 })
+                {
+                    fields["hash_passwrd"] = SmfLoginForm.HashPassword(
+                        credentials.Username!, credentials.Password!, salt);
+                    fields["passwd"] = string.Empty;
+                }
+                else
+                {
+                    fields["passwd"] = credentials.Password!;
+                    fields.Remove("hash_passwrd");
+                }
+
                 var cookieJar = CollectCookies(formResponse);
 
-                using var loginRequest = new HttpRequestMessage(HttpMethod.Post, LoginPostUrl)
+                // The form's own action carries the PHP session id in its query string;
+                // posting to a constructed URL drops the session the page just started.
+                var postUrl = SmfLoginForm.ReadLoginAction(loginHtml) ?? LoginPostUrl;
+
+                using var loginRequest = new HttpRequestMessage(HttpMethod.Post, postUrl)
                 {
                     Content = new FormUrlEncodedContent(fields)
                 };
+
+                loginRequest.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+                loginRequest.Headers.TryAddWithoutValidation("Referer", LoginUrl);
 
                 if (cookieJar.Length > 0)
                 {
@@ -142,14 +170,37 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                 }
 
                 using var loginResponse = await _httpClient.SendAsync(loginRequest, ct);
-                var cookie = CollectCookies(loginResponse);
+
+                // The session arrives on the redirect response itself. A client that
+                // follows redirects automatically discards those headers before we see
+                // them, which is why this client is registered without auto-redirect.
+                var cookie = MergeCookies(cookieJar, CollectCookies(loginResponse));
+
+                var status = (int)loginResponse.StatusCode;
+                var location = loginResponse.Headers.Location?.ToString();
+                var body = await loginResponse.Content.ReadAsStringAsync(ct);
+
+                if (SmfLoginForm.LooksLikeBadCredentials(body))
+                {
+                    return new AbookSignIn(false, null, "abook.link rejected the username or password.");
+                }
 
                 if (cookie.Length == 0)
                 {
-                    var body = await loginResponse.Content.ReadAsStringAsync(ct);
-                    return new AbookSignIn(false, null, SmfLoginForm.LooksLikeBadCredentials(body)
-                        ? "abook.link rejected the username or password."
-                        : "abook.link did not return a session. The login form may have changed.");
+                    return new AbookSignIn(false, null,
+                        $"abook.link returned no session (HTTP {status}). The login form may have changed.");
+                }
+
+                // Prove the cookie actually authenticates rather than assuming it. A
+                // failed SMF login still hands back a session cookie, so the presence of
+                // one says nothing on its own.
+                var verified = await IsAuthenticatedAsync(cookie, ct);
+                if (!verified)
+                {
+                    return new AbookSignIn(false, null,
+                        $"abook.link accepted the request but the session is not signed in "
+                        + $"(login returned HTTP {status}{(location is null ? string.Empty : $", redirect to {location}")}). "
+                        + "Check the username and password.");
                 }
 
                 _logger.LogInformation("Signed in to abook.link as {Username}", credentials.Username);
@@ -167,6 +218,51 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         /// has no cookie container by design, so cookies are carried explicitly rather than
         /// leaking between callers of the same client.
         /// </summary>
+        /// <summary>
+        /// Fetches the forum index and checks whether it renders as signed in.
+        /// </summary>
+        private async Task<bool> IsAuthenticatedAsync(string cookie, CancellationToken ct)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, "https://abook.link/book/index.php");
+                request.Headers.TryAddWithoutValidation("Cookie", cookie);
+                request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+
+                using var response = await _httpClient.SendAsync(request, ct);
+                return SmfLoginForm.IsSignedIn(await response.Content.ReadAsStringAsync(ct));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Could not verify the abook.link session");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Overlays newly issued cookies onto the ones already held, keeping the latest
+        /// value for a name. SMF re-issues PHPSESSID on login, and sending the stale one
+        /// alongside it makes the session ambiguous.
+        /// </summary>
+        private static string MergeCookies(string existing, string issued)
+        {
+            var jar = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var source in new[] { existing, issued })
+            {
+                foreach (var pair in source.Split(';', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = pair.Split('=', 2);
+                    if (parts.Length == 2 && parts[0].Trim().Length > 0)
+                    {
+                        jar[parts[0].Trim()] = parts[1].Trim();
+                    }
+                }
+            }
+
+            return string.Join("; ", jar.Select(entry => $"{entry.Key}={entry.Value}"));
+        }
+
         private static string CollectCookies(HttpResponseMessage response)
         {
             if (!response.Headers.TryGetValues("Set-Cookie", out var values))

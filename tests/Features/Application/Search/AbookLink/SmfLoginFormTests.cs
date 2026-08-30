@@ -31,12 +31,31 @@ public sealed class SmfLoginFormTests : BaseTests
     }
 
     [Fact]
-    public void SignedInIsDetectedByTheLogoutLinkNotTheStatusCode()
+    public void SignedInIsDetectedFromThePageNotTheStatusCode()
     {
         // A logged-out SMF page still answers 200, so the status code proves nothing.
         Assert.True(SmfLoginForm.IsSignedIn("""<a href="index.php?action=logout;abc=def">Logout</a>"""));
-        Assert.False(SmfLoginForm.IsSignedIn("""<a href="index.php?action=login">Login</a>"""));
+        Assert.False(SmfLoginForm.IsSignedIn("""<form action="index.php?action=login2">"""));
         Assert.False(SmfLoginForm.IsSignedIn(null));
+    }
+
+    [Fact]
+    public void APageWithNoNavigationStillCountsAsSignedIn()
+    {
+        // The site's own tools render no forum navigation, so no logout link appears even
+        // on a good session. Requiring one reported a working session as expired.
+        const string toolPage = "<html><body>Hello nexal, welcome to the search tool.</body></html>";
+
+        Assert.True(SmfLoginForm.IsSignedIn(toolPage));
+    }
+
+    [Fact]
+    public void ALoginFormMeansSignedOutEvenWithoutALogoutLink()
+    {
+        const string signedOutTool =
+            """<html><body><form action="https://abook.link/book/index.php?action=login2"></form></body></html>""";
+
+        Assert.False(SmfLoginForm.IsSignedIn(signedOutTool));
     }
 
     [Fact]
