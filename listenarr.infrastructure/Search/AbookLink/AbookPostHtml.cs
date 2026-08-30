@@ -49,6 +49,58 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         [GeneratedRegex(@"\n{3,}")]
         private static partial Regex BlankRuns();
 
+        [GeneratedRegex(@"id\s*=\s*[""']msg_\d+[""']", RegexOptions.IgnoreCase)]
+        private static partial Regex MessageAnchor();
+
+        private static readonly string[] Boundaries =
+        [
+            "The following users thanked this post",
+            "Report to moderator"
+        ];
+
+        /// <summary>
+        /// Narrows a topic page to its first post.
+        ///
+        /// A topic page carries the whole thread plus the forum's own furniture, and
+        /// parsing all of it lets a reply's text and page chrome — "Posts", "Thanked",
+        /// "The following users thanked this post" — arrive as though they were NFO
+        /// fields. SMF anchors each message with an id of the form <c>msg_12345</c>, so
+        /// the first post is everything up to the second such anchor.
+        ///
+        /// Falls back to the whole page when no anchor is found: reading too much is
+        /// recoverable, reading nothing is not.
+        /// </summary>
+        public static string FirstPost(string? html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return string.Empty;
+            }
+
+            var anchors = MessageAnchor().Matches(html);
+            if (anchors.Count == 0)
+            {
+                return html;
+            }
+
+            var start = anchors[0].Index;
+            var end = anchors.Count > 1 ? anchors[1].Index : html.Length;
+
+            // The thanked-by roll and the moderation footer sit inside the first post's
+            // block but are the forum's furniture, not the release. Cutting at whichever
+            // appears first keeps hundreds of usernames out of the parse.
+            foreach (var marker in Boundaries)
+            {
+                var cut = html.IndexOf(marker, start, StringComparison.OrdinalIgnoreCase);
+                if (cut > start && cut < end)
+                {
+                    end = cut;
+                }
+            }
+
+            return html[start..end];
+        }
+
         /// <summary>
         /// Extracts readable text, preserving the line structure the NFO depends on.
         /// </summary>

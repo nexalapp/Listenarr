@@ -40,6 +40,29 @@ namespace Listenarr.Api.Features.AbookLink
         public List<string> UnrecognisedLabels { get; set; } = new();
     }
 
+    public sealed class AbookResolverAttemptResponse
+    {
+        public string Resolver { get; set; } = string.Empty;
+        public bool Succeeded { get; set; }
+        public string? Failure { get; set; }
+        public string? Detail { get; set; }
+        public int CandidateCount { get; set; }
+    }
+
+    public sealed class AbookGrabResponse
+    {
+        public int TopicId { get; set; }
+        public bool Succeeded { get; set; }
+        public string Stage { get; set; } = string.Empty;
+        public string Detail { get; set; } = string.Empty;
+        public bool Thanked { get; set; }
+        public bool WorthRetrying { get; set; }
+        public string? NzbUrl { get; set; }
+        public bool HasPassword { get; set; }
+        public AbookCandidateResponse? Book { get; set; }
+        public List<AbookResolverAttemptResponse> Attempts { get; set; } = new();
+    }
+
     public sealed class AbookSearchResponse
     {
         public string Query { get; set; } = string.Empty;
@@ -67,11 +90,16 @@ namespace Listenarr.Api.Features.AbookLink
         private const int DefaultInspect = 10;
 
         private readonly IAbookLinkBrowser _browser;
+        private readonly IAbookGrabResolver _grabs;
         private readonly ILogger<AbookLinkController> _logger;
 
-        public AbookLinkController(IAbookLinkBrowser browser, ILogger<AbookLinkController> logger)
+        public AbookLinkController(
+            IAbookLinkBrowser browser,
+            IAbookGrabResolver grabs,
+            ILogger<AbookLinkController> logger)
         {
             _browser = browser;
+            _grabs = grabs;
             _logger = logger;
         }
 
@@ -110,6 +138,50 @@ namespace Listenarr.Api.Features.AbookLink
             CancellationToken cancellationToken = default)
         {
             return Ok(await _browser.DiagnoseLoginAsync(cancellationToken));
+        }
+
+        /// <summary>
+        /// Resolves a topic to a downloadable NZB.
+        ///
+        /// This posts a "thanks" to abook.link under the configured account, visibly and
+        /// on purpose — it is the only way the payload is revealed. It is a POST rather
+        /// than a GET for that reason: nothing here should happen by following a link.
+        /// The NZB is not sent to a download client; that is a separate step.
+        /// </summary>
+        [HttpPost("resolve/{topicId:int}")]
+        [ProducesResponseType(typeof(AbookGrabResponse), StatusCodes.Status200OK)]
+        public async Task<ActionResult<AbookGrabResponse>> Resolve(
+            int topicId,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await _grabs.ResolveAsync(topicId, cancellationToken);
+
+            _logger.LogInformation(
+                "abook.link grab for topic {TopicId} finished at stage {Stage} (succeeded: {Succeeded})",
+                topicId, result.Stage, result.Succeeded);
+
+            return Ok(new AbookGrabResponse
+            {
+                TopicId = result.TopicId,
+                Succeeded = result.Succeeded,
+                Stage = result.Stage,
+                Detail = result.Detail,
+                Thanked = result.Thanked,
+                WorthRetrying = result.Resolution?.WorthRetrying ?? false,
+                NzbUrl = result.NzbUrl,
+                // A flag, not the value: a password belongs in the download client, not in
+                // an API response somebody may paste into a bug report.
+                HasPassword = result.Password is { Length: > 0 },
+                Book = result.Post is null ? null : Map(new AbookCandidate(topicId, string.Empty, result.Post)),
+                Attempts = result.Resolution?.Attempts.Select(attempt => new AbookResolverAttemptResponse
+                {
+                    Resolver = attempt.Resolver,
+                    Succeeded = attempt.Succeeded,
+                    Failure = attempt.Failure?.ToString(),
+                    Detail = attempt.Detail,
+                    CandidateCount = attempt.Candidates?.Count ?? 0
+                }).ToList() ?? []
+            });
         }
 
         /// <summary>Parses one topic without revealing its payload.</summary>

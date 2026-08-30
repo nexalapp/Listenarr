@@ -57,6 +57,7 @@ internal static class SearchRegistrationExtensions
                 UseProxy = false
             });
         services.AddScoped<IAbookLinkBrowser, AbookLinkBrowser>();
+        services.AddScoped<IAbookGrabResolver, AbookGrabResolver>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }

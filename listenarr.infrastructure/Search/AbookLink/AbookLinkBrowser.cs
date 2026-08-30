@@ -81,7 +81,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                     continue;
                 }
 
-                var post = AbookPostParser.Parse(AbookPostHtml.ToText(topic.Body), hit.Title);
+                var post = AbookPostParser.Parse(AbookPostHtml.ToText(AbookPostHtml.FirstPost(topic.Body)), hit.Title);
                 report.Add(hit.TopicId.ToString(), post);
                 candidates.Add(new AbookCandidate(hit.TopicId, hit.Title, post));
             }
@@ -104,7 +104,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                 return Failed(topic.Reason ?? "abook.link topic could not be read.");
             }
 
-            var post = AbookPostParser.Parse(AbookPostHtml.ToText(topic.Body), AbookTopicTitleOf(topic.Body));
+            var post = AbookPostParser.Parse(AbookPostHtml.ToText(AbookPostHtml.FirstPost(topic.Body)), AbookTopicTitleOf(topic.Body));
             var report = new AbookParseReport();
             report.Add(topicId.ToString(), post);
 

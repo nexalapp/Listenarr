@@ -47,6 +47,7 @@ namespace Listenarr.Application.Search.AbookLink
         private static readonly string[] PublisherLabels = ["publisher"];
         private static readonly string[] AbridgedLabels = ["abridged"];
         private static readonly string[] CompressedLabels = ["compressed with", "archive"];
+        private static readonly string[] TagLabels = ["tags", "id3 tags"];
 
         private static readonly string[] YearLabels =
         [
@@ -180,6 +181,10 @@ namespace Listenarr.Application.Search.AbookLink
             if (In(label, PositionLabels)) { post.SeriesPosition ??= AbookValues.ParsePosition(value); return true; }
             if (In(label, YearLabels)) { post.Year ??= AbookValues.ParseYear(value); return true; }
             if (In(label, CompressedLabels)) { post.CompressedWith ??= value; return true; }
+
+            // Recognised so it stops appearing as an unknown label, but not surfaced:
+            // ID3 tag state says nothing about which book this is or its quality.
+            if (In(label, TagLabels)) { return true; }
 
             if (In(label, AbridgedLabels))
             {
