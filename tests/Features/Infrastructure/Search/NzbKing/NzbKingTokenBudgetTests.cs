@@ -51,10 +51,14 @@ public sealed class NzbKingTokenBudgetTests : BaseTests
         }
     }
 
-    private static INzbKingTokenBudget CreateBudget(ListenArrDbContext db, TimeProvider time) =>
+    private static INzbKingTokenBudget CreateBudget(
+        ListenArrDbContext db,
+        TimeProvider time,
+        IToastService? toasts = null) =>
         new NzbKingTokenBudget(
             new EfNzbKingLedgerRepository(db),
             Mock.Of<IAppMetricsService>(),
+            toasts ?? Mock.Of<IToastService>(),
             time,
             Mock.Of<ILogger<NzbKingTokenBudget>>());
 
@@ -194,6 +198,89 @@ public sealed class NzbKingTokenBudgetTests : BaseTests
         await WithBudgetAsync(async (_, budget) =>
         {
             Assert.Null(await budget.GetStatusAsync("a-key-that-was-never-spent"));
+        });
+    }
+
+    [Fact]
+    public async Task ARefusalInterruptsButAnOrdinarySpendDoesNot()
+    {
+        // A refusal blocked something that was asked for. A spend is already visible in
+        // the grab that caused it, and a toast per spend is how toasts get ignored.
+        await WithBudgetAsync(async (createContext, _) =>
+        {
+            var toasts = new Mock<IToastService>();
+            var time = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            var budget = CreateBudget(createContext(), time, toasts.Object);
+
+            await budget.TryAcquireAsync(ApiKey, NzbKingAccessPurpose.Grab, "a book");
+
+            toasts.Verify(t => t.PublishToastAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()),
+                Times.Never);
+
+            var spendable = NzbKingTokenPolicy.MaxTokens - NzbKingTokenPolicy.ReserveFloor;
+            for (var i = 1; i < spendable; i++)
+            {
+                await budget.TryAcquireAsync(ApiKey, NzbKingAccessPurpose.Grab, $"book {i}");
+            }
+
+            await budget.TryAcquireAsync(ApiKey, NzbKingAccessPurpose.Grab, "one too many");
+
+            toasts.Verify(t => t.PublishToastAsync(
+                "warning", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()),
+                Times.AtLeastOnce);
+        });
+    }
+
+    [Fact]
+    public async Task TheLowBalanceNoticeIsRaisedOnCrossingNotOnEverySpendBelowIt()
+    {
+        // Repeating it on every spend below the line turns a useful warning into wallpaper.
+        await WithBudgetAsync(async (createContext, _) =>
+        {
+            var toasts = new Mock<IToastService>();
+            var time = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            var budget = CreateBudget(createContext(), time, toasts.Object);
+
+            // Spend well past the threshold so several spends happen below it.
+            for (var i = 0; i < 85; i++)
+            {
+                await budget.TryAcquireAsync(ApiKey, NzbKingAccessPurpose.Grab, $"book {i}");
+            }
+
+            toasts.Verify(t => t.PublishNotificationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int?>()),
+                Times.Once);
+        });
+    }
+
+    [Fact]
+    public async Task ABrokenToastServiceDoesNotBreakTheGrab()
+    {
+        // Reporting on a thing must not be able to take that thing down.
+        await WithBudgetAsync(async (createContext, _) =>
+        {
+            var toasts = new Mock<IToastService>();
+            toasts.Setup(t => t.PublishToastAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()))
+                .ThrowsAsync(new InvalidOperationException("hub is down"));
+            toasts.Setup(t => t.PublishNotificationAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int?>()))
+                .ThrowsAsync(new InvalidOperationException("hub is down"));
+
+            var time = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            var budget = CreateBudget(createContext(), time, toasts.Object);
+
+            var spendable = NzbKingTokenPolicy.MaxTokens - NzbKingTokenPolicy.ReserveFloor;
+            for (var i = 0; i < spendable; i++)
+            {
+                await budget.TryAcquireAsync(ApiKey, NzbKingAccessPurpose.Grab, $"book {i}");
+            }
+
+            var refused = await budget.TryAcquireAsync(ApiKey, NzbKingAccessPurpose.Grab, "one too many");
+
+            Assert.False(refused.Granted);
+            Assert.Contains("exhausted", refused.Reason, StringComparison.OrdinalIgnoreCase);
         });
     }
 

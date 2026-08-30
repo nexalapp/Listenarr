@@ -29,19 +29,29 @@ namespace Listenarr.Infrastructure.Search.NzbKing
     /// </summary>
     public class NzbKingTokenBudget : INzbKingTokenBudget
     {
+        /// <summary>
+        /// Balance at which the allowance is worth mentioning. Announced once, when it is
+        /// crossed - repeating it on every spend below the line is how a warning becomes
+        /// wallpaper.
+        /// </summary>
+        private const int LowBalanceThreshold = 20;
+
         private readonly INzbKingLedgerRepository _ledger;
         private readonly IAppMetricsService _metrics;
+        private readonly IToastService _toasts;
         private readonly TimeProvider _timeProvider;
         private readonly ILogger<NzbKingTokenBudget> _logger;
 
         public NzbKingTokenBudget(
             INzbKingLedgerRepository ledger,
             IAppMetricsService metrics,
+            IToastService toasts,
             TimeProvider timeProvider,
             ILogger<NzbKingTokenBudget> logger)
         {
             _ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
             _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
+            _toasts = toasts ?? throw new ArgumentNullException(nameof(toasts));
             _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -71,6 +81,10 @@ namespace Listenarr.Infrastructure.Search.NzbKing
             if (result.KeyDeleted)
             {
                 _metrics.Increment("nzbking.tokens.denied");
+
+                await Notify("error", "NZBKing key no longer works",
+                    "The key has been deleted by NZBKing. Request a new one and save it against the source.");
+
                 return new NzbKingTokenLease(false, fingerprint, 0, nextRefill, result.AccessId,
                     "The NZBKing API key has been deleted. Request a new one and save it against this indexer.");
             }
@@ -82,12 +96,27 @@ namespace Listenarr.Infrastructure.Search.NzbKing
                     "NZBKing token budget refused a {Purpose} request; estimated balance {Balance} is at the reserve of {Reserve}. Next token at {NextRefill:u}",
                     purpose, result.BalanceAfter, NzbKingTokenPolicy.ReserveFloor, nextRefill);
 
+                // A refusal blocked something the operator asked for, so it is worth
+                // interrupting for - unlike the spends and refills either side of it.
+                await Notify("warning", "NZBKing allowance exhausted",
+                    $"Held back to protect the key. One token returns every hour; the next at {nextRefill:HH:mm}.");
+
                 return new NzbKingTokenLease(false, fingerprint, result.BalanceAfter, nextRefill, result.AccessId,
                     $"NZBKing token budget exhausted (estimated {result.BalanceAfter} left, reserve {NzbKingTokenPolicy.ReserveFloor}). Next token at {nextRefill:u}.");
             }
 
             _metrics.Increment("nzbking.tokens.spent");
             _metrics.Gauge("nzbking.tokens.remaining", result.BalanceAfter);
+
+            // Only on the way past the line, and only to the activity bell. A spend is
+            // already visible in the grab that caused it, and an hourly refill is not news.
+            if (result.BalanceAfter < LowBalanceThreshold
+                && result.BalanceAfter + 1 >= LowBalanceThreshold)
+            {
+                await NotifyQuietly("NZBKing allowance running low",
+                    $"About {result.BalanceAfter} of {NzbKingTokenPolicy.MaxTokens} tokens left. "
+                    + "One returns every hour; grabs stop before the key can be deleted.");
+            }
 
             return new NzbKingTokenLease(true, fingerprint, result.BalanceAfter, nextRefill, result.AccessId, null);
         }
@@ -118,6 +147,34 @@ namespace Listenarr.Infrastructure.Search.NzbKing
 
             var now = _timeProvider.GetUtcNow().UtcDateTime;
             await _ledger.RecordOutcomeAsync(accessId, lease.KeyFingerprint, outcome, httpStatus, now, ct);
+        }
+
+        /// <summary>
+        /// Toasts must never take down the thing they report on: a broadcast failure is
+        /// logged and swallowed rather than turning a working grab into a failed one.
+        /// </summary>
+        private async Task Notify(string level, string title, string message)
+        {
+            try
+            {
+                await _toasts.PublishToastAsync(level, title, message);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Could not publish an NZBKing budget toast");
+            }
+        }
+
+        private async Task NotifyQuietly(string title, string message)
+        {
+            try
+            {
+                await _toasts.PublishNotificationAsync(title, message);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Could not publish an NZBKing budget notification");
+            }
         }
 
         public async Task<NzbKingKeyStatus?> GetStatusAsync(string apiKey, CancellationToken ct = default)
