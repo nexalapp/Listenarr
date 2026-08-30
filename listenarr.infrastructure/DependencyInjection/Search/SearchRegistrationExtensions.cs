@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Infrastructure.Search.Nzb;
 using Listenarr.Infrastructure.Search.NzbKing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,12 @@ internal static class SearchRegistrationExtensions
         services.AddScoped<INzbKingLedgerRepository, EfNzbKingLedgerRepository>();
         services.AddScoped<INzbKingTokenBudget, NzbKingTokenBudget>();
         services.AddScoped<NzbKingApiClient>();
+
+        // Free indexes first; the metered one is only reached when they have nothing.
+        services.AddScoped<INzbResolver, NzbIndexResolver>();
+        services.AddScoped<INzbResolver, BinsearchResolver>();
+        services.AddScoped<INzbResolver, NzbKingResolver>();
+        services.AddScoped<INzbResolverChain, NzbResolverChain>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
