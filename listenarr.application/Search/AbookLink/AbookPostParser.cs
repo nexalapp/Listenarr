@@ -48,18 +48,26 @@ namespace Listenarr.Application.Search.AbookLink
         private static readonly string[] AbridgedLabels = ["abridged"];
         private static readonly string[] CompressedLabels = ["compressed with", "archive"];
         private static readonly string[] TagLabels = ["tags", "id3 tags"];
+        private static readonly string[] ChapterLabels = ["chapters", "chapter count", "number of chapters"];
+        private static readonly string[] GenreLabels = ["genre", "genres"];
 
         private static readonly string[] YearLabels =
         [
             "copyright", "audio copyright", "audiobook copyright",
-            "audiobook release", "release date", "publication date"
+            "audiobook release", "release date", "publication date",
+            "audiobook release date"
         ];
 
         private static readonly string[] FormatLabels = ["media format", "file type", "source format", "encoded codec"];
         private static readonly string[] FileCountLabels = ["total files", "number of files"];
         private static readonly string[] SizeLabels = ["total size", "size"];
         private static readonly string[] DurationLabels = ["duration", "total duration", "length"];
-        private static readonly string[] BitrateLabels = ["encoded at", "encoded bitrate", "bitrate", "source bitrate"];
+        private static readonly string[] BitrateLabels =
+        [
+            "encoded at", "encoded bitrate", "bitrate", "source bitrate",
+            // Some posters qualify it with the format, e.g. "MP3 Encoded At".
+            "mp3 encoded at", "m4b encoded at", "encoding"
+        ];
 
         [GeneratedRegex(@"^\s*([A-Za-z][A-Za-z0-9 &/'\-]{0,40}?)\s*(\([^)]*\))?\s*:\s*(.*)$")]
         private static partial Regex LabelledLine();
@@ -180,6 +188,13 @@ namespace Listenarr.Application.Search.AbookLink
             if (In(label, SeriesLabels)) { post.SeriesName ??= value; return true; }
             if (In(label, PositionLabels)) { post.SeriesPosition ??= AbookValues.ParsePosition(value); return true; }
             if (In(label, YearLabels)) { post.Year ??= AbookValues.ParseYear(value); return true; }
+            if (In(label, GenreLabels)) { post.Genre ??= value; return true; }
+
+            if (In(label, ChapterLabels))
+            {
+                if (int.TryParse(value.Trim(), out var chapters)) post.Chapters ??= chapters;
+                return true;
+            }
             if (In(label, CompressedLabels)) { post.CompressedWith ??= value; return true; }
 
             // Recognised so it stops appearing as an unknown label, but not surfaced:

@@ -77,6 +77,12 @@ namespace Listenarr.Application.Search.AbookLink
         public string? Bitrate { get; set; }
         public bool? Abridged { get; set; }
 
+        /// <summary>Chapter count, where the poster states one.</summary>
+        public int? Chapters { get; set; }
+
+        /// <summary>Genre as the poster wrote it; often several, comma separated.</summary>
+        public string? Genre { get; set; }
+
         /// <summary>Archive tool named by the poster, e.g. Winrar. Explains why a password exists.</summary>
         public string? CompressedWith { get; set; }
 

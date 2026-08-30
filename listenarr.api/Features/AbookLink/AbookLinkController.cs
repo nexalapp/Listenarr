@@ -36,6 +36,8 @@ namespace Listenarr.Api.Features.AbookLink
         public int? FileCount { get; set; }
         public long? SizeBytes { get; set; }
         public string? Duration { get; set; }
+        public int? Chapters { get; set; }
+        public string? Genre { get; set; }
         public bool HasPayload { get; set; }
         public bool MultiPart { get; set; }
         public List<string> UnrecognisedLabels { get; set; } = new();
@@ -350,6 +352,8 @@ namespace Listenarr.Api.Features.AbookLink
             FileCount = candidate.Post.FileCount,
             SizeBytes = candidate.Post.SizeBytes,
             Duration = candidate.Post.Duration?.ToString(),
+            Chapters = candidate.Post.Chapters,
+            Genre = candidate.Post.Genre,
             // Deliberately a flag, not the value: this endpoint never reveals a payload.
             HasPayload = candidate.Post.CanGrab,
             MultiPart = candidate.Post.MultiPart,
