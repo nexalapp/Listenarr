@@ -1296,7 +1296,6 @@ export interface NzbKingStatus {
   lastSuccessfulUseAt?: string | null
   keyDeleted: boolean
   summary: string
-  spentRecently: number
   refusedRecently: number
 }
 

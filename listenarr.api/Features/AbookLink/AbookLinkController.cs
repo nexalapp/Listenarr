@@ -78,8 +78,11 @@ namespace Listenarr.Api.Features.AbookLink
         public bool KeyDeleted { get; set; }
         public string Summary { get; set; } = string.Empty;
 
-        /// <summary>Attempts in the last 24 hours, so the widget can say what has been happening.</summary>
-        public int SpentRecently { get; set; }
+        /// <summary>
+        /// Grabs refused in the last 24 hours. A refusal is an event rather than a level:
+        /// something was asked for and did not happen, which the balance cannot express.
+        /// Spends need no equivalent -- the balance already accounts for them.
+        /// </summary>
         public int RefusedRecently { get; set; }
     }
 
@@ -317,15 +320,12 @@ namespace Listenarr.Api.Features.AbookLink
             // anything older has already been earned back.
             var since = DateTime.UtcNow.AddDays(-1);
             var recent = await _browser.GetNzbKingLedgerAsync(RecentAccessLimit, cancellationToken);
-            var spentRecently = recent.Count(a =>
-                a.AttemptedAt >= since && a.Outcome == NzbKingAccessOutcome.Spent);
             var refusedRecently = recent.Count(a =>
                 a.AttemptedAt >= since && a.Outcome == NzbKingAccessOutcome.DeniedByBudget);
 
             return Ok(new NzbKingStatusResponse
             {
                 Configured = true,
-                SpentRecently = spentRecently,
                 RefusedRecently = refusedRecently,
                 EstimatedBalance = status.EstimatedBalance,
                 MaxTokens = NzbKingTokenPolicy.MaxTokens,

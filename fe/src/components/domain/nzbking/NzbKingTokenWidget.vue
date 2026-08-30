@@ -25,11 +25,11 @@
     <div class="token-head">
       <span class="token-title">NZBKing tokens</span>
       <span v-if="tokens.status.keyDeleted" class="token-count deleted">key deleted</span>
-      <!-- "About" rather than a bare figure: NZBKing publishes no balance, so this is
-           our own reckoning and can drift from theirs. -->
-      <span v-else class="token-count"
-        >≈{{ tokens.estimatedBalance }} of {{ tokens.status.maxTokens }}</span
-      >
+      <!-- The spendable count, not the raw balance. The reserve is never spendable, so
+           quoting the total invites reconciling two numbers to reach the one that
+           actually governs whether a grab can happen. The bar still shows the reserve.
+           "About" because NZBKing publishes no balance: this is our own reckoning. -->
+      <span v-else class="token-count">≈{{ tokens.spendable }} available</span>
     </div>
 
     <div
@@ -47,9 +47,14 @@
     <p v-if="tokens.status.keyDeleted" class="token-note deleted">
       Request a new key and save it against the abook.link source.
     </p>
-    <p v-else class="token-note">{{ tokens.spendable }} spendable · {{ refillText }}</p>
+    <!-- Only when a token is actually due. At the maximum there is nothing to wait
+         for, and saying so takes a word that reads as a third competing figure. -->
+    <p v-else-if="refillText" class="token-note">{{ refillText }}</p>
 
-    <p v-if="activityText" class="token-activity">{{ activityText }}</p>
+    <!-- A refusal is an event, not a level: a grab was asked for and did not happen.
+         The balance cannot show that, and the toast that announced it is long gone.
+         How many were spent needs no line -- the count above already reflects them. -->
+    <p v-if="refusedText" class="token-activity">{{ refusedText }}</p>
   </div>
 </template>
 
@@ -74,21 +79,18 @@ const reservePercent = computed(() => {
 
 const refillText = computed(() => {
   const ms = tokens.msUntilNextRefill
-  if (ms === null) return 'full'
+  if (ms === null) return ''
 
   const minutes = Math.max(1, Math.round(ms / 60000))
   return minutes >= 60 ? `+1 in ${Math.floor(minutes / 60)}h ${minutes % 60}m` : `+1 in ${minutes}m`
 })
 
-const activityText = computed(() => {
-  const s = tokens.status
-  if (!s?.configured) return ''
-
-  const parts: string[] = []
-  if (s.spentRecently > 0) parts.push(`${s.spentRecently} spent`)
-  // Refusals are worth naming: that is the budget protecting the key, not a fault.
-  if (s.refusedRecently > 0) parts.push(`${s.refusedRecently} refused`)
-  return parts.length > 0 ? `Last 24h: ${parts.join(', ')}` : ''
+const refusedText = computed(() => {
+  const refused = tokens.status?.refusedRecently ?? 0
+  if (refused < 1) return ''
+  return refused === 1
+    ? '1 grab refused in the last 24h'
+    : `${refused} grabs refused in the last 24h`
 })
 
 onMounted(() => {

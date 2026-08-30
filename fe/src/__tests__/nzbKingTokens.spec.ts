@@ -30,7 +30,6 @@ const status = (overrides: Record<string, unknown> = {}) => ({
   lastSuccessfulUseAt: null,
   keyDeleted: false,
   summary: '',
-  spentRecently: 0,
   refusedRecently: 0,
   ...overrides,
 })
@@ -142,7 +141,6 @@ describe('nzbKingTokens store', () => {
       maxTokens: 100,
       reserveFloor: 5,
       summary: '',
-      spentRecently: 0,
       refusedRecently: 0,
     })
     const store = await loadStore()
