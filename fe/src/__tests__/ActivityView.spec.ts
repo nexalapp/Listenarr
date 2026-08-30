@@ -170,6 +170,76 @@ describe('ActivityView', () => {
     expect(wrapper.text()).toContain('Moving')
   })
 
+  it('keeps a download the client calls completed while Listenarr is still importing', async () => {
+    // NZBGet reports 'completed' the moment its own work is done, but Listenarr
+    // still has the import to do. Both records share an id, so the queue snapshot
+    // shadows ours; the 'hide completed external downloads' rule then dropped the
+    // row entirely while the sidebar badge kept counting it.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-1',
+          title: 'Starship Raider',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      activeDownloads: [
+        {
+          id: 'dl-1',
+          title: 'Starship Raider',
+          status: 'ImportPending',
+          progress: 100,
+          downloadClientId: 'client-1',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const row = vm.allActivityItems.find((item) => item.id === 'dl-1')
+
+    expect(row).toMatchObject({ status: 'importpending' })
+    expect(wrapper.text()).toContain('Importing')
+  })
+
+  it('still hides an external download once Listenarr has no work left for it', async () => {
+    // The guard above must not defeat the preference: with nothing of ours
+    // outstanding, a completed external download stays hidden as before.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-2',
+          title: 'Already Imported',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    expect(vm.allActivityItems.find((item) => item.id === 'dl-2')).toBeUndefined()
+  })
+
   it('includes completed external downloads from the downloads store in the unified list', async () => {
     mockSignalR()
     mockApi()

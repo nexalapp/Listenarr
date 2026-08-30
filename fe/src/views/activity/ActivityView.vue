@@ -519,11 +519,32 @@ const isDirectDownload = (downloadClientId?: string): boolean =>
   (downloadClientId || '').toString().toUpperCase() === 'DDL'
 
 const allActivityItems = computed(() => {
-  const queueItems = [...queue.value]
-  const trackedQueueIds = new Set(queueItems.map((item) => item.id))
-
   const activeDownloadsList = unref(downloadsStore.activeDownloads || [])
   const failedDownloadsList = unref(downloadsStore.failedDownloads || [])
+
+  // A download client reports 'completed' once *its* work is done, but Listenarr
+  // may still have the import to do. The queue snapshot shadows our own record by
+  // id, so without this the row is filtered out as completed and vanishes from
+  // Activity while the sidebar badge keeps counting it.
+  //
+  // Only post-transfer states override the snapshot. While a file is still moving
+  // the client is the fresher authority on transfer state, and a stale local
+  // 'Downloading' must not override its 'completed' — these are the states the
+  // client has no knowledge of at all, because they are ours.
+  const ourPostTransferStates = new Set(['importpending', 'importblocked', 'processing'])
+  const stillOurWork = new Map<string, string>()
+  for (const download of [...activeDownloadsList, ...failedDownloadsList]) {
+    const status = convertDownloadToQueueItem(download).status
+    if (ourPostTransferStates.has(status)) {
+      stillOurWork.set(download.id, status)
+    }
+  }
+
+  const queueItems = queue.value.map((item) => {
+    const ourStatus = stillOurWork.get(item.id)
+    return ourStatus && item.status === 'completed' ? { ...item, status: ourStatus } : item
+  })
+  const trackedQueueIds = new Set(queueItems.map((item) => item.id))
 
   const ddlDownloadItems = activeDownloadsList
     .filter((d) => isDirectDownload(d.downloadClientId))
