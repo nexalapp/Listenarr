@@ -431,10 +431,12 @@ const buildIndexerPayload = (): IndexerPayload => {
     payload.additionalSettings = JSON.stringify({ mam_id: mamId.value, mam_options: mamOpts })
     payload.apiKey = ''
   } else if (payload.implementation === 'AbookLink') {
+    // Secrets are sent back as-is, including the redacted placeholder, because the
+    // server restores the stored value from it. Omitting a field would delete it.
     payload.additionalSettings = JSON.stringify({
       abook_username: abookUsername.value,
       abook_password: abookPassword.value,
-      nzbking_api_key: abookNzbKingApiKey.value || undefined,
+      nzbking_api_key: abookNzbKingApiKey.value,
     })
     payload.apiKey = ''
     payload.url = 'https://abook.link'
@@ -522,10 +524,11 @@ watch(
         try {
           const settings = JSON.parse(newIndexer.additionalSettings)
           abookUsername.value = settings.abook_username || ''
-          // Left blank on purpose: the API returns a redacted placeholder, and showing
-          // it would invite saving the placeholder over the real password.
-          abookPassword.value = ''
-          abookNzbKingApiKey.value = ''
+          // Keep the redacted placeholder the API returns. The server restores the stored
+          // value when it sees it, so an untouched field leaves the secret alone - whereas
+          // blanking it saves an empty password over a working one.
+          abookPassword.value = settings.abook_password || ''
+          abookNzbKingApiKey.value = settings.nzbking_api_key || ''
         } catch (e) {
           console.error('Failed to parse abook.link settings:', e)
           abookUsername.value = ''
