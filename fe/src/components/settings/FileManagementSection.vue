@@ -147,13 +147,31 @@
         label="Conversion Archive Path"
         help="Where source MP3s are moved after a verified conversion. Each book gets its own folder. Leave this empty and the MP3s stay where they are."
       >
-        <input
-          type="text"
-          :value="settings.conversionArchivePath ?? ''"
-          placeholder="/mnt/user/audiobooks-archive"
-          @change="
-            (e) => updateField('conversionArchivePath', (e.target as HTMLInputElement).value)
-          "
+        <div class="path-input-row">
+          <input
+            id="conversion-archive-path"
+            v-model="conversionArchivePath"
+            type="text"
+            class="form-input"
+            placeholder="Select or enter a path..."
+            @change="updateField('conversionArchivePath', conversionArchivePath)"
+          />
+          <button
+            type="button"
+            class="icon-btn btn-secondary btn-inline-browse"
+            @click="showArchiveBrowser = true"
+            title="Browse for folder"
+            aria-label="Browse for folder"
+          >
+            <PhFolder :size="16" />
+          </button>
+        </div>
+
+        <FolderBrowserModal
+          v-model:visible="showArchiveBrowser"
+          v-model:modelValue="conversionArchivePath"
+          :show-input="false"
+          @update:modelValue="(value: string) => updateField('conversionArchivePath', value)"
         />
       </FormRow>
 
@@ -253,9 +271,10 @@
 
 <script setup lang="ts">
 import type { ApplicationSettings } from '@/types'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { PhFolder, PhQuestion, PhX, PhWarning } from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
+import FolderBrowserModal from '@/components/feedback/FolderBrowserModal.vue'
 
 const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{
@@ -264,6 +283,19 @@ const emit = defineEmits<{
 
 const showModal = ref(false)
 const activePatternType = ref<'folder' | 'file'>('folder')
+// The browser writes through v-model, and the section's other fields are one-way
+// bound, so the path needs a local ref. Kept in step with the prop so a save
+// elsewhere, or a discard, is reflected here.
+const conversionArchivePath = ref(props.settings.conversionArchivePath ?? '')
+const showArchiveBrowser = ref(false)
+
+watch(
+  () => props.settings.conversionArchivePath,
+  (value) => {
+    conversionArchivePath.value = value ?? ''
+  },
+)
+
 const folderPattern = ref(props.settings.folderNamingPattern || '')
 const filePatternSingleFile = ref(props.settings.fileNamingPattern || '')
 const filePatternMultiFile = ref(props.settings.multiFileNamingPattern || '{Title}-{DiskNumber:00}')
@@ -729,5 +761,15 @@ h3 svg {
   margin: 0.5rem 0 0;
   font-size: 0.8rem;
   color: #6c757d;
+}
+
+.path-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.path-input-row .form-input {
+  flex: 1;
 }
 </style>
