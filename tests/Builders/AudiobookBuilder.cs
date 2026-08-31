@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Listenarr.Tests.Builders
 {
     public class AudiobookBuilder
@@ -57,7 +59,9 @@ namespace Listenarr.Tests.Builders
         public AudiobookBuilder WithPublishedDate(DateOnly value)
         {
             _audiobook.PublishYear = value.Year.ToString();
-            _audiobook.PublishedDate = value.ToString();
+            // Metadata sources hand us ISO dates ("2028-01-11"); DateOnly.ToString() would
+            // format for the ambient culture and produce something no parser here accepts.
+            _audiobook.PublishedDate = value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             return this;
         }
 

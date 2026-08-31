@@ -35,6 +35,27 @@ namespace Listenarr.Api.Features.Library
             _logger = logger;
         }
 
+        /// <summary>
+        /// Lists every monitor. The calendar reads this to tell "nothing announced" apart
+        /// from "the monitor has been failing", which are the same empty page otherwise.
+        /// </summary>
+        [HttpGet]
+        [ProducesResponseType(typeof(IReadOnlyList<MonitoredSeriesResponse>), StatusCodes.Status200OK)]
+        public async Task<ActionResult<IReadOnlyList<MonitoredSeriesResponse>>> GetAll(
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var monitored = await _seriesMonitoringService.GetAllMonitoredSeriesAsync(cancellationToken);
+                return Ok(monitored.Select(ToResponse).ToList());
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Failed to list monitored series");
+                return StatusCode(StatusCodes.Status500InternalServerError, "Internal server error");
+            }
+        }
+
         [HttpGet("status")]
         [ProducesResponseType(typeof(SeriesMonitoringStatusResponse), StatusCodes.Status200OK)]
         public async Task<ActionResult<SeriesMonitoringStatusResponse>> GetStatus(

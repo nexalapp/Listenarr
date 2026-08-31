@@ -52,6 +52,12 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public AudibleSearchResultBuilder WithReleaseDate(string? value)
+        {
+            _result.ReleaseDate = value;
+            return this;
+        }
+
         public AudibleSearchResult Build()
         {
             return _result;

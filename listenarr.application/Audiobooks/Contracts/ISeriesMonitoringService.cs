@@ -20,6 +20,13 @@ namespace Listenarr.Application.Audiobooks.Contracts
 {
     public interface ISeriesMonitoringService
     {
+        /// <summary>
+        /// Every monitor, so a caller can surface the ones whose last sync failed.
+        /// A monitor that has been erroring for a month otherwise presents as an
+        /// empty calendar rather than as a broken monitor.
+        /// </summary>
+        Task<List<MonitoredSeries>> GetAllMonitoredSeriesAsync(CancellationToken cancellationToken = default);
+
         Task<MonitoredSeries?> GetMonitoredSeriesAsync(
             string name,
             string region,

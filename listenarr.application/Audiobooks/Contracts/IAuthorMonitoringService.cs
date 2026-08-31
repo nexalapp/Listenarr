@@ -20,6 +20,13 @@ namespace Listenarr.Application.Audiobooks.Contracts
 {
     public interface IAuthorMonitoringService
     {
+        /// <summary>
+        /// Every monitor, so a caller can surface the ones whose last sync failed.
+        /// A monitor that has been erroring for a month otherwise presents as an
+        /// empty calendar rather than as a broken monitor.
+        /// </summary>
+        Task<List<MonitoredAuthor>> GetAllMonitoredAuthorsAsync(CancellationToken cancellationToken = default);
+
         Task<MonitoredAuthor?> GetMonitoredAuthorAsync(
             string name,
             string region,

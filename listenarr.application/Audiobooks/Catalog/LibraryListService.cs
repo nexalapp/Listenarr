@@ -90,6 +90,10 @@ namespace Listenarr.Application.Audiobooks.Catalog
             var activeDownloadAudiobookIds = await activeDownloadTask;
             var activeDownloadAudiobookIdSet = activeDownloadAudiobookIds.ToHashSet();
 
+            // One reading of "today" for the whole page, so two books with the same release
+            // date cannot land on opposite sides of a midnight boundary within one response.
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
             return audiobooks.Select(a =>
             {
                 filesByAudiobookId.TryGetValue(a.Id, out var files);
@@ -149,7 +153,9 @@ namespace Listenarr.Application.Audiobooks.Catalog
                          hasAnyFile,
                          a.Quality,
                          qualityProfile,
-                         files)
+                         files,
+                         a.PublishedDate,
+                         today)
                 };
             }).ToList();
         }

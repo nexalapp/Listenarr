@@ -52,6 +52,8 @@ import type {
   AuthorMonitoringStatusResponse,
   MonitorAuthorResponse,
   MonitorSeriesResponse,
+  MonitoredAuthor,
+  MonitoredSeries,
   SeriesMonitoringStatusResponse,
   SeriesCatalogResponse,
   SeriesLookupResponse,
@@ -510,6 +512,14 @@ class ApiService {
     }
   }
 
+  /**
+   * Every monitored author. The calendar reads this to tell "nothing announced"
+   * apart from "the monitor has been failing".
+   */
+  async getMonitoredAuthors(): Promise<MonitoredAuthor[]> {
+    return this.request<MonitoredAuthor[]>('/authors/monitoring')
+  }
+
   async getAuthorMonitoringStatus(
     name: string,
     region: string = 'us',
@@ -537,6 +547,11 @@ class ApiService {
     return this.request<{ message: string }>(`/authors/monitoring/${id}`, {
       method: 'DELETE',
     })
+  }
+
+  /** Every monitored series. See {@link getMonitoredAuthors}. */
+  async getMonitoredSeries(): Promise<MonitoredSeries[]> {
+    return this.request<MonitoredSeries[]>('/series/monitoring')
   }
 
   async getSeriesMonitoringStatus(
