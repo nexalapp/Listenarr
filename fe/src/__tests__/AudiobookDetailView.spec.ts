@@ -54,6 +54,7 @@ vi.mock('@/services/signalr', () => ({
     onDownloadsList: vi.fn(() => () => undefined),
     onScanJobUpdate: vi.fn(() => () => undefined),
     onConversionJobUpdate: vi.fn(() => () => undefined),
+    onTagJobUpdate: vi.fn(() => () => undefined),
   },
 }))
 

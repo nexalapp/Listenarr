@@ -428,6 +428,87 @@ export interface ConversionJobUpdate {
   completedAt?: string | null
 }
 
+/** One tag-writing run, as the server reports it over SignalR and REST. */
+export interface TagJobUpdate {
+  jobId: string
+  audiobookId: number
+  status: ConversionJobStatus | string
+  phase?: string
+  progress?: number
+  trigger?: string
+  fileCount?: number
+  tagsWritten?: number
+  error?: string | null
+  failureKind?: string | null
+  canRetry?: boolean
+  /**
+   * The job removed a library file and is holding its only replacement. Retrying is
+   * what puts it back, so this is not an ordinary failure and must not read like one.
+   */
+  holdingUnpublishedFile?: boolean
+  attemptCount?: number
+  enqueuedAt?: string
+  completedAt?: string | null
+}
+
+/** Whether a tag may be overwritten. Serialised by enum name. */
+export type TagWriteMode = 'Never' | 'WhenEmpty' | 'Always'
+
+/** What will happen to one tag, and why. Serialised by enum name. */
+export type TagChangeAction =
+  | 'Write'
+  | 'Unchanged'
+  | 'NotConfigured'
+  | 'Deselected'
+  | 'Preserved'
+  | 'NoValue'
+
+/** One tag Listenarr can write, with its current mapping. */
+export interface TagDefinition {
+  tag: string
+  label: string
+  description: string
+  defaultPattern: string
+  defaultMode: TagWriteMode
+  isLongText: boolean
+  pattern: string
+  mode: TagWriteMode
+}
+
+/** One tag's before and after. */
+export interface TagChangePreview {
+  tag: string
+  label: string
+  current?: string | null
+  proposed?: string | null
+  action: TagChangeAction
+  reason: string
+}
+
+export interface TagPreviewFile {
+  fileId: number
+  name: string
+  error?: string | null
+  changes: TagChangePreview[]
+}
+
+/** What writing tags to one book would change, before anything is written. */
+export interface TagPreview {
+  audiobookId: number
+  title?: string | null
+  canWrite: boolean
+  hasChanges: boolean
+  reason?: string | null
+  files: TagPreviewFile[]
+}
+
+/** What goes into one tag and whether it may be overwritten. */
+export interface TagMapping {
+  tag: string
+  pattern: string
+  mode: TagWriteMode
+}
+
 export interface ApplicationSettings {
   version: number
   outputPath: string
@@ -459,6 +540,13 @@ export interface ApplicationSettings {
   conversionSourceDisposition?: 'Archive' | 'Keep' | 'Delete'
   // Where archived source MP3s are moved to
   conversionArchivePath?: string
+  // Write the library's metadata into a book's M4B files once it lands
+  writeMetadataTags?: boolean
+  // Embed the book's cover into a file that carries none
+  embedCoverArtInTags?: boolean
+  // What goes into each tag and whether it may be overwritten. Absent means the
+  // shipped defaults, which mirror the library's own bracket convention.
+  tagMappings?: TagMapping[]
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean

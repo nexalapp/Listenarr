@@ -107,6 +107,17 @@ describe('ActivityView mobile virtualization', () => {
       }),
     }))
 
+    vi.doMock('@/stores/tagJobs', () => ({
+      useTagJobsStore: () => ({
+        jobs: [],
+        activeJobs: [],
+        getJobForAudiobook: vi.fn(() => undefined),
+        retry: vi.fn(async () => ({ queued: true })),
+        refresh: vi.fn(async () => undefined),
+        start: vi.fn(),
+      }),
+    }))
+
     vi.doMock('@/services/errorTracking', () => ({
       errorTracking: {
         captureException: vi.fn(),

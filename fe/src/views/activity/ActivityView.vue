@@ -210,6 +210,17 @@
             Retrying re-runs the conversion from the original files, which have been left exactly as
             they were. Nothing in the library was replaced.
           </p>
+          <p v-else-if="blockDetailsTagJobHoldsFile" class="warning-text warning-text-urgent">
+            <PhWarning />
+            This book is missing a file until this job is retried. The tagged copy was written and
+            checked, but could not be put back — it is being held and has not been deleted. Retrying
+            publishes it.
+          </p>
+          <p v-else-if="blockDetailsIsTagging" class="warning-text">
+            <PhInfo />
+            Retrying re-reads the book's files and writes the tags again. The files were left
+            exactly as they were.
+          </p>
           <p v-else class="warning-text">
             <PhInfo />
             Retrying re-runs the import against the same files. If the path is not reachable from
@@ -306,6 +317,7 @@ import {
   PhX,
   PhQueue,
   PhWarningCircle,
+  PhWarning,
   PhInfo,
   PhChartBar,
   PhTrash,
@@ -319,6 +331,7 @@ import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore, type TrackedMoveJob } from '@/stores/moveJobs'
 import { useConversionJobsStore, type TrackedConversionJob } from '@/stores/conversionJobs'
+import { useTagJobsStore, type TrackedTagJob } from '@/stores/tagJobs'
 import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
@@ -328,6 +341,7 @@ const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
 const moveJobsStore = useMoveJobsStore()
 const conversionJobsStore = useConversionJobsStore()
+const tagJobsStore = useTagJobsStore()
 const configStore = useConfigurationStore()
 
 const filterText = ref('')
@@ -623,6 +637,46 @@ const CONVERSION_PHASE_LABELS: Record<string, string> = {
   RetiringSources: 'Tidying up sources',
 }
 
+/**
+ * A tag write reports like a conversion: one row per book, a bar while it runs, and
+ * on failure a clickable status carrying the reason and a retry.
+ */
+const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
+  const failed = job.status === 'Failed'
+  const phaseLabel = TAG_PHASE_LABELS[job.phase] ?? 'Writing tags'
+
+  return {
+    id: `tagging:${job.jobId}`,
+    title: 'Write metadata tags',
+    audiobookId: job.audiobookId,
+    status: failed ? 'importblocked' : job.status === 'Running' ? 'processing' : 'queued',
+    progress: job.progress,
+    size: 0,
+    downloaded: 0,
+    downloadSpeed: 0,
+    eta: undefined,
+    quality: '',
+    downloadClient: failed
+      ? 'Metadata tags'
+      : `Metadata tags · ${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
+    downloadClientId: 'LISTENARR_TAGGING',
+    downloadClientType: 'tagging',
+    addedAt: '',
+    errorMessage: job.error ?? undefined,
+    canPause: false,
+    canRemove: false,
+    canRetryImport: failed && job.canRetry,
+  }
+}
+
+const TAG_PHASE_LABELS: Record<string, string> = {
+  None: 'Waiting',
+  Reading: 'Reading current tags',
+  Writing: 'Writing tags',
+  Verifying: 'Verifying',
+  Publishing: 'Publishing',
+}
+
 // Read user preference from configuration store
 const showCompletedExternalDownloads = computed(
   () => configStore.applicationSettings?.showCompletedExternalDownloads ?? false,
@@ -744,6 +798,16 @@ const allActivityItems = computed(() => {
     const item = convertConversionJobToQueueItem(job)
     finalMap.set(item.id, item)
   }
+  // Same rule for tag writes, and one more reason to keep failures on screen: a
+  // failed one may be holding the only copy of a library file it already removed.
+  for (const job of tagJobsStore.jobs) {
+    if (job.status === 'Completed' || job.status === 'Cancelled' || job.status === 'Superseded') {
+      continue
+    }
+
+    const item = convertTagJobToQueueItem(job)
+    finalMap.set(item.id, item)
+  }
   for (const it of combined) finalMap.set(it.id, it)
   for (const it of completedExternal) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
   for (const it of failedFromDownloads) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
@@ -801,6 +865,24 @@ const blockDetailsIsConversion = computed(
   () => blockDetailsItem.value?.id.startsWith('conversion:') ?? false,
 )
 
+const blockDetailsIsTagging = computed(
+  () => blockDetailsItem.value?.id.startsWith('tagging:') ?? false,
+)
+
+/**
+ * Whether the failed tag write is holding a library file's only copy. That is not an
+ * ordinary failure and must not read like one: the book is missing a file until this
+ * job is retried.
+ */
+const blockDetailsTagJobHoldsFile = computed(() => {
+  const id = blockDetailsItem.value?.id
+  if (!id?.startsWith('tagging:')) return false
+  const jobId = id.slice('tagging:'.length).toLowerCase()
+  return tagJobsStore.jobs.some(
+    (job) => job.jobId.toLowerCase() === jobId && job.holdingUnpublishedFile,
+  )
+})
+
 const openBlockDetails = (item: QueueItem) => {
   blockDetailsItem.value = item
 }
@@ -810,6 +892,8 @@ const retryImport = async (item: QueueItem) => {
   try {
     if (item.id.startsWith('conversion:')) {
       await conversionJobsStore.retry(item.id.slice('conversion:'.length))
+    } else if (item.id.startsWith('tagging:')) {
+      await tagJobsStore.retry(item.id.slice('tagging:'.length))
     } else {
       await apiService.retryImport(item.id)
     }
@@ -924,6 +1008,7 @@ const formatEta = (seconds: number): string => {
 onMounted(async () => {
   moveJobsStore.start()
   conversionJobsStore.start()
+  tagJobsStore.start()
   updateActivityLayoutMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleViewportResize, { passive: true })
@@ -1549,6 +1634,14 @@ onUnmounted(() => {
   margin-top: 0.1rem;
   width: 18px;
   height: 18px;
+}
+
+/* A book that is missing a file until this job is retried is not a yellow-notice
+   problem, and reading like one would get it left for later. */
+.warning-text-urgent {
+  color: #ff6b6b;
+  background-color: rgba(255, 107, 107, 0.12);
+  border-color: rgba(255, 107, 107, 0.3);
 }
 
 .modal-footer {

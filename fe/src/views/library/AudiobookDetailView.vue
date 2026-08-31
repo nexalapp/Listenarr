@@ -644,6 +644,13 @@
     @close="showOrganizeModal = false"
     @done="handleOrganizeDone"
   />
+
+  <TagPreviewModal
+    :visible="showTagPreviewModal"
+    :audiobook-id="audiobook?.id ?? null"
+    @close="showTagPreviewModal = false"
+    @confirm="writeTags"
+  />
 </template>
 
 <script setup lang="ts">
@@ -657,6 +664,7 @@ import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useScanNotificationsStore } from '@/stores/scanNotifications'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
 import { useConversionJobsStore } from '@/stores/conversionJobs'
+import { useTagJobsStore } from '@/stores/tagJobs'
 import { apiService, ensureImageCached } from '@/services/api'
 import { isApiImagesUrl } from '@/services/apiBase'
 import { handleImageError } from '@/utils/imageFallback'
@@ -677,6 +685,7 @@ import { useProtectedImages } from '@/composables/useProtectedImages'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import { buildAudibleProductUrl } from '@/utils/marketDomains'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import TagPreviewModal from '@/components/domain/tagging/TagPreviewModal.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
@@ -726,6 +735,7 @@ const rootFoldersStore = useRootFoldersStore()
 const scanNotificationsStore = useScanNotificationsStore()
 const filesystemReadinessStore = useFilesystemReadinessStore()
 const conversionJobsStore = useConversionJobsStore()
+const tagJobsStore = useTagJobsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
 type DetailTab = 'details' | 'files' | 'history'
@@ -847,6 +857,19 @@ const topActions = computed<DetailTopAction[]>(() => [
     },
   },
   {
+    key: 'write-tags',
+    label: writeTagsLabel.value,
+    title: writeTagsTitle.value,
+    ariaLabel: 'Write Metadata Tags',
+    icon: tagWriteInFlight.value ? PhSpinner : PhTag,
+    iconClass: tagWriteInFlight.value ? 'ph-spin' : undefined,
+    disabled: tagWriteInFlight.value || !hasTaggableFiles.value,
+    desktopGroup: 'secondary',
+    onClick: () => {
+      showTagPreviewModal.value = true
+    },
+  },
+  {
     key: 'edit',
     label: 'Edit Metadata',
     title: 'Edit Metadata',
@@ -926,6 +949,7 @@ type DetailTopAction = {
     | 'edit'
     | 'rescan-metadata'
     | 'convert'
+    | 'write-tags'
     | 'organize'
     | 'delete'
   label: string
@@ -1239,6 +1263,7 @@ onMounted(async () => {
   // Idempotent: the store subscribes once and the Activity view may have started
   // it already. Without it the button cannot tell that a conversion is running.
   conversionJobsStore.start()
+  tagJobsStore.start()
 
   await loadAudiobook()
 
@@ -1502,6 +1527,73 @@ async function convertToM4b() {
       metadata: { audiobookId: audiobook.value?.id },
     })
     toast.error('Conversion failed to queue', err instanceof Error ? err.message : String(err))
+  }
+}
+
+const showTagPreviewModal = ref(false)
+
+const hasTaggableFiles = computed(
+  () =>
+    audiobook.value?.files?.some((file) => {
+      const path = (file.path ?? '').toLowerCase()
+      return path.endsWith('.m4b') || path.endsWith('.m4a')
+    }) ?? false,
+)
+
+const activeTagWrite = computed(() =>
+  audiobook.value ? tagJobsStore.getJobForAudiobook(audiobook.value.id) : undefined,
+)
+
+const tagWriteInFlight = computed(() => {
+  const status = activeTagWrite.value?.status
+  return status === 'Queued' || status === 'Running' || status === 'RetryScheduled'
+})
+
+const writeTagsLabel = computed(() => {
+  const job = activeTagWrite.value
+  if (job?.status === 'Running') {
+    return `Writing tags ${Math.round(job.progress)}%`
+  }
+
+  return tagWriteInFlight.value ? 'Tag write queued' : 'Write Tags'
+})
+
+const writeTagsTitle = computed(() => {
+  if (!hasTaggableFiles.value) {
+    // MP3 books are converted first: ID3 cannot carry the description atom that is
+    // the whole point of writing tags.
+    return 'This book has no M4B files to write tags into'
+  }
+
+  return tagWriteInFlight.value
+    ? 'A tag write is already queued for this book'
+    : "Write the library's metadata into this book's M4B files"
+})
+
+async function writeTags(tags: string[]) {
+  if (!audiobook.value) return
+
+  showTagPreviewModal.value = false
+  const toast = useToast()
+  try {
+    const response = await tagJobsStore.write(audiobook.value.id, tags)
+    if (response.queued) {
+      toast.success(
+        'Tag write queued',
+        'Progress is shown in Activity. Each file is copied, tagged and checked before it replaces the original.',
+      )
+    } else {
+      // A refusal carries its reason from the server; showing it beats a generic
+      // failure the operator cannot act on.
+      toast.error('Not queued', response.reason ?? 'This book could not be queued for tag writing.')
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobookDetailView',
+      operation: 'writeTags',
+      metadata: { audiobookId: audiobook.value?.id },
+    })
+    toast.error('Tag write failed to queue', err instanceof Error ? err.message : String(err))
   }
 }
 

@@ -18,6 +18,9 @@
 import type {
   SearchResult,
   ConversionJobUpdate,
+  TagDefinition,
+  TagJobUpdate,
+  TagPreview,
   Download,
   ApiConfiguration,
   DownloadClientConfiguration,
@@ -1479,6 +1482,47 @@ class ApiService {
   /** Active conversions plus recently finished ones. */
   async getConversionJobs(): Promise<ConversionJobUpdate[]> {
     return this.request<ConversionJobUpdate[]>('/conversion/jobs')
+  }
+
+  /** The tags Listenarr can write, with their current mapping. */
+  async getTagDefinitions(): Promise<TagDefinition[]> {
+    return this.request<TagDefinition[]>('/tagging/tags')
+  }
+
+  /**
+   * What writing tags to one book would change. Reads the files' real tags, writes
+   * nothing and queues nothing.
+   */
+  async previewTags(audiobookId: number, tags?: string[]): Promise<TagPreview> {
+    const query = tags?.length
+      ? '?' + tags.map((tag) => `tags=${encodeURIComponent(tag)}`).join('&')
+      : ''
+    return this.request<TagPreview>(`/tagging/audiobooks/${audiobookId}/preview${query}`)
+  }
+
+  /** Queue a tag write. Omit `tags` for every tag the mapping allows. */
+  async writeTags(
+    audiobookId: number,
+    tags?: string[],
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}`, {
+      method: 'POST',
+      body: JSON.stringify({ tags: tags ?? null }),
+    })
+  }
+
+  /** Re-run a tag write that failed. */
+  async retryTagWrite(
+    jobId: string,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/jobs/${encodeURIComponent(jobId)}/retry`, {
+      method: 'POST',
+    })
+  }
+
+  /** Active tag writes plus recently finished ones. */
+  async getTagJobs(): Promise<TagJobUpdate[]> {
+    return this.request<TagJobUpdate[]>('/tagging/jobs')
   }
 
   async requeueMoveJob(jobId: string): Promise<{ message: string; jobId: string }> {
