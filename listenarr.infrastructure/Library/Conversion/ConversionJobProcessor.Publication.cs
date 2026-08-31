@@ -39,6 +39,45 @@ namespace Listenarr.Infrastructure.Library.Conversion
             IAudiobookFileService audiobookFileService,
             CancellationToken cancellationToken)
         {
+            // The publication stack signals a rejected write by throwing, not by
+            // returning: the pinned-parent check raises when the file it created is not
+            // the file it can still see. That has to become a reported failure with the
+            // reason attached, or it escapes as an unclassified error and the scratch
+            // file is left behind.
+            try
+            {
+                return await PublishConvertedFileCoreAsync(
+                    audiobook,
+                    scratchPath,
+                    destinationPath,
+                    fileMover,
+                    audiobookFileService,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Publishing the converted file for audiobook {AudiobookId} was rejected",
+                    audiobook.Id);
+
+                return PublicationOutcome.Failed(
+                    $"The converted file could not be published into the library: {ex.Message} The original files have been left alone.");
+            }
+        }
+
+        private async Task<PublicationOutcome> PublishConvertedFileCoreAsync(
+            Audiobook audiobook,
+            string scratchPath,
+            string destinationPath,
+            IFileMover fileMover,
+            IAudiobookFileService audiobookFileService,
+            CancellationToken cancellationToken)
+        {
             // Stable per (job, destination) so a retry after a crash resumes the same
             // durable operation rather than starting a second one.
             var operationId = BuildOperationId(audiobook.Id, destinationPath);

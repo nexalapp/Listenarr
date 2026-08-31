@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -50,6 +49,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
             // Reclaim anything a previous process left mid-flight before looking for new
             // work, so a restart resumes rather than stalls.
             await queue.RecoverAbandonedJobsAsync(cancellationToken);
+
+            await SweepOrphanedScratchFilesAsync(scope.ServiceProvider, queue, cancellationToken);
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -177,248 +178,59 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
         }
 
-        private async Task<ExecutionOutcome> ExecuteAsync(
-            ConversionJob job,
+        /// <summary>
+        /// Remove scratch files left by jobs that are no longer active.
+        ///
+        /// A crash mid-encode leaves one behind, and for a real book it is hundreds of
+        /// megabytes. Nothing else would ever remove it, so the config volume would fill
+        /// one interrupted conversion at a time.
+        /// </summary>
+        private async Task SweepOrphanedScratchFilesAsync(
             IServiceProvider services,
             IConversionQueueService queue,
             CancellationToken cancellationToken)
         {
-            var audiobookRepository = services.GetRequiredService<IAudiobookRepository>();
-            var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
-            if (audiobook == null)
-            {
-                return ExecutionOutcome.Failed(
-                    ConversionFailureKind.SourceUnreadable,
-                    "That audiobook no longer exists.");
-            }
-
-            var sources = CollectSourceFiles(audiobook);
-            if (sources.Count == 0)
-            {
-                return ExecutionOutcome.Failed(
-                    ConversionFailureKind.SourceUnreadable,
-                    "This book no longer has any MP3 files to convert.");
-            }
-
-            var semanticsResolver = services.GetRequiredService<IFileSystemSemanticsResolver>();
-            var pathComparer = await ResolvePathComparerAsync(
-                semanticsResolver,
-                audiobook,
-                cancellationToken);
-
-            await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Probing, 0, cancellationToken);
-
-            var ffmpegService = services.GetRequiredService<IFfmpegService>();
-            var planning = await BuildPlanAsync(
-                audiobook,
-                sources.Select(s => s.File).ToList(),
-                ffmpegService,
-                pathComparer,
-                cancellationToken);
-
-            if (!planning.Success)
-            {
-                return ExecutionOutcome.Failed(planning.FailureKind, planning.Error!);
-            }
-
-            var plan = planning.Plan!;
-            var settings = await services.GetRequiredService<IConfigurationService>()
-                .GetApplicationSettingsAsync();
-
-            var destinationPath = await BuildDestinationPathAsync(
-                audiobook,
-                planning.Tags!,
-                services,
-                settings);
-
-            if (destinationPath == null)
-            {
-                return ExecutionOutcome.Failed(
-                    ConversionFailureKind.Unknown,
-                    "The converted file's destination could not be determined because this book has no known folder.");
-            }
-
-            // The encode writes outside the library, and publication then imports the
-            // result the same way a completed download is imported. The library
-            // filesystem carries no scratch namespace by design, and a partly written
-            // encode sitting next to the book is exactly what that rule exists to
-            // prevent — a reader cannot tell it from a real file.
-            var scratchDirectory = services.GetRequiredService<IApplicationPathService>()
-                .ResolveFromConfig("conversion");
-            Directory.CreateDirectory(scratchDirectory);
-
-            var scratchPath = Path.Combine(scratchDirectory, $"conversion-{job.Id:N}.m4b");
-
-            var converter = services.GetRequiredService<IAudiobookConverter>();
-            var progress = new Progress<ConversionProgress>(report =>
-            {
-                // Fire-and-forget: progress that could not be persisted must never stall
-                // or fail the encode reporting it.
-                _ = queue.ReportProgressAsync(
-                    job.Id,
-                    ConversionJobPhase.Encoding,
-                    report.Fraction * 100,
-                    CancellationToken.None);
-            });
-
-            await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 0, cancellationToken);
-
-            ConversionResult result;
             try
             {
-                result = await converter.ConvertAsync(
-                    new ConversionRequest(plan, scratchPath, planning.Tags!),
-                    progress,
-                    cancellationToken);
+                var scratchDirectory = services.GetRequiredService<IApplicationPathService>()
+                    .ResolveFromConfig("conversion");
+                if (!Directory.Exists(scratchDirectory))
+                {
+                    return;
+                }
+
+                foreach (var file in Directory.EnumerateFiles(scratchDirectory, "conversion-*.m4b"))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var name = Path.GetFileNameWithoutExtension(file);
+                    if (!Guid.TryParseExact(name["conversion-".Length..], "N", out var jobId))
+                    {
+                        continue;
+                    }
+
+                    // Only the job's own worker may remove its scratch file while it runs,
+                    // so an active job's file is left alone even though it looks orphaned.
+                    var job = await queue.GetJobAsync(jobId, cancellationToken);
+                    if (job != null && job.Status.IsActive())
+                    {
+                        continue;
+                    }
+
+                    TryDeleteScratch(file);
+                    logger.LogInformation(
+                        "Removed the scratch file left by conversion {JobId}",
+                        jobId);
+                }
             }
             catch (OperationCanceledException)
             {
-                // A cancelled encode leaves a partial file behind; nothing has been
-                // published, so removing it is safe and keeps the library folder clean.
-                TryDeleteScratch(scratchPath);
                 throw;
             }
-
-            if (!result.Success)
+            catch (Exception ex) when (IsNonFatal(ex))
             {
-                TryDeleteScratch(scratchPath);
-                return ExecutionOutcome.Failed(result.FailureKind, result.Message ?? "The conversion failed.");
+                logger.LogDebug(ex, "Could not sweep orphaned conversion scratch files");
             }
-
-            await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Publishing, 95, cancellationToken);
-
-            var publication = await PublishConvertedFileAsync(
-                audiobook,
-                scratchPath,
-                destinationPath,
-                services.GetRequiredService<IFileMover>(),
-                services.GetRequiredService<IAudiobookFileService>(),
-                cancellationToken);
-
-            if (!publication.Success)
-            {
-                TryDeleteScratch(scratchPath);
-                return ExecutionOutcome.Failed(
-                    ConversionFailureKind.OutputRejected,
-                    publication.Error!);
-            }
-
-            await queue.ReportProgressAsync(job.Id, ConversionJobPhase.RetiringSources, 98, cancellationToken);
-
-            var warning = await RetireSourcesAsync(
-                audiobook,
-                sources.Select(s => new SourceFileReference(s.File.Id, s.FullPath)).ToList(),
-                settings,
-                services.GetRequiredService<IAudiobookFileRepository>(),
-                services.GetRequiredService<IFileSystem>(),
-                cancellationToken);
-
-            return ExecutionOutcome.Succeeded(
-                publication.OutputPath!,
-                result.ChapterCount,
-                audiobook.Title,
-                warning);
-        }
-
-        /// <summary>
-        /// Where the M4B lands: the book's own directory, named from the configured file
-        /// naming pattern. Conversion replaces a book's files; it does not relocate it.
-        /// </summary>
-        private static async Task<string?> BuildDestinationPathAsync(
-            Audiobook audiobook,
-            AudioMetadata tags,
-            IServiceProvider services,
-            ApplicationSettings settings)
-        {
-            if (string.IsNullOrWhiteSpace(audiobook.BasePath))
-            {
-                return null;
-            }
-
-            var namingService = services.GetRequiredService<IFileNamingService>();
-
-            string fileName;
-            try
-            {
-                fileName = namingService.ApplyNamingPattern(
-                    settings.FileNamingPattern,
-                    tags,
-                    treatAsFilename: true);
-            }
-            catch (Exception ex) when (
-                ex is not OperationCanceledException
-                && ex is not OutOfMemoryException
-                && ex is not StackOverflowException)
-            {
-                fileName = string.Empty;
-            }
-
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                fileName = FileUtils.SafeFileName(
-                    audiobook.Title is { Length: > 0 } title ? title : $"audiobook-{audiobook.Id}");
-            }
-
-            return await Task.FromResult(
-                Path.GetFullPath(Path.Combine(audiobook.BasePath, fileName + ".m4b")));
-        }
-
-        /// <summary>The book's MP3 files, with their paths resolved.</summary>
-        private static List<(AudiobookFile File, string FullPath)> CollectSourceFiles(Audiobook audiobook)
-        {
-            var results = new List<(AudiobookFile, string)>();
-            foreach (var file in audiobook.Files ?? [])
-            {
-                if (string.IsNullOrWhiteSpace(file.Path)
-                    || !string.Equals(Path.GetExtension(file.Path), ".mp3", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var fullPath = ResolveFullPath(audiobook, file);
-                if (fullPath != null)
-                {
-                    results.Add((file, fullPath));
-                }
-            }
-
-            return results;
-        }
-
-        /// <summary>
-        /// Ordering has to use the source filesystem's own case semantics, or two files
-        /// differing only in case would be treated as one on a case-sensitive share.
-        /// </summary>
-        private static async Task<StringComparer> ResolvePathComparerAsync(
-            IFileSystemSemanticsResolver resolver,
-            Audiobook audiobook,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(audiobook.BasePath))
-                {
-                    var resolution = await resolver.ResolveAsync(
-                        audiobook.BasePath,
-                        FileSystemCaseSensitivityMode.Auto,
-                        cancellationToken);
-                    if (resolution.Semantics.Comparer is { } comparer)
-                    {
-                        return comparer;
-                    }
-                }
-            }
-            catch (Exception ex) when (
-                ex is not OperationCanceledException
-                && ex is not OutOfMemoryException
-                && ex is not StackOverflowException)
-            {
-                // Fall through to the conservative default below.
-            }
-
-            // Ordinal treats more paths as distinct, which is the safe direction: it can
-            // list a duplicate, never silently drop a chapter.
-            return StringComparer.Ordinal;
         }
 
         private void TryDeleteScratch(string scratchPath)
