@@ -234,9 +234,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
         }
 
         [EncoderFact]
-        public async Task WriteAsync_KeepsCoverArtAsAnAttachedPicture()
+        public async Task WriteAsync_KeepsCoverArtWhileWritingFreeformTags()
         {
-            var source = await WriteBookAsync(coverArt: true);
+            // The combination that ruled ffmpeg out. Its mov muxer will write freeform
+            // atoms (-movflags +use_metadata_tags) or an attached picture, never both:
+            // with the flag on it emits no covr atom at all. A real library file has
+            // cover art and needs SERIES, so a writer that cannot do both is no use.
+            var source = await WriteBookAsync(coverArt: true, chapters: 3, seconds: 6);
             var writer = BuildWriter();
             var existing = await writer.ReadAsync(source);
             Assert.True(existing.HasCoverArt);
@@ -244,15 +248,32 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
             var result = await writer.WriteAsync(new TagWriteRequest(
                 source,
                 OutputPath,
-                Tags(("title", "Drive")),
+                Tags(
+                    ("title", "Drive"),
+                    ("album", "[The Expanse 2.7] Drive"),
+                    ("description", "A short story of the Expanse."),
+                    ("SERIES", "The Expanse"),
+                    ("ASIN", "B00A2M2XPO")),
                 existing));
 
             Assert.True(result.Success, result.Message);
 
             var written = await writer.ReadAsync(OutputPath);
+
             // Not merely "has a video stream": without the attached_pic disposition a
             // player shows the book as a video file with one very long frame.
             Assert.True(written.HasCoverArt);
+            Assert.Equal(3, written.ChapterCount);
+            Assert.Equal("The Expanse", written.Tags["SERIES"]);
+            Assert.Equal("B00A2M2XPO", written.Tags["ASIN"]);
+            Assert.Equal("[The Expanse 2.7] Drive", written.Tags["album"]);
+
+            // And the description is in the desc atom, which is the only place Plex
+            // reads an album summary from.
+            var bytes = await File.ReadAllBytesAsync(OutputPath);
+            var descAtom = IndexOf(bytes, "desc"u8);
+            var value = IndexOf(bytes, "A short story of the Expanse."u8);
+            Assert.True(descAtom >= 0 && value > descAtom && value - descAtom < 64);
         }
 
         [EncoderFact]
