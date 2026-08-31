@@ -13,10 +13,22 @@ services:
       - TZ=America/Denver
     volumes:
       - /mnt/user/appdata/listenarr:/app/config
-      # Read-only for the first validation pass: a scan of 1,119 books cannot
-      # rename, move, or retag anything while the library layout is unverified.
-      # Drop the :ro (and add a downloads mount) once scanning looks correct.
-      - /mnt/user/audiobooks:/audiobooks:ro
+
+      # Writable so imports can land. This was read-only for the first validation
+      # pass, which also meant nothing could ever be imported; a scan of 1,119 books
+      # can now rename, move and retag, so take a backup of the share before the
+      # first import if the layout still has not been eyeballed.
+      - /mnt/user/audiobooks:/audiobooks
+
+      # Mounted at /downloads to match the path the download client reports, so no
+      # remote path mapping is needed: NZBGet says
+      # /downloads/completed/<category>/<release> and Listenarr resolves exactly
+      # that. Without this mount, every import fails with "No importable files
+      # found" while the file sits plainly visible on the share.
+      #
+      # Read-write on purpose. The mover renames rather than copies when source and
+      # destination share a volume, and a rename needs to remove the original.
+      - /mnt/user/Downloads:/downloads
     restart: unless-stopped
     labels:
       net.unraid.docker.managed: composeman
