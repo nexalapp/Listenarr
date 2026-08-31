@@ -161,10 +161,13 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     scratchDirectory,
                     $"tagging-{job.Id:N}-{file.Id}.m4b");
 
+                // Only the tags that need setting. Everything else the file carries --
+                // its track numbers, its cover, whatever a previous tagger left -- is not
+                // named here and is therefore not touched.
                 var request = new TagWriteRequest(
                     fullPath,
                     scratchPath,
-                    plan.FinalTags,
+                    plan.WrittenTags,
                     existing,
                     cover);
 

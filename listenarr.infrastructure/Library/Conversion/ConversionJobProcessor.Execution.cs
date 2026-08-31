@@ -167,6 +167,24 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 return ExecutionOutcome.Failed(result.FailureKind, result.Message ?? "The conversion failed.");
             }
 
+            // ffmpeg's mov muxer writes only the tags it has standard atoms for, and
+            // silently drops the rest - SERIES, SERIESPOSITION, ASIN and sort_album among
+            // them, which is precisely the set this library's files carry. The flag that
+            // would make it keep them writes QuickTime mdta metadata instead of the
+            // iTunes atoms players read, and drops cover art besides. So the complete set
+            // is applied here, by the same writer that applies it to a book already in
+            // the library: one code path decides what a tag says, and one writes it.
+            var tagged = await services.GetRequiredService<IAudiobookTagWriter>()
+                .ApplyAsync(scratchPath, planning.Tags!, cancellationToken);
+
+            if (!tagged.Success)
+            {
+                TryDeleteScratch(scratchPath);
+                return ExecutionOutcome.Failed(
+                    ConversionFailureKind.OutputRejected,
+                    $"The converted file's tags could not be written: {tagged.Message}");
+            }
+
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Publishing, 95, cancellationToken);
 
             PublicationOutcome publication;

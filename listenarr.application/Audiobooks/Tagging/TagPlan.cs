@@ -74,6 +74,28 @@ namespace Listenarr.Application.Audiobooks.Tagging
 
         public bool HasChanges => Changes.Any(change => change.IsWrite);
 
+        /// <summary>
+        /// Just the tags that need setting, and nothing else.
+        ///
+        /// <para>
+        /// This is what a rewrite of an existing file applies. Everything the file already
+        /// carries and this does not name — a release's own track numbers, its cover art,
+        /// a tagger's custom key — is left byte for byte alone, which is both safer than
+        /// rewriting it and the only way to be sure nothing was lost in the process.
+        /// </para>
+        /// <para>
+        /// Empty when the file is already correct, and that is what makes running this on
+        /// every import cheap: there is then nothing to write at all.
+        /// </para>
+        /// </summary>
+        public IReadOnlyDictionary<string, string> WrittenTags =>
+            Changes
+                .Where(change => change.IsWrite)
+                .ToDictionary(
+                    change => change.Tag,
+                    change => change.Proposed ?? string.Empty,
+                    StringComparer.OrdinalIgnoreCase);
+
         public static TagPlan Empty { get; } = new(
             [],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));

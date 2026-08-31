@@ -45,11 +45,17 @@ namespace Listenarr.Application.Audiobooks.Tagging
     }
 
     /// <summary>What a file currently carries. Read once and used for both the plan and the verification.</summary>
+    /// <remarks>
+    /// <c>MajorBrand</c> is the container's declared brand — <c>M4B</c> on a
+    /// properly-tagged audiobook. It is carried through a rewrite rather than left to the
+    /// muxer's default, which would quietly downgrade an M4B to an M4A.
+    /// </remarks>
     public sealed record AudiobookFileTags(
         IReadOnlyDictionary<string, string> Tags,
         int ChapterCount,
         TimeSpan Duration,
-        bool HasCoverArt)
+        bool HasCoverArt,
+        string? MajorBrand = null)
     {
         public static AudiobookFileTags Empty { get; } = new(
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
@@ -120,6 +126,24 @@ namespace Listenarr.Application.Audiobooks.Tagging
         Task<TagWriteResult> WriteAsync(
             TagWriteRequest request,
             IProgress<double>? progress = null,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Apply tags to a file the caller already owns, with no copy, then verify it.
+        /// </summary>
+        /// <remarks>
+        /// For a file that is <em>already</em> scratch — a conversion's freshly encoded
+        /// output on its way to the library. Copying it first would be a second pass over
+        /// several hundred megabytes to protect a file nothing is serving yet.
+        /// <para>
+        /// Never call this on a library file. The copy in <see cref="WriteAsync"/> is
+        /// what makes a failed write leave the original untouched, and this has no such
+        /// protection by design.
+        /// </para>
+        /// </remarks>
+        Task<TagWriteResult> ApplyAsync(
+            string path,
+            IReadOnlyDictionary<string, string> tags,
             CancellationToken cancellationToken = default);
     }
 }

@@ -95,7 +95,8 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<IAudiobookConverter, FfmpegAudiobookConverter>();
         services.AddScoped<ITagJobRepository, EfTagJobRepository>();
         services.AddScoped<ITagQueueService, TagQueueService>();
-        services.AddScoped<IAudiobookTagWriter, FfmpegTagWriter>();
+        services.AddScoped<FfprobeTagReader>();
+        services.AddScoped<IAudiobookTagWriter, M4bTagWriter>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
         services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();

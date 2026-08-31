@@ -153,6 +153,14 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
             args.Add("-ac");
             args.Add(plan.TargetChannels.ToString(CultureInfo.InvariantCulture));
 
+            // Deliberately no -movflags +use_metadata_tags. It looks like the way to get
+            // SERIES, ASIN and their neighbours written, and ffprobe does read them back
+            // — but it makes ffmpeg write QuickTime mdta metadata (a "keys" table plus an
+            // index-addressed ilst) rather than the iTunes "----" freeform atoms this
+            // library's files use and players read. It also drops cover art outright.
+            // Those tags are applied after the encode instead, by the same writer that
+            // applies them to an existing book.
+            //
             // The ipod muxer is what makes this an audiobook rather than a video file
             // with an audio track: it writes the M4B-shaped brand players look for.
             args.Add("-f");

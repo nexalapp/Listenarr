@@ -114,6 +114,24 @@ namespace Listenarr.Tests.Builders
             return this;
         }
 
+        public ApplicationSettingsBuilder WithAutomaticTagWriting()
+        {
+            _applicationSettings.WriteMetadataTags = true;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithoutAutomaticTagWriting()
+        {
+            _applicationSettings.WriteMetadataTags = false;
+            return this;
+        }
+
+        public ApplicationSettingsBuilder WithTagMappings(params TagMapping[] mappings)
+        {
+            _applicationSettings.TagMappings = [.. mappings];
+            return this;
+        }
+
         public ApplicationSettings Build()
         {
             _applicationSettings.ImportBlacklistExtensions = _importBlacklistExtensions;
