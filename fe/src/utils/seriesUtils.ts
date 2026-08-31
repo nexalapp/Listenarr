@@ -63,10 +63,12 @@ export function isSeriesRestatement(subtitle: string, seriesNames: string[]): bo
     const name = normalizeForComparison(seriesName)
     if (!name) continue
 
-    // Audible writes the series with and without a trailing "Series", and either
-    // form can reach the badge or the subtitle, so accept both as the same name.
-    const bare = name.replace(/ series$/, '')
-    for (const candidate of new Set([bare, `${bare} series`])) {
+    // Audible writes the series with and without a trailing "Series" and with or
+    // without a leading "The" - "The Sun Eater 1" against a Sun Eater badge - and any
+    // of those forms can reach the badge or the subtitle, so accept them all as the
+    // same name.
+    const bare = name.replace(/ series$/, '').replace(/^the /, '')
+    for (const candidate of new Set([bare, `the ${bare}`, `${bare} series`])) {
       if (subject === candidate) return true
 
       // "Paragon Space, Book 1" / "Paragon Space 1" / "Paragon Space Series"
