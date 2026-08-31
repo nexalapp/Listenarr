@@ -36,6 +36,19 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
         Task<string?> EnsureFfprobeInstalledAsync();
 
         /// <summary>
+        /// Return the full path to an ffmpeg encoder, preferring an operator-configured
+        /// path, then PATH, then the application's bundled directory. Does NOT download.
+        /// Returns null when no encoder is available.
+        /// </summary>
+        Task<string?> GetFfmpegPathAsync();
+
+        /// <summary>
+        /// Ensure an ffmpeg encoder is available, performing the download/extract/install
+        /// flow when the host provides none. Returns the resolved path or null.
+        /// </summary>
+        Task<string?> EnsureFfmpegInstalledAsync();
+
+        /// <summary>
         /// Execute the utility ffprobe against the given file
         /// </summary>
         /// <param name="filePath">File to execute ffprobe on</param>

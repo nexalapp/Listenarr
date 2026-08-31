@@ -7,6 +7,7 @@ namespace Listenarr.Tests.Mocks
     {
         private TempFileService _fileService = new();
         private string _ffprobePath = "";
+        private string _ffmpegPath = "";
 
         public async ValueTask DisposeAsync()
         {
@@ -26,6 +27,21 @@ namespace Listenarr.Tests.Mocks
             }
 
             return _ffprobePath;
+        }
+
+        public async Task<string?> EnsureFfmpegInstalledAsync()
+        {
+            return await GetFfmpegPathAsync();
+        }
+
+        public async Task<string?> GetFfmpegPathAsync()
+        {
+            if (string.IsNullOrWhiteSpace(_ffmpegPath))
+            {
+                _ffmpegPath = await _fileService.GetTempFileAsync("ffmpegfake");
+            }
+
+            return _ffmpegPath;
         }
 
         public async Task<string> GetLicenseAsync()
