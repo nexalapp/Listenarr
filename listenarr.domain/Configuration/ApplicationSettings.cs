@@ -91,6 +91,19 @@ namespace Listenarr.Domain.Configuration
         // Whether to extract archive files (zip/rar/7z) when discovered in a completed download
         public bool ExtractArchives { get; set; } = true;
 
+        // Whether an imported MP3 audiobook is automatically queued for conversion to a
+        // single chaptered M4B. Off until the conversion has been proven against the real
+        // library: it is slow, IO-heavy, and rewrites what the library serves.
+        public bool ConvertMp3ToM4b { get; set; } = false;
+
+        // What happens to the source MP3s once a conversion has been verified.
+        public ConversionSourceDisposition ConversionSourceDisposition { get; set; } =
+            ConversionSourceDisposition.Archive;
+
+        // Where archived source MP3s are moved to. Empty means the conversion will not
+        // archive, because moving files to an unconfigured location is not a safe guess.
+        public string ConversionArchivePath { get; set; } = string.Empty;
+
         // Maximum number of concurrent ffprobe processes during an unmatched scan.
         // Lower values reduce NAS/disk I/O pressure; higher values speed up large libraries.
         public int UnmatchedScanConcurrency { get; set; } = 2;

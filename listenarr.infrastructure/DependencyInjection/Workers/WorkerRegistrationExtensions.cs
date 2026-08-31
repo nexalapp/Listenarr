@@ -58,6 +58,14 @@ internal static class WorkerRegistrationExtensions
             IDownloadProcessingJobCleanupProcessor,
             DownloadProcessingJobCleanupService>(services);
 
+        // Conversion is deliberately its own worker rather than a stage of the import
+        // processor: an encode can run for an hour, and sharing that worker would stall
+        // every other import behind it.
+        AddHostedProcessor<
+            ConversionJobProcessor,
+            IConversionJobProcessor,
+            ConversionBackgroundService>(services);
+
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
         return services;
     }
