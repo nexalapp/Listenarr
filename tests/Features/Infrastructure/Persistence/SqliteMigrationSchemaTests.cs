@@ -44,6 +44,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260829163019_AddNzbKingTokenLedger";
     private const string ConversionJobsMigrationId =
         "20260831152310_AddConversionJobs";
+    private const string TagJobsMigrationId =
+        "20260831172740_AddTagJobs";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -170,7 +172,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 FileMutationParentGenerationProofsMigrationId,
                 CompatibilityFilePublicationMigrationId,
                 NzbKingTokenLedgerMigrationId,
-                ConversionJobsMigrationId
+                ConversionJobsMigrationId,
+                TagJobsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
