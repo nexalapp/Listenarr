@@ -199,6 +199,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     return;
                 }
 
+                var now = DateTime.UtcNow;
+
                 foreach (var file in Directory.EnumerateFiles(scratchDirectory, "conversion-*.m4b"))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -217,10 +219,31 @@ namespace Listenarr.Infrastructure.Library.Conversion
                         continue;
                     }
 
+                    // A failed job may be holding a verified encode so a retry need not
+                    // repeat it. That is worth real disk, but not indefinitely: a book
+                    // nobody retries would otherwise keep its output forever.
+                    if (job != null
+                        && !string.IsNullOrWhiteSpace(job.VerifiedOutputPath)
+                        && IsWithinKeptOutputRetention(job, now))
+                    {
+                        continue;
+                    }
+
                     TryDeleteScratch(file);
-                    logger.LogInformation(
-                        "Removed the scratch file left by conversion {JobId}",
-                        jobId);
+                    if (job != null && !string.IsNullOrWhiteSpace(job.VerifiedOutputPath))
+                    {
+                        await queue.ClearVerifiedOutputAsync(jobId, cancellationToken);
+                        logger.LogInformation(
+                            "Dropped the kept encode for conversion {JobId} after {Days} day(s) unretried",
+                            jobId,
+                            KeptOutputRetention.TotalDays);
+                    }
+                    else
+                    {
+                        logger.LogInformation(
+                            "Removed the scratch file left by conversion {JobId}",
+                            jobId);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -232,6 +255,16 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 logger.LogDebug(ex, "Could not sweep orphaned conversion scratch files");
             }
         }
+
+        /// <summary>
+        /// How long a failed job may hold the encode it could not publish. Long enough
+        /// that an operator fixing a mount or a permission gets the retry for free, short
+        /// enough that an abandoned book does not keep a book-sized file indefinitely.
+        /// </summary>
+        internal static readonly TimeSpan KeptOutputRetention = TimeSpan.FromDays(7);
+
+        internal static bool IsWithinKeptOutputRetention(ConversionJob job, DateTime now) =>
+            now - (job.CompletedAt ?? job.UpdatedAt ?? job.EnqueuedAt) < KeptOutputRetention;
 
         private void TryDeleteScratch(string scratchPath)
         {

@@ -261,6 +261,36 @@ namespace Listenarr.Application.Audiobooks.Conversion
             }
         }
 
+        public async Task RecordVerifiedOutputAsync(
+            Guid jobId,
+            string outputPath,
+            long outputLength,
+            int chapterCount,
+            CancellationToken cancellationToken = default)
+        {
+            await repository.UpdateAsync(jobId, job =>
+            {
+                job.VerifiedOutputPath = outputPath;
+                job.VerifiedOutputLength = outputLength;
+                job.ChapterCount = chapterCount;
+            }, cancellationToken);
+
+            logger.LogInformation(
+                "Kept the verified encode for conversion {JobId} so a retry need not repeat it",
+                jobId);
+        }
+
+        public async Task ClearVerifiedOutputAsync(
+            Guid jobId,
+            CancellationToken cancellationToken = default)
+        {
+            await repository.UpdateAsync(jobId, job =>
+            {
+                job.VerifiedOutputPath = null;
+                job.VerifiedOutputLength = null;
+            }, cancellationToken);
+        }
+
         public async Task CompleteAsync(
             Guid jobId,
             string outputPath,
@@ -281,6 +311,10 @@ namespace Listenarr.Application.Audiobooks.Conversion
                 job.CompletedAt = now;
                 job.LeaseOwner = null;
                 job.LeaseExpiresAt = null;
+                // The kept encode has been moved into the library, so the scratch path
+                // it named no longer holds anything.
+                job.VerifiedOutputPath = null;
+                job.VerifiedOutputLength = null;
                 // Clearing the key releases the unique index so the book can be
                 // converted again later without colliding with this row.
                 job.ActiveDeduplicationKey = null;

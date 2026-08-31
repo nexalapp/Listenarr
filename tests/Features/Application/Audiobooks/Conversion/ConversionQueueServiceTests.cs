@@ -335,6 +335,96 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Conversion
             Assert.False(job.CanRetry);
         }
 
+        // ---- keeping a verified encode ------------------------------------------------
+
+        [Fact]
+        public async Task RecordVerifiedOutputAsync_RemembersTheEncodeAndItsSize()
+        {
+            var job = new ConversionJob { AudiobookId = 7 };
+            GivenJob(job);
+
+            await BuildService().RecordVerifiedOutputAsync(job.Id, "/scratch/out.m4b", 4096, 12);
+
+            Assert.Equal("/scratch/out.m4b", job.VerifiedOutputPath);
+            Assert.Equal(4096, job.VerifiedOutputLength);
+            Assert.Equal(12, job.ChapterCount);
+        }
+
+        [Fact]
+        public async Task ClearVerifiedOutputAsync_ForgetsTheEncode()
+        {
+            var job = new ConversionJob
+            {
+                AudiobookId = 7,
+                VerifiedOutputPath = "/scratch/out.m4b",
+                VerifiedOutputLength = 4096
+            };
+            GivenJob(job);
+
+            await BuildService().ClearVerifiedOutputAsync(job.Id);
+
+            Assert.Null(job.VerifiedOutputPath);
+            Assert.Null(job.VerifiedOutputLength);
+        }
+
+        [Fact]
+        public async Task CompleteAsync_ForgetsTheKeptEncode()
+        {
+            // Completing moves the file into the library, so the scratch path it named
+            // holds nothing and must not be offered to a later retry.
+            var job = new ConversionJob
+            {
+                AudiobookId = 7,
+                VerifiedOutputPath = "/scratch/out.m4b",
+                VerifiedOutputLength = 4096
+            };
+            GivenJob(job);
+
+            await BuildService().CompleteAsync(job.Id, "/library/book/book.m4b", 12);
+
+            Assert.Null(job.VerifiedOutputPath);
+            Assert.Null(job.VerifiedOutputLength);
+        }
+
+        [Fact]
+        public async Task FailAsync_LeavesAKeptEncodeAlone()
+        {
+            // The point of keeping it is that a retry can publish it, and a retry only
+            // happens after a failure.
+            var job = new ConversionJob
+            {
+                AudiobookId = 7,
+                AttemptCount = 1,
+                MaxAttempts = 3,
+                VerifiedOutputPath = "/scratch/out.m4b",
+                VerifiedOutputLength = 4096
+            };
+            GivenJob(job);
+
+            await BuildService().FailAsync(job.Id, ConversionFailureKind.OutputRejected, "rejected");
+
+            Assert.Equal("/scratch/out.m4b", job.VerifiedOutputPath);
+            Assert.Equal(4096, job.VerifiedOutputLength);
+        }
+
+        [Fact]
+        public async Task RetryAsync_KeepsTheEncodeSoItNeedNotBeRepeated()
+        {
+            var job = new ConversionJob
+            {
+                AudiobookId = 7,
+                Status = ConversionJobStatus.Failed,
+                VerifiedOutputPath = "/scratch/out.m4b",
+                VerifiedOutputLength = 4096
+            };
+            GivenJob(job);
+
+            await BuildService().RetryAsync(job.Id);
+
+            Assert.Equal(ConversionJobStatus.Queued, job.Status);
+            Assert.Equal("/scratch/out.m4b", job.VerifiedOutputPath);
+        }
+
         private void GivenJob(ConversionJob job)
         {
             _repository

@@ -98,6 +98,23 @@ namespace Listenarr.Domain.Audiobooks.Conversion
         public string? OutputPath { get; set; }
 
         /// <summary>
+        /// A completed and verified encode this job produced but could not publish.
+        ///
+        /// Set only after the output has been read back and its chapters and duration
+        /// confirmed, so a retry can publish it again instead of re-encoding a book that
+        /// may have taken hours. Cleared once the job publishes or the file is swept.
+        /// </summary>
+        [MaxLength(2000)]
+        public string? VerifiedOutputPath { get; set; }
+
+        /// <summary>
+        /// Byte length of <see cref="VerifiedOutputPath"/> as verified. A file whose size
+        /// no longer matches is not the one that was checked, so it is re-encoded rather
+        /// than trusted.
+        /// </summary>
+        public long? VerifiedOutputLength { get; set; }
+
+        /// <summary>
         /// Operator-facing reason for a terminal failure. Written to be read in the
         /// Activity view, so it names the file or the limit rather than pointing at a log.
         /// </summary>

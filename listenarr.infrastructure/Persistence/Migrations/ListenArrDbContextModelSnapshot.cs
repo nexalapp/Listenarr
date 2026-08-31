@@ -726,6 +726,13 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("VerifiedOutputLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("VerifiedOutputPath")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ActiveDeduplicationKey")

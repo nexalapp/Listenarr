@@ -105,6 +105,25 @@ namespace Listenarr.Application.Audiobooks.Conversion
             double progress,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Remember that this job produced a verified encode it could not publish, so a
+        /// retry can publish that file instead of spending the encode again.
+        /// </summary>
+        Task RecordVerifiedOutputAsync(
+            Guid jobId,
+            string outputPath,
+            long outputLength,
+            int chapterCount,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Forget a job's verified encode, because it has been published, swept, or no
+        /// longer matches the book's sources.
+        /// </summary>
+        Task ClearVerifiedOutputAsync(
+            Guid jobId,
+            CancellationToken cancellationToken = default);
+
         Task CompleteAsync(
             Guid jobId,
             string outputPath,

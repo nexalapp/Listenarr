@@ -92,6 +92,19 @@ namespace Listenarr.Application.Audiobooks.Conversion
         Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Check an encode that already exists at the request's scratch path against the
+        /// request's plan, without re-encoding.
+        ///
+        /// Lets a retry publish an output a previous attempt produced instead of spending
+        /// the encode again, which for a long book is hours. The plan is rebuilt from the
+        /// current sources first, so an output that no longer matches them fails here and
+        /// is re-encoded rather than published stale.
+        /// </summary>
+        Task<ConversionResult> VerifyExistingOutputAsync(
+            ConversionRequest request,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Run one conversion, reporting progress as it goes. Never throws for an
         /// expected failure; the outcome is in the returned result.
         /// </summary>

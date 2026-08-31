@@ -43,7 +43,7 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string NzbKingTokenLedgerMigrationId =
         "20260829163019_AddNzbKingTokenLedger";
     private const string ConversionJobsMigrationId =
-        "20260831012038_AddConversionJobs";
+        "20260831152310_AddConversionJobs";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()

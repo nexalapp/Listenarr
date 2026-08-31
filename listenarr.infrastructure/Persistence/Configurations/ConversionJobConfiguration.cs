@@ -38,6 +38,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
 
             builder.Property(job => job.ActiveDeduplicationKey).HasMaxLength(256);
             builder.Property(job => job.OutputPath).HasMaxLength(2000);
+            builder.Property(job => job.VerifiedOutputPath).HasMaxLength(2000);
             builder.Property(job => job.FailureKind).HasMaxLength(32);
             builder.Property(job => job.LeaseOwner).HasMaxLength(200);
             builder.Property(job => job.LeaseGeneration).HasDefaultValue(0);

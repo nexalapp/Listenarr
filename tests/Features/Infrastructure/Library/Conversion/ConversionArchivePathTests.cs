@@ -177,5 +177,50 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Conversion
                 ConversionJobProcessor.BuildOperationId(job, 2, "/library/book/book.m4b"),
                 ConversionJobProcessor.BuildOperationId(job, 3, "/library/book/book.m4b"));
         }
+
+        // ---- how long a kept encode survives -----------------------------------------
+
+        [Fact]
+        public void IsWithinKeptOutputRetention_KeepsARecentFailure()
+        {
+            // An operator who fixes a mount and retries the same day gets the encode for
+            // free rather than paying for it twice.
+            var now = new DateTime(2026, 8, 31, 12, 0, 0, DateTimeKind.Utc);
+            var job = new ConversionJob { CompletedAt = now.AddHours(-2) };
+
+            Assert.True(ConversionJobProcessor.IsWithinKeptOutputRetention(job, now));
+        }
+
+        [Fact]
+        public void IsWithinKeptOutputRetention_DropsOneNobodyCameBackFor()
+        {
+            // The file is book-sized; an abandoned conversion must not hold it forever.
+            var now = new DateTime(2026, 8, 31, 12, 0, 0, DateTimeKind.Utc);
+            var job = new ConversionJob { CompletedAt = now - ConversionJobProcessor.KeptOutputRetention.Add(TimeSpan.FromHours(1)) };
+
+            Assert.False(ConversionJobProcessor.IsWithinKeptOutputRetention(job, now));
+        }
+
+        [Fact]
+        public void IsWithinKeptOutputRetention_FallsBackWhenTheJobNeverCompleted()
+        {
+            // A job killed before it recorded a completion still has to age out.
+            var now = new DateTime(2026, 8, 31, 12, 0, 0, DateTimeKind.Utc);
+            var stale = new ConversionJob
+            {
+                CompletedAt = null,
+                UpdatedAt = null,
+                EnqueuedAt = now - ConversionJobProcessor.KeptOutputRetention.Add(TimeSpan.FromDays(1))
+            };
+            var fresh = new ConversionJob
+            {
+                CompletedAt = null,
+                UpdatedAt = now.AddMinutes(-5),
+                EnqueuedAt = now.AddDays(-30)
+            };
+
+            Assert.False(ConversionJobProcessor.IsWithinKeptOutputRetention(stale, now));
+            Assert.True(ConversionJobProcessor.IsWithinKeptOutputRetention(fresh, now));
+        }
     }
 }

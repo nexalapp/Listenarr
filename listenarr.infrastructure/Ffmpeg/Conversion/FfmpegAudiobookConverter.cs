@@ -49,6 +49,14 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
             return !string.IsNullOrEmpty(path);
         }
 
+        public Task<ConversionResult> VerifyExistingOutputAsync(
+            ConversionRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            return VerifyOutputAsync(request, cancellationToken);
+        }
+
         public async Task<ConversionResult> ConvertAsync(
             ConversionRequest request,
             IProgress<ConversionProgress>? progress = null,

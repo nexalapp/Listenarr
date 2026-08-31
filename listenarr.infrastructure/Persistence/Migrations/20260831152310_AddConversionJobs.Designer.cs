@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260831012038_AddConversionJobs")]
+    [Migration("20260831152310_AddConversionJobs")]
     partial class AddConversionJobs
     {
         /// <inheritdoc />
@@ -727,6 +727,13 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasDefaultValue("Automatic");
 
                     b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("VerifiedOutputLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("VerifiedOutputPath")
+                        .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");

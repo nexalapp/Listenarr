@@ -131,22 +131,31 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 _ = ReportProgressSafelyAsync(queue, job.Id, percent);
             });
 
-            await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 0, cancellationToken);
+            var request = new ConversionRequest(plan, scratchPath, planning.Tags!);
 
-            ConversionResult result;
-            try
+            // A previous attempt may have encoded this book already and failed only when
+            // publishing it. Re-encoding a twenty-hour book to repeat a step that takes
+            // seconds is the wrong trade, so reuse that output when it still holds up.
+            //
+            // Only a *finished* encode can be reused. ffmpeg cannot resume a partial one,
+            // so an attempt interrupted mid-encode always starts over.
+            var result = await TryReuseVerifiedOutputAsync(job, request, queue, converter, cancellationToken);
+
+            if (result == null)
             {
-                result = await converter.ConvertAsync(
-                    new ConversionRequest(plan, scratchPath, planning.Tags!),
-                    progress,
-                    cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // A cancelled encode leaves a partial file behind; nothing has been
-                // published, so removing it is safe and keeps the library folder clean.
-                TryDeleteScratch(scratchPath);
-                throw;
+                await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 0, cancellationToken);
+
+                try
+                {
+                    result = await converter.ConvertAsync(request, progress, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // A cancelled encode leaves a partial file behind; nothing has been
+                    // published, so removing it is safe and keeps the folder clean.
+                    TryDeleteScratch(scratchPath);
+                    throw;
+                }
             }
 
             if (!result.Success)
@@ -180,7 +189,9 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             if (!publication.Success)
             {
-                TryDeleteScratch(scratchPath);
+                // Keep the encode. It is verified, and only publication failed — a retry
+                // should not have to produce it again.
+                await RememberVerifiedOutputAsync(job, scratchPath, result, queue);
                 return ExecutionOutcome.Failed(
                     ConversionFailureKind.OutputRejected,
                     publication.Error!);
@@ -202,6 +213,109 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 result.ChapterCount,
                 audiobook.Title,
                 warning);
+        }
+
+        /// <summary>
+        /// Reuse a verified encode from an earlier attempt, when there is one that still
+        /// matches the book as it is now. Returns null when the encode must be run.
+        ///
+        /// The plan is rebuilt from the current sources before this is called, so
+        /// verifying against it is what stops a stale output — produced before the book's
+        /// files changed — from being published as though it were current.
+        /// </summary>
+        private async Task<ConversionResult?> TryReuseVerifiedOutputAsync(
+            ConversionJob job,
+            ConversionRequest request,
+            IConversionQueueService queue,
+            IAudiobookConverter converter,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(job.VerifiedOutputPath) || job.VerifiedOutputLength is null)
+            {
+                return null;
+            }
+
+            if (!string.Equals(job.VerifiedOutputPath, request.ScratchOutputPath, StringComparison.Ordinal)
+                || !File.Exists(request.ScratchOutputPath))
+            {
+                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
+                return null;
+            }
+
+            // Length first: it is free, and a truncated or replaced file is not the one
+            // that was verified.
+            long length;
+            try
+            {
+                length = new FileInfo(request.ScratchOutputPath).Length;
+            }
+            catch (Exception ex) when (IsNonFatal(ex))
+            {
+                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
+                return null;
+            }
+
+            if (length != job.VerifiedOutputLength)
+            {
+                logger.LogInformation(
+                    "Discarding the kept encode for conversion {JobId}: it is {Actual} bytes, not the {Expected} that were verified",
+                    job.Id,
+                    length,
+                    job.VerifiedOutputLength);
+                TryDeleteScratch(request.ScratchOutputPath);
+                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
+                return null;
+            }
+
+            await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Verifying, 90, cancellationToken);
+
+            var verification = await converter.VerifyExistingOutputAsync(request, cancellationToken);
+            if (!verification.Success)
+            {
+                logger.LogInformation(
+                    "Re-encoding conversion {JobId}: the kept encode no longer matches this book ({Reason})",
+                    job.Id,
+                    verification.Message);
+                TryDeleteScratch(request.ScratchOutputPath);
+                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
+                return null;
+            }
+
+            logger.LogInformation(
+                "Reusing the verified encode for conversion {JobId}; only publication is retried",
+                job.Id);
+            return verification;
+        }
+
+        /// <summary>
+        /// Record a verified encode against the job so a retry can publish it directly.
+        /// Best effort: failing to remember it costs an encode, never correctness.
+        /// </summary>
+        private async Task RememberVerifiedOutputAsync(
+            ConversionJob job,
+            string scratchPath,
+            ConversionResult result,
+            IConversionQueueService queue)
+        {
+            try
+            {
+                if (!File.Exists(scratchPath))
+                {
+                    return;
+                }
+
+                await queue.RecordVerifiedOutputAsync(
+                    job.Id,
+                    scratchPath,
+                    new FileInfo(scratchPath).Length,
+                    result.ChapterCount,
+                    CancellationToken.None);
+            }
+            catch (Exception ex) when (IsNonFatal(ex))
+            {
+                logger.LogDebug(ex, "Could not keep the verified encode for conversion {JobId}", job.Id);
+                TryDeleteScratch(scratchPath);
+            }
         }
 
         /// <summary>

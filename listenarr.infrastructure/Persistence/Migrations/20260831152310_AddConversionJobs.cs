@@ -46,6 +46,8 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     SourceFileCount = table.Column<int>(type: "INTEGER", nullable: false),
                     ChapterCount = table.Column<int>(type: "INTEGER", nullable: false),
                     OutputPath = table.Column<string>(type: "TEXT", maxLength: 2000, nullable: true),
+                    VerifiedOutputPath = table.Column<string>(type: "TEXT", maxLength: 2000, nullable: true),
+                    VerifiedOutputLength = table.Column<long>(type: "INTEGER", nullable: true),
                     Error = table.Column<string>(type: "TEXT", nullable: true),
                     FailureKind = table.Column<string>(type: "TEXT", maxLength: 32, nullable: true),
                     CanRetry = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: true),
