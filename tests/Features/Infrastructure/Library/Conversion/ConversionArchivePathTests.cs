@@ -128,5 +128,54 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Conversion
             Assert.DoesNotContain("..", relative);
             Assert.Equal("The Garden of Rama 2", relative);
         }
+
+        // ---- operation identity ------------------------------------------------------
+
+        [Fact]
+        public void BuildOperationId_IsStableForTheSameJob()
+        {
+            // A crash mid-publication must resume the same durable operation rather than
+            // start a second one, which is the whole reason this is derived and not random.
+            var job = Guid.NewGuid();
+
+            Assert.Equal(
+                ConversionJobProcessor.BuildOperationId(job, 2, "/library/book/book.m4b"),
+                ConversionJobProcessor.BuildOperationId(job, 2, "/library/book/book.m4b"));
+        }
+
+        [Fact]
+        public void BuildOperationId_DiffersBetweenJobsForTheSameBook()
+        {
+            // The durable journal records this operation's source path, which is the
+            // job's own scratch file. A key shared across jobs made a later conversion
+            // collide with an earlier one's journal row and be rejected for a path
+            // mismatch — leaving a book unconvertible forever after its first failure.
+            var first = ConversionJobProcessor.BuildOperationId(
+                Guid.NewGuid(), 2, "/library/book/book.m4b");
+            var second = ConversionJobProcessor.BuildOperationId(
+                Guid.NewGuid(), 2, "/library/book/book.m4b");
+
+            Assert.NotEqual(first, second);
+        }
+
+        [Fact]
+        public void BuildOperationId_DiffersBetweenDestinations()
+        {
+            var job = Guid.NewGuid();
+
+            Assert.NotEqual(
+                ConversionJobProcessor.BuildOperationId(job, 2, "/library/book/one.m4b"),
+                ConversionJobProcessor.BuildOperationId(job, 2, "/library/book/two.m4b"));
+        }
+
+        [Fact]
+        public void BuildOperationId_DiffersBetweenBooks()
+        {
+            var job = Guid.NewGuid();
+
+            Assert.NotEqual(
+                ConversionJobProcessor.BuildOperationId(job, 2, "/library/book/book.m4b"),
+                ConversionJobProcessor.BuildOperationId(job, 3, "/library/book/book.m4b"));
+        }
     }
 }

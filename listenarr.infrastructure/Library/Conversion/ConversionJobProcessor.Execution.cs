@@ -161,6 +161,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             try
             {
                 publication = await PublishConvertedFileAsync(
+                    job.Id,
                     audiobook,
                     scratchPath,
                     destinationPath,

@@ -32,6 +32,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
         /// the one place in the library where that guarantee does not hold.
         /// </summary>
         private async Task<PublicationOutcome> PublishConvertedFileAsync(
+            Guid jobId,
             Audiobook audiobook,
             string scratchPath,
             string destinationPath,
@@ -53,6 +54,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             try
             {
                 outcome = await PublishConvertedFileCoreAsync(
+                    jobId,
                     audiobook,
                     scratchPath,
                     destinationPath,
@@ -121,6 +123,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
         }
 
         private async Task<PublicationOutcome> PublishConvertedFileCoreAsync(
+            Guid jobId,
             Audiobook audiobook,
             string scratchPath,
             string destinationPath,
@@ -130,7 +133,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
         {
             // Stable per (job, destination) so a retry after a crash resumes the same
             // durable operation rather than starting a second one.
-            var operationId = BuildOperationId(audiobook.Id, destinationPath);
+            var operationId = BuildOperationId(jobId, audiobook.Id, destinationPath);
 
             using var registrationLease = await fileMover.PrepareActionForRegistrationAsync(
                 FileAction.Move,
@@ -422,9 +425,19 @@ namespace Listenarr.Infrastructure.Library.Conversion
         /// A stable operation ID for one (audiobook, destination) publication, so a retry
         /// after a crash resumes the same durable operation instead of starting another.
         /// </summary>
-        private static Guid BuildOperationId(int audiobookId, string destinationPath)
+        /// <summary>
+        /// A stable operation ID for one job's publication, so a retry of <em>that job</em>
+        /// resumes the same durable operation after a crash instead of starting another.
+        ///
+        /// Keyed on the job, not just the book and destination. The durable journal
+        /// records this operation's source path, which is the job's own scratch file — so
+        /// a key shared across jobs makes a later conversion of the same book collide
+        /// with the earlier one's journal row and be rejected for a path mismatch. That
+        /// left a book unconvertible forever after its first failure.
+        /// </summary>
+        internal static Guid BuildOperationId(Guid jobId, int audiobookId, string destinationPath)
         {
-            var seed = $"conversion:{audiobookId}:{FileUtils.NormalizeStoredPath(destinationPath)}";
+            var seed = $"conversion:{jobId:N}:{audiobookId}:{FileUtils.NormalizeStoredPath(destinationPath)}";
             var hash = System.Security.Cryptography.MD5.HashData(
                 System.Text.Encoding.UTF8.GetBytes(seed));
             return new Guid(hash);
