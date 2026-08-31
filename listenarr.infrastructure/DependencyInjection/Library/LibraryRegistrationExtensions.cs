@@ -68,6 +68,12 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<IAuthorMonitoringService, AuthorMonitoringService>();
         services.AddScoped<ISeriesMonitoringService, SeriesMonitoringService>();
         services.AddScoped<IFileNamingService, FileNamingService>();
+
+        // The one place a tag value is decided, for both tag writing and conversion.
+        // Scoped because it holds the naming service, which holds a DbContext-backed
+        // configuration service.
+        services.AddScoped<AudiobookTagPlanner>();
+        services.AddScoped<ITagPreviewService, TagPreviewService>();
         services.AddScoped<IRenameService, RenameService>();
         services.AddScoped<IQualityProfileService, QualityProfileService>();
         return services;
@@ -87,6 +93,9 @@ internal static class LibraryRegistrationExtensions
         // capturing them.
         services.AddScoped<IConversionQueueService, ConversionQueueService>();
         services.AddScoped<IAudiobookConverter, FfmpegAudiobookConverter>();
+        services.AddScoped<ITagJobRepository, EfTagJobRepository>();
+        services.AddScoped<ITagQueueService, TagQueueService>();
+        services.AddScoped<IAudiobookTagWriter, FfmpegTagWriter>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
         services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();

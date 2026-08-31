@@ -52,6 +52,17 @@ namespace Listenarr.Domain.Audiobooks
         public decimal? SeriesPosition { get; set; }
 
         /// <summary>
+        /// Every series the book belongs to, in order, primary first.
+        /// <para>
+        /// <see cref="Series"/> carries only the primary one, which is all a folder name
+        /// needs. A tag does not have that limit, and the library's own files use it: a
+        /// book in two series is tagged <c>[Enderverse 07.5][Ender's Saga 1.1] Title</c>,
+        /// which the primary series alone cannot reconstruct.
+        /// </para>
+        /// </summary>
+        public List<SeriesReference>? AllSeries { get; set; }
+
+        /// <summary>
         /// The series position exactly as the metadata source gave it.
         /// <para>
         /// Audible/Audnexus report a position as a string, and it is not always a number:
@@ -105,4 +116,10 @@ namespace Listenarr.Domain.Audiobooks
                 Format = value.Format;
         }
     }
+
+    /// <summary>
+    /// One series a book belongs to. A position is text rather than a number because
+    /// "1-4" and "0.5" are both real positions that a decimal cannot hold.
+    /// </summary>
+    public sealed record SeriesReference(string Name, string? Number);
 }

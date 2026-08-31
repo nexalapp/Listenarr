@@ -96,6 +96,14 @@ namespace Listenarr.Domain.Audiobooks
                 Language = !string.IsNullOrWhiteSpace(Language) ? Language : null,
                 Asin = !string.IsNullOrWhiteSpace(Asin) ? Asin : null,
                 Series = Series,
+                // Every series the book belongs to, primary first. A folder name uses
+                // only the primary one; a tag can carry all of them, and the library's
+                // own files do.
+                AllSeries = BuildSeriesReferences(),
+                // The blurb is the reason the fork exists: it is the MP4 'desc' atom that
+                // Plex reads an album summary from, and nothing downstream can supply it.
+                Description = !string.IsNullOrWhiteSpace(Description) ? Description : null,
+                Genre = Genres?.FirstOrDefault(g => !string.IsNullOrWhiteSpace(g))?.Trim() ?? string.Empty,
                 // Prefer audiobook's publish year when available
                 Year = int.TryParse(PublishYear, out var py) ? py : (int?)null,
                 // Series position / number.
@@ -114,6 +122,41 @@ namespace Listenarr.Domain.Audiobooks
                 // We'll put it into AdditionalData so FileNamingService can use Format/Bitrate/Quality
                 AdditionalData = new Dictionary<string, object> { { "Quality", Quality ?? string.Empty } }
             };
+        }
+
+        /// <summary>
+        /// The book's series memberships as plain references, primary first.
+        ///
+        /// Falls back to the legacy <see cref="Series"/>/<see cref="SeriesNumber"/> pair
+        /// when no memberships are stored, because books added before memberships existed
+        /// still carry their series only in those two columns.
+        /// </summary>
+        private List<SeriesReference>? BuildSeriesReferences()
+        {
+            if (SeriesMemberships is { Count: > 0 })
+            {
+                var references = SeriesMemberships
+                    .Where(membership => !string.IsNullOrWhiteSpace(membership.SeriesName))
+                    .OrderByDescending(membership => membership.IsPrimary)
+                    .ThenBy(membership => membership.SortOrder)
+                    .Select(membership => new SeriesReference(
+                        membership.SeriesName!.Trim(),
+                        string.IsNullOrWhiteSpace(membership.SeriesNumber)
+                            ? null
+                            : membership.SeriesNumber.Trim()))
+                    .ToList();
+
+                if (references.Count > 0)
+                {
+                    return references;
+                }
+            }
+
+            return string.IsNullOrWhiteSpace(Series)
+                ? null
+                : [new SeriesReference(
+                    Series.Trim(),
+                    string.IsNullOrWhiteSpace(SeriesNumber) ? null : SeriesNumber.Trim())];
         }
     }
 }

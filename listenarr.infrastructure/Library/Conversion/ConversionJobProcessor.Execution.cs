@@ -70,11 +70,16 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Probing, 0, cancellationToken);
 
+            var settings = await services.GetRequiredService<IConfigurationService>()
+                .GetApplicationSettingsAsync();
+
             var ffmpegService = services.GetRequiredService<IFfmpegService>();
             var planning = await BuildPlanAsync(
                 audiobook,
                 sources.Select(s => s.File).ToList(),
                 ffmpegService,
+                services.GetRequiredService<AudiobookTagPlanner>(),
+                TagCatalog.Reconcile(settings.TagMappings),
                 pathComparer,
                 cancellationToken);
 
@@ -84,12 +89,10 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
 
             var plan = planning.Plan!;
-            var settings = await services.GetRequiredService<IConfigurationService>()
-                .GetApplicationSettingsAsync();
 
             var destinationPath = await BuildDestinationPathAsync(
                 audiobook,
-                planning.Tags!,
+                planning.Metadata!,
                 services,
                 settings);
 

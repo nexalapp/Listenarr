@@ -70,22 +70,46 @@ namespace Listenarr.Application.Common
             return result;
         }
 
-        private Dictionary<string, object> BuildVariables(AudioMetadata metadata)
+        private Dictionary<string, object> BuildVariables(AudioMetadata metadata) =>
+            BuildVariables(metadata, sanitizeForPath: true);
+
+        /// <summary>
+        /// Resolve the pattern tokens from one book's metadata.
+        ///
+        /// <paramref name="sanitizeForPath"/> is what separates a name from a tag. A path
+        /// component cannot hold a colon or a slash, so naming replaces them; a tag can,
+        /// and must, or "Book Two: The Reckoning" becomes "Book Two - The Reckoning" in
+        /// the file's own title. Nothing else differs between the two.
+        /// </summary>
+        private Dictionary<string, object> BuildVariables(AudioMetadata metadata, bool sanitizeForPath)
         {
+            string Clean(string? value) =>
+                string.IsNullOrWhiteSpace(value)
+                    ? string.Empty
+                    : sanitizeForPath ? SanitizePathComponent(value) : StripControlCharacters(value);
+
             return new Dictionary<string, object>
             {
                 // Keep multi-word author names as a single folder name (e.g. "Jane Austen")
-                { "Author", SanitizePathComponent(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
+                { "Author", Clean(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
                 // For Series we must not fallback to Album or Title - when Series is blank we want
                 // the variable to be empty so ApplyNamingPattern can remove any adjacent separators
-                { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(metadata.Series) },
-                { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
-                { "Subtitle", string.IsNullOrWhiteSpace(metadata.Subtitle) ? string.Empty : SanitizePathComponent(metadata.Subtitle) },
-                { "Edition", string.IsNullOrWhiteSpace(metadata.Edition) ? string.Empty : SanitizePathComponent(metadata.Edition) },
-                { "Narrator", string.IsNullOrWhiteSpace(metadata.Narrator) ? string.Empty : SanitizePathComponent(metadata.Narrator) },
-                { "Publisher", string.IsNullOrWhiteSpace(metadata.Publisher) ? string.Empty : SanitizePathComponent(metadata.Publisher) },
-                { "Language", string.IsNullOrWhiteSpace(metadata.Language) ? string.Empty : SanitizePathComponent(metadata.Language) },
-                { "Asin", string.IsNullOrWhiteSpace(metadata.Asin) ? string.Empty : SanitizePathComponent(metadata.Asin) },
+                { "Series", Clean(metadata.Series) },
+                { "Title", Clean(FirstNonEmpty(metadata.Title, "Unknown Title")) },
+                { "Subtitle", Clean(metadata.Subtitle) },
+                { "Edition", Clean(metadata.Edition) },
+                { "Narrator", Clean(metadata.Narrator) },
+                { "Publisher", Clean(metadata.Publisher) },
+                { "Language", Clean(metadata.Language) },
+                { "Asin", Clean(metadata.Asin) },
+                { "Genre", Clean(metadata.Genre) },
+                // Never sanitised as a path component: a blurb is several sentences of
+                // real punctuation, and it is only ever written into a tag.
+                { "Description", StripControlCharacters(metadata.Description, keepNewlines: true) },
+                // Every series the book is in, each in its own bracket group, which is the
+                // shape the library's multi-series files already use. Empty for a
+                // standalone book so the surrounding pattern collapses around it.
+                { "SeriesBrackets", BuildSeriesBrackets(metadata, sanitizeForPath) },
                 // Prefer the position exactly as the source gave it. A non-numeric but real
                 // position (an omnibus at "1-4") does not survive the decimal parse, and
                 // falling through to TrackNumber here would write a track number into the
@@ -96,6 +120,123 @@ namespace Listenarr.Application.Common
                 { "DiskNumber", metadata.DiscNumber?.ToString() ?? string.Empty },
                 { "ChapterNumber", metadata.TrackNumber?.ToString() ?? string.Empty }
             };
+        }
+
+        /// <summary>
+        /// Render every series the book belongs to as adjacent bracket groups —
+        /// <c>[Enderverse 07.5][Ender's Saga 1.1]</c> — primary first.
+        ///
+        /// <para>
+        /// Returns empty for a book with no series, so a pattern such as
+        /// <c>{SeriesBrackets} {Title}</c> collapses to the bare title rather than
+        /// leaving a stray separator. A single-series book renders one group, which is
+        /// byte-identical to what <c>[{Series} {SeriesNumber}]</c> produces — so the same
+        /// pattern serves all three shapes without a conditional.
+        /// </para>
+        /// <para>
+        /// Bracket characters inside a series name are dropped rather than escaped: they
+        /// would otherwise be read as group delimiters by the empty-group collapse and
+        /// could swallow the title.
+        /// </para>
+        /// </summary>
+        private string BuildSeriesBrackets(AudioMetadata metadata, bool sanitizeForPath)
+        {
+            var series = metadata.AllSeries;
+            if (series == null || series.Count == 0)
+            {
+                if (string.IsNullOrWhiteSpace(metadata.Series))
+                {
+                    return string.Empty;
+                }
+
+                series =
+                [
+                    new SeriesReference(
+                        metadata.Series,
+                        FirstNonEmpty(
+                            metadata.SeriesPositionRaw,
+                            metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture)))
+                ];
+            }
+
+            return BuildSeriesBrackets(series, sanitizeForPath);
+        }
+
+        private string BuildSeriesBrackets(
+            IReadOnlyList<SeriesReference> series,
+            bool sanitizeForPath)
+        {
+            var builder = new StringBuilder();
+            foreach (var entry in series)
+            {
+                if (string.IsNullOrWhiteSpace(entry.Name))
+                {
+                    continue;
+                }
+
+                var name = StripBrackets(sanitizeForPath
+                    ? SanitizePathComponent(entry.Name)
+                    : StripControlCharacters(entry.Name));
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                var number = StripBrackets(StripControlCharacters(entry.Number));
+
+                builder.Append('[').Append(name);
+                if (!string.IsNullOrWhiteSpace(number))
+                {
+                    builder.Append(' ').Append(number);
+                }
+
+                builder.Append(']');
+            }
+
+            return builder.ToString();
+        }
+
+        private static string StripBrackets(string? value) =>
+            string.IsNullOrEmpty(value)
+                ? string.Empty
+                : new string([.. value.Where(c => c is not ('[' or ']'))]).Trim();
+
+        /// <summary>
+        /// Remove characters that cannot appear in a tag value without corrupting the
+        /// metadata document that carries it, while leaving everything a reader would
+        /// expect to see. Newlines survive only where they are meaningful — a blurb has
+        /// paragraphs; an album name does not.
+        /// </summary>
+        private static string StripControlCharacters(string? value, bool keepNewlines = false)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var builder = new StringBuilder(value.Length);
+            foreach (var c in value)
+            {
+                if (c == '\r')
+                {
+                    continue;
+                }
+
+                if (c == '\n')
+                {
+                    builder.Append(keepNewlines ? '\n' : ' ');
+                    continue;
+                }
+
+                if (char.IsControl(c))
+                {
+                    continue;
+                }
+
+                builder.Append(c);
+            }
+
+            return builder.ToString().Trim();
         }
 
         private Dictionary<string, object> BuildVariables(AudibleBookMetadata metadata)
@@ -118,6 +259,14 @@ namespace Listenarr.Application.Common
                 { "Publisher", string.IsNullOrWhiteSpace(metadata.Publisher) ? string.Empty : SanitizePathComponent(metadata.Publisher) },
                 { "Language", string.IsNullOrWhiteSpace(metadata.Language) ? string.Empty : SanitizePathComponent(metadata.Language) },
                 { "Asin", string.IsNullOrWhiteSpace(metadata.Asin) ? string.Empty : SanitizePathComponent(metadata.Asin) },
+                { "Genre", SanitizeOrEmpty(metadata.Genres?.FirstOrDefault(g => !string.IsNullOrWhiteSpace(g))) },
+                { "Description", StripControlCharacters(metadata.Description, keepNewlines: true) },
+                { "SeriesBrackets", BuildSeriesBrackets(
+                    AudiobookSeriesMembershipHelper
+                        .Normalize(metadata.SeriesMemberships, metadata.Series, metadata.SeriesNumber)
+                        .Select(m => new SeriesReference(m.SeriesName!, m.SeriesNumber))
+                        .ToList(),
+                    sanitizeForPath: true) },
                 { "SeriesNumber", metadata.SeriesNumber?.ToString() ?? string.Empty },
                 { "Year", metadata.PublishYear?.ToString() ?? string.Empty },
                 { "Quality", string.Empty },
@@ -125,6 +274,9 @@ namespace Listenarr.Application.Common
                 { "ChapterNumber", string.Empty }
             };
         }
+
+        private string SanitizeOrEmpty(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? string.Empty : SanitizePathComponent(value);
 
         private static string FirstNonEmpty(params string?[] candidates)
         {

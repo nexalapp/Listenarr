@@ -30,11 +30,21 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
         /// <summary>
         /// Render the FFMETADATA document carrying the tags and chapter marks.
         ///
+        /// <para>
+        /// The tags arrive already resolved, from the same planner that resolves them for
+        /// a tag write. That is deliberate: converting a book and enriching it must
+        /// produce the same tags, and two renderings of the same mapping would eventually
+        /// disagree about one of them.
+        /// </para>
+        /// <para>
         /// The description goes in as <c>description</c>, which ffmpeg's mov muxer writes
         /// to the MP4 <c>desc</c> atom. That atom is the whole point: Plex populates an
         /// album summary from it and from nothing else.
+        /// </para>
         /// </summary>
-        public static string BuildMetadataDocument(ConversionPlan plan, AudioMetadata tags)
+        public static string BuildMetadataDocument(
+            ConversionPlan plan,
+            IReadOnlyDictionary<string, string> tags)
         {
             ArgumentNullException.ThrowIfNull(plan);
             ArgumentNullException.ThrowIfNull(tags);
@@ -42,19 +52,9 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
             var builder = new StringBuilder();
             builder.Append(";FFMETADATA1\n");
 
-            AppendTag(builder, "title", tags.Album is { Length: > 0 } ? tags.Album : tags.Title);
-            AppendTag(builder, "album", tags.Album is { Length: > 0 } ? tags.Album : tags.Title);
-            AppendTag(builder, "artist", tags.Artist);
-            AppendTag(builder, "album_artist", tags.AlbumArtist is { Length: > 0 } ? tags.AlbumArtist : tags.Artist);
-            AppendTag(builder, "composer", tags.Narrator);
-            AppendTag(builder, "genre", tags.Genre is { Length: > 0 } ? tags.Genre : "Audiobook");
-            AppendTag(builder, "description", tags.Description);
-            AppendTag(builder, "publisher", tags.Publisher);
-            AppendTag(builder, "language", tags.Language);
-
-            if (tags.Year is > 0)
+            foreach (var (key, value) in tags)
             {
-                AppendTag(builder, "date", tags.Year.Value.ToString(CultureInfo.InvariantCulture));
+                AppendTag(builder, key, value);
             }
 
             foreach (var chapter in plan.Chapters)

@@ -33,5 +33,17 @@ namespace Listenarr.Application.Downloads.Contracts
         string ApplyNamingPattern(string pattern, Dictionary<string, object> variables, bool treatAsFilename = false); // FIXME: Should be private
         string ApplyNamingPattern(string pattern, AudioMetadata metadata, bool treatAsFilename = false);
         string ApplyNamingPattern(string pattern, AudibleBookMetadata metadata, bool treatAsFilename = false);
+
+        /// <summary>
+        /// Render one metadata tag's value from its configured pattern.
+        /// </summary>
+        /// <remarks>
+        /// The same template language and the same empty-token collapse as the naming
+        /// patterns, so an album tag can mirror the folder name without a second syntax.
+        /// What differs is the output: a tag keeps colons, slashes and — for a blurb —
+        /// paragraph breaks, none of which survive a path component. Returns an empty
+        /// string when the pattern holds tokens and every one of them resolved empty.
+        /// </remarks>
+        string RenderTagValue(string pattern, AudioMetadata metadata);
     }
 }
