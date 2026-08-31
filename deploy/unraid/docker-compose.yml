@@ -21,6 +21,10 @@ services:
       # a backup of the share) once it has.
       - /mnt/user/audiobooks:/audiobooks:ro
 
+      # Lowercase: the share is /mnt/user/downloads, and nzbget binds that same
+      # source at this same destination. Capitalised, Docker silently creates an
+      # empty /mnt/user/Downloads and every import fails looking into it.
+      #
       # Mounted at /downloads to match the path the download client reports, so no
       # remote path mapping is needed: NZBGet says
       # /downloads/completed/<category>/<release> and Listenarr resolves exactly
@@ -29,7 +33,7 @@ services:
       #
       # Read-write on purpose. The mover renames rather than copies when source and
       # destination share a volume, and a rename needs to remove the original.
-      - /mnt/user/Downloads:/downloads
+      - /mnt/user/downloads:/downloads
     restart: unless-stopped
     labels:
       net.unraid.docker.managed: composeman
