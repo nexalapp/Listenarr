@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatSeriesMemberships } from '@/utils/seriesUtils'
+import { formatSeriesMemberships, isSeriesRestatement } from '@/utils/seriesUtils'
 
 describe('formatSeriesMemberships', () => {
   it('lists every series a book belongs to with its number', () => {
@@ -31,5 +31,41 @@ describe('formatSeriesMemberships', () => {
   it('returns an empty string when there is no series information', () => {
     expect(formatSeriesMemberships({})).toBe('')
     expect(formatSeriesMemberships({ seriesMemberships: [] })).toBe('')
+  })
+})
+
+describe('isSeriesRestatement', () => {
+  it('recognises a subtitle that only repeats the series and position', () => {
+    expect(isSeriesRestatement('Paragon Space, Book 1', ['Paragon Space'])).toBe(true)
+    expect(isSeriesRestatement('Paragon Space Book 1', ['Paragon Space'])).toBe(true)
+    expect(isSeriesRestatement('Paragon Space, Vol. 2', ['Paragon Space'])).toBe(true)
+    expect(isSeriesRestatement('The Expanse, Book 1.5', ['The Expanse'])).toBe(true)
+    expect(isSeriesRestatement('Paragon Space, Book One', ['Paragon Space'])).toBe(true)
+    expect(isSeriesRestatement('Book 1 of the Paragon Space', ['Paragon Space'])).toBe(true)
+  })
+
+  it('recognises the series name on its own', () => {
+    expect(isSeriesRestatement('Paragon Space', ['Paragon Space'])).toBe(true)
+    expect(isSeriesRestatement('Paragon Space Series', ['Paragon Space'])).toBe(true)
+    expect(isSeriesRestatement('Paragon Space, Book 1', ['Paragon Space Series'])).toBe(true)
+  })
+
+  it('matches any of the series a book belongs to', () => {
+    expect(isSeriesRestatement("Ender's Saga, Book 1", ['Enderverse', "Ender's Saga"])).toBe(true)
+  })
+
+  it('keeps a subtitle that says something of its own', () => {
+    expect(isSeriesRestatement('A Heroic Saga', ['Dune Series'])).toBe(false)
+    expect(isSeriesRestatement('Paragon Space, Book 1: A Space Opera', ['Paragon Space'])).toBe(
+      false,
+    )
+    expect(isSeriesRestatement('A Paragon Space Novel', ['Paragon Space'])).toBe(false)
+    expect(isSeriesRestatement('Paragon Space', ['Other Series'])).toBe(false)
+  })
+
+  it('keeps the subtitle when there is no series to compare against', () => {
+    expect(isSeriesRestatement('Paragon Space, Book 1', [])).toBe(false)
+    expect(isSeriesRestatement('Paragon Space, Book 1', ['', '   '])).toBe(false)
+    expect(isSeriesRestatement('', ['Paragon Space'])).toBe(false)
   })
 })
