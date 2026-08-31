@@ -202,6 +202,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             Audiobook audiobook,
             IReadOnlyList<SourceFileReference> sources,
             ApplicationSettings settings,
+            IReadOnlyList<RootFolder> rootFolders,
             IAudiobookFileRepository fileRepository,
             IFileSystem fileSystem,
             CancellationToken cancellationToken)
@@ -227,7 +228,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
                 case ConversionSourceDisposition.Archive:
                 default:
-                    return ArchiveSources(audiobook, sources, settings, fileSystem);
+                    return ArchiveSources(audiobook, sources, settings, rootFolders, fileSystem);
             }
         }
 
@@ -235,6 +236,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             Audiobook audiobook,
             IReadOnlyList<SourceFileReference> sources,
             ApplicationSettings settings,
+            IReadOnlyList<RootFolder> rootFolders,
             IFileSystem fileSystem)
         {
             var archiveRoot = settings.ConversionArchivePath;
@@ -252,14 +254,13 @@ namespace Listenarr.Infrastructure.Library.Conversion
             string destinationDirectory;
             try
             {
-                // One directory per book so an archive of many books stays navigable and
-                // two books cannot collide on a shared filename like "01.mp3".
-                var bookFolder = FileUtils.SafeFileName(
-                    audiobook.Title is { Length: > 0 } title
-                        ? $"{title} [{audiobook.Id}]"
-                        : $"audiobook-{audiobook.Id}");
-
-                destinationDirectory = Path.GetFullPath(Path.Combine(archiveRoot, bookFolder));
+                // Mirror the book's own place in the library — Author/Series/Title, or
+                // whatever the naming pattern produced — rather than flattening every
+                // book into one directory. An archive of a few hundred books has to stay
+                // navigable, and keeping the layout means it can be read back or
+                // re-imported without reconstructing where anything came from.
+                var relative = BuildArchiveRelativePath(audiobook, rootFolders);
+                destinationDirectory = Path.GetFullPath(Path.Combine(archiveRoot, relative));
 
                 if (!FileSystemSafety.TryValidateMutationTarget(
                         destinationDirectory,
@@ -318,6 +319,71 @@ namespace Listenarr.Infrastructure.Library.Conversion
             return failed > 0
                 ? $"Converted, but {failed} of {sources.Count} source file(s) could not be archived and were left in place."
                 : null;
+        }
+
+        /// <summary>
+        /// Where a book's sources belong under the archive root: its path relative to the
+        /// root folder that holds it, so the archive mirrors the library.
+        ///
+        /// Containment is decided by the relative path itself rather than a host-default
+        /// comparer — a result that escapes upwards or stays rooted means the book is not
+        /// under that root. The longest matching root wins, so a root nested inside
+        /// another does not produce a needlessly deep archive path.
+        ///
+        /// Falls back to a sanitised title when the book sits outside every configured
+        /// root, or has no base path at all: an archive that keeps the files under an
+        /// ugly name beats one that refuses to take them.
+        /// </summary>
+        internal static string BuildArchiveRelativePath(
+            Audiobook audiobook,
+            IReadOnlyList<RootFolder> rootFolders)
+        {
+            var basePath = audiobook.BasePath;
+            if (!string.IsNullOrWhiteSpace(basePath))
+            {
+                var best = string.Empty;
+                foreach (var root in rootFolders ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(root.Path))
+                    {
+                        continue;
+                    }
+
+                    string relative;
+                    try
+                    {
+                        relative = Path.GetRelativePath(root.Path, basePath);
+                    }
+                    catch (Exception ex) when (ex is ArgumentException or PathTooLongException)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(relative)
+                        || relative == "."
+                        || Path.IsPathRooted(relative)
+                        || relative.StartsWith("..", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    // The deepest containing root gives the shortest relative path.
+                    if (best.Length == 0 || relative.Length < best.Length)
+                    {
+                        best = relative;
+                    }
+                }
+
+                if (best.Length > 0)
+                {
+                    return best;
+                }
+            }
+
+            return FileUtils.SafeFileName(
+                audiobook.Title is { Length: > 0 } title
+                    ? $"{title} [{audiobook.Id}]"
+                    : $"audiobook-{audiobook.Id}");
         }
 
         private string? DeleteSources(

@@ -191,6 +191,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 audiobook,
                 sources.Select(s => new SourceFileReference(s.File.Id, s.FullPath)).ToList(),
                 settings,
+                await services.GetRequiredService<IRootFolderService>().GetAllAsync(),
                 services.GetRequiredService<IAudiobookFileRepository>(),
                 services.GetRequiredService<IFileSystem>(),
                 cancellationToken);
