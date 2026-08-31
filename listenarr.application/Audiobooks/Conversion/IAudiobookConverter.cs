@@ -50,10 +50,15 @@ namespace Listenarr.Application.Audiobooks.Conversion
     /// path; publishing it into the library is the caller's job, so a failure here
     /// cannot touch the file the library is currently serving.
     /// </summary>
+    /// <remarks>
+    /// <c>Tags</c> is the complete, already-resolved tag set for the output. It comes
+    /// from the same planner a tag write uses, so a converted book and an enriched one
+    /// carry identical tags rather than two renderings of the same mapping.
+    /// </remarks>
     public sealed record ConversionRequest(
         ConversionPlan Plan,
         string ScratchOutputPath,
-        AudioMetadata Tags,
+        IReadOnlyDictionary<string, string> Tags,
         string? CoverArtPath = null);
 
     /// <summary>Progress of an in-flight encode.</summary>

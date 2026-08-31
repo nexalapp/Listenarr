@@ -66,6 +66,14 @@ internal static class WorkerRegistrationExtensions
             IConversionJobProcessor,
             ConversionBackgroundService>(services);
 
+        // Tag writing is its own worker for the same reason, and separate from conversion
+        // besides: a book already in M4B never touches the conversion queue, and one that
+        // does is tagged by the conversion itself.
+        AddHostedProcessor<
+            TagJobProcessor,
+            ITagJobProcessor,
+            TagBackgroundService>(services);
+
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
         return services;
     }

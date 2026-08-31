@@ -30,11 +30,21 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
         /// <summary>
         /// Render the FFMETADATA document carrying the tags and chapter marks.
         ///
+        /// <para>
+        /// The tags arrive already resolved, from the same planner that resolves them for
+        /// a tag write. That is deliberate: converting a book and enriching it must
+        /// produce the same tags, and two renderings of the same mapping would eventually
+        /// disagree about one of them.
+        /// </para>
+        /// <para>
         /// The description goes in as <c>description</c>, which ffmpeg's mov muxer writes
         /// to the MP4 <c>desc</c> atom. That atom is the whole point: Plex populates an
         /// album summary from it and from nothing else.
+        /// </para>
         /// </summary>
-        public static string BuildMetadataDocument(ConversionPlan plan, AudioMetadata tags)
+        public static string BuildMetadataDocument(
+            ConversionPlan plan,
+            IReadOnlyDictionary<string, string> tags)
         {
             ArgumentNullException.ThrowIfNull(plan);
             ArgumentNullException.ThrowIfNull(tags);
@@ -42,19 +52,9 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
             var builder = new StringBuilder();
             builder.Append(";FFMETADATA1\n");
 
-            AppendTag(builder, "title", tags.Album is { Length: > 0 } ? tags.Album : tags.Title);
-            AppendTag(builder, "album", tags.Album is { Length: > 0 } ? tags.Album : tags.Title);
-            AppendTag(builder, "artist", tags.Artist);
-            AppendTag(builder, "album_artist", tags.AlbumArtist is { Length: > 0 } ? tags.AlbumArtist : tags.Artist);
-            AppendTag(builder, "composer", tags.Narrator);
-            AppendTag(builder, "genre", tags.Genre is { Length: > 0 } ? tags.Genre : "Audiobook");
-            AppendTag(builder, "description", tags.Description);
-            AppendTag(builder, "publisher", tags.Publisher);
-            AppendTag(builder, "language", tags.Language);
-
-            if (tags.Year is > 0)
+            foreach (var (key, value) in tags)
             {
-                AppendTag(builder, "date", tags.Year.Value.ToString(CultureInfo.InvariantCulture));
+                AppendTag(builder, key, value);
             }
 
             foreach (var chapter in plan.Chapters)
@@ -153,6 +153,14 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
             args.Add("-ac");
             args.Add(plan.TargetChannels.ToString(CultureInfo.InvariantCulture));
 
+            // Deliberately no -movflags +use_metadata_tags. It looks like the way to get
+            // SERIES, ASIN and their neighbours written, and ffprobe does read them back
+            // — but it makes ffmpeg write QuickTime mdta metadata (a "keys" table plus an
+            // index-addressed ilst) rather than the iTunes "----" freeform atoms this
+            // library's files use and players read. It also drops cover art outright.
+            // Those tags are applied after the encode instead, by the same writer that
+            // applies them to an existing book.
+            //
             // The ipod muxer is what makes this an audiobook rather than a video file
             // with an audio track: it writes the M4B-shaped brand players look for.
             args.Add("-f");

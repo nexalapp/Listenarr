@@ -147,15 +147,34 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
             // this key is the reason the whole conversion is worth doing.
             var document = FfmpegCommandBuilder.BuildMetadataDocument(
                 Plan(),
-                new AudioMetadata { Description = "A hobbit leaves home." });
+                Tags(("description", "A hobbit leaves home.")));
 
             Assert.Contains("description=A hobbit leaves home.", document);
         }
 
         [Fact]
+        public void BuildMetadataDocument_WritesEveryResolvedTagVerbatim()
+        {
+            // The tags arrive already resolved by the shared planner, so this builder
+            // decides nothing about their values -- it only escapes and emits them. A
+            // builder that reinterpreted them is how a converted book and an enriched one
+            // would drift apart.
+            var document = FfmpegCommandBuilder.BuildMetadataDocument(
+                Plan(),
+                Tags(
+                    ("album", "[The Expanse 2.7] Drive"),
+                    ("sort_album", "The Expanse 2.7 - Drive"),
+                    ("SERIES", "The Expanse")));
+
+            Assert.Contains("album=[The Expanse 2.7] Drive", document);
+            Assert.Contains("sort_album=The Expanse 2.7 - Drive", document);
+            Assert.Contains("SERIES=The Expanse", document);
+        }
+
+        [Fact]
         public void BuildMetadataDocument_WritesOneChapterBlockPerSource()
         {
-            var document = FfmpegCommandBuilder.BuildMetadataDocument(Plan(sourceCount: 3), new AudioMetadata());
+            var document = FfmpegCommandBuilder.BuildMetadataDocument(Plan(sourceCount: 3), Tags());
 
             Assert.Equal(3, document.Split("[CHAPTER]").Length - 1);
             Assert.Contains("START=0\nEND=60000", document);
@@ -169,7 +188,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
             // would let tag text introduce a key of its own.
             var document = FfmpegCommandBuilder.BuildMetadataDocument(
                 Plan(),
-                new AudioMetadata { Description = "Chapter 1 = the start; see #2\nartist=Impostor" });
+                Tags(("description", "Chapter 1 = the start; see #2\nartist=Impostor")));
 
             Assert.Contains("\\=", document);
             Assert.Contains(@"\;", document);
@@ -178,20 +197,19 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
         }
 
         [Fact]
-        public void BuildMetadataDocument_DefaultsGenreToAudiobook()
-        {
-            var document = FfmpegCommandBuilder.BuildMetadataDocument(Plan(), new AudioMetadata());
-
-            Assert.Contains("genre=Audiobook", document);
-        }
-
-        [Fact]
         public void BuildMetadataDocument_OmitsTagsThatHaveNoValue()
         {
-            var document = FfmpegCommandBuilder.BuildMetadataDocument(Plan(), new AudioMetadata());
+            // An empty value would write a key with nothing after it, which reads back as
+            // a present-but-blank tag rather than an absent one.
+            var document = FfmpegCommandBuilder.BuildMetadataDocument(
+                Plan(),
+                Tags(("description", ""), ("publisher", "   ")));
 
             Assert.DoesNotContain("description=", document);
             Assert.DoesNotContain("publisher=", document);
         }
+
+        private static Dictionary<string, string> Tags(params (string Key, string Value)[] tags) =>
+            tags.ToDictionary(tag => tag.Key, tag => tag.Value, StringComparer.OrdinalIgnoreCase);
     }
 }

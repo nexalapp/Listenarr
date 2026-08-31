@@ -104,6 +104,20 @@ namespace Listenarr.Domain.Configuration
         // archive, because moving files to an unconfigured location is not a safe guess.
         public string ConversionArchivePath { get; set; } = string.Empty;
 
+        // Whether a book is automatically queued for tag writing once its M4B lands in
+        // the library, from a download import or from a conversion. Off until the
+        // mapping has been checked against the real library: it rewrites files.
+        public bool WriteMetadataTags { get; set; } = false;
+
+        // Whether tag writing embeds the book's cover art when the file carries none.
+        // Replacing existing art is never automatic; this only fills a gap.
+        public bool EmbedCoverArtInTags { get; set; } = true;
+
+        // What goes into each tag and whether it may be overwritten. Null means the
+        // shipped defaults, which mirror the library's own bracket convention.
+        // See TagCatalog for the tags, their defaults and why each one is what it is.
+        public List<TagMapping>? TagMappings { get; set; }
+
         // Maximum number of concurrent ffprobe processes during an unmatched scan.
         // Lower values reduce NAS/disk I/O pressure; higher values speed up large libraries.
         public int UnmatchedScanConcurrency { get; set; } = 2;

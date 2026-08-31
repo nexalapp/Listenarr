@@ -44,6 +44,8 @@ type ActivityViewVm = {
   openBlockDetails: (item: ActivityItem) => void
   blockDetailsItem: ActivityItem | null
   blockDetailLines: string[]
+  blockDetailsIsTagging: boolean
+  blockDetailsTagJobHoldsFile: boolean
 }
 
 const mockSignalR = () => {
@@ -115,6 +117,22 @@ const mockConversionJobsStore = (overrides: Record<string, unknown> = {}) => {
   return currentConversionJobsStore
 }
 
+let currentTagJobsStore: Record<string, unknown>
+
+const mockTagJobsStore = (overrides: Record<string, unknown> = {}) => {
+  currentTagJobsStore = {
+    jobs: [],
+    activeJobs: [],
+    getJobForAudiobook: vi.fn(() => undefined),
+    retry: vi.fn(async () => ({ queued: true })),
+    refresh: vi.fn(async () => undefined),
+    start: vi.fn(),
+    ...overrides,
+  }
+
+  return currentTagJobsStore
+}
+
 const mockDownloadsStore = (overrides: Record<string, unknown> = {}) => {
   const store = {
     activeDownloads: [],
@@ -158,6 +176,10 @@ describe('ActivityView', () => {
     mockConversionJobsStore()
     vi.doMock('@/stores/conversionJobs', () => ({
       useConversionJobsStore: () => currentConversionJobsStore,
+    }))
+    mockTagJobsStore()
+    vi.doMock('@/stores/tagJobs', () => ({
+      useTagJobsStore: () => currentTagJobsStore,
     }))
     vi.spyOn(globalThis, 'setInterval').mockReturnValue(
       1 as unknown as ReturnType<typeof setInterval>,
@@ -328,6 +350,175 @@ describe('ActivityView', () => {
     const vm = wrapper.vm as unknown as ActivityViewVm
 
     expect(vm.allActivityItems.find((item) => item.id === 'conversion:conv-4')).toBeUndefined()
+  })
+
+  it('shows a running tag write with its phase and progress', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-1',
+          audiobookId: 42,
+          status: 'Running',
+          phase: 'Writing',
+          progress: 60,
+          fileCount: 2,
+          tagsWritten: 0,
+          error: null,
+          canRetry: false,
+          holdingUnpublishedFile: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const tagWrite = vm.allActivityItems.find((item) => item.id === 'tagging:tag-1')
+
+    expect(tagWrite).toMatchObject({ status: 'processing', progress: 60 })
+    expect(tagWrite?.downloadClient).toContain('Writing tags')
+    expect(tagWrite?.downloadClient).toContain('2 files')
+  })
+
+  it('routes a tag-write retry to the tag queue, not the import retry', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    const tagStore = mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-2',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          fileCount: 1,
+          tagsWritten: 0,
+          error: 'The tagged copy could not be published.',
+          canRetry: true,
+          holdingUnpublishedFile: true,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const tagWrite = vm.allActivityItems.find((item) => item.id === 'tagging:tag-2')
+
+    await vm.retryImport(tagWrite!)
+
+    expect(tagStore.retry).toHaveBeenCalledWith('tag-2')
+  })
+
+  it("flags a failed tag write that is holding a library file's only copy", async () => {
+    // The book is missing a file until this job is retried. Reading like an ordinary
+    // failure is how it would get left for later.
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-3',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          fileCount: 1,
+          tagsWritten: 0,
+          error: 'The tagged copy could not be published.',
+          canRetry: true,
+          holdingUnpublishedFile: true,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const tagWrite = vm.allActivityItems.find((item) => item.id === 'tagging:tag-3')
+
+    vm.openBlockDetails(tagWrite!)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.blockDetailsIsTagging).toBe(true)
+    expect(vm.blockDetailsTagJobHoldsFile).toBe(true)
+    expect(wrapper.find('.warning-text-urgent').exists()).toBe(true)
+  })
+
+  it('does not flag an ordinary failed tag write as holding a file', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-4',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          fileCount: 1,
+          tagsWritten: 0,
+          error: 'The file could not be read.',
+          canRetry: true,
+          holdingUnpublishedFile: false,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    vm.openBlockDetails(vm.allActivityItems.find((item) => item.id === 'tagging:tag-4')!)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.blockDetailsIsTagging).toBe(true)
+    expect(vm.blockDetailsTagJobHoldsFile).toBe(false)
+    expect(wrapper.find('.warning-text-urgent').exists()).toBe(false)
+  })
+
+  it('drops a completed tag write from the activity list', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-5',
+          audiobookId: 42,
+          status: 'Completed',
+          phase: 'None',
+          progress: 100,
+          fileCount: 1,
+          tagsWritten: 14,
+          error: null,
+          canRetry: false,
+          holdingUnpublishedFile: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    expect(vm.allActivityItems.find((item) => item.id === 'tagging:tag-5')).toBeUndefined()
   })
 
   it('keeps a download the client calls completed while Listenarr is still importing', async () => {

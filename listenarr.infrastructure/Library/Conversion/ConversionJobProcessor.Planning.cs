@@ -32,6 +32,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
             Audiobook audiobook,
             IReadOnlyList<AudiobookFile> sourceFiles,
             IFfmpegService ffmpegService,
+            AudiobookTagPlanner tagPlanner,
+            IReadOnlyList<TagMapping> tagMappings,
             StringComparer pathComparer,
             CancellationToken cancellationToken)
         {
@@ -92,7 +94,13 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
 
             var plan = ConversionPlanner.BuildPlan(sources, pathComparer);
-            var tags = BuildBookTags(audiobook, bookTags);
+
+            // The output is brand new, so there are no existing tags to preserve or
+            // protect: every mapping that resolves to something is written. Routing
+            // through the same planner a tag write uses is what makes a converted book
+            // and an enriched one carry identical tags.
+            var bookMetadata = AudiobookTagMetadata.Create(audiobook, bookTags);
+            var tags = tagPlanner.Plan(bookMetadata, tagMappings, existingTags: null).FinalTags;
 
             logger.LogInformation(
                 "Planned conversion of audiobook {AudiobookId}: {Files} file(s), {Duration}, {BitRate}bps {SampleRate}Hz {Channels}ch",
@@ -103,43 +111,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 plan.TargetSampleRate,
                 plan.TargetChannels);
 
-            return PlanningOutcome.Planned(plan, tags);
+            return PlanningOutcome.Planned(plan, bookMetadata, tags);
         }
-
-        /// <summary>
-        /// Tags for the output, preferring what the library knows about the book over
-        /// what its files happen to carry. The library record is the corrected one; the
-        /// file tags are whatever the source release shipped with.
-        /// </summary>
-        private static AudioMetadata BuildBookTags(Audiobook audiobook, AudioMetadata? fromFiles)
-        {
-            var tags = audiobook.CreateBasicAudioMetadata();
-
-            // The album is what a player shows as the book, and CreateBasicAudioMetadata
-            // leaves it empty because it describes a single imported file.
-            tags.Album = FirstNonEmpty(audiobook.Title, fromFiles?.Album, tags.Title) ?? string.Empty;
-
-            // The description is the reason this conversion exists, so it is worth
-            // falling back to the file tags when the library record has none.
-            tags.Description = FirstNonEmpty(audiobook.Description, fromFiles?.Description);
-
-            tags.Genre = FirstNonEmpty(fromFiles?.Genre, "Audiobook") ?? "Audiobook";
-            tags.Narrator ??= fromFiles?.Narrator;
-            tags.Publisher ??= fromFiles?.Publisher;
-            tags.Language ??= fromFiles?.Language;
-            tags.Year ??= fromFiles?.Year;
-
-            if (string.IsNullOrWhiteSpace(tags.Artist) && fromFiles != null)
-            {
-                tags.Artist = fromFiles.Artist;
-                tags.AlbumArtist = fromFiles.AlbumArtist;
-            }
-
-            return tags;
-        }
-
-        private static string? FirstNonEmpty(params string?[] candidates) =>
-            candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
 
         /// <summary>
         /// Whether a probe found tags worth borrowing. A file whose only tag is a track
@@ -177,48 +150,33 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
         }
 
+        /// <summary>Absolute path of a registered file, resolved the same way everywhere.</summary>
+        private static string? ResolveFullPath(Audiobook audiobook, AudiobookFile file) =>
+            AudiobookFilePaths.ResolveFullPath(audiobook, file);
+
         /// <summary>
-        /// Absolute path of a registered file. Stored paths may be relative to the
-        /// owning book's base path, so a bare join is not enough.
+        /// A planned conversion. <paramref name="Metadata"/> is what the naming pattern
+        /// resolves the destination filename from; <paramref name="Tags"/> is the
+        /// resolved tag set the output will carry. They are separate because a filename
+        /// and a tag sanitise their values differently.
         /// </summary>
-        private static string? ResolveFullPath(Audiobook audiobook, AudiobookFile file)
-        {
-            if (string.IsNullOrWhiteSpace(file.Path))
-            {
-                return null;
-            }
-
-            try
-            {
-                if (Path.IsPathRooted(file.Path))
-                {
-                    return Path.GetFullPath(file.Path);
-                }
-
-                return string.IsNullOrWhiteSpace(audiobook.BasePath)
-                    ? null
-                    : Path.GetFullPath(Path.Combine(audiobook.BasePath, file.Path));
-            }
-            catch (Exception ex) when (
-                ex is ArgumentException or NotSupportedException or PathTooLongException)
-            {
-                return null;
-            }
-        }
-
         private sealed record PlanningOutcome(
             ConversionPlan? Plan,
-            AudioMetadata? Tags,
+            AudioMetadata? Metadata,
+            IReadOnlyDictionary<string, string>? Tags,
             ConversionFailureKind FailureKind,
             string? Error)
         {
-            public bool Success => Plan != null && Tags != null;
+            public bool Success => Plan != null && Metadata != null && Tags != null;
 
-            public static PlanningOutcome Planned(ConversionPlan plan, AudioMetadata tags) =>
-                new(plan, tags, ConversionFailureKind.None, null);
+            public static PlanningOutcome Planned(
+                ConversionPlan plan,
+                AudioMetadata metadata,
+                IReadOnlyDictionary<string, string> tags) =>
+                new(plan, metadata, tags, ConversionFailureKind.None, null);
 
             public static PlanningOutcome Failed(ConversionFailureKind kind, string error) =>
-                new(null, null, kind, error);
+                new(null, null, null, kind, error);
         }
     }
 }

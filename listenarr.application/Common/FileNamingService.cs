@@ -193,7 +193,73 @@ namespace Listenarr.Application.Common
         private static FileSystemPathSyntax GetNativePathSyntax() =>
             OperatingSystem.IsWindows() ? FileSystemPathSyntax.Windows : FileSystemPathSyntax.Unix;
 
-        public string ApplyNamingPattern(string pattern, Dictionary<string, object> variables, bool treatAsFilename = false)
+        /// <summary>
+        /// How a rendered pattern is finished off.
+        ///
+        /// The token substitution and the empty-group collapse are identical in all
+        /// three; what differs is what the result is allowed to contain. A path may not
+        /// hold a colon and is split on slashes; a tag may hold both, and a blurb keeps
+        /// the paragraph breaks that a name would have flattened.
+        /// </summary>
+        private enum NamingRenderMode
+        {
+            Path,
+            Filename,
+            Tag
+        }
+
+        // {VariableName} or {VariableName:Format}
+        private static readonly Regex VariableRegex =
+            new(@"\{(\w+)(?::([^}]+))?\}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// Render one tag's value from its configured pattern.
+        ///
+        /// <para>
+        /// The same template language as the naming patterns, deliberately: the album tag
+        /// has to mirror the folder name, and the empty-token collapse is what lets one
+        /// pattern produce "[The Expanse 2.7] Drive" for a series book and "Drive" for a
+        /// standalone with no conditional anywhere.
+        /// </para>
+        /// <para>
+        /// Returns empty when the pattern holds tokens and every one of them resolved
+        /// empty. That is what stops "https://www.audible.com/pd/{Asin}" from writing a
+        /// bare URL prefix into a book that has no ASIN — a tag with only its scaffolding
+        /// left is worse than no tag.
+        /// </para>
+        /// </summary>
+        public string RenderTagValue(string pattern, AudioMetadata metadata)
+        {
+            ArgumentNullException.ThrowIfNull(metadata);
+            if (string.IsNullOrWhiteSpace(pattern))
+            {
+                return string.Empty;
+            }
+
+            var variables = BuildVariables(metadata, sanitizeForPath: false);
+
+            // A pattern that is nothing but one token renders that token verbatim. The
+            // cleanup below exists to tidy the gaps a collapsed token leaves between
+            // literals, and a blurb has no such gaps -- running it would flatten the
+            // paragraphs the description atom is read for.
+            var lone = VariableRegex.Match(pattern.Trim());
+            if (lone.Success && lone.Length == pattern.Trim().Length)
+            {
+                return variables.TryGetValue(lone.Groups[1].Value, out var soleValue)
+                    ? FormatValue(soleValue, lone.Groups[2].Success ? lone.Groups[2].Value : null).Trim()
+                    : string.Empty;
+            }
+
+            return ApplyNamingPattern(pattern, variables, NamingRenderMode.Tag);
+        }
+
+        public string ApplyNamingPattern(string pattern, Dictionary<string, object> variables, bool treatAsFilename = false) =>
+            ApplyNamingPattern(
+                pattern,
+                variables,
+                treatAsFilename ? NamingRenderMode.Filename : NamingRenderMode.Path);
+
+        private string ApplyNamingPattern(string pattern, Dictionary<string, object> variables, NamingRenderMode mode)
         {
             if (string.IsNullOrWhiteSpace(pattern))
             {
@@ -201,15 +267,20 @@ namespace Listenarr.Application.Common
             }
 
             var result = pattern;
+            var treatAsFilename = mode == NamingRenderMode.Filename;
+            var variableRegex = VariableRegex;
 
-            // Regex to match variables: {VariableName} or {VariableName:Format}
-            var variableRegex = new Regex(@"\{(\w+)(?::([^}]+))?\}", RegexOptions.IgnoreCase);
+            // A pattern whose every token came back empty has nothing of the book left in
+            // it, only the literals that were meant to frame them.
+            var tokensSeen = 0;
+            var tokensResolved = 0;
 
             // Replace variables. If a variable is empty, emit a sentinel so we can clean up surrounding
             // punctuation and separators (for example: remove "{Series}/" when Series is empty).
             const string EmptySentinel = "\uE000";
             result = variableRegex.Replace(result, match =>
             {
+                tokensSeen++;
                 var variableName = match.Groups[1].Value;
                 var format = match.Groups[2].Success ? match.Groups[2].Value : null;
 
@@ -221,31 +292,15 @@ namespace Listenarr.Application.Common
                         return EmptySentinel;
                     }
 
-                    string renderedValue;
+                    tokensResolved++;
+                    var renderedValue = FormatValue(value, format);
 
-                    // Apply formatting if specified
-                    if (!string.IsNullOrEmpty(format))
-                    {
-                        // For numeric values with format (e.g., {DiskNumber:00})
-                        if (value is int intValue)
-                        {
-                            renderedValue = intValue.ToString(format);
-                        }
-                        else if (int.TryParse(value.ToString(), out var parsedInt))
-                        {
-                            renderedValue = parsedInt.ToString(format);
-                        }
-                        else
-                        {
-                            renderedValue = value.ToString() ?? string.Empty;
-                        }
-                    }
-                    else
-                    {
-                        renderedValue = value.ToString() ?? string.Empty;
-                    }
-
-                    return SanitizePathComponent(renderedValue);
+                    // The variables were already sanitised (or deliberately not) when they
+                    // were built, so a tag keeps its punctuation while a path component
+                    // has had it replaced.
+                    return mode == NamingRenderMode.Tag
+                        ? renderedValue
+                        : SanitizePathComponent(renderedValue);
                 }
 
                 // Variable not found, return sentinel so we can optionally remove surrounding chars
@@ -263,6 +318,24 @@ namespace Listenarr.Application.Common
             result = CollapseBracketGroup(result, '(', ')', EmptySentinel);
             result = CollapseBracketGroup(result, '[', ']', EmptySentinel);
             result = CollapseBracketGroup(result, '{', '}', EmptySentinel);
+
+            if (mode == NamingRenderMode.Tag)
+            {
+                // Horizontal whitespace only, and a comma joins the separator set. A tag
+                // value may legitimately span lines -- a blurb has paragraphs -- so the
+                // path rules, which treat every kind of whitespace alike and rewrite
+                // sentinels into slashes, would corrupt it.
+                result = Regex.Replace(result, @"[^\S\r\n]*[-–—:_,][^\S\r\n]*" + EmptySentinel, string.Empty);
+                result = Regex.Replace(result, EmptySentinel + @"[^\S\r\n]*[-–—:_,][^\S\r\n]*", string.Empty);
+                result = result.Replace(EmptySentinel, string.Empty);
+                result = Regex.Replace(result, @"[^\S\r\n]{2,}", " ");
+                result = result.Trim();
+
+                // Every token came back empty, so what is left is the pattern's own
+                // scaffolding: "https://www.audible.com/pd/" for a book with no ASIN.
+                // Writing that is worse than writing nothing.
+                return tokensSeen > 0 && tokensResolved == 0 ? string.Empty : result;
+            }
 
             // Remove common separators adjacent to any surviving sentinel (e.g. " - {sentinel}")
             result = Regex.Replace(result, @"\s*[-–—:_]\s*" + EmptySentinel, string.Empty);
@@ -313,6 +386,32 @@ namespace Listenarr.Application.Common
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Render one resolved variable, applying a numeric format such as
+        /// <c>{DiskNumber:00}</c> when the value can carry one.
+        /// </summary>
+        private static string FormatValue(object? value, string? format)
+        {
+            if (value == null)
+            {
+                return string.Empty;
+            }
+
+            if (string.IsNullOrEmpty(format))
+            {
+                return value.ToString() ?? string.Empty;
+            }
+
+            if (value is int intValue)
+            {
+                return intValue.ToString(format);
+            }
+
+            return int.TryParse(value.ToString(), out var parsedInt)
+                ? parsedInt.ToString(format)
+                : value.ToString() ?? string.Empty;
         }
 
         /// <summary>

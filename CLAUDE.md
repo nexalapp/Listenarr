@@ -95,6 +95,49 @@ The merged-MP3 case is the one that matters for this library: every one of its
 embedded marks would flatten all of them to one chapter. It is also the most
 valuable case, because ID3 cannot carry `desc` at all and MP4 can.
 
+**Tag values come from the naming-pattern language, not a bespoke formatter.**
+The album tag has to mirror the folder name, so it uses the same templates and the
+same empty-token collapse: `{SeriesBrackets} {Title}` renders
+`[The Expanse 2.7] Drive` for a series book and `Drive` for a standalone, with no
+conditional. `{SeriesBrackets}` reads every `AudiobookSeriesMembership`, which is
+what produces the double-bracket `[Enderverse 07.5][Ender's Saga 1.1]` form the
+library's cross-series books carry and the primary series alone cannot. Tag
+rendering skips path sanitisation — a tag may hold a colon, a slash and, for a
+blurb, paragraph breaks.
+
+**One planner decides every tag value, for tagging and for conversion.** Two
+renderings of one mapping would eventually disagree, and converting a book would
+then produce different tags from enriching it. `AudiobookTagPlanner` is the only
+place a tag value is decided; conversion resolves through it against an empty set
+of existing tags.
+
+**ffmpeg cannot write this library's tags. TagLib# can.** The mov muxer writes
+only the keys it has standard atoms for and drops the rest silently — `SERIES`,
+`SERIESPOSITION`, `ASIN` and `sort_album`, which is exactly the set the library's
+files carry. `-movflags +use_metadata_tags` appears to fix that and does not: it
+writes QuickTime **mdta** metadata (a `keys` table plus an index-addressed `ilst`)
+rather than the iTunes `----` atoms players read, *and* it drops cover art
+outright. ffprobe reads both forms back under the same names, so a round-trip
+check alone cannot tell them apart — assert on the bytes. Tag writing is therefore
+a byte copy plus a direct atom edit through TagLib#: audio, chapter tracks and
+cover art survive by construction. Conversion still encodes with ffmpeg, because
+only ffmpeg writes the chapters, then applies the tags the same way.
+
+**Publication cannot overwrite, so a tag write removes the original first.**
+`FileMover.PrepareActionForRegistrationAsync` treats an existing destination as a
+resumed publication of the *same* bytes and refuses when the content differs — a
+replacement is exactly that case. The rewrite is recorded against the job
+*before* the original is removed, so a crash in the window leaves a durable row
+naming the book's only copy; the scratch sweeper is forbidden from touching a
+file in that state, and the next attempt publishes it before doing anything else.
+This is only defensible because the copy is verified first: same audio, same
+chapters, same cover, every written tag read back.
+
+**Automatic tagging hangs off scan completion, next to conversion.** Both import
+paths converge there. A book conversion accepts is not also offered for tagging,
+because the conversion writes the tags itself. A re-run is free: the planner finds
+nothing to write and no file is opened.
+
 **An embedded title only names a chapter when it distinguishes the file.** Parts
 split from one book commonly all carry the book's own title tag, and preferring
 it named every chapter identically. A title shared by more than one source falls

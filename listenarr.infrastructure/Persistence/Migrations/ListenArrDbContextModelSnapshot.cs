@@ -1763,6 +1763,128 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("SeriesCacheEntries");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.Tagging.TagJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActiveDeduplicationKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CanRetry")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("EnqueuedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FailureKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FileCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LeaseExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LeaseGeneration")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("LeaseOwner")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MaxAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(3);
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OverriddenValuesJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PendingDestinationPath")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PendingFileId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("PendingOutputLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PendingOutputPath")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Phase")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("None");
+
+                    b.Property<double>("Progress")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("SelectedTagsJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TagsWritten")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Automatic");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActiveDeduplicationKey")
+                        .IsUnique()
+                        .HasFilter("\"ActiveDeduplicationKey\" IS NOT NULL");
+
+                    b.HasIndex("AudiobookId");
+
+                    b.HasIndex("Status", "NextAttemptAt", "LeaseExpiresAt");
+
+                    b.ToTable("TagJobs", (string)null);
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Configuration.ApiConfiguration", b =>
                 {
                     b.Property<string>("Id")
@@ -1879,6 +2001,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("DownloadCompletionStabilitySeconds")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("EmbedCoverArtInTags")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("EnableAmazonSearch")
                         .HasColumnType("INTEGER");
 
@@ -1960,6 +2087,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<bool>("ShowCompletedExternalDownloads")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("TagMappings")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("UnmatchedScanConcurrency")
                         .HasColumnType("INTEGER");
 
@@ -1973,6 +2103,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Webhooks")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("WriteMetadataTags")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

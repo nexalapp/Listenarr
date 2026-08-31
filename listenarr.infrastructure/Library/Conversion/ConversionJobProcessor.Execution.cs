@@ -70,11 +70,16 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Probing, 0, cancellationToken);
 
+            var settings = await services.GetRequiredService<IConfigurationService>()
+                .GetApplicationSettingsAsync();
+
             var ffmpegService = services.GetRequiredService<IFfmpegService>();
             var planning = await BuildPlanAsync(
                 audiobook,
                 sources.Select(s => s.File).ToList(),
                 ffmpegService,
+                services.GetRequiredService<AudiobookTagPlanner>(),
+                TagCatalog.Reconcile(settings.TagMappings),
                 pathComparer,
                 cancellationToken);
 
@@ -84,12 +89,10 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
 
             var plan = planning.Plan!;
-            var settings = await services.GetRequiredService<IConfigurationService>()
-                .GetApplicationSettingsAsync();
 
             var destinationPath = await BuildDestinationPathAsync(
                 audiobook,
-                planning.Tags!,
+                planning.Metadata!,
                 services,
                 settings);
 
@@ -128,7 +131,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 // or fail the encode reporting it. A report can also land after the job
                 // has finished and its scope has been disposed, so nothing here may throw
                 // into an unobserved task.
-                _ = ReportProgressSafelyAsync(queue, job.Id, percent);
+                _ = ReportProgressSafelyAsync(job.Id, percent);
             });
 
             var request = new ConversionRequest(plan, scratchPath, planning.Tags!);
@@ -162,6 +165,24 @@ namespace Listenarr.Infrastructure.Library.Conversion
             {
                 TryDeleteScratch(scratchPath);
                 return ExecutionOutcome.Failed(result.FailureKind, result.Message ?? "The conversion failed.");
+            }
+
+            // ffmpeg's mov muxer writes only the tags it has standard atoms for, and
+            // silently drops the rest - SERIES, SERIESPOSITION, ASIN and sort_album among
+            // them, which is precisely the set this library's files carry. The flag that
+            // would make it keep them writes QuickTime mdta metadata instead of the
+            // iTunes atoms players read, and drops cover art besides. So the complete set
+            // is applied here, by the same writer that applies it to a book already in
+            // the library: one code path decides what a tag says, and one writes it.
+            var tagged = await services.GetRequiredService<IAudiobookTagWriter>()
+                .ApplyAsync(scratchPath, planning.Tags!, cancellationToken);
+
+            if (!tagged.Success)
+            {
+                TryDeleteScratch(scratchPath);
+                return ExecutionOutcome.Failed(
+                    ConversionFailureKind.OutputRejected,
+                    $"The converted file's tags could not be written: {tagged.Message}");
             }
 
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Publishing, 95, cancellationToken);
@@ -321,21 +342,27 @@ namespace Listenarr.Infrastructure.Library.Conversion
         /// <summary>
         /// Persist one progress report, absorbing anything that goes wrong.
         ///
+        /// <para>
+        /// In its own scope: these run on the encoder's reader thread, and sharing the
+        /// job scope's DbContext with the flow around them lets two operations overlap on
+        /// one context, which EF refuses outright.
+        /// </para>
+        /// <para>
         /// Progress is a courtesy: it is derived from the encode rather than driving it,
         /// and the job's durable state does not depend on any single report landing.
+        /// </para>
         /// </summary>
-        private async Task ReportProgressSafelyAsync(
-            IConversionQueueService queue,
-            Guid jobId,
-            int percent)
+        private async Task ReportProgressSafelyAsync(Guid jobId, int percent)
         {
             try
             {
-                await queue.ReportProgressAsync(
-                    jobId,
-                    ConversionJobPhase.Encoding,
-                    percent,
-                    CancellationToken.None);
+                using var scope = scopeFactory.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<IConversionQueueService>()
+                    .ReportProgressAsync(
+                        jobId,
+                        ConversionJobPhase.Encoding,
+                        percent,
+                        CancellationToken.None);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

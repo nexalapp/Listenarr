@@ -142,7 +142,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
                 StringComparer.Ordinal);
 
             var result = await BuildConverter().ConvertAsync(
-                new ConversionRequest(plan, OutputPath, new AudioMetadata { Title = "Test Book" }));
+                new ConversionRequest(plan, OutputPath, Tags(("title", "Test Book"))));
 
             Assert.True(result.Success, result.Message);
             Assert.Equal(3, result.ChapterCount);
@@ -165,7 +165,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
                 new ConversionRequest(
                     plan,
                     OutputPath,
-                    new AudioMetadata { Title = "Test Book", Description = "A hobbit leaves home." }));
+                    Tags(("title", "Test Book"), ("description", "A hobbit leaves home."))));
 
             Assert.True(result.Success, result.Message);
 
@@ -196,7 +196,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
                 StringComparer.Ordinal);
 
             var result = await BuildConverter().ConvertAsync(
-                new ConversionRequest(plan, OutputPath, new AudioMetadata()));
+                new ConversionRequest(plan, OutputPath, Tags()));
 
             Assert.True(result.Success, result.Message);
 
@@ -213,7 +213,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
 
             var reported = new List<double>();
             var result = await BuildConverter().ConvertAsync(
-                new ConversionRequest(plan, OutputPath, new AudioMetadata()),
+                new ConversionRequest(plan, OutputPath, Tags()),
                 new Progress<ConversionProgress>(p => reported.Add(p.Fraction)));
 
             Assert.True(result.Success, result.Message);
@@ -247,7 +247,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
                 StringComparer.Ordinal);
 
             var result = await BuildConverter().ConvertAsync(
-                new ConversionRequest(plan, OutputPath, new AudioMetadata { Title = "Merged Book" }));
+                new ConversionRequest(plan, OutputPath, Tags(("title", "Merged Book"))));
 
             Assert.True(result.Success, result.Message);
             Assert.Equal(3, result.ChapterCount);
@@ -271,7 +271,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
                 StringComparer.Ordinal);
 
             var result = await BuildConverter().ConvertAsync(
-                new ConversionRequest(plan, OutputPath, new AudioMetadata()));
+                new ConversionRequest(plan, OutputPath, Tags()));
 
             Assert.False(result.Success);
             Assert.Equal(ConversionFailureKind.SourceUnreadable, result.FailureKind);
@@ -290,7 +290,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
             var plan = ConversionPlanner.BuildPlan([Source(corrupt, 1)], StringComparer.Ordinal);
 
             var result = await BuildConverter().ConvertAsync(
-                new ConversionRequest(plan, OutputPath, new AudioMetadata()));
+                new ConversionRequest(plan, OutputPath, Tags()));
 
             Assert.False(result.Success);
             Assert.Equal(ConversionFailureKind.EncodeFailed, result.FailureKind);
@@ -310,7 +310,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
                 StringComparer.Ordinal);
 
             var result = await converter.ConvertAsync(
-                new ConversionRequest(plan, OutputPath, new AudioMetadata()));
+                new ConversionRequest(plan, OutputPath, Tags()));
 
             Assert.False(result.Success);
             Assert.Equal(ConversionFailureKind.EncoderUnavailable, result.FailureKind);
@@ -404,5 +404,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
             public Task<AudioMetadata> RunFfprobeAsync(MetadataFileSource fileSource) =>
                 throw new NotSupportedException();
         }
+
+        /// <summary>
+        /// The resolved tag set a conversion is handed. The converter does not decide tag
+        /// values -- the shared planner does -- so these tests state them directly.
+        /// </summary>
+        private static Dictionary<string, string> Tags(params (string Key, string Value)[] tags) =>
+            tags.ToDictionary(tag => tag.Key, tag => tag.Value, StringComparer.OrdinalIgnoreCase);
     }
 }

@@ -1,3 +1,4 @@
+using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.AspNetCore.SignalR;
@@ -657,6 +658,65 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
         {
             Assert.True(queue.TryGetJob(jobId, out var job));
             return Assert.IsType<ScanJob>(job);
+        }
+
+        // ---- what a completed scan hands on ----------------------------------------
+
+        [Fact]
+        public async Task ProcessJobAsync_QueuesATagWrite_WhenAutomaticTaggingIsOn()
+        {
+            // Scan completion is where the download path and the manual/library path
+            // converge, so it is the one hook that catches an M4B however it arrived.
+            await UpdateSettingsAsync(settings => settings.WriteMetadataTags = true);
+
+            var basePath = FileService.GetTempDirectory("scan-processor-autotag");
+            _ = await FileService.GetFileAsync(basePath, "Tagged Book.m4b", "audio");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Tagged Book")
+                .WithBasePath(basePath)
+                .Build());
+            var (_, job) = await CreateQueuedScanJobAsync(audiobook);
+
+            await _provider.GetRequiredService<IScanJobProcessor>()
+                .ProcessJobAsync(job, CancellationToken.None);
+
+            var queued = await _provider.GetRequiredService<ITagQueueService>()
+                .GetActiveJobForAudiobookAsync(audiobook.Id, CancellationToken.None);
+            Assert.NotNull(queued);
+            Assert.Equal(TagTrigger.Automatic, queued!.Trigger);
+        }
+
+        [Fact]
+        public async Task ProcessJobAsync_QueuesNoTagWrite_WhenAutomaticTaggingIsOff()
+        {
+            await UpdateSettingsAsync(settings => settings.WriteMetadataTags = false);
+
+            var basePath = FileService.GetTempDirectory("scan-processor-no-autotag");
+            _ = await FileService.GetFileAsync(basePath, "Untagged Book.m4b", "audio");
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Untagged Book")
+                .WithBasePath(basePath)
+                .Build());
+            var (_, job) = await CreateQueuedScanJobAsync(audiobook);
+
+            await _provider.GetRequiredService<IScanJobProcessor>()
+                .ProcessJobAsync(job, CancellationToken.None);
+
+            Assert.Null(await _provider.GetRequiredService<ITagQueueService>()
+                .GetActiveJobForAudiobookAsync(audiobook.Id, CancellationToken.None));
+        }
+
+        /// <summary>
+        /// Read-modify-write the settings row. Saving a fresh instance is rejected: the
+        /// row carries a concurrency version, and a save without it is exactly the stale
+        /// write that check exists to catch.
+        /// </summary>
+        private async Task UpdateSettingsAsync(Action<ApplicationSettings> mutate)
+        {
+            var settings = await _applicationSettingsRepository.GetAsync()
+                ?? throw new InvalidOperationException("The test harness has no settings row.");
+            mutate(settings);
+            await _applicationSettingsRepository.SaveAsync(settings);
         }
 
         private async Task<(ScanQueueService Queue, ScanJob Job)> CreateQueuedScanJobAsync(

@@ -57,6 +57,10 @@ describe('AudiobookDetailView SignalR integration', () => {
       void cb
       return () => {}
     }
+    ;(signalRService as unknown).onTagJobUpdate = (cb?: (...args: unknown[]) => void) => {
+      void cb
+      return () => undefined
+    }
 
     // Seed the library store with an initial audiobook
     const store = useLibraryStore()
@@ -108,6 +112,10 @@ describe('AudiobookDetailView SignalR integration', () => {
     ;(signalRService as unknown).onConversionJobUpdate = (cb?: (...args: unknown[]) => void) => {
       void cb
       return () => {}
+    }
+    ;(signalRService as unknown).onTagJobUpdate = (cb?: (...args: unknown[]) => void) => {
+      void cb
+      return () => undefined
     }
 
     callbacks[0](serverDto as Audiobook)

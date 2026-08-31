@@ -22,6 +22,7 @@ import type {
   Audiobook,
   RootFolderPathChangeResult,
   ConversionJobUpdate,
+  TagJobUpdate,
 } from '@/types'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { setConnected, setLastError, setReconnectAttempts } from './signalrEvents'
@@ -211,6 +212,7 @@ class SignalRService {
     }) => void
   > = new Set()
   private conversionJobCallbacks: Set<(job: ConversionJobUpdate) => void> = new Set()
+  private tagJobCallbacks: Set<(job: TagJobUpdate) => void> = new Set()
   private rootFolderRelocationCallbacks: Set<(update: RootFolderPathChangeResult) => void> =
     new Set()
   private filesRemovedCallbacks: Set<
@@ -457,6 +459,11 @@ class SignalRService {
       case 'ConversionJobUpdate':
         if (args && args[0]) {
           this.conversionJobCallbacks.forEach((cb) => cb(args[0] as ConversionJobUpdate))
+        }
+        break
+      case 'TagJobUpdate':
+        if (args && args[0]) {
+          this.tagJobCallbacks.forEach((cb) => cb(args[0] as TagJobUpdate))
         }
         break
       case 'RootFolderRelocationUpdate':
@@ -779,6 +786,14 @@ class SignalRService {
     this.conversionJobCallbacks.add(callback)
     return () => {
       this.conversionJobCallbacks.delete(callback)
+    }
+  }
+
+  // Subscribe to metadata tag-writing job updates
+  onTagJobUpdate(callback: (job: TagJobUpdate) => void): () => void {
+    this.tagJobCallbacks.add(callback)
+    return () => {
+      this.tagJobCallbacks.delete(callback)
     }
   }
 
