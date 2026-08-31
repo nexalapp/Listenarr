@@ -23,6 +23,7 @@ namespace Listenarr.Application.Metadata.Core
     public static class AudiobookStatusEvaluator
     {
         public const string Downloading = "downloading";
+        public const string Announced = "announced";
         public const string NoFile = "no-file";
         public const string QualityMismatch = "quality-mismatch";
         public const string QualityMatch = "quality-match";
@@ -32,7 +33,9 @@ namespace Listenarr.Application.Metadata.Core
             bool hasAnyFile,
             string? audiobookQuality,
             QualityProfile? qualityProfile,
-            IReadOnlyList<AudiobookFormatSummary>? files)
+            IReadOnlyList<AudiobookFormatSummary>? files,
+            string? publishedDate = null,
+            DateOnly? today = null)
         {
             if (isDownloading)
             {
@@ -41,7 +44,15 @@ namespace Listenarr.Application.Metadata.Core
 
             if (!hasAnyFile)
             {
-                return NoFile;
+                // A monitored series adds its whole catalogue, unreleased titles included, so
+                // "no file" covers two unlike things: a book that can be searched for now, and
+                // one nobody can have yet. The release date already distinguishes them, so the
+                // status is derived rather than persisted.
+                return ReleaseDateWindow.IsFutureRelease(
+                    publishedDate,
+                    today ?? DateOnly.FromDateTime(DateTime.UtcNow))
+                    ? Announced
+                    : NoFile;
             }
 
             if (qualityProfile == null)

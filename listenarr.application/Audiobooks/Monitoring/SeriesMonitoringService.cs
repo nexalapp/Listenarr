@@ -99,6 +99,11 @@ namespace Listenarr.Application.Audiobooks.Monitoring
             _logger = logger;
         }
 
+        public async Task<List<MonitoredSeries>> GetAllMonitoredSeriesAsync(CancellationToken cancellationToken = default)
+        {
+            return await _series.GetAllAsync(cancellationToken);
+        }
+
         public async Task<MonitoredSeries?> GetMonitoredSeriesAsync(
             string name,
             string region,

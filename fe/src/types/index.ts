@@ -840,7 +840,14 @@ export interface AudiobookExternalIdentifierInput {
   source?: AudiobookExternalIdentifierSource
 }
 
-export type AudiobookStatus = 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match'
+// 'announced' is a fileless book whose release date has not arrived: derived from
+// PublishedDate server-side, not persisted. See ReleaseDateWindow.
+export type AudiobookStatus =
+  | 'downloading'
+  | 'announced'
+  | 'no-file'
+  | 'quality-mismatch'
+  | 'quality-match'
 
 export interface Audiobook {
   /** Distinct container formats of the book's files, uppercase, e.g. ['MP3'] or ['M4B']. */
