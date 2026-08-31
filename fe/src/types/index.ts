@@ -163,6 +163,10 @@ export interface Download {
   metadata: Record<string, unknown>
   // Optional link to an audiobook record when the download was queued for a specific audiobook
   audiobookId?: number
+  // Why an import stopped, and what it tried, for a download in ImportBlocked
+  importBlockReason?: string
+  importBlockMessages?: string[]
+  importAttempts?: number
 }
 
 export interface QueueItem {
@@ -186,6 +190,8 @@ export interface QueueItem {
   downloadClientType: string
   addedAt: string
   errorMessage?: string
+  // Set when a blocked import can be retried from the activity row
+  canRetryImport?: boolean
   isStaleSnapshot?: boolean
   snapshotState?: string
   snapshotFailureReason?: string
@@ -1270,4 +1276,39 @@ export interface RenameResult {
   conflict: boolean
   error?: string
   renamedFiles: FileRenameResultItem[]
+}
+
+/**
+ * NZBKing's token allowance, as Listenarr estimates it.
+ *
+ * NZBKing publishes no balance endpoint, so this is a local reckoning: one token
+ * per query, one back per hour, capped at the maximum. It can drift from what
+ * NZBKing believes, which is why a reserve is held back and why the figure is
+ * presented as an estimate rather than a reading.
+ */
+export interface NzbKingStatus {
+  configured: boolean
+  estimatedBalance: number
+  maxTokens: number
+  reserveFloor: number
+  spendable: number
+  nextRefillAt?: string | null
+  lastSuccessfulUseAt?: string | null
+  keyDeleted: boolean
+  summary: string
+  refusedRecently: number
+}
+
+export interface NzbKingAccess {
+  attemptedAt: string
+  purpose: string
+  outcome: string
+  query?: string | null
+  httpStatus?: number | null
+  balanceAfter: number
+}
+
+export interface NzbKingLedger {
+  configured: boolean
+  entries: NzbKingAccess[]
 }

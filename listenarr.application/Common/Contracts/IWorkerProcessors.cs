@@ -83,6 +83,16 @@ namespace Listenarr.Application.Common.Contracts
         Task RunCycleAsync(CancellationToken cancellationToken);
     }
 
+    /// <summary>
+    /// Touches idle NZBKing API keys. NZBKing deletes a key that goes unused for a month,
+    /// and replacing one needs a human to solve a CAPTCHA, so an otherwise-quiet library
+    /// would silently lose its key.
+    /// </summary>
+    public interface INzbKingKeepaliveProcessor
+    {
+        Task RunCycleAsync(CancellationToken cancellationToken);
+    }
+
     public interface ISeriesMonitoringProcessor
     {
         Task RunCycleAsync(CancellationToken cancellationToken);

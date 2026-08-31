@@ -91,16 +91,25 @@ Expect the app process to run as uid 99 / gid 100 (the entrypoint remaps from
 `PUID`/`PGID`), and ffprobe to self-install into `/app/config/ffmpeg/ffprobe` on
 first start.
 
-## Read-only library
+## Library and downloads mounts
 
-The library mount is read-only. Listenarr renames and moves files once a root
-folder is configured, and the existing 439G library has not been validated
-against the scanner's path parsing. A write attempt fails loudly rather than
-damaging anything — that is the point.
+The library mount is now writable, because a read-only library cannot be imported
+into: every import fails at the moment it tries to place the file. Listenarr
+renames and moves files once a root folder is configured, and the existing 439G
+library has not been validated against the scanner's path parsing, so the
+protection the `:ro` used to provide is gone.
 
-Before granting write access, run a full scan and confirm parsing looks right.
+Before the first import, run a full scan and confirm parsing looks right.
 `LISTENARR_LOG_LEVEL=Debug` gives per-file reasons instead of aggregate counts;
 set it back to `Information` afterward, as Debug across the full library is
-verbose.
+verbose. Take a backup of the share first if that scan has not been eyeballed.
 
-Drop the `:ro` and add a `/mnt/user/downloads` mount when moving on to imports.
+The downloads share is mounted at `/downloads`, which is the same path the
+download client reports its completed files under. That alignment is deliberate:
+Listenarr resolves import sources by the path the client gives it, so matching
+the paths means no remote path mapping is needed. Mount it anywhere else and
+every import fails with "No importable files found" while the file sits plainly
+visible on the share.
+
+Both are read-write. The file mover renames rather than copies when source and
+destination share a volume, and a rename has to remove the original.

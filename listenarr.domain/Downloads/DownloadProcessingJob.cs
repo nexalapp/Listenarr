@@ -225,6 +225,23 @@ namespace Listenarr.Domain.Downloads
         }
 
         /// <summary>
+        /// Return a terminally failed job to the queue for an operator-requested retry.
+        /// Clearing the download's blocked flag alone leaves the job Failed with its
+        /// retries spent, so the import is never attempted again and the download sits
+        /// in ImportPending forever — reporting progress it will never make.
+        /// </summary>
+        public DownloadProcessingJob Reopen(string message = "Retry requested by operator")
+        {
+            Status = ProcessingJobStatus.Pending;
+            RetryCount = 0;
+            ErrorMessage = null;
+            CompletedAt = null;
+            NextRetryAt = null;
+            AddLogEntry(message);
+            return this;
+        }
+
+        /// <summary>
         /// Schedule job for retry with exponential backoff
         /// </summary>
         public DownloadProcessingJob ScheduleRetry(string errorMessage = "")
@@ -237,7 +254,11 @@ namespace Listenarr.Domain.Downloads
 
             if (RetryCount >= MaxRetries)
             {
-                MarkAsFailed($"Max retries ({MaxRetries}) exceeded");
+                // Keep the cause. On its own "Max retries exceeded" says only that we
+                // stopped, not what went wrong, and it is what the operator is shown.
+                MarkAsFailed(string.IsNullOrEmpty(errorMessage)
+                    ? $"Max retries ({MaxRetries}) exceeded"
+                    : $"{errorMessage} (max retries ({MaxRetries}) exceeded)");
                 return this;
             }
 

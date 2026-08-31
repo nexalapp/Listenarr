@@ -72,6 +72,8 @@ namespace Listenarr.Api.Features.Downloads
         [HttpPost("send")]
         public async Task<ActionResult<string>> SendToDownloadClient([FromBody] SendDownloadRequest request)
         {
+            var protocol = DownloadProtocol.Unknown;
+
             try
             {
                 _logger.LogInformation("=== SendToDownloadClient RECEIVED REQUEST ===");
@@ -83,6 +85,7 @@ namespace Listenarr.Api.Features.Downloads
                 }
 
                 var candidate = _downloadReferenceService.Read(request.DownloadReference);
+                protocol = candidate.SourceDescriptor.Protocol;
                 _logger.LogInformation("Title: {Title}", LogRedaction.SanitizeText(candidate.Title));
                 _logger.LogInformation("Protocol: {Protocol}", candidate.SourceDescriptor.Protocol);
                 _logger.LogInformation("Source: {Source}", LogRedaction.SanitizeText(candidate.Source));
@@ -110,11 +113,27 @@ namespace Listenarr.Api.Features.Downloads
             catch (DownloadClientSubmissionException ex)
             {
                 _logger.LogWarning(ex, "Download client submission failed");
-                return StatusCode(StatusCodes.Status502BadGateway, new
+
+                // Built as ProblemDetails here on purpose. ServerErrorProblemDetailsFilter
+                // rewrites any other 5xx body, keeping only "message" and blanking the
+                // detail outside Development — so an actionable reason put in a second
+                // field never reaches anyone. These reasons name the stage that failed and
+                // what to do about it ("the post was thanked but no search string could be
+                // read from it"), which is the whole value of them; a submission failure is
+                // reported to the person who asked for the grab, not just to the log.
+                var problem = new ProblemDetails
                 {
-                    message = "Failed to send torrent to download client",
-                    error = ex.Message
-                });
+                    Status = StatusCodes.Status502BadGateway,
+                    // Named for the protocol rather than assuming torrent: this text
+                    // reached an operator as "failed to send torrent" for a usenet grab,
+                    // and sent the diagnosis in the wrong direction.
+                    Title = $"Failed to send {protocol.ToString().ToLowerInvariant()} to download client",
+                    Detail = ex.Message,
+                    Instance = HttpContext.Request.Path
+                };
+                problem.Extensions["code"] = "download_submission_failed";
+
+                return StatusCode(StatusCodes.Status502BadGateway, problem);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

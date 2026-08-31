@@ -145,6 +145,7 @@ namespace Listenarr.Tests.Common
                 provider.GetRequiredService<IDownloadService>(),
                 provider.GetRequiredService<ILogger<DownloadsController>>(),
                 provider.GetRequiredService<IConfigurationService>(),
+                provider.GetRequiredService<IDownloadProcessingJobService>(),
                 provider.GetRequiredService<IMemoryCache>());
         }
 
@@ -154,7 +155,8 @@ namespace Listenarr.Tests.Common
                 provider.GetRequiredService<IIndexerRepository>(),
                 provider.GetRequiredService<ILogger<IndexersController>>(),
                 new HttpClient(handler),
-                provider.GetRequiredService<IConfigurationService>());
+                provider.GetRequiredService<IConfigurationService>(),
+                provider.GetRequiredService<ISecretProtector>());
         }
     }
 }

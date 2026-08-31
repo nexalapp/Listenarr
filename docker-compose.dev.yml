@@ -16,6 +16,13 @@ services:
       # Point LISTENARR_DEV_LIBRARY at a folder of audiobooks to scan; defaults to ./dev-library
       - ${LISTENARR_DEV_LIBRARY:-./dev-library}:/audiobooks
 
+      # Importing needs to read the files the download client wrote. Point
+      # LISTENARR_DEV_DOWNLOADS at that folder, mounted where the client reports its
+      # paths (LISTENARR_DEV_DOWNLOADS_TARGET) so no remote path mapping is needed.
+      # Read-only by default: an import can copy out, but nothing can alter or delete
+      # the client's files. Defaults to ./dev-downloads, so it is inert until set.
+      - ${LISTENARR_DEV_DOWNLOADS:-./dev-downloads}:${LISTENARR_DEV_DOWNLOADS_TARGET:-/downloads}:ro
+
       # Host build output is macOS-targeted (osx-arm64/osx-x64) and would poison
       # the Linux build. Mask every artifact directory with container-only volumes.
       - dev-obj-api:/src/listenarr.api/obj

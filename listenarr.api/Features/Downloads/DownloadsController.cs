@@ -29,14 +29,16 @@ public class DownloadsController : ControllerBase
     private readonly IDownloadService _downloadService;
     private readonly ILogger<DownloadsController> _logger;
     private readonly IConfigurationService _configurationService;
+    private readonly IDownloadProcessingJobService _downloadProcessingJobService;
     private readonly IMemoryCache? _cache;
 
-    public DownloadsController(IDownloadRepository downloadRepository, IDownloadService downloadService, ILogger<DownloadsController> logger, IConfigurationService configurationService, IMemoryCache? cache = null)
+    public DownloadsController(IDownloadRepository downloadRepository, IDownloadService downloadService, ILogger<DownloadsController> logger, IConfigurationService configurationService, IDownloadProcessingJobService downloadProcessingJobService, IMemoryCache? cache = null)
     {
         _downloadRepository = downloadRepository;
         _downloadService = downloadService;
         _logger = logger;
         _configurationService = configurationService;
+        _downloadProcessingJobService = downloadProcessingJobService;
         _cache = cache;
     }
     /// <summary>
@@ -195,12 +197,40 @@ public class DownloadsController : ControllerBase
 
             await _downloadService.UpdateAsync(download);
 
-            _logger.LogInformation("Reset blocked import {DownloadId} back to ImportPending", LogRedaction.SanitizeText(id));
+            // Unblocking the download is not enough on its own: the job that failed
+            // keeps its spent retries and terminal status, so nothing would pick the
+            // work up again and the download would sit in ImportPending forever.
+            var jobs = await _downloadProcessingJobService.GetJobsForDownloadAsync(id);
+            var reopened = jobs
+                .Where(job => job.Status is ProcessingJobStatus.Failed or ProcessingJobStatus.Completed)
+                .ToList();
+
+            foreach (var job in reopened)
+            {
+                await _downloadProcessingJobService.UpdateJobAsync(job.Reopen());
+            }
+
+            var stillQueued = jobs.Any(job =>
+                job.Status is ProcessingJobStatus.Pending or ProcessingJobStatus.Processing or ProcessingJobStatus.Retry);
+            var willRetry = reopened.Count > 0 || stillQueued;
+
+            _logger.LogInformation(
+                "Reset blocked import {DownloadId} back to ImportPending, requeued {JobCount} job(s)",
+                LogRedaction.SanitizeText(id),
+                reopened.Count);
+
+            // Say which of the two happened. Reporting "retry queued" when no job was
+            // requeued leaves the download sitting in ImportPending making no progress,
+            // with nothing to tell the operator that it never restarted.
             return Ok(new
             {
-                message = "Import retry queued",
+                message = willRetry
+                    ? "Import retry queued"
+                    : "Download unblocked, but its import job is no longer on record so nothing was requeued",
                 id,
-                status = download.Status.ToString()
+                status = download.Status.ToString(),
+                jobsRequeued = reopened.Count,
+                retryQueued = willRetry
             });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

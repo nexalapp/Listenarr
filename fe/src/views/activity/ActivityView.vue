@@ -127,7 +127,16 @@
               <span v-else class="muted">-</span>
             </div>
             <div class="col-status">
-              <span :class="['status-badge', item.status]">
+              <button
+                v-if="item.errorMessage"
+                :class="['status-badge', item.status, 'status-badge-actionable']"
+                :title="`${formatStatus(item.status)} — click for details`"
+                @click="openBlockDetails(item)"
+              >
+                {{ formatStatus(item.status) }}
+                <PhInfo class="status-badge-hint" />
+              </button>
+              <span v-else :class="['status-badge', item.status]">
                 {{ formatStatus(item.status) }}
               </span>
               <span
@@ -170,6 +179,54 @@
 
     <!-- Loading State -->
     <LoadingState v-if="loading && queue.length === 0" message="Loading queue..." />
+
+    <!-- Import Block Details Modal -->
+    <div v-if="blockDetailsItem" class="modal-overlay" @click="blockDetailsItem = null">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>
+            <PhWarningCircle />
+            {{ formatStatus(blockDetailsItem.status) }}
+          </h3>
+          <button class="modal-close" @click="blockDetailsItem = null">
+            <PhX />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="remove-item-info">
+            <strong>{{ getDisplayTitle(blockDetailsItem) }}</strong>
+            <div class="item-details">
+              <span v-if="blockDetailsItem.downloadClient">
+                <PhDesktop />
+                {{ blockDetailsItem.downloadClient }}
+              </span>
+            </div>
+          </div>
+          <ul class="block-reason-list">
+            <li v-for="(line, index) in blockDetailLines" :key="index">{{ line }}</li>
+          </ul>
+          <p class="warning-text">
+            <PhInfo />
+            Retrying re-runs the import against the same files. If the path is not reachable from
+            Listenarr, add a remote path mapping for this client in Settings first.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="blockDetailsItem = null">Close</button>
+          <button
+            v-if="blockDetailsItem.canRetryImport"
+            class="btn btn-primary"
+            :disabled="retryingImportId === blockDetailsItem.id"
+            @click="retryImport(blockDetailsItem)"
+          >
+            <component
+              :is="retryingImportId === blockDetailsItem.id ? PhSpinner : PhArrowClockwise"
+            />
+            {{ retryingImportId === blockDetailsItem.id ? 'Retrying...' : 'Retry Import' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Remove Confirmation Modal -->
     <div v-if="showRemoveModal" class="modal-overlay" @click="showRemoveModal = false">
@@ -465,6 +522,12 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   }
   const status = statusMap[download.status] ?? 'downloading'
 
+  // A blocked import is the one state where the operator has to act, so the row
+  // has to say why. Lead with the reason, then what it tried.
+  const blockDetail = [download.importBlockReason, ...(download.importBlockMessages ?? [])]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(' — ')
+
   const clientName = (download as unknown as Record<string, unknown>)['downloadClientName'] as
     | string
     | undefined
@@ -486,6 +549,8 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
     addedAt: download.startedAt,
     canPause: false,
     canRemove: true,
+    errorMessage: blockDetail || download.errorMessage,
+    canRetryImport: status === 'importblocked',
   }
 }
 
@@ -519,11 +584,42 @@ const isDirectDownload = (downloadClientId?: string): boolean =>
   (downloadClientId || '').toString().toUpperCase() === 'DDL'
 
 const allActivityItems = computed(() => {
-  const queueItems = [...queue.value]
-  const trackedQueueIds = new Set(queueItems.map((item) => item.id))
-
   const activeDownloadsList = unref(downloadsStore.activeDownloads || [])
   const failedDownloadsList = unref(downloadsStore.failedDownloads || [])
+
+  // A download client reports 'completed' once *its* work is done, but Listenarr
+  // may still have the import to do. The queue snapshot shadows our own record by
+  // id, so without this the row is filtered out as completed and vanishes from
+  // Activity while the sidebar badge keeps counting it.
+  //
+  // Only post-transfer states override the snapshot. While a file is still moving
+  // the client is the fresher authority on transfer state, and a stale local
+  // 'Downloading' must not override its 'completed' — these are the states the
+  // client has no knowledge of at all, because they are ours.
+  const ourPostTransferStates = new Set(['importpending', 'importblocked', 'processing'])
+  const stillOurWork = new Map<string, QueueItem>()
+  for (const download of [...activeDownloadsList, ...failedDownloadsList]) {
+    const converted = convertDownloadToQueueItem(download)
+    if (ourPostTransferStates.has(converted.status)) {
+      stillOurWork.set(download.id, converted)
+    }
+  }
+
+  const queueItems = queue.value.map((item) => {
+    const ours = stillOurWork.get(item.id)
+    if (!ours || item.status !== 'completed') return item
+
+    // Keep the client's transfer figures, take our post-transfer state and the
+    // detail that goes with it — without the reason and the retry, the row tells
+    // the operator something is wrong but nothing about what or what to do.
+    return {
+      ...item,
+      status: ours.status,
+      errorMessage: ours.errorMessage ?? item.errorMessage,
+      canRetryImport: ours.canRetryImport,
+    }
+  })
+  const trackedQueueIds = new Set(queueItems.map((item) => item.id))
 
   const ddlDownloadItems = activeDownloadsList
     .filter((d) => isDirectDownload(d.downloadClientId))
@@ -629,6 +725,38 @@ const filteredQueue = computed(() => {
     )
   })
 })
+
+const retryingImportId = ref<string | null>(null)
+const blockDetailsItem = ref<QueueItem | null>(null)
+
+// The row is a single fixed-height line, so the reason lives here where it has
+// room to wrap and sit next to the action it calls for.
+const blockDetailLines = computed(() =>
+  (blockDetailsItem.value?.errorMessage ?? '')
+    .split(' — ')
+    .map((line) => line.trim())
+    .filter(Boolean),
+)
+
+const openBlockDetails = (item: QueueItem) => {
+  blockDetailsItem.value = item
+}
+
+const retryImport = async (item: QueueItem) => {
+  retryingImportId.value = item.id
+  try {
+    await apiService.retryImport(item.id)
+    blockDetailsItem.value = null
+    await refreshQueue()
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'ActivityView',
+      operation: 'retryImport',
+    })
+  } finally {
+    retryingImportId.value = null
+  }
+}
 
 const refreshQueue = async () => {
   loading.value = true
@@ -1084,6 +1212,35 @@ onUnmounted(() => {
 }
 
 /* Status badges */
+.status-badge-actionable {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-badge-actionable:hover,
+.status-badge-actionable:focus-visible {
+  filter: brightness(1.25);
+}
+
+.status-badge-hint {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.block-reason-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .status-badge {
   padding: 0.2rem 0.5rem;
   border-radius: 4px;

@@ -99,20 +99,19 @@ namespace Listenarr.Api.Middleware
         {
             if (string.IsNullOrEmpty(input)) return input;
             var redacted = input;
-            var patterns = new[]
-            {
-                "(?i)(\"password\"\\s*:\\s*)\"[^\"]*\"",
-                "(?i)(\"passwordHash\"\\s*:\\s*)\"[^\"]*\"",
-                "(?i)(\"apiKey\"\\s*:\\s*)\"[^\"]*\"",
-                "(?i)(\"token\"\\s*:\\s*)\"[^\"]*\"",
-                "(?i)(\"authorization\"\\s*:\\s*)\"[^\"]*\"",
-                "(?i)(\"secret\"\\s*:\\s*)\"[^\"]*\""
-            };
 
-            foreach (var pattern in patterns)
-            {
-                redacted = Regex.Replace(redacted, pattern, "$1\"<redacted>\"");
-            }
+            // Matched on a substring of the key, not the whole key, and tolerating the
+            // escaped quotes of a JSON string nested inside JSON. Settings blobs carry
+            // secrets under names like abook_password, mam_id and nzbking_api_key, none of
+            // which an exact-name pattern catches - and a request body is logged before
+            // anything else has had a chance to redact it.
+            //
+            // The vocabulary matches ApiResponseRedactor.IsSensitiveKey so a name that is
+            // hidden in responses is also hidden in logs.
+            const string sensitive = "password|passwd|apikey|api_key|token|secret|cookie|authorization|mam";
+            var pattern = "(?i)(\\\\?\"[^\"\\\\]*(?:" + sensitive + ")[^\"\\\\]*\\\\?\"\\s*:\\s*)\\\\?\"(?:[^\"\\\\]|\\\\.)*?\\\\?\"";
+
+            redacted = Regex.Replace(redacted, pattern, "$1\"<redacted>\"");
 
             redacted = Regex.Replace(
                 redacted,

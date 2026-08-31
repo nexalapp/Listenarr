@@ -22,6 +22,8 @@ type ActivityItem = {
   id: string
   title?: string
   status?: string
+  errorMessage?: string
+  canRetryImport?: boolean
   downloadClientId?: string
   downloadClient?: string
   downloadClientType?: string
@@ -38,6 +40,10 @@ type ActivityViewVm = {
   queueHealthClients: Array<{ name: string; isUnavailable?: boolean }>
   removeFromQueue: (item: ActivityItem) => Promise<void> | void
   confirmRemove: () => Promise<void>
+  retryImport: (item: ActivityItem) => Promise<void>
+  openBlockDetails: (item: ActivityItem) => void
+  blockDetailsItem: ActivityItem | null
+  blockDetailLines: string[]
 }
 
 const mockSignalR = () => {
@@ -53,6 +59,7 @@ const mockApi = (overrides: Record<string, unknown> = {}) => {
     getQueue: vi.fn(async () => []),
     removeFromQueue: vi.fn(async () => undefined),
     cancelDownload: vi.fn(async () => undefined),
+    retryImport: vi.fn(async () => undefined),
     ...overrides,
   }
 
@@ -168,6 +175,169 @@ describe('ActivityView', () => {
     expect(move).toMatchObject({ status: 'moving', progress: 37.5 })
     expect(wrapper.text()).toContain('38%')
     expect(wrapper.text()).toContain('Moving')
+  })
+
+  it('keeps a download the client calls completed while Listenarr is still importing', async () => {
+    // NZBGet reports 'completed' the moment its own work is done, but Listenarr
+    // still has the import to do. Both records share an id, so the queue snapshot
+    // shadows ours; the 'hide completed external downloads' rule then dropped the
+    // row entirely while the sidebar badge kept counting it.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-1',
+          title: 'Starship Raider',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      activeDownloads: [
+        {
+          id: 'dl-1',
+          title: 'Starship Raider',
+          status: 'ImportPending',
+          progress: 100,
+          downloadClientId: 'client-1',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const row = vm.allActivityItems.find((item) => item.id === 'dl-1')
+
+    expect(row).toMatchObject({ status: 'importpending' })
+    expect(wrapper.text()).toContain('Importing')
+  })
+
+  it('still hides an external download once Listenarr has no work left for it', async () => {
+    // The guard above must not defeat the preference: with nothing of ours
+    // outstanding, a completed external download stays hidden as before.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-2',
+          title: 'Already Imported',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    expect(vm.allActivityItems.find((item) => item.id === 'dl-2')).toBeUndefined()
+  })
+
+  it('explains a blocked import on the row and offers a retry', async () => {
+    // A blocked import is the one state the operator has to act on, so the row
+    // has to say why and give them the action. Previously it showed a bare
+    // "Import Blocked" badge with no reason and no way forward.
+    mockSignalR()
+    const api = mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      failedDownloads: [
+        {
+          id: 'dl-3',
+          title: 'Starship Raider',
+          status: 'ImportBlocked',
+          progress: 100,
+          downloadClientId: 'client-1',
+          importBlockReason: 'Unable to import the download',
+          importBlockMessages: ['No importable files found', 'Looked for files in /downloads/x'],
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const row = vm.allActivityItems.find((item) => item.id === 'dl-3')
+
+    expect(row?.status).toBe('importblocked')
+    expect(row?.errorMessage).toContain('No importable files found')
+    expect(row?.errorMessage).toContain('/downloads/x')
+    expect(row?.canRetryImport).toBe(true)
+
+    // The row is a single fixed-height line, so the reason is one click away
+    // rather than clipped into the status column.
+    expect(wrapper.text()).not.toContain('No importable files found')
+    vm.openBlockDetails(row!)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.blockDetailLines).toEqual([
+      'Unable to import the download',
+      'No importable files found',
+      'Looked for files in /downloads/x',
+    ])
+    expect(wrapper.text()).toContain('No importable files found')
+    expect(wrapper.text()).toContain('Looked for files in /downloads/x')
+
+    await vm.retryImport(row!)
+    expect(api.retryImport).toHaveBeenCalledWith('dl-3')
+    expect(vm.blockDetailsItem).toBeNull()
+  })
+
+  it('keeps the block reason and retry when a queue snapshot shadows the record', async () => {
+    // The client still lists the item as completed, and that snapshot wins on
+    // transfer figures. It must not strip the reason or the retry with it.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-4',
+          title: 'Starship Raider',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      failedDownloads: [
+        {
+          id: 'dl-4',
+          title: 'Starship Raider',
+          status: 'ImportBlocked',
+          progress: 100,
+          downloadClientId: 'client-1',
+          importBlockReason: 'Unable to import the download',
+          importBlockMessages: ['No importable files found'],
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const row = vm.allActivityItems.find((item) => item.id === 'dl-4')
+
+    expect(row?.status).toBe('importblocked')
+    expect(row?.errorMessage).toContain('No importable files found')
+    expect(row?.canRetryImport).toBe(true)
   })
 
   it('includes completed external downloads from the downloads store in the unified list', async () => {

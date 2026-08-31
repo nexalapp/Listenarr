@@ -57,8 +57,13 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+                // "warning", not "quiet" or "error": the messages that explain an
+                // unreadable file (an unimplemented codec, most often) are logged by
+                // ffmpeg at warning level, so any stricter level throws away the only
+                // description of what went wrong. Diagnostics go to stderr, so the JSON
+                // on stdout is unaffected.
                 startInfo.ArgumentList.Add("-v");
-                startInfo.ArgumentList.Add("quiet");
+                startInfo.ArgumentList.Add("warning");
                 startInfo.ArgumentList.Add("-print_format");
                 startInfo.ArgumentList.Add("json");
                 startInfo.ArgumentList.Add("-show_format");
@@ -66,12 +71,26 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
                 startInfo.ArgumentList.Add(safeReadPath);
 
                 var pr = await _processRunner.RunAsync(startInfo, 10000);
-                _logger.LogInformation("ffprobe exit code {Code} for file {File}; stderr length={Len}", pr.ExitCode, sanitizedPublicPath, pr.Stderr?.Length ?? 0);
 
                 if (pr.TimedOut || pr.ExitCode != 0)
                 {
-                    throw new FfmpegException($"ffprobe cannot read/process {sanitizedPublicPath}");
+                    var diagnostic = SummariseFfprobeFailure(pr.Stderr);
+                    _logger.LogWarning(
+                        "ffprobe exit code {Code} for file {File}{TimedOut}: {Diagnostic}",
+                        pr.ExitCode,
+                        sanitizedPublicPath,
+                        pr.TimedOut ? " (timed out)" : string.Empty,
+                        diagnostic);
+
+                    // Carry the reason into the message: this is what reaches the import
+                    // block detail, and "cannot read/process" on its own tells an operator
+                    // nothing they can act on.
+                    throw new FfmpegException(pr.TimedOut
+                        ? $"ffprobe timed out reading {sanitizedPublicPath}"
+                        : $"ffprobe cannot read/process {sanitizedPublicPath}: {diagnostic}");
                 }
+
+                _logger.LogInformation("ffprobe read {File} successfully", sanitizedPublicPath);
 
                 if (string.IsNullOrEmpty(pr.Stdout))
                 {
@@ -124,5 +143,50 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
 
             return string.Empty;
         }
+
+        /// <summary>
+        /// Reduce ffprobe's stderr to the one line worth showing an operator. ffmpeg
+        /// repeats the same complaint once per decode attempt and prefixes each with a
+        /// component and pointer, neither of which means anything outside ffmpeg.
+        /// </summary>
+        internal static string SummariseFfprobeFailure(string? stderr)
+        {
+            if (string.IsNullOrWhiteSpace(stderr))
+            {
+                return "no diagnostic output";
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var lines = new List<string>();
+            foreach (var raw in stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+
+                // Strip a leading "[component @ 0xADDRESS] " prefix.
+                var close = line.IndexOf("] ", StringComparison.Ordinal);
+                if (line.StartsWith('[') && close > 0)
+                {
+                    line = line[(close + 2)..].Trim();
+                }
+
+                if (line.Length > 0 && seen.Add(line))
+                {
+                    lines.Add(line);
+                }
+            }
+
+            if (lines.Count == 0)
+            {
+                return "no diagnostic output";
+            }
+
+            var summary = string.Join("; ", lines.Take(3));
+            return summary.Length > 400 ? summary[..400] + "…" : summary;
+        }
+
     }
 }

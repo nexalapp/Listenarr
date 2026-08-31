@@ -53,6 +53,8 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<RootFolderRelocationCreatedDirectory> RootFolderRelocationCreatedDirectories { get; set; } = null!;
         public DbSet<MonitoredAuthor> MonitoredAuthors { get; set; } = null!;
         public DbSet<MonitoredSeries> MonitoredSeries { get; set; } = null!;
+        public DbSet<NzbKingKeyState> NzbKingKeyStates { get; set; } = null!;
+        public DbSet<NzbKingApiAccess> NzbKingApiAccesses { get; set; } = null!;
         public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; } = null!;
         public DbSet<SeriesCacheEntry> SeriesCacheEntries { get; set; } = null!;
         public DbSet<UserSession> UserSessions { get; set; } = null!;
@@ -142,6 +144,10 @@ namespace Listenarr.Infrastructure.Persistence
             modelBuilder.Entity<MonitoredAuthor>().HasIndex(a => a.LastCheckedAt);
             modelBuilder.Entity<MonitoredSeries>().HasIndex(s => new { s.SeriesNameNormalized, s.Region, s.Language }).IsUnique();
             modelBuilder.Entity<MonitoredSeries>().HasIndex(s => s.LastCheckedAt);
+
+            // One ledger row per key; the fingerprint is the budget's identity.
+            modelBuilder.Entity<NzbKingKeyState>().HasIndex(k => k.KeyFingerprint).IsUnique();
+            modelBuilder.Entity<NzbKingApiAccess>().HasIndex(a => new { a.KeyFingerprint, a.AttemptedAt });
             modelBuilder.Entity<AuthorCacheEntry>().HasIndex(a => new { a.AuthorNameNormalized, a.Region }).IsUnique();
             modelBuilder.Entity<AuthorCacheEntry>().HasIndex(a => new { a.AuthorAsin, a.Region });
             modelBuilder.Entity<SeriesCacheEntry>().HasIndex(s => new { s.SeriesNameNormalized, s.Region }).IsUnique();
