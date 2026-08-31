@@ -88,3 +88,89 @@ describe('customFilterEvaluator - grouping and precedence', () => {
     ).toBe(true)
   })
 })
+
+describe('customFilterEvaluator - format', () => {
+  const book = (formats?: string[], extra: Record<string, unknown> = {}) =>
+    ({
+      id: 1,
+      title: 'A Book',
+      authors: [],
+      narrators: [],
+      monitored: true,
+      formats,
+      ...extra,
+    }) as unknown as Audiobook
+
+  it('matches a book by its container format', () => {
+    expect(evaluateRules(book(['MP3']), [{ field: 'format', operator: 'is', value: 'MP3' }])).toBe(
+      true,
+    )
+    expect(evaluateRules(book(['M4B']), [{ field: 'format', operator: 'is', value: 'MP3' }])).toBe(
+      false,
+    )
+  })
+
+  it('ignores case, because the server stores MP3 and nobody types it that way', () => {
+    expect(evaluateRules(book(['MP3']), [{ field: 'format', operator: 'is', value: 'mp3' }])).toBe(
+      true,
+    )
+    expect(evaluateRules(book(['mp3']), [{ field: 'format', operator: 'is', value: 'MP3' }])).toBe(
+      true,
+    )
+  })
+
+  it("matches when any of a mixed book's formats matches", () => {
+    // A book part-way through a conversion holds both, and hiding it from a
+    // format filter is exactly when someone is looking for it.
+    const mixed = book(['M4B', 'MP3'])
+    expect(evaluateRules(mixed, [{ field: 'format', operator: 'is', value: 'mp3' }])).toBe(true)
+    expect(evaluateRules(mixed, [{ field: 'format', operator: 'is', value: 'm4b' }])).toBe(true)
+  })
+
+  it('excludes with is_not only when no format matches', () => {
+    expect(
+      evaluateRules(book(['M4B']), [{ field: 'format', operator: 'is_not', value: 'mp3' }]),
+    ).toBe(true)
+    expect(
+      evaluateRules(book(['M4B', 'MP3']), [{ field: 'format', operator: 'is_not', value: 'mp3' }]),
+    ).toBe(false)
+  })
+
+  it('supports contains for partial matches', () => {
+    expect(
+      evaluateRules(book(['M4B']), [{ field: 'format', operator: 'contains', value: '4' }]),
+    ).toBe(true)
+    expect(
+      evaluateRules(book(['MP3']), [{ field: 'format', operator: 'not_contains', value: '4' }]),
+    ).toBe(true)
+  })
+
+  it('never matches a book with no formats', () => {
+    expect(evaluateRules(book([]), [{ field: 'format', operator: 'is', value: 'mp3' }])).toBe(false)
+    expect(
+      evaluateRules(book(undefined), [{ field: 'format', operator: 'is', value: 'mp3' }]),
+    ).toBe(false)
+  })
+
+  it('excludes a formatless book from is_not, since nothing contradicts it', () => {
+    expect(evaluateRules(book([]), [{ field: 'format', operator: 'is_not', value: 'mp3' }])).toBe(
+      true,
+    )
+  })
+
+  it('falls back to the legacy quality string when formats are absent', () => {
+    // A payload from before this field existed should not become unfilterable.
+    const legacy = book(undefined, { quality: 'MP3' })
+    expect(evaluateRules(legacy, [{ field: 'format', operator: 'is', value: 'mp3' }])).toBe(true)
+  })
+
+  it('combines with other rules', () => {
+    const mp3 = book(['MP3'], { title: 'The Garden of Rama', monitored: true })
+    expect(
+      evaluateRules(mp3, [
+        { field: 'format', operator: 'is', value: 'mp3' },
+        { field: 'monitored', operator: 'is', value: 'true', conjunction: 'and' },
+      ]),
+    ).toBe(true)
+  })
+})

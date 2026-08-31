@@ -137,6 +137,9 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     FilePath = a.FilePath,
                     FileSize = a.FileSize,
                     FileCount = fileCountById.TryGetValue(a.Id, out var trueCount) ? trueCount : 0,
+                    // Reuses the format summaries already loaded above for status, so
+                    // this costs no extra query.
+                    Formats = AudiobookFormats.Describe(files),
                     Quality = a.Quality,
                     QualityProfileId = a.QualityProfileId,
                     AuthorAsins = a.AuthorAsins?.ToArray(),
@@ -150,5 +153,6 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 };
             }).ToList();
         }
+
     }
 }

@@ -719,6 +719,8 @@ export interface AudiobookExternalIdentifierInput {
 export type AudiobookStatus = 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match'
 
 export interface Audiobook {
+  /** Distinct container formats of the book's files, uppercase, e.g. ['MP3'] or ['M4B']. */
+  formats?: string[]
   id: number
   title: string
   subtitle?: string
