@@ -39,14 +39,20 @@ namespace Listenarr.Infrastructure.Library.Conversion
             IAudiobookFileService audiobookFileService,
             CancellationToken cancellationToken)
         {
+            // Publication creates the destination before it can prove the file it
+            // created is the file it still sees. When that proof fails, whatever is at
+            // the destination is ours and nothing else will remove it — so record
+            // whether anything was there first, and only clean up what we added.
+            var destinationExistedBefore = File.Exists(destinationPath);
+
             // The publication stack signals a rejected write by throwing, not by
             // returning: the pinned-parent check raises when the file it created is not
             // the file it can still see. That has to become a reported failure with the
-            // reason attached, or it escapes as an unclassified error and the scratch
-            // file is left behind.
+            // reason attached, or it escapes as an unclassified error.
+            PublicationOutcome outcome;
             try
             {
-                return await PublishConvertedFileCoreAsync(
+                outcome = await PublishConvertedFileCoreAsync(
                     audiobook,
                     scratchPath,
                     destinationPath,
@@ -56,6 +62,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
             catch (OperationCanceledException)
             {
+                DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
                 throw;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -65,8 +72,51 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     "Publishing the converted file for audiobook {AudiobookId} was rejected",
                     audiobook.Id);
 
+                DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
                 return PublicationOutcome.Failed(
                     $"The converted file could not be published into the library: {ex.Message} The original files have been left alone.");
+            }
+
+            if (!outcome.Success)
+            {
+                DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
+            }
+
+            return outcome;
+        }
+
+        /// <summary>
+        /// Remove a destination this conversion created but never published.
+        ///
+        /// A rejected publication leaves an empty file with the book's final name sitting
+        /// in the library folder. Left there it is worse than nothing: a scan would treat
+        /// it as the book, and an operator seeing it would reasonably think the conversion
+        /// worked. Only a path that did not exist beforehand is touched.
+        /// </summary>
+        private void DiscardAbandonedDestination(string destinationPath, bool existedBefore)
+        {
+            if (existedBefore)
+            {
+                // Something was already there. Whatever went wrong, it is not ours to remove.
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(destinationPath))
+                {
+                    File.Delete(destinationPath);
+                    logger.LogInformation(
+                        "Removed the unpublished conversion destination {Path}",
+                        LogRedaction.SanitizeFilePath(destinationPath));
+                }
+            }
+            catch (Exception ex) when (IsNonFatal(ex))
+            {
+                logger.LogWarning(
+                    ex,
+                    "Could not remove the unpublished conversion destination {Path}",
+                    LogRedaction.SanitizeFilePath(destinationPath));
             }
         }
 

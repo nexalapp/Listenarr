@@ -15,8 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Common.Exceptions;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Conversion
 {
@@ -43,6 +45,21 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 return ExecutionOutcome.Failed(
                     ConversionFailureKind.SourceUnreadable,
                     "This book no longer has any MP3 files to convert.");
+            }
+
+            // A conversion rewrites what the library serves for this book, so it must not
+            // run while a move owns the book's filesystem state. Transient by design: the
+            // move finishes, and the retry then finds the files where the move left them.
+            try
+            {
+                await services.GetRequiredService<IMoveQueueService>()
+                    .EnsureFilesystemMutationAllowedAsync(job.AudiobookId, cancellationToken);
+            }
+            catch (ApplicationConflictException conflict)
+            {
+                return ExecutionOutcome.Failed(
+                    ConversionFailureKind.Transient,
+                    conflict.SafeDetail);
             }
 
             var semanticsResolver = services.GetRequiredService<IFileSystemSemanticsResolver>();
@@ -95,15 +112,23 @@ namespace Listenarr.Infrastructure.Library.Conversion
             var scratchPath = Path.Combine(scratchDirectory, $"conversion-{job.Id:N}.m4b");
 
             var converter = services.GetRequiredService<IAudiobookConverter>();
+            // ffmpeg reports about once a second, so an hour-long book would otherwise
+            // write the job row and broadcast roughly 3,600 times to move a bar that has
+            // 100 positions. Report only when the whole percent actually changes.
+            var lastReportedPercent = -1;
             var progress = new Progress<ConversionProgress>(report =>
             {
+                var percent = (int)Math.Round(Math.Clamp(report.Fraction, 0, 1) * 100);
+                if (percent == Interlocked.Exchange(ref lastReportedPercent, percent))
+                {
+                    return;
+                }
+
                 // Fire-and-forget: progress that could not be persisted must never stall
-                // or fail the encode reporting it.
-                _ = queue.ReportProgressAsync(
-                    job.Id,
-                    ConversionJobPhase.Encoding,
-                    report.Fraction * 100,
-                    CancellationToken.None);
+                // or fail the encode reporting it. A report can also land after the job
+                // has finished and its scope has been disposed, so nothing here may throw
+                // into an unobserved task.
+                _ = ReportProgressSafelyAsync(queue, job.Id, percent);
             });
 
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 0, cancellationToken);
@@ -175,6 +200,31 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 result.ChapterCount,
                 audiobook.Title,
                 warning);
+        }
+
+        /// <summary>
+        /// Persist one progress report, absorbing anything that goes wrong.
+        ///
+        /// Progress is a courtesy: it is derived from the encode rather than driving it,
+        /// and the job's durable state does not depend on any single report landing.
+        /// </summary>
+        private async Task ReportProgressSafelyAsync(
+            IConversionQueueService queue,
+            Guid jobId,
+            int percent)
+        {
+            try
+            {
+                await queue.ReportProgressAsync(
+                    jobId,
+                    ConversionJobPhase.Encoding,
+                    percent,
+                    CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogDebug(ex, "Could not record progress for conversion {JobId}", jobId);
+            }
         }
 
         /// <summary>
