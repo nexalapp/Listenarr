@@ -12,6 +12,28 @@
 #   ./run.sh help       list every target
 # ---------------------------------------------------------------------------
 
+# Machine-specific overrides live in .env.local, which is gitignored. Put the
+# folders this machine uses there once instead of exporting them per shell:
+#
+#   LISTENARR_DEV_ARCHIVE=/Volumes/nas/Downloads/format/original
+#
+# An exported value still wins, so a one-off override needs no edit.
+if [ -f ".env.local" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in '' | \#*) continue ;; esac
+        key="${line%%=*}"
+        value="${line#*=}"
+        key="${key// /}"
+        value="${value%\"}"
+        value="${value#\"}"
+        # An exported value wins, matching docker compose's own precedence, so a
+        # one-off override needs no edit to the file.
+        if [ -z "${!key:-}" ]; then
+            export "$key=$value"
+        fi
+    done <".env.local"
+fi
+
 COMPOSE_FILE="docker-compose.dev.yml"
 CONTAINER="listenarr-listenarr-dev-1"
 API_URL="http://localhost:4545"
@@ -25,6 +47,10 @@ export LISTENARR_DEV_LIBRARY="${LISTENARR_DEV_LIBRARY:-../audiobooks-test}"
 # so the two must line up. Mounted read-only.
 export LISTENARR_DEV_DOWNLOADS="${LISTENARR_DEV_DOWNLOADS:-./dev-downloads}"
 export LISTENARR_DEV_DOWNLOADS_TARGET="${LISTENARR_DEV_DOWNLOADS_TARGET:-/downloads}"
+# Where a conversion moves a book's source MP3s once its M4B is verified. The
+# container path is what goes in Settings -> General -> Conversion Archive Path.
+export LISTENARR_DEV_ARCHIVE="${LISTENARR_DEV_ARCHIVE:-./dev-archive}"
+export LISTENARR_DEV_ARCHIVE_TARGET="${LISTENARR_DEV_ARCHIVE_TARGET:-/archive}"
 
 
 # -- Dev environment --
@@ -37,6 +63,10 @@ dev() {
     if [ "$LISTENARR_DEV_DOWNLOADS" != "./dev-downloads" ] && [ ! -d "$LISTENARR_DEV_DOWNLOADS" ]; then
         echo "Warning: downloads folder '$LISTENARR_DEV_DOWNLOADS' does not exist."
         echo "         Imports will find no files to import."
+    fi
+    if [ "$LISTENARR_DEV_ARCHIVE" != "./dev-archive" ] && [ ! -d "$LISTENARR_DEV_ARCHIVE" ]; then
+        echo "Warning: archive folder '$LISTENARR_DEV_ARCHIVE' does not exist."
+        echo "         Conversions will convert but leave their source files in place."
     fi
     echo "Starting Listenarr (library: $LISTENARR_DEV_LIBRARY)"
     docker compose -f "$COMPOSE_FILE" up -d
