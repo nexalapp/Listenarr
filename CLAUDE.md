@@ -84,10 +84,21 @@ with no error — and its output drifts from the nominal duration, walking the
 chapter marks out of sync over a long book. Measured: 110ms of drift over two
 files through the demuxer, 0ms through the filter.
 
-**A source file's own chapters are preserved.** ffprobe reads ID3 CHAP frames, so
-a book already merged into one chaptered MP3 keeps its marks (offset by the files
-before it). Converting such a book is the *most* valuable case here, because ID3
-cannot carry `desc` at all.
+**Conversion handles both shapes: multi-part files and one merged chaptered MP3.**
+Files with no marks of their own get one chapter each, ordered naturally. Files
+that already carry ID3 CHAP frames keep those marks, offset by whatever plays
+before them; ffprobe reads them, so nothing is lost. The two mix freely in one
+book.
+
+The merged-MP3 case is the one that matters for this library: every one of its
+375 MP3 books is a single already-chaptered file, so a converter that ignored
+embedded marks would flatten all of them to one chapter. It is also the most
+valuable case, because ID3 cannot carry `desc` at all and MP4 can.
+
+**An embedded title only names a chapter when it distinguishes the file.** Parts
+split from one book commonly all carry the book's own title tag, and preferring
+it named every chapter identically. A title shared by more than one source falls
+back to the filename; a lone source keeps its own title.
 
 **Conversion writes outside the library, then publishes through `FileMover`.**
 `BackendArchitectureTests.LibraryFilesystem_HasNoListenarrScratchNamespaceProtocol`
