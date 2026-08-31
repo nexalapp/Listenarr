@@ -27,4 +27,51 @@ namespace Listenarr.Application.Audiobooks.Files
         public string? Codec { get; set; }
         public int? Bitrate { get; set; }
     }
+
+    /// <summary>
+    /// Derives the container formats of a book from its file summaries.
+    /// </summary>
+    public static class AudiobookFormats
+    {
+        /// <summary>
+        /// The distinct container formats of one book's files, uppercase and sorted.
+        ///
+        /// A list rather than one value: a book can legitimately hold more than one —
+        /// part-way through a conversion it holds both — and collapsing that would make
+        /// it invisible to a filter looking for either.
+        ///
+        /// Falls back to the container, then to the file extension, when a row carries no
+        /// format. Files registered before format extraction ran, or by a path ffprobe
+        /// could not read, still have a usable answer sitting on disk.
+        /// </summary>
+        public static string[] Describe(IReadOnlyList<AudiobookFormatSummary>? files)
+        {
+            if (files == null || files.Count == 0)
+            {
+                return [];
+            }
+
+            return files
+                .Select(file => FirstUsable(file.Format, file.Container, ExtensionOf(file.Path)))
+                .Where(format => !string.IsNullOrWhiteSpace(format))
+                .Select(format => format!.Trim().ToUpperInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static string? FirstUsable(params string?[] candidates) =>
+            candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
+
+        private static string? ExtensionOf(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            var extension = System.IO.Path.GetExtension(path);
+            return string.IsNullOrWhiteSpace(extension) ? null : extension.TrimStart('.');
+        }
+    }
 }

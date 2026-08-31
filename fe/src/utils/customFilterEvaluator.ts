@@ -42,10 +42,58 @@ function resolveFileCount(a: Audiobook): number {
   return 0
 }
 
+/**
+ * A book's container formats, uppercase, as the library payload reports them.
+ *
+ * Falls back to the legacy single `quality` string so a book the server has not
+ * re-projected yet does not silently drop out of every format filter.
+ */
+function resolveFormats(a: Audiobook): string[] {
+  const record = a as unknown as Record<string, unknown>
+  const formats = record['formats']
+  if (Array.isArray(formats)) {
+    return formats.map((f) => String(f)).filter((f) => f.length > 0)
+  }
+
+  const quality = record['quality']
+  return typeof quality === 'string' && quality.length > 0 ? [quality] : []
+}
+
+/**
+ * Format is multi-valued: a book part-way through a conversion legitimately holds
+ * both, and it matches when any of its formats does.
+ *
+ * Comparison is case-insensitive for every operator, `is` included. The server
+ * stores "MP3" and nobody types it that way, and the generic `is` below compares
+ * raw strings.
+ */
+function evalFormat(a: Audiobook, op: string, value: string): boolean {
+  const formats = resolveFormats(a).map((f) => f.toLowerCase())
+  const v = value.toLowerCase()
+
+  switch (op) {
+    case 'is':
+      return formats.some((f) => f === v)
+    case 'is_not':
+      return !formats.some((f) => f === v)
+    case 'contains':
+      return formats.some((f) => f.includes(v))
+    case 'not_contains':
+      return !formats.some((f) => f.includes(v))
+    default:
+      return true
+  }
+}
+
 function evalSingle(a: Audiobook, r: RuleLike): boolean {
   const field = r.field
   const op = r.operator
   const val = (r.value || '').toString()
+
+  if (field === 'format') {
+    return evalFormat(a, op, val)
+  }
+
   let left = ''
   switch (field) {
     case 'monitored':

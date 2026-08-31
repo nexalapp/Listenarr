@@ -678,6 +678,7 @@
       :filter="editingFilter"
       :qualityProfiles="qualityProfiles"
       :languages="availableLanguages"
+      :formats="availableFormats"
       :years="availableYears"
       @save="handleSaveCustomFilterFromModal"
       @close="
@@ -898,6 +899,18 @@ const availableLanguages = computed(() => {
     if (b.language) langs.add(b.language)
   }
   return Array.from(langs).sort()
+})
+
+// Only the formats actually present, so the filter never offers a value that
+// would match nothing in this library.
+const availableFormats = computed(() => {
+  const formats = new Set<string>()
+  for (const b of libraryStore.audiobooks || []) {
+    for (const f of b.formats || []) {
+      if (f) formats.add(f)
+    }
+  }
+  return Array.from(formats).sort()
 })
 
 const availableYears = computed(() => {
