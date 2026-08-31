@@ -69,72 +69,68 @@
           <h1>Listenarr</h1>
         </RouterLink>
       </div>
-      <div class="nav-actions">
-        <!-- Backend connection indicator moved to System view -->
-        <!-- Mobile backdrop (real DOM element so clicks reliably close the search) -->
-        <div v-if="searchOpen" class="mobile-search-backdrop" @click="closeSearch" />
+      <!-- Always-on library search, sitting in the content column so it lines up with
+           the toolbar beneath it -->
+      <div class="nav-search" ref="navSearchRef">
+        <PhMagnifyingGlass class="search-icon" />
+        <input
+          v-model="searchQuery"
+          @input="onSearchInput"
+          @keydown.enter="applyFirstResult"
+          @keydown.escape.prevent="closeSearchResults"
+          @focus="searchResultsOpen = true"
+          ref="searchInputRef"
+          class="search-input"
+          type="search"
+          placeholder="Search your library..."
+          aria-label="Search your library"
+        />
+        <div class="inline-spinner" v-if="searching" aria-hidden="true"></div>
 
-        <div class="nav-search-inline" ref="navSearchRef" :class="{ open: searchOpen }">
-          <input
-            v-model="searchQuery"
-            @input="onSearchInput"
-            @keydown.enter="applyFirstResult"
-            @keydown.escape.prevent="closeSearch"
-            ref="searchInputRef"
-            class="search-input-inline"
-            type="search"
-            placeholder="Search your library..."
-            aria-label="Search your audiobooks"
-          />
-          <button
-            class="nav-btn"
-            aria-hidden="true"
-            role="button"
-            tabindex="0"
-            @click="toggleSearch"
-            @keydown.enter.prevent="toggleSearch"
-          >
-            <PhMagnifyingGlass class="search-inline-icon" />
-          </button>
-          <div class="inline-spinner" v-if="searching" aria-hidden="true"></div>
-          <!-- Results overlay: shows suggestions, or a searching/no-results state with spinner -->
-          <div
-            class="search-results-inline"
-            v-if="searching || suggestions.length > 0 || searchQuery.length > 0"
-          >
-            <ul v-if="suggestions.length > 0" class="search-list">
+        <div v-if="showSearchResults" class="search-results" role="listbox">
+          <template v-if="suggestions.length > 0">
+            <div class="search-group-label">In your library</div>
+            <ul class="search-list">
               <li
                 v-for="s in suggestions"
                 :key="s.id"
                 class="search-result"
+                role="option"
                 @click="selectSuggestion(s)"
               >
-                <div style="display: flex; align-items: center; gap: 10px">
-                  <img
-                    v-if="s.imageUrl"
-                    :src="getProtectedImageSrc(s.imageUrl, getPlaceholderUrl())"
-                    @error="handleImageError"
-                    alt="cover"
-                    class="result-thumb"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                  <img v-else :src="getPlaceholderUrl()" alt="cover" class="result-thumb" />
-                  <div>
-                    <div class="result-title">{{ s.title }}</div>
-                    <div class="result-sub">{{ s.author }}</div>
-                  </div>
+                <img
+                  :src="
+                    s.imageUrl
+                      ? getProtectedImageSrc(s.imageUrl, getPlaceholderUrl())
+                      : getPlaceholderUrl()
+                  "
+                  @error="handleImageError"
+                  alt=""
+                  class="result-thumb"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <div class="result-text">
+                  <div class="result-title">{{ s.title }}</div>
+                  <div class="result-sub">{{ s.author }}</div>
                 </div>
               </li>
             </ul>
-
-            <div v-else class="search-empty-overlay">
-              <div class="overlay-spinner" v-if="searching" aria-hidden="true"></div>
-              <div class="search-empty" v-if="searching">Searching...</div>
-              <div class="search-empty" v-else-if="searchQuery.length > 0">No matches</div>
-            </div>
+          </template>
+          <div v-else class="search-empty">
+            {{ searching ? 'Searching...' : 'Nothing in your library matches' }}
           </div>
+
+          <!-- Always the last option, so a book the library lacks is one click away -->
+          <div class="search-group-label">Add new</div>
+          <button type="button" class="search-result search-add-new" @click="searchTheWeb">
+            <PhMagnifyingGlass class="add-new-icon" />
+            <span class="result-title">Search the web for "{{ searchQuery.trim() }}"</span>
+          </button>
         </div>
+      </div>
+
+      <div class="nav-actions">
         <div class="notification-wrapper" ref="notificationRef">
           <button
             class="nav-btn"
@@ -564,7 +560,7 @@ import {
   PhList,
   PhFolderOpen,
 } from '@phosphor-icons/vue'
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { preloadRoute } from '@/router'
 // SignalR indicator moved to System view; session token handled where needed
@@ -1205,37 +1201,29 @@ const suggestions = vueRef<
 const searching = vueRef(false)
 const searchInputRef = vueRef<HTMLInputElement | null>(null)
 
-// Slide-out search state and refs
 const navSearchRef = vueRef<HTMLElement | null>(null)
-const searchOpen = vueRef(false)
+const searchResultsOpen = vueRef(false)
 
-const toggleSearch = () => {
-  searchOpen.value = !searchOpen.value
-  if (searchOpen.value) {
-    // Wait for DOM update then focus input
-    nextTick(() => searchInputRef.value?.focus())
-  }
-}
+// The results only exist while there is something to search for; "Add new" is offered
+// alongside them, so the panel opens even when the library has no match.
+const showSearchResults = computed(
+  () => searchResultsOpen.value && searchQuery.value.trim().length > 0,
+)
 
-const closeSearch = () => {
-  if (searchOpen.value) {
-    searchOpen.value = false
-  }
+const closeSearchResults = () => {
+  searchResultsOpen.value = false
 }
 
 const handleSearchDocumentClick = (e: MouseEvent) => {
   const el = navSearchRef.value
   if (!el) return
-  const target = e.target as Node
-  // Close search if clicking outside the search container (on mobile overlay)
-  if (!el.contains(target)) {
-    searchOpen.value = false
-  }
+  if (!el.contains(e.target as Node)) closeSearchResults()
 }
 
 let searchDebounceTimer: number | undefined
 const onSearchInput = async () => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchResultsOpen.value = true
   const q = searchQuery.value.trim()
   if (q.length === 0) {
     suggestions.value = []
@@ -1275,11 +1263,22 @@ const onSearchInput = async () => {
   }, 250)
 }
 
+// The last option in the panel: hand the query to Add New, which searches the web.
+const searchTheWeb = () => {
+  const query = searchQuery.value.trim()
+  if (!query) return
+  searchQuery.value = ''
+  suggestions.value = []
+  closeSearchResults()
+  void router.push({ name: 'add-new', query: { q: query } })
+}
+
 const selectSuggestion = (s: { id: number; title: string; author?: string }) => {
   // Navigate to audiobook detail if local (id > 0), else open search view
   if (!s) return
   searchQuery.value = ''
   suggestions.value = []
+  closeSearchResults()
   if (s.id && s.id > 0) {
     // Navigate to audiobook detail page (router name: 'audiobook-detail')
     void router.push({ name: 'audiobook-detail', params: { id: String(s.id) } })
@@ -1290,7 +1289,11 @@ const selectSuggestion = (s: { id: number; title: string; author?: string }) => 
 }
 
 const applyFirstResult = () => {
-  if (suggestions.value.length > 0) selectSuggestion(suggestions.value[0]!)
+  if (suggestions.value.length > 0) {
+    selectSuggestion(suggestions.value[0]!)
+    return
+  }
+  searchTheWeb()
 }
 
 watch(
@@ -1717,6 +1720,9 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 <style scoped>
 #app {
   --top-nav-height: 60px;
+  /* The sidebar column and the gutter the content toolbars sit in */
+  --sidebar-width: 200px;
+  --content-gutter: 20px;
   --security-banner-height: 0px;
   --filesystem-banner-height: 0px;
   --app-banner-height: 0px;
@@ -1739,7 +1745,9 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   padding: 0 1rem;
   height: var(--top-nav-height);
   display: flex;
-  justify-content: space-between;
+  /* Laid out from the left so the search keeps its column; the actions are pushed
+     to the right edge by their own auto margin. */
+  justify-content: flex-start;
   align-items: center;
   position: fixed;
   top: var(--app-banner-height);
@@ -1830,6 +1838,9 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  /* Span the sidebar plus the toolbar's own gutter, less the header padding, so
+     whatever follows starts level with the first toolbar button below. */
+  flex: 0 0 calc(var(--sidebar-width) + var(--content-gutter) - 1rem);
 }
 
 .brand-link {
@@ -1898,6 +1909,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   display: flex;
   align-items: center;
   gap: 1rem;
+  margin-left: auto;
 }
 
 .nav-user {
@@ -2024,7 +2036,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 /* Sidebar */
 .sidebar {
-  width: 200px;
+  width: var(--sidebar-width);
   background-color: #2a2a2a;
   border-right: 1px solid #3a3a3a;
   position: fixed;
@@ -2335,65 +2347,6 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   border-radius: 6px;
 }
 
-.nav-search-inline {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Collapsible slide-out search: input is absolutely positioned so it doesn't affect layout */
-.nav-search-inline {
-  min-width: 44px; /* reserve space for the icon */
-}
-
-.search-input-inline {
-  transition:
-    transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1),
-    width 220ms ease,
-    opacity 180ms ease;
-  position: absolute;
-  top: 50%;
-  right: 40px; /* leave space for the icon */
-  transform: translateX(15%);
-  width: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.nav-search-inline.open .search-input-inline {
-  transform: translateX(40px);
-  width: 340px;
-  max-width: 50vw;
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* Keep the results dropdown aligned to the input when open */
-.search-results-inline {
-  position: absolute;
-  top: 56px; /* slightly below the input */
-  right: 40px;
-  left: auto;
-  width: 340px;
-  max-width: 50vw;
-}
-
-.search-inline-icon {
-  color: #c7cfd6;
-  font-size: 20px;
-  cursor: pointer;
-  border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.search-inline-icon:hover {
-  background-color: #3a3a3a;
-  color: #fff;
-}
-
 .notification-inline-icon {
   color: #c7cfd6;
   font-size: 20px;
@@ -2573,19 +2526,6 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   margin-left: 6px;
 }
 
-.search-input-inline {
-  width: 340px;
-  max-width: 50vw;
-  padding: 8px 12px 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #424242;
-  background: #222;
-  color: #fff;
-  outline: none;
-  font-size: 0.95rem;
-  position: relative;
-}
-
 .search-input::placeholder {
   color: #9aa0a6;
 }
@@ -2593,30 +2533,6 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 .search-input:focus {
   border-color: #2196f3;
   box-shadow: 0 4px 14px rgba(33, 150, 243, 0.12);
-}
-
-.search-results-inline {
-  list-style: none;
-  margin: 8px 0 0 0;
-  padding: 0;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.nav-search-inline {
-  position: relative;
-}
-
-.search-results-inline {
-  position: absolute;
-  top: 44px;
-  left: 0;
-  right: 0;
-  background: #1f1f1f;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 6px;
-  z-index: 1400;
 }
 
 .search-list {
@@ -2634,34 +2550,117 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   background: #2a2a2a;
 }
 
-.search-empty-overlay {
+/* @keyframes spin is centralized in src/assets/animations.css */
+
+/*
+ * Header search. The brand fills the sidebar column so the field starts exactly where
+ * the content does, lining it up with the first button of the toolbar underneath.
+ */
+.nav-search {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
-  justify-content: flex-start;
+  gap: 8px;
+  flex: 1 1 auto;
+  max-width: 420px;
+  padding: 0 8px 0 12px;
+  border-radius: 6px;
+  border: 1px solid #424242;
+  background: #222;
 }
 
-/* Small spinner */
-.overlay-spinner {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.08);
-  border-top-color: #2196f3;
-  animation: spin 800ms linear infinite;
+.nav-search:focus-within {
+  border-color: var(--brand-500);
+  box-shadow: 0 4px 14px rgba(33, 150, 243, 0.12);
 }
 
-/* @keyframes spin is centralized in src/assets/animations.css */
+.search-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: #9aa0a6;
+}
+
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+  outline: none;
+  font-size: 0.95rem;
+}
+
+.search-input::placeholder {
+  color: #9aa0a6;
+}
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  background: #1f1f1f;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  z-index: 1400;
+}
+
+.search-group-label {
+  padding: 8px 10px 4px;
+  color: #8b98a5;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 
 .search-result {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
   padding: 8px 10px;
+  border: none;
+  background: none;
   border-radius: 6px;
   cursor: pointer;
   color: #e6eef6;
+  text-align: left;
+  font: inherit;
+}
+
+.search-add-new .result-title {
+  font-weight: 500;
+}
+
+.add-new-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: #9aa0a6;
+}
+
+.result-text {
+  min-width: 0;
+}
+
+.result-title,
+.result-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-empty {
+  padding: 10px;
+  color: #9aa0a6;
+  font-size: 0.9rem;
 }
 
 .search-result:hover {
@@ -2679,115 +2678,18 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   color: #bfc8cf;
 }
 
-.search-empty {
-  padding: 8px 10px;
-  color: #9aa0a6;
-  font-size: 0.9rem;
-}
-
-/* Mobile search overlay */
+/*
+ * On narrow screens the sidebar is off-canvas, so the brand no longer has a column to
+ * fill: let it size to its content and give the row back to the search.
+ */
 @media (max-width: 768px) {
-  .nav-search-inline {
-    position: fixed;
-    top: 1rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 90%;
-    max-width: 400px;
-    z-index: 2001;
-    background-color: #1e1e1e;
-    border-radius: 6px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    border: 1px solid #3a3a3a;
+  .nav-brand {
+    flex: 0 1 auto;
   }
 
-  /* Backdrop element (renders in DOM) - clicks close the search reliably */
-  .mobile-search-backdrop {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.9);
-    z-index: 2000;
-    cursor: pointer;
-  }
-
-  .search-input-inline {
-    position: static;
-    transform: none;
-    width: 100% !important;
-    opacity: 1;
-    pointer-events: auto;
-    background: #1e1e1e;
-    border: 0px solid transparent;
-    transform: translateX(0) !important;
-  }
-
-  .search-results-inline {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    width: 100%;
+  .nav-search {
+    min-width: 0;
     max-width: none;
-    margin-top: 0.5rem;
-  }
-
-  .nav-search-inline .nav-btn {
-    position: absolute;
-    right: 0.75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    color: #ccc;
-    padding: 0.5rem;
-    border-radius: 6px;
-    z-index: 1;
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .nav-search-inline .nav-btn:hover {
-    background-color: #3a3a3a;
-    color: white;
-  }
-
-  .search-input-inline {
-    padding-right: 3rem; /* Make room for the close button */
-    height: 44px;
-    box-sizing: border-box;
-  }
-
-  /* Hide search input and results when not open, but keep button visible */
-  .nav-search-inline:not(.open) .search-input-inline,
-  .nav-search-inline:not(.open) .search-results-inline,
-  .nav-search-inline:not(.open) .inline-spinner {
-    display: none;
-  }
-
-  /* Show search button in nav when search is not open */
-  .nav-search-inline:not(.open) {
-    position: static;
-    transform: none;
-    width: auto;
-    background: none;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-    z-index: auto;
-  }
-
-  .nav-search-inline:not(.open)::before {
-    display: none;
-  }
-
-  .nav-search-inline:not(.open) .nav-btn {
-    position: static;
-    transform: none;
-    width: 44px;
-    height: 44px;
   }
 }
 
