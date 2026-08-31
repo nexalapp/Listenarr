@@ -35,7 +35,19 @@ vi.mock('@/services/api', () => ({
 
 type AudiobooksVm = {
   setGroupBy?: (value: string) => Promise<void> | void
-  groupedCollections?: Array<{ name: string; count: number; coverUrl?: string }>
+  groupByAuthor?: boolean
+  groupBySeries?: boolean
+  viewMode?: 'grid' | 'list'
+  displayedAudiobooks?: Array<{ id: number }>
+  librarySections?: Array<{ headers: Array<{ level: number; label: string }> }>
+  groupingOptions?: string[]
+  groupedCollections?: Array<{
+    name: string
+    count: number
+    coverUrl?: string
+    coverUrls?: string[]
+    author?: string
+  }>
   showItemDetails?: boolean
   groupBy?: string
   visibleRange?: { start: number; end: number }
@@ -108,7 +120,7 @@ describe('AudiobooksView', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -200,7 +212,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -298,7 +310,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -311,15 +323,19 @@ describe('AudiobooksView Grouping', () => {
 
     const groupedCollections = vm.groupedCollections ?? []
     expect(groupedCollections).toHaveLength(2)
+    // A series also records the author it is filed under, so the series view can be
+    // headed by author.
     expect(groupedCollections.find((g) => g.name === 'Series 1')).toEqual({
       name: 'Series 1',
       count: 2,
       coverUrls: ['cover1.jpg', 'cover2.jpg'],
+      author: 'Author A',
     })
     expect(groupedCollections.find((g) => g.name === 'Series 2')).toEqual({
       name: 'Series 2',
       count: 1,
       coverUrls: ['cover3.jpg'],
+      author: 'Author B',
     })
   })
 
@@ -357,7 +373,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -378,8 +394,8 @@ describe('AudiobooksView Grouping', () => {
     expect((vm as unknown).sortKey).toBe('author-last')
     expect((vm as unknown).sortOrder).toBe('asc')
 
-    // CustomSelect should not be marked "active" for the default author sort
-    const csStub = wrapper.find('custom-select-stub')
+    // The view options control should not be marked "active" for the default author sort
+    const csStub = wrapper.find('view-options-dropdown-stub')
     expect(csStub.exists()).toBe(true)
     expect(csStub.attributes('active')).toBe('false')
 
@@ -387,14 +403,14 @@ describe('AudiobooksView Grouping', () => {
     vm.sortKey = 'count'
     vm.sortOrder = 'desc'
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('true')
+    expect(wrapper.find('view-options-dropdown-stub').attributes('active')).toBe('true')
     expect(vm.groupedCollections[0].name).toBe('Author A')
 
     // Sort collections by author-last ascending (back to default) — control should be inactive
     vm.sortKey = 'author-last'
     vm.sortOrder = 'asc'
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('false')
+    expect(wrapper.find('view-options-dropdown-stub').attributes('active')).toBe('false')
     expect(vm.groupedCollections[0].name).toBe('Author A')
 
     // Switch to series grouping and verify options
@@ -408,13 +424,13 @@ describe('AudiobooksView Grouping', () => {
     // Series default should be `title` ascending and the control should NOT be active
     expect((vm as unknown).sortKey).toBe('title')
     expect((vm as unknown).sortOrder).toBe('asc')
-    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('false')
+    expect(wrapper.find('view-options-dropdown-stub').attributes('active')).toBe('false')
 
     // Sort series by count ascending (non-default)
     vm.sortKey = 'count'
     vm.sortOrder = 'asc'
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('true')
+    expect(wrapper.find('view-options-dropdown-stub').attributes('active')).toBe('true')
     expect(vm.groupedCollections[0].name).toBe('Series Y')
   })
 
@@ -473,7 +489,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -483,6 +499,117 @@ describe('AudiobooksView Grouping', () => {
     const vm = getVm(wrapper)
     const groupedCollections = vm.groupedCollections ?? []
     expect(groupedCollections).toHaveLength(0)
+  })
+
+  it('heads the books list by author and series, in either view mode', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+        {
+          path: '/collection/:type/:name',
+          name: 'collection',
+          component: { template: '<div />' },
+        },
+      ],
+    })
+    await router.push('/books')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 1,
+        title: 'Zeta',
+        authors: ['Ada Lovelace'],
+        seriesMemberships: [{ seriesName: 'Engines', seriesNumber: '2', isPrimary: true }],
+        files: [],
+      },
+      {
+        id: 2,
+        title: 'Alpha',
+        authors: ['Ada Lovelace'],
+        seriesMemberships: [{ seriesName: 'Engines', seriesNumber: '1', isPrimary: true }],
+        files: [],
+      },
+      { id: 3, title: 'Solo', authors: ['Ada Lovelace'], files: [] },
+      { id: 4, title: 'Other', authors: ['Bob Zeta'], files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'ViewOptionsDropdown',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = getVm(wrapper)
+
+    // No headings until grouping is switched on
+    expect(wrapper.findAll('.group-header')).toHaveLength(0)
+
+    vm.groupByAuthor = true
+    vm.groupBySeries = true
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+
+    // Only the rows near the (zero-height, under jsdom) viewport are drawn, so the DOM
+    // shows the first headings and the row model carries the rest.
+    const headings = wrapper.findAll('.group-header').map((h) => h.text())
+    expect(headings[0]).toContain('Ada Lovelace')
+    expect(headings[1]).toContain('Engines')
+
+    const allHeadings = (vm.librarySections ?? []).flatMap((section) =>
+      section.headers.map((h) => `${h.level}:${h.label}`),
+    )
+    expect(allHeadings).toEqual([
+      '1:Ada Lovelace',
+      '2:Engines',
+      '2:Standalone',
+      '1:Bob Zeta',
+      '2:Standalone',
+    ])
+
+    // Series position wins over the title sort inside a series heading
+    expect(vm.displayedAudiobooks?.map((b) => b.id)).toEqual([2, 1, 3, 4])
+
+    // The same headings are drawn in list view
+    vm.viewMode = 'list'
+    await new Promise((r) => setTimeout(r, 0))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.audiobooks-list .group-header').length).toBeGreaterThan(0)
+
+    // A heading opens the collection page for that author or series
+    const link = wrapper.findAll('.group-header-link')[0]!
+    expect(link.text()).toBe('Ada Lovelace')
+    await link.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(router.currentRoute.value.fullPath).toBe('/collection/author/Ada%20Lovelace')
   })
 
   it("'Clear Filters' button resets search, custom filter and builtin filters", async () => {
@@ -518,7 +645,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -616,7 +743,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -689,7 +816,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -765,7 +892,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
@@ -780,6 +907,168 @@ describe('AudiobooksView Grouping', () => {
     await vm.setGroupBy?.('authors')
     await wrapper.vm.$nextTick()
     expect(store.selectedIds.size).toBe(0)
+  })
+
+  it('lays collections out as cards or rows, following the view toggle', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/authors',
+          name: 'authors',
+          component: AudiobooksView,
+          meta: { requiresAuth: true, libraryGroup: 'authors' },
+        },
+        {
+          path: '/collection/:type/:name',
+          name: 'collection',
+          component: { template: '<div />' },
+        },
+      ],
+    })
+    await router.push('/authors')
+    await router.isReady().catch(() => {})
+
+    localStorage.setItem('listenarr.viewMode', 'grid')
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 1, title: 'Book 1', authors: ['Author A'], imageUrl: 'c1', files: [] },
+      { id: 2, title: 'Book 2', authors: ['Author A'], imageUrl: 'c2', files: [] },
+      { id: 3, title: 'Book 3', authors: ['Author B'], imageUrl: 'c3', files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'ViewOptionsDropdown',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.findAll('.grouped-grid .collection-card')).toHaveLength(2)
+    expect(wrapper.find('.grouped-list').exists()).toBe(false)
+
+    const vm = getVm(wrapper)
+    vm.viewMode = 'list'
+    await wrapper.vm.$nextTick()
+
+    const rows = wrapper.findAll('.collection-list-item')
+    expect(rows).toHaveLength(2)
+    expect(wrapper.find('.grouped-grid').exists()).toBe(false)
+    expect(rows[0]!.text()).toContain('Author A')
+    expect(rows[0]!.text()).toContain('2 books')
+
+    // A row opens the same collection page the card does
+    await rows[0]!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(router.currentRoute.value.fullPath).toBe('/collection/author/Author%20A')
+  })
+
+  it('heads the series view by author, and offers that grouping only where it applies', async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+        {
+          path: '/authors',
+          name: 'authors',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'authors' },
+        },
+        {
+          path: '/series',
+          name: 'series',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'series' },
+        },
+      ],
+    })
+    await router.push('/series')
+    await router.isReady().catch(() => {})
+
+    localStorage.setItem('listenarr.viewMode', 'list')
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 1, title: 'A1', authors: ['Ada Lovelace'], series: 'Engines', files: [] },
+      { id: 2, title: 'A2', authors: ['Ada Lovelace'], series: 'Looms', files: [] },
+      { id: 3, title: 'B1', authors: ['Bob Zeta'], series: 'Widgets', files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'ViewOptionsDropdown',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = getVm(wrapper)
+
+    // The series view offers only the author grouping; the authors view offers none
+    expect(vm.groupingOptions).toEqual(['author'])
+
+    vm.groupByAuthor = true
+    await wrapper.vm.$nextTick()
+
+    const headings = wrapper.findAll('.collection-group-header').map((h) => h.text())
+    expect(headings[0]).toContain('Ada Lovelace')
+    expect(headings[0]).toContain('2 series')
+    expect(headings[1]).toContain('Bob Zeta')
+
+    // Turning it off puts the collections back in one flat run
+    vm.groupByAuthor = false
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.collection-group-header')).toHaveLength(0)
+    expect(wrapper.findAll('.collection-list-item')).toHaveLength(3)
+
+    await vm.setGroupBy?.('authors')
+    await wrapper.vm.$nextTick()
+    expect(vm.groupingOptions).toEqual([])
   })
 
   it('series bottom placard is only visible when showItemDetails is enabled', async () => {
@@ -817,6 +1106,10 @@ describe('AudiobooksView Grouping', () => {
     await router.push('/books')
     await router.isReady().catch(() => {})
 
+    // The placard belongs to the card layout, so pin it rather than inheriting the
+    // view mode another test persisted.
+    localStorage.setItem('listenarr.viewMode', 'grid')
+
     const store = useLibraryStore()
     store.audiobooks = [
       {
@@ -846,7 +1139,7 @@ describe('AudiobooksView Grouping', () => {
           'EditAudiobookModal',
           'CustomFilterModal',
           'FiltersDropdown',
-          'CustomSelect',
+          'ViewOptionsDropdown',
         ],
       },
     })
