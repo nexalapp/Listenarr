@@ -15,7 +15,7 @@
 # Machine-specific overrides live in .env.local, which is gitignored. Put the
 # folders this machine uses there once instead of exporting them per shell:
 #
-#   LISTENARR_DEV_ARCHIVE=/Volumes/nas/Downloads/format/original
+#   LISTENARR_DEV_ARCHIVE=/path/to/where/converted/sources/are/archived
 #
 # An exported value still wins, so a one-off override needs no edit.
 if [ -f ".env.local" ]; then
