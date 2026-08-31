@@ -104,8 +104,12 @@ namespace Listenarr.Application.Common
                 { "Asin", Clean(metadata.Asin) },
                 { "Genre", Clean(metadata.Genre) },
                 // Never sanitised as a path component: a blurb is several sentences of
-                // real punctuation, and it is only ever written into a tag.
-                { "Description", StripControlCharacters(metadata.Description, keepNewlines: true) },
+                // real punctuation, and it is only ever written into a tag. Audible
+                // returns it as HTML and nothing that reads the desc atom renders
+                // markup, so the tags come out and the paragraph breaks stay.
+                { "Description", StripControlCharacters(
+                    TagText.FromHtml(metadata.Description),
+                    keepNewlines: true) },
                 // Every series the book is in, each in its own bracket group, which is the
                 // shape the library's multi-series files already use. Empty for a
                 // standalone book so the surrounding pattern collapses around it.
@@ -260,7 +264,9 @@ namespace Listenarr.Application.Common
                 { "Language", string.IsNullOrWhiteSpace(metadata.Language) ? string.Empty : SanitizePathComponent(metadata.Language) },
                 { "Asin", string.IsNullOrWhiteSpace(metadata.Asin) ? string.Empty : SanitizePathComponent(metadata.Asin) },
                 { "Genre", SanitizeOrEmpty(metadata.Genres?.FirstOrDefault(g => !string.IsNullOrWhiteSpace(g))) },
-                { "Description", StripControlCharacters(metadata.Description, keepNewlines: true) },
+                { "Description", StripControlCharacters(
+                    TagText.FromHtml(metadata.Description),
+                    keepNewlines: true) },
                 { "SeriesBrackets", BuildSeriesBrackets(
                     AudiobookSeriesMembershipHelper
                         .Normalize(metadata.SeriesMemberships, metadata.Series, metadata.SeriesNumber)
