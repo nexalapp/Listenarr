@@ -107,6 +107,12 @@ const buildApiRequestUrl = (endpoint: string): string => {
 
 type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: number }
 
+// A 404 from a metadata lookup is an answer ("Audible has no such thing"), not a failure.
+// Every other error — network, 500, auth — leaves the question open, so callers must be able
+// to tell the two apart rather than reading both as "not found".
+const isNotFoundError = (err: unknown): boolean =>
+  typeof err === 'object' && err !== null && (err as ErrorWithStatus).status === 404
+
 class ApiService {
   private antiforgeryToken: string | null = null
   private antiforgeryTokenSession: string | null = null
@@ -471,8 +477,11 @@ class ApiService {
       const params = new URLSearchParams({ name, region })
       if (asin) params.append('asin', asin)
       return await this.request<SeriesLookupResponse>(`/metadata/series?${params.toString()}`)
-    } catch {
-      return null
+    } catch (err) {
+      // Null means Audible has no such series; anything else propagates so the caller can
+      // keep treating the series as possibly-Audible-backed.
+      if (isNotFoundError(err)) return null
+      throw err
     }
   }
 
@@ -493,8 +502,11 @@ class ApiService {
       return await this.request<SeriesCatalogResponse>(
         `/metadata/series/books?${params.toString()}`,
       )
-    } catch {
-      return null
+    } catch (err) {
+      // Null means Audible has no catalog for this series name — the shape a library-only
+      // series takes. Transient failures propagate rather than masquerading as that.
+      if (isNotFoundError(err)) return null
+      throw err
     }
   }
 
