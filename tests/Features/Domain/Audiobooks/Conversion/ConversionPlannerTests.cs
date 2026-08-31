@@ -174,6 +174,47 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Conversion
             Assert.Equal(TimeSpan.FromSeconds(30), plan.Chapters[1].End);
         }
 
+        [Fact]
+        public void BuildPlan_IgnoresAnEmbeddedTitleSharedByEveryPart()
+        {
+            // Parts split from one book commonly all carry the book's own title tag.
+            // Preferring it would name every chapter identically, which is worse than
+            // the filenames — those at least tell the parts apart.
+            var plan = ConversionPlanner.BuildPlan(
+                [
+                    Source("Part 1.mp3", embeddedTitle: "Building Bridges"),
+                    Source("Part 2.mp3", embeddedTitle: "Building Bridges"),
+                    Source("Part 10.mp3", embeddedTitle: "Building Bridges"),
+                ],
+                StringComparer.Ordinal);
+
+            Assert.Equal(["Part 1", "Part 2", "Part 10"], plan.Chapters.Select(c => c.Title));
+        }
+
+        [Fact]
+        public void BuildPlan_KeepsEmbeddedTitlesThatActuallyDifferPerPart()
+        {
+            var plan = ConversionPlanner.BuildPlan(
+                [
+                    Source("01.mp3", embeddedTitle: "An Unexpected Party"),
+                    Source("02.mp3", embeddedTitle: "Roast Mutton"),
+                ],
+                StringComparer.Ordinal);
+
+            Assert.Equal(["An Unexpected Party", "Roast Mutton"], plan.Chapters.Select(c => c.Title));
+        }
+
+        [Fact]
+        public void BuildPlan_KeepsASingleFilesEmbeddedTitle()
+        {
+            // One source cannot collide with anything, so its own title still stands.
+            var plan = ConversionPlanner.BuildPlan(
+                [Source("01.mp3", embeddedTitle: "Building Bridges")],
+                StringComparer.Ordinal);
+
+            Assert.Equal("Building Bridges", plan.Chapters[0].Title);
+        }
+
         // ---- files that already carry chapters --------------------------------------
 
         [Fact]

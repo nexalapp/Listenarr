@@ -96,6 +96,18 @@ namespace Listenarr.Domain.Audiobooks.Conversion
                 .Select(p => byPath[p.FullPath])
                 .ToList();
 
+            // An embedded title only names a chapter if it tells the files apart. Parts
+            // split from one book commonly all carry the book's own title tag, and using
+            // it would name every chapter identically — worse than the filenames, which
+            // at least differ.
+            var repeatedTitles = ordered
+                .Select(source => source.EmbeddedTitle?.Trim())
+                .Where(title => !string.IsNullOrEmpty(title))
+                .GroupBy(title => title, StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             var chapters = new List<ConversionChapter>(ordered.Count);
             var cursor = TimeSpan.Zero;
             foreach (var source in ordered)
@@ -129,7 +141,7 @@ namespace Listenarr.Domain.Audiobooks.Conversion
                 {
                     chapters.Add(new ConversionChapter(
                         chapters.Count + 1,
-                        BuildChapterTitle(source, chapters.Count + 1),
+                        BuildChapterTitle(source, chapters.Count + 1, repeatedTitles),
                         cursor,
                         cursor + duration,
                         source.FullPath));
@@ -254,10 +266,15 @@ namespace Listenarr.Domain.Audiobooks.Conversion
         /// the chapter number. A title that is only digits and punctuation is discarded:
         /// it says no more than the number already does.
         /// </summary>
-        private static string BuildChapterTitle(ConversionSource source, int number)
+        private static string BuildChapterTitle(
+            ConversionSource source,
+            int number,
+            IReadOnlySet<string> repeatedTitles)
         {
             var embedded = source.EmbeddedTitle?.Trim();
-            if (!string.IsNullOrEmpty(embedded) && !TitleWithoutWords.IsMatch(embedded))
+            if (!string.IsNullOrEmpty(embedded)
+                && !TitleWithoutWords.IsMatch(embedded)
+                && !repeatedTitles.Contains(embedded))
             {
                 return embedded;
             }
