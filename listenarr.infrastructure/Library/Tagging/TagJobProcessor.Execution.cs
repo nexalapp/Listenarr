@@ -186,7 +186,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 {
                     result = await writer.WriteAsync(
                         request,
-                        BuildProgress(queue, job.Id, basePercent, 100.0 / files.Count),
+                        BuildProgress(job.Id, basePercent, 100.0 / files.Count),
                         cancellationToken);
                 }
                 catch (OperationCanceledException)
@@ -306,11 +306,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
         /// Turn per-file ffmpeg progress into progress over the whole job, so a book with
         /// four files does not run its bar from zero to a hundred four times.
         /// </summary>
-        private IProgress<double> BuildProgress(
-            ITagQueueService queue,
-            Guid jobId,
-            double basePercent,
-            double span)
+        private IProgress<double> BuildProgress(Guid jobId, double basePercent, double span)
         {
             var lastReportedPercent = -1;
             return new Progress<double>(fraction =>
@@ -325,19 +321,36 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 // or fail the rewrite reporting it. A report can also land after the job
                 // has finished and its scope has been disposed, so nothing here may throw
                 // into an unobserved task.
-                _ = ReportProgressSafelyAsync(queue, jobId, percent);
+                _ = ReportProgressSafelyAsync(jobId, percent);
             });
         }
 
-        private async Task ReportProgressSafelyAsync(ITagQueueService queue, Guid jobId, int percent)
+        /// <summary>
+        /// Persist one progress report, absorbing anything that goes wrong.
+        ///
+        /// <para>
+        /// In its own scope, and that is the point rather than an oversight. These run on
+        /// the copy's thread while the job's own thread is using the job scope's
+        /// DbContext, and EF throws "a second operation was started on this context
+        /// instance" the moment the two overlap — which they do, because a copy reports a
+        /// hundred times while the flow around it is reading and writing rows.
+        /// </para>
+        /// <para>
+        /// Progress is a courtesy: it is derived from the work rather than driving it, and
+        /// the job's durable state does not depend on any single report landing.
+        /// </para>
+        /// </summary>
+        private async Task ReportProgressSafelyAsync(Guid jobId, int percent)
         {
             try
             {
-                await queue.ReportProgressAsync(
-                    jobId,
-                    TagJobPhase.Writing,
-                    percent,
-                    CancellationToken.None);
+                using var scope = scopeFactory.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<ITagQueueService>()
+                    .ReportProgressAsync(
+                        jobId,
+                        TagJobPhase.Writing,
+                        percent,
+                        CancellationToken.None);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

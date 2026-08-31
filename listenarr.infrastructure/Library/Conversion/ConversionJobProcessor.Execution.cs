@@ -131,7 +131,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 // or fail the encode reporting it. A report can also land after the job
                 // has finished and its scope has been disposed, so nothing here may throw
                 // into an unobserved task.
-                _ = ReportProgressSafelyAsync(queue, job.Id, percent);
+                _ = ReportProgressSafelyAsync(job.Id, percent);
             });
 
             var request = new ConversionRequest(plan, scratchPath, planning.Tags!);
@@ -342,21 +342,27 @@ namespace Listenarr.Infrastructure.Library.Conversion
         /// <summary>
         /// Persist one progress report, absorbing anything that goes wrong.
         ///
+        /// <para>
+        /// In its own scope: these run on the encoder's reader thread, and sharing the
+        /// job scope's DbContext with the flow around them lets two operations overlap on
+        /// one context, which EF refuses outright.
+        /// </para>
+        /// <para>
         /// Progress is a courtesy: it is derived from the encode rather than driving it,
         /// and the job's durable state does not depend on any single report landing.
+        /// </para>
         /// </summary>
-        private async Task ReportProgressSafelyAsync(
-            IConversionQueueService queue,
-            Guid jobId,
-            int percent)
+        private async Task ReportProgressSafelyAsync(Guid jobId, int percent)
         {
             try
             {
-                await queue.ReportProgressAsync(
-                    jobId,
-                    ConversionJobPhase.Encoding,
-                    percent,
-                    CancellationToken.None);
+                using var scope = scopeFactory.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<IConversionQueueService>()
+                    .ReportProgressAsync(
+                        jobId,
+                        ConversionJobPhase.Encoding,
+                        percent,
+                        CancellationToken.None);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
