@@ -656,6 +656,7 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useScanNotificationsStore } from '@/stores/scanNotifications'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
+import { useConversionJobsStore } from '@/stores/conversionJobs'
 import { apiService, ensureImageCached } from '@/services/api'
 import { isApiImagesUrl } from '@/services/apiBase'
 import { handleImageError } from '@/utils/imageFallback'
@@ -724,6 +725,7 @@ const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const scanNotificationsStore = useScanNotificationsStore()
 const filesystemReadinessStore = useFilesystemReadinessStore()
+const conversionJobsStore = useConversionJobsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
 type DetailTab = 'details' | 'files' | 'history'
@@ -832,6 +834,19 @@ const topActions = computed<DetailTopAction[]>(() => [
     onClick: toggleMonitored,
   },
   {
+    key: 'convert',
+    label: convertLabel.value,
+    title: convertTitle.value,
+    ariaLabel: 'Convert to M4B',
+    icon: conversionInFlight.value ? PhSpinner : PhFileAudio,
+    iconClass: conversionInFlight.value ? 'ph-spin' : undefined,
+    disabled: conversionInFlight.value || !hasConvertibleFiles.value,
+    desktopGroup: 'secondary',
+    onClick: () => {
+      void convertToM4b()
+    },
+  },
+  {
     key: 'edit',
     label: 'Edit Metadata',
     title: 'Edit Metadata',
@@ -910,6 +925,7 @@ type DetailTopAction = {
     | 'monitor'
     | 'edit'
     | 'rescan-metadata'
+    | 'convert'
     | 'organize'
     | 'delete'
   label: string
@@ -1220,6 +1236,10 @@ onMounted(async () => {
   syncActiveTabFromRoute()
   document.addEventListener('click', handleClickOutside)
 
+  // Idempotent: the store subscribes once and the Activity view may have started
+  // it already. Without it the button cannot tell that a conversion is running.
+  conversionJobsStore.start()
+
   await loadAudiobook()
 
   // Keep the shared scan notification store current when this detail view is mounted.
@@ -1418,6 +1438,70 @@ async function refresh() {
   // Reload history if history tab is active
   if (activeTab.value === 'history') {
     await loadHistory()
+  }
+}
+
+/**
+ * The book's MP3 files. A book that is already a single M4B has nothing to gain,
+ * so the button is disabled rather than offering work that would be refused.
+ */
+const hasConvertibleFiles = computed(
+  () =>
+    audiobook.value?.files?.some((file) => (file.path ?? '').toLowerCase().endsWith('.mp3')) ??
+    false,
+)
+
+const activeConversion = computed(() =>
+  audiobook.value ? conversionJobsStore.getJobForAudiobook(audiobook.value.id) : undefined,
+)
+
+const conversionInFlight = computed(() => {
+  const status = activeConversion.value?.status
+  return status === 'Queued' || status === 'Running' || status === 'RetryScheduled'
+})
+
+const convertLabel = computed(() => {
+  const job = activeConversion.value
+  if (job?.status === 'Running') {
+    return `Converting ${Math.round(job.progress)}%`
+  }
+
+  return conversionInFlight.value ? 'Conversion queued' : 'Convert to M4B'
+})
+
+const convertTitle = computed(() => {
+  if (!hasConvertibleFiles.value) {
+    return 'This book has no MP3 files to convert'
+  }
+
+  return conversionInFlight.value
+    ? 'A conversion is already queued for this book'
+    : "Fold this book's MP3 files into a single M4B with chapters"
+})
+
+async function convertToM4b() {
+  if (!audiobook.value || conversionInFlight.value) return
+
+  const toast = useToast()
+  try {
+    const response = await conversionJobsStore.convert(audiobook.value.id)
+    if (response.queued) {
+      toast.success(
+        'Conversion queued',
+        'Progress is shown in Activity. The original files are left alone until the result is verified.',
+      )
+    } else {
+      // A refusal carries its reason from the server; showing it beats a generic
+      // failure the operator cannot act on.
+      toast.error('Not queued', response.reason ?? 'This book could not be queued for conversion.')
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobookDetailView',
+      operation: 'convertToM4b',
+      metadata: { audiobookId: audiobook.value?.id },
+    })
+    toast.error('Conversion failed to queue', err instanceof Error ? err.message : String(err))
   }
 }
 

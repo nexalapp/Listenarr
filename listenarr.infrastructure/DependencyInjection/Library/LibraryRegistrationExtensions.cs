@@ -80,6 +80,13 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<IQualityProfileRepository, QualityProfileRepository>();
         services.AddScoped<IAudiobookFileRepository, EfAudiobookFileRepository>();
         services.AddScoped<IMoveJobRepository, EfMoveJobRepository>();
+        services.AddScoped<IConversionJobRepository, EfConversionJobRepository>();
+
+        // Scoped, because both hold a DbContext through the repository. The conversion
+        // worker is a singleton and resolves them from a per-job scope rather than
+        // capturing them.
+        services.AddScoped<IConversionQueueService, ConversionQueueService>();
+        services.AddScoped<IAudiobookConverter, FfmpegAudiobookConverter>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
         services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();

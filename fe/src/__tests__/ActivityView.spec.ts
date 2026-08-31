@@ -99,6 +99,22 @@ const mockMoveJobsStore = (overrides: Record<string, unknown> = {}) => {
   return currentMoveJobsStore
 }
 
+let currentConversionJobsStore: Record<string, unknown>
+
+const mockConversionJobsStore = (overrides: Record<string, unknown> = {}) => {
+  currentConversionJobsStore = {
+    jobs: [],
+    activeJobs: [],
+    getJobForAudiobook: vi.fn(() => undefined),
+    retry: vi.fn(async () => ({ queued: true })),
+    refresh: vi.fn(async () => undefined),
+    start: vi.fn(),
+    ...overrides,
+  }
+
+  return currentConversionJobsStore
+}
+
 const mockDownloadsStore = (overrides: Record<string, unknown> = {}) => {
   const store = {
     activeDownloads: [],
@@ -139,6 +155,10 @@ describe('ActivityView', () => {
     vi.doMock('@/stores/moveJobs', () => ({
       useMoveJobsStore: () => currentMoveJobsStore,
     }))
+    mockConversionJobsStore()
+    vi.doMock('@/stores/conversionJobs', () => ({
+      useConversionJobsStore: () => currentConversionJobsStore,
+    }))
     vi.spyOn(globalThis, 'setInterval').mockReturnValue(
       1 as unknown as ReturnType<typeof setInterval>,
     )
@@ -175,6 +195,139 @@ describe('ActivityView', () => {
     expect(move).toMatchObject({ status: 'moving', progress: 37.5 })
     expect(wrapper.text()).toContain('38%')
     expect(wrapper.text()).toContain('Moving')
+  })
+
+  it('shows a running conversion with its phase and progress', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-1',
+          audiobookId: 42,
+          status: 'Running',
+          phase: 'Encoding',
+          progress: 42,
+          sourceFileCount: 12,
+          chapterCount: 0,
+          error: null,
+          canRetry: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const conversion = vm.allActivityItems.find((item) => item.id === 'conversion:conv-1')
+
+    expect(conversion).toMatchObject({ status: 'processing', progress: 42 })
+    expect(conversion?.downloadClient).toContain('Encoding')
+    expect(conversion?.downloadClient).toContain('12 files')
+  })
+
+  it('explains a failed conversion on the row and offers a retry', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-2',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          sourceFileCount: 12,
+          chapterCount: 0,
+          error: 'Source file is missing: Chapter 7.mp3',
+          failureKind: 'SourceUnreadable',
+          canRetry: true,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const conversion = vm.allActivityItems.find((item) => item.id === 'conversion:conv-2')
+
+    // The reason has to reach the operator, not only the log.
+    expect(conversion?.errorMessage).toBe('Source file is missing: Chapter 7.mp3')
+    expect(conversion?.canRetryImport).toBe(true)
+
+    vm.openBlockDetails(conversion!)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Chapter 7.mp3')
+    // A conversion never replaced anything, so it must not borrow the import copy.
+    expect(wrapper.text()).toContain('left exactly')
+    expect(wrapper.text()).not.toContain('remote path mapping')
+  })
+
+  it('routes a conversion retry to the conversion queue, not the import retry', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    const conversionStore = mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-3',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          sourceFileCount: 3,
+          chapterCount: 0,
+          error: 'ffmpeg exited with code 1',
+          canRetry: true,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const conversion = vm.allActivityItems.find((item) => item.id === 'conversion:conv-3')
+
+    await vm.retryImport(conversion!)
+
+    expect(conversionStore.retry).toHaveBeenCalledWith('conv-3')
+  })
+
+  it('drops a completed conversion from the activity list', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-4',
+          audiobookId: 42,
+          status: 'Completed',
+          phase: 'None',
+          progress: 100,
+          sourceFileCount: 12,
+          chapterCount: 12,
+          error: null,
+          canRetry: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    expect(vm.allActivityItems.find((item) => item.id === 'conversion:conv-4')).toBeUndefined()
   })
 
   it('keeps a download the client calls completed while Listenarr is still importing', async () => {

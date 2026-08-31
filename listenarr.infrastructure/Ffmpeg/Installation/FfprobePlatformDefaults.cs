@@ -50,6 +50,25 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
             return null;
         }
 
+        /// <summary>
+        /// URL of an archive that carries the ffmpeg encoder, when the ffprobe archive
+        /// for this platform does not. Returns null where one download supplies both,
+        /// so no second request is made for nothing.
+        /// </summary>
+        public static string? GetFfmpegDownloadUrl()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                // The macOS ffprobe archive above holds ffprobe alone, so the encoder
+                // has to be fetched separately. "getrelease" tracks the current build.
+                return "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip";
+            }
+
+            // The Linux static tarballs and the Windows essentials build both already
+            // contain ffmpeg alongside ffprobe.
+            return null;
+        }
+
         public static string? GetChecksum()
         {
             return null;

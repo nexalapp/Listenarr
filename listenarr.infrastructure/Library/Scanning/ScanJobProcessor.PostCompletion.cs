@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Scanning;
@@ -12,6 +13,7 @@ public partial class ScanJobProcessor
         CancellationToken cancellationToken)
     {
         await NotifyAvailableAsync(audiobook, created);
+        await QueueConversionIfWantedAsync(audiobook, cancellationToken);
         try
         {
             if (_audiobookUpdatePublisher != null)
@@ -67,6 +69,61 @@ public partial class ScanJobProcessor
                 broadcastException,
                 "Unable to broadcast terminal scan state for job {JobId}",
                 job.Id);
+        }
+    }
+
+    /// <summary>
+    /// Offer the newly scanned book to the conversion queue.
+    ///
+    /// This is the one hook both import paths reach. The download path and the
+    /// manual/library path share no import service — the manual controller composes its
+    /// own dependencies and never touches IDownloadImportService — but both finish by
+    /// enqueueing a focused scan, so scan completion is where they converge, and it runs
+    /// once per book rather than once per file.
+    ///
+    /// A post-completion effect: the scan is already durably complete, so a refusal or a
+    /// failure here must not disturb it.
+    /// </summary>
+    private async Task QueueConversionIfWantedAsync(
+        Audiobook audiobook,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var conversionQueue = scope.ServiceProvider
+                .GetRequiredService<IConversionQueueService>();
+
+            var result = await conversionQueue.EnqueueAsync(
+                audiobook.Id,
+                ConversionTrigger.Automatic,
+                cancellationToken);
+
+            if (result.Queued)
+            {
+                _logger.LogInformation(
+                    "Queued conversion {JobId} for audiobook {AudiobookId} after scan",
+                    result.JobId,
+                    audiobook.Id);
+            }
+            else if (result.Outcome
+                     is not ConversionEnqueueOutcome.Disabled
+                     and not ConversionEnqueueOutcome.NothingToConvert)
+            {
+                // Disabled and NothingToConvert are the ordinary answers for most books
+                // and would be noise; anything else is worth a line.
+                _logger.LogInformation(
+                    "Did not queue a conversion for audiobook {AudiobookId}: {Reason}",
+                    audiobook.Id,
+                    result.Reason);
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            _logger.LogWarning(
+                exception,
+                "Could not offer audiobook {AudiobookId} to the conversion queue after its scan",
+                audiobook.Id);
         }
     }
 

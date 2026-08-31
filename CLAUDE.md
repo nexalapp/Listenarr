@@ -70,6 +70,49 @@ server itself against local disk. See `deploy/unraid/README.md`.
 root folder is configured, and the existing library has not been validated
 against the scanner. Drop `:ro` only after a scan looks correct.
 
+**ffmpeg is enough for M4B; m4b-tool is not needed.** Verified by inspecting the
+bytes ffmpeg produces: it writes the `desc` atom (the whole reason for this fork),
+`chpl` Nero chapters *and* a QuickTime chapter track, and `covr` cover art. What
+m4b-tool would add — libfdk_aac, silence-based chapter splitting, an AAC remux
+path — is irrelevant under a 128k cap, for one-file-per-chapter sources, and for
+MP3 input. It would cost a PHP runtime plus mp4v2 in an image that has neither.
+
+**Conversion uses ffmpeg's concat *filter*, never the concat demuxer.** The
+demuxer adopts the first input's sample rate and channel layout for the whole
+book — a 44.1kHz stereo chapter after a 22kHz mono one is silently downmixed,
+with no error — and its output drifts from the nominal duration, walking the
+chapter marks out of sync over a long book. Measured: 110ms of drift over two
+files through the demuxer, 0ms through the filter.
+
+**Conversion handles both shapes: multi-part files and one merged chaptered MP3.**
+Files with no marks of their own get one chapter each, ordered naturally. Files
+that already carry ID3 CHAP frames keep those marks, offset by whatever plays
+before them; ffprobe reads them, so nothing is lost. The two mix freely in one
+book.
+
+The merged-MP3 case is the one that matters for this library: every one of its
+375 MP3 books is a single already-chaptered file, so a converter that ignored
+embedded marks would flatten all of them to one chapter. It is also the most
+valuable case, because ID3 cannot carry `desc` at all and MP4 can.
+
+**An embedded title only names a chapter when it distinguishes the file.** Parts
+split from one book commonly all carry the book's own title tag, and preferring
+it named every chapter identically. A title shared by more than one source falls
+back to the filename; a lone source keeps its own title.
+
+**Conversion writes outside the library, then publishes through `FileMover`.**
+`BackendArchitectureTests.LibraryFilesystem_HasNoListenarrScratchNamespaceProtocol`
+forbids a scratch namespace in the library filesystem, and a half-written encode
+beside the book is exactly what that prevents — nothing reading the directory can
+tell it from a real file.
+
+**Conversion hooks scan completion, because that is where the two import paths
+converge.** The download path goes through `IDownloadImportService`; the
+manual/library path does not (`ManualImportController` composes its own
+dependencies). Both finish by calling `IScanQueueService.EnqueueScanAsync` with
+the audiobook. Hooking file registration instead would fire once per file and put
+a side effect inside the registration lease's rollback path.
+
 **Parsing is derived from the configured naming pattern, not hardcoded.**
 `PathMetadataParser` previously used a fixed regex that could never match the
 folders the renamer produces under the default pattern. It now builds a matcher

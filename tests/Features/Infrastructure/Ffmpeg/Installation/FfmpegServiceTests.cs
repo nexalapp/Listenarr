@@ -215,5 +215,113 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             await Assert.ThrowsAsync<FfmpegException>(() => service.RunFfprobeAsync(missingFile));
             processRunner.Verify(runner => runner.RunAsync(It.IsAny<System.Diagnostics.ProcessStartInfo>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         }
+
+        [EncoderFact]
+        [Trait("Method", "ReadChaptersAsync")]
+        public async Task ReadChaptersAsync_ReadsIdThreeChaptersFromAMergedMp3()
+        {
+            // A library may already hold books merged into one chaptered MP3. Those marks
+            // live in ID3 CHAP frames, and a conversion that could not read them would
+            // flatten the whole book into a single chapter.
+            var ffmpegDirectory = FileService.GetTempDirectory("ffprobe-chapters");
+            File.Copy(
+                EncoderFactAttribute.FindOnPath("ffprobe")!,
+                Path.Combine(ffmpegDirectory, "ffprobe"));
+
+            var chaptered = await WriteChapteredMp3Async(
+                FileService.GetTempDirectory("chaptered-source"),
+                [("Opening", 0, 3), ("Middle", 3, 6), ("End", 6, 9)]);
+
+            var service = new FfmpegService(
+                new Mock<ILogger<FfmpegService>>().Object,
+                new HttpClient(),
+                _provider.GetRequiredService<IStartupConfigService>(),
+                _provider.GetRequiredService<IProcessRunner>(),
+                Mock.Of<IApplicationPathService>(paths => paths.FfmpegRootPath == ffmpegDirectory));
+
+            var chapters = await service.ReadChaptersAsync(chaptered);
+
+            Assert.Equal(3, chapters.Count);
+            Assert.Equal(["Opening", "Middle", "End"], chapters.Select(chapter => chapter.Title));
+            Assert.Equal(TimeSpan.FromSeconds(3), chapters[1].Start);
+            Assert.Equal(TimeSpan.FromSeconds(9), chapters[2].End);
+        }
+
+        [EncoderFact]
+        [Trait("Method", "ReadChaptersAsync")]
+        public async Task ReadChaptersAsync_ReturnsNothingForAFileWithNoChapters()
+        {
+            var ffmpegDirectory = FileService.GetTempDirectory("ffprobe-nochapters");
+            File.Copy(
+                EncoderFactAttribute.FindOnPath("ffprobe")!,
+                Path.Combine(ffmpegDirectory, "ffprobe"));
+
+            var plain = await WritePlainMp3Async(FileService.GetTempDirectory("plain-source"));
+
+            var service = new FfmpegService(
+                new Mock<ILogger<FfmpegService>>().Object,
+                new HttpClient(),
+                _provider.GetRequiredService<IStartupConfigService>(),
+                _provider.GetRequiredService<IProcessRunner>(),
+                Mock.Of<IApplicationPathService>(paths => paths.FfmpegRootPath == ffmpegDirectory));
+
+            Assert.Empty(await service.ReadChaptersAsync(plain));
+        }
+
+        private static async Task<string> WritePlainMp3Async(string directory)
+        {
+            var path = Path.Combine(directory, "plain.mp3");
+            await RunFfmpegAsync(
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=9",
+                "-c:a", "libmp3lame", "-b:a", "64k", path);
+            return path;
+        }
+
+        /// <summary>Write an MP3 carrying ID3 chapter marks, the way a merge tool would.</summary>
+        private static async Task<string> WriteChapteredMp3Async(
+            string directory,
+            IReadOnlyList<(string Title, int Start, int End)> chapters)
+        {
+            var source = await WritePlainMp3Async(directory);
+
+            var metadata = new System.Text.StringBuilder(";FFMETADATA1\n");
+            foreach (var chapter in chapters)
+            {
+                metadata.Append("[CHAPTER]\nTIMEBASE=1/1000\n");
+                metadata.Append($"START={chapter.Start * 1000}\nEND={chapter.End * 1000}\n");
+                metadata.Append($"title={chapter.Title}\n");
+            }
+
+            var metadataPath = Path.Combine(directory, "chapters.ffmetadata");
+            await File.WriteAllTextAsync(metadataPath, metadata.ToString());
+
+            var target = Path.Combine(directory, "chaptered.mp3");
+            await RunFfmpegAsync(
+                "-i", source, "-i", metadataPath,
+                "-map", "0:a", "-map_metadata", "1", "-c:a", "copy", target);
+            return target;
+        }
+
+        private static async Task RunFfmpegAsync(params string[] arguments)
+        {
+            var startInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = EncoderFactAttribute.FindOnPath("ffmpeg")!,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[] { "-hide_banner", "-loglevel", "error", "-y" }.Concat(arguments))
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            var runner = new Listenarr.Infrastructure.SystemDiagnostics.Processes.SystemProcessRunner(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<
+                    Listenarr.Infrastructure.SystemDiagnostics.Processes.SystemProcessRunner>.Instance);
+            var result = await runner.RunAsync(startInfo, 30_000);
+            Assert.Equal(0, result.ExitCode);
+        }
     }
 }

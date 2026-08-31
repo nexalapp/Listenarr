@@ -69,12 +69,25 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
         {
             var path = await ffmpegService.EnsureFfprobeInstalledAsync();
 
+            // Resolve the encoder in the same pass. Conversion needs it, and reporting
+            // only ffprobe is what let a missing ffmpeg go unnoticed until a job failed.
+            var ffmpegPath = await ffmpegService.EnsureFfmpegInstalledAsync();
+            if (string.IsNullOrEmpty(ffmpegPath))
+            {
+                logger.LogWarning(
+                    "No ffmpeg encoder is available. Audiobook conversion stays unavailable until one is installed or LISTENARR_FFMPEG_PATH points at one.");
+            }
+            else
+            {
+                logger.LogInformation("ffmpeg available at {Path}", ffmpegPath);
+            }
+
             if (!string.IsNullOrEmpty(path))
             {
                 logger.LogInformation("ffprobe installed/available at {Path}", path);
                 try
                 {
-                    await hubContext.Clients.All.SendAsync("FfmpegInstallStatus", new { status = "Installed", path }, cancellationToken: cancellationToken);
+                    await hubContext.Clients.All.SendAsync("FfmpegInstallStatus", new { status = "Installed", path, ffmpegPath }, cancellationToken: cancellationToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
