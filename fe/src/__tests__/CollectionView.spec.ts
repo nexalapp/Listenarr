@@ -234,7 +234,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
     await new Promise((r) => setTimeout(r, 0))
@@ -298,7 +298,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
     await new Promise((r) => setTimeout(r, 0))
@@ -356,7 +356,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
     await new Promise((r) => setTimeout(r, 0))
@@ -414,7 +414,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
     await new Promise((r) => setTimeout(r, 0))
@@ -451,7 +451,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -541,7 +541,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -647,7 +647,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -763,7 +763,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
     await flushPromises()
@@ -816,7 +816,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
     await flushPromises()
@@ -917,7 +917,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1027,7 +1027,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1129,7 +1129,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1208,7 +1208,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1278,7 +1278,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1288,8 +1288,9 @@ describe('CollectionView', () => {
     expect(mockGetAuthorMonitoringStatus).toHaveBeenCalledWith('Andy Weir', 'uk', 'german')
     expect(wrapper.find('.author-hero-meta').text()).toContain('United Kingdom (UK) / German')
 
-    const monitorButton = wrapper.find('.author-monitor-btn')
-    expect(monitorButton.text()).toContain('Monitor Author')
+    // Monitoring lives only on the hero pill now, which reads its own state
+    const monitorButton = wrapper.find('.hero-monitor-pill')
+    expect(monitorButton.text()).toContain('Not Monitored')
 
     await monitorButton.trigger('click')
     await flushPromises()
@@ -1361,7 +1362,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1371,8 +1372,8 @@ describe('CollectionView', () => {
     expect(mockGetSeriesMonitoringStatus).toHaveBeenCalledWith('Mistborn', 'uk', 'german')
     expect(wrapper.find('.author-hero-meta').text()).toContain('United Kingdom (UK) / German')
 
-    const monitorButton = wrapper.find('.author-monitor-btn')
-    expect(monitorButton.text()).toContain('Monitor Series')
+    const monitorButton = wrapper.find('.hero-monitor-pill')
+    expect(monitorButton.text()).toContain('Not Monitored')
 
     await monitorButton.trigger('click')
     await flushPromises()
@@ -1437,7 +1438,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1451,8 +1452,8 @@ describe('CollectionView', () => {
     expect(wrapper.text()).toContain('2 in library')
 
     // The two actions that can only fail are gone, and their absence is explained.
-    expect(wrapper.find('.author-refresh-btn').exists()).toBe(false)
-    expect(wrapper.find('.author-monitor-btn').exists()).toBe(false)
+    expect(wrapper.find('.hero-refresh-btn').exists()).toBe(false)
+    expect(wrapper.find('.hero-monitor-pill').exists()).toBe(false)
     expect(wrapper.text()).toContain('Not on Audible')
     expect(wrapper.text()).not.toContain('Not Monitored')
     // "N total books" would just restate the library count.
@@ -1501,14 +1502,14 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
     await flushPromises()
 
-    expect(wrapper.find('.author-refresh-btn').exists()).toBe(true)
-    expect(wrapper.find('.author-monitor-btn').exists()).toBe(true)
+    expect(wrapper.find('.hero-refresh-btn').exists()).toBe(true)
+    expect(wrapper.find('.hero-monitor-pill').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Not on Audible')
   })
 
@@ -1566,7 +1567,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1574,7 +1575,7 @@ describe('CollectionView', () => {
 
     expect(wrapper.text()).toContain('Last sync failed')
     // Monitoring can still be turned off, even though it could not be turned on here.
-    const monitorButton = wrapper.find('.author-monitor-btn')
+    const monitorButton = wrapper.find('.hero-monitor-pill')
     expect(monitorButton.exists()).toBe(true)
     expect(monitorButton.text()).toContain('Monitoring Series')
 
@@ -1645,7 +1646,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
 
@@ -1654,7 +1655,7 @@ describe('CollectionView', () => {
     mockGetAuthorCatalog.mockClear()
     mockGetAuthorLookup.mockClear()
 
-    const refreshButton = wrapper.find('.author-refresh-btn')
+    const refreshButton = wrapper.find('.hero-refresh-btn')
     expect(refreshButton.exists()).toBe(true)
 
     await refreshButton.trigger('click')
@@ -1705,7 +1706,7 @@ describe('CollectionView', () => {
     const wrapper = mount(CollectionView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
       },
     })
     await flushPromises()
@@ -1715,5 +1716,104 @@ describe('CollectionView', () => {
     // Shows the Mistborn position (#2 from the membership), not the primary 'Other Series' #5.
     expect(card.text()).toContain('#2')
     expect(card.text()).not.toContain('#5')
+  })
+})
+
+describe('CollectionView series grouping', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  async function mountAuthorCollection(groupBySeries: boolean) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    mockGetApplicationSettings.mockResolvedValue({
+      defaultSearchRegion: 'us',
+      defaultSearchLanguage: 'english',
+    })
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push('/collection/author/Christopher%20Ruocchio')
+    await router.isReady().catch(() => {})
+
+    localStorage.setItem('listenarr.groupBySeries', groupBySeries ? 'true' : 'false')
+
+    const store = useLibraryStore()
+    const library = [
+      {
+        id: 1,
+        title: 'Howling Dark',
+        authors: ['Christopher Ruocchio'],
+        seriesMemberships: [{ seriesName: 'Sun Eater', seriesNumber: '2', isPrimary: true }],
+        files: [],
+      },
+      {
+        id: 2,
+        title: 'Empire of Silence',
+        authors: ['Christopher Ruocchio'],
+        seriesMemberships: [{ seriesName: 'Sun Eater', seriesNumber: '1', isPrimary: true }],
+        files: [],
+      },
+      {
+        id: 3,
+        title: 'The Dregs of Empire',
+        authors: ['Christopher Ruocchio'],
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks = library
+    mockGetLibrary.mockResolvedValue(library)
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
+      },
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('heads an author collection by series, in reading order, standalones last', async () => {
+    const wrapper = await mountAuthorCollection(true)
+
+    const headings = wrapper.findAll('.collection-section-header').map((h) => h.text())
+    expect(headings[0]).toContain('Sun Eater')
+    expect(headings[1]).toContain('Standalone')
+
+    const titles = wrapper.findAll('.collection-card .collection-title').map((t) => t.text())
+    expect(titles).toEqual(['Empire of Silence', 'Howling Dark', 'The Dregs of Empire'])
+  })
+
+  it('opens the series from its heading, and leaves the catch-all headings plain', async () => {
+    const wrapper = await mountAuthorCollection(true)
+
+    const links = wrapper.findAll('.section-title-link')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.text()).toBe('Sun Eater')
+
+    // "Standalone" is a bucket, not a series, so it names no page
+    const headings = wrapper.findAll('.collection-section-header')
+    expect(headings[1]!.text()).toContain('Standalone')
+    expect(headings[1]!.find('.section-title-link').exists()).toBe(false)
+
+    await links[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$route.fullPath).toBe('/collection/series/Sun%20Eater')
+  })
+
+  it('leaves the collection unheaded when the grouping is off', async () => {
+    const wrapper = await mountAuthorCollection(false)
+
+    expect(wrapper.findAll('.collection-section-header')).toHaveLength(0)
+    expect(wrapper.findAll('.collection-card').length).toBe(3)
   })
 })

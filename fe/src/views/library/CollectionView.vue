@@ -39,7 +39,18 @@
         </div>
 
         <div class="info-section author-hero-info">
-          <h1 class="title author-hero-title">{{ authorHeroName }}</h1>
+          <div class="author-hero-title-row">
+            <h1 class="title author-hero-title">{{ authorHeroName }}</h1>
+            <button
+              class="hero-refresh-btn"
+              :disabled="authorMetadataRefreshBusy"
+              @click="refreshAuthorMetadata"
+              title="Refresh author metadata"
+            >
+              <PhArrowClockwise :class="{ 'spin-icon': authorMetadataRefreshBusy }" />
+              Refresh Metadata
+            </button>
+          </div>
 
           <div class="meta-info author-hero-meta">
             <span>
@@ -51,6 +62,7 @@
 
           <div class="status-badges author-hero-badges">
             <Pill
+              class="hero-monitor-pill"
               interactive
               :variant="isCurrentAuthorMonitored ? 'primary' : 'default'"
               :disabled="authorMonitoringBusy || authorMetadataRefreshBusy"
@@ -73,19 +85,16 @@
           </div>
 
           <div v-if="authorHeroBiography" class="description author-hero-description">
-            <div
-              class="description-content author-hero-description-content"
-              :class="{ expanded: showFullAuthorDescription }"
-            >
-              {{ authorHeroDescriptionText }}
+            <div class="description-content author-hero-description-content">
+              {{ authorHeroDescriptionText
+              }}<button
+                v-if="authorHeroCanToggleDescription"
+                class="show-more-btn"
+                @click="showFullAuthorDescription = !showFullAuthorDescription"
+              >
+                {{ showFullAuthorDescription ? 'Show Less' : 'Show More' }}
+              </button>
             </div>
-            <button
-              v-if="authorHeroCanToggleDescription"
-              class="show-more-btn author-hero-toggle"
-              @click="showFullAuthorDescription = !showFullAuthorDescription"
-            >
-              {{ showFullAuthorDescription ? 'Show Less' : 'Show More' }}
-            </button>
           </div>
 
           <div v-if="authorSimilarAuthors.length > 0" class="author-similar-authors">
@@ -165,7 +174,19 @@
         </div>
 
         <div class="info-section author-hero-info">
-          <h1 class="title author-hero-title">{{ seriesHeroName }}</h1>
+          <div class="author-hero-title-row">
+            <h1 class="title author-hero-title">{{ seriesHeroName }}</h1>
+            <button
+              v-if="!seriesIsLibraryOnly"
+              class="hero-refresh-btn"
+              :disabled="seriesMetadataRefreshBusy"
+              @click="refreshSeriesMetadata"
+              title="Refresh series metadata"
+            >
+              <PhArrowClockwise :class="{ 'spin-icon': seriesMetadataRefreshBusy }" />
+              Refresh Metadata
+            </button>
+          </div>
 
           <div class="meta-info author-hero-meta">
             <span>
@@ -178,6 +199,7 @@
           <div class="status-badges author-hero-badges">
             <Pill
               v-if="!seriesIsLibraryOnly || isCurrentSeriesMonitored"
+              class="hero-monitor-pill"
               interactive
               :variant="isCurrentSeriesMonitored ? 'primary' : 'default'"
               :disabled="seriesMonitoringBusy || seriesMetadataRefreshBusy"
@@ -217,32 +239,23 @@
           </div>
 
           <div v-if="seriesHeroBiography" class="description author-hero-description">
-            <div
-              class="description-content author-hero-description-content"
-              :class="{ expanded: showFullSeriesDescription }"
-            >
-              {{ seriesHeroDescriptionText }}
+            <div class="description-content author-hero-description-content">
+              {{ seriesHeroDescriptionText
+              }}<button
+                v-if="seriesHeroCanToggleDescription"
+                class="show-more-btn"
+                @click="showFullSeriesDescription = !showFullSeriesDescription"
+              >
+                {{ showFullSeriesDescription ? 'Show Less' : 'Show More' }}
+              </button>
             </div>
-            <button
-              v-if="seriesHeroCanToggleDescription"
-              class="show-more-btn author-hero-toggle"
-              @click="showFullSeriesDescription = !showFullSeriesDescription"
-            >
-              {{ showFullSeriesDescription ? 'Show Less' : 'Show More' }}
-            </button>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Top Toolbar -->
-    <div
-      class="toolbar"
-      :class="{
-        'toolbar-without-top-nav': isMetadataCollection,
-        'toolbar-with-monitoring': isAuthorCollection || isSeriesCollection,
-      }"
-    >
+    <div class="toolbar" :class="{ 'toolbar-without-top-nav': isMetadataCollection }">
       <div class="toolbar-left">
         <button class="toolbar-btn" @click="goBack">
           <PhArrowLeft />
@@ -294,68 +307,16 @@
         </button>
       </div>
       <div class="toolbar-right">
-        <div v-if="isAuthorCollection" class="author-monitoring-controls">
-          <div class="author-monitoring-actions">
-            <button
-              class="toolbar-btn author-refresh-btn"
-              :disabled="authorMetadataRefreshBusy"
-              @click="refreshAuthorMetadata"
-              title="Refresh author metadata"
-            >
-              <PhArrowClockwise v-if="authorMetadataRefreshBusy" class="spin-icon" />
-              <PhArrowClockwise v-else />
-              Refresh Author Metadata
-            </button>
-            <button
-              class="toolbar-btn author-monitor-btn"
-              :class="{ active: isCurrentAuthorMonitored }"
-              :disabled="authorMonitoringBusy || authorMetadataRefreshBusy"
-              @click="toggleAuthorMonitoring"
-              :title="
-                isCurrentAuthorMonitored ? 'Stop monitoring this author' : 'Monitor this author'
-              "
-            >
-              <PhArrowClockwise v-if="authorMonitoringBusy" class="spin-icon" />
-              <component v-else :is="isCurrentAuthorMonitored ? PhEye : PhPlus" />
-              {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Monitor Author' }}
-            </button>
-          </div>
-        </div>
-        <div v-else-if="isSeriesCollection" class="author-monitoring-controls">
-          <div class="author-monitoring-actions">
-            <button
-              v-if="!seriesIsLibraryOnly"
-              class="toolbar-btn author-refresh-btn"
-              :disabled="seriesMetadataRefreshBusy"
-              @click="refreshSeriesMetadata"
-              title="Refresh series metadata"
-            >
-              <PhArrowClockwise v-if="seriesMetadataRefreshBusy" class="spin-icon" />
-              <PhArrowClockwise v-else />
-              Refresh Series Metadata
-            </button>
-            <button
-              v-if="!seriesIsLibraryOnly || isCurrentSeriesMonitored"
-              class="toolbar-btn author-monitor-btn"
-              :class="{ active: isCurrentSeriesMonitored }"
-              :disabled="seriesMonitoringBusy || seriesMetadataRefreshBusy"
-              @click="toggleSeriesMonitoring"
-              :title="
-                isCurrentSeriesMonitored ? 'Stop monitoring this series' : 'Monitor this series'
-              "
-            >
-              <PhArrowClockwise v-if="seriesMonitoringBusy" class="spin-icon" />
-              <component v-else :is="isCurrentSeriesMonitored ? PhEye : PhPlus" />
-              {{ isCurrentSeriesMonitored ? 'Monitoring Series' : 'Monitor Series' }}
-            </button>
-          </div>
-        </div>
         <div class="toolbar-filters">
-          <CustomSelect
+          <ViewOptionsDropdown
             v-model="sortKeyProxy"
+            v-model:groupBySeries="groupBySeries"
             :options="sortOptions"
+            :current-value="sortKey"
+            :grouping-options="collectionGroupingOptions"
+            :active="viewOptionsActive"
             class="toolbar-custom-select"
-            aria-label="Sort by"
+            aria-label="View options"
           />
         </div>
       </div>
@@ -399,11 +360,20 @@
 
         <template v-for="section in paginatedAudiobookSections" :key="`list-${section.key}`">
           <div
-            v-if="shouldShowAvailabilitySections && section.items.length > 0"
+            v-if="section.title && section.items.length > 0"
             class="list-section-header"
             :class="`is-${section.key}`"
           >
-            <span class="section-title">{{ section.title }}</span>
+            <button
+              v-if="section.seriesName"
+              type="button"
+              class="section-title section-title-link"
+              :title="`Open ${section.title}`"
+              @click="goToSeriesCollection(section.seriesName)"
+            >
+              {{ section.title }}
+            </button>
+            <span v-else class="section-title">{{ section.title }}</span>
             <span class="section-count">{{ section.count }}</span>
           </div>
 
@@ -555,11 +525,20 @@
           class="collection-section"
         >
           <div
-            v-if="shouldShowAvailabilitySections && section.items.length > 0"
+            v-if="section.title && section.items.length > 0"
             class="collection-section-header"
             :class="`is-${section.key}`"
           >
-            <span class="section-title">{{ section.title }}</span>
+            <button
+              v-if="section.seriesName"
+              type="button"
+              class="section-title section-title-link"
+              :title="`Open ${section.title}`"
+              @click="goToSeriesCollection(section.seriesName)"
+            >
+              {{ section.title }}
+            </button>
+            <span v-else class="section-title">{{ section.title }}</span>
             <span class="section-count">{{ section.count }}</span>
           </div>
 
@@ -835,7 +814,7 @@ import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationMod
 import { showConfirm } from '@/composables/useConfirm'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import { getPlaceholderUrl } from '@/utils/placeholder'
-import CustomSelect from '@/components/form/CustomSelect.vue'
+import ViewOptionsDropdown from '@/components/ui/ViewOptionsDropdown.vue'
 import { EmptyState, LoadingState, Pill } from '@/components/base'
 import type {
   Audiobook,
@@ -852,7 +831,8 @@ import type {
   SeriesLookupResponse,
 } from '@/types'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
-import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
+import { safeText, stripHtmlAndNormalize, truncateAtWord } from '@/utils/textUtils'
+import { buildLibrarySections } from '@/utils/libraryGrouping'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
   getPreferredSearchLanguageFilter,
@@ -873,11 +853,14 @@ type RemoteCatalogBook = AuthorCatalogBook | SeriesCatalogBook
 
 type CollectionStatus = AudiobookStatus | 'not-added'
 
-interface AvailabilitySection {
-  key: 'in-library' | 'not-added' | 'all'
+/** A run of books under one heading: an availability split, or a series group. */
+interface DisplaySection {
+  key: string
   title: string
   count: number
   items: CollectionDisplayItem[]
+  /** The series this heading stands for, when it names one that has its own page. */
+  seriesName?: string
 }
 
 const route = useRoute()
@@ -932,6 +915,9 @@ const authorMonitoringBusy = ref(false)
 const authorMonitoringStatus = ref<MonitoredAuthor | null>(null)
 const authorMonitoringStatusRequestId = ref(0)
 const pendingAddBook = ref<AudibleBookMetadata | null>(null)
+// Collapsed descriptions end on a word, so the toggle that follows reads as part of them.
+const DESCRIPTION_COLLAPSED_LENGTH = 360
+
 const showFullAuthorDescription = ref(false)
 const showFullSeriesDescription = ref(false)
 
@@ -1339,6 +1325,41 @@ watch(sortOptions, (newOpts) => {
   }
 })
 
+// Only an author collection has more than one series to head; a series collection is
+// already one series, and the other collection types are not series-shaped.
+const collectionGroupingOptions = computed<Array<'author' | 'series'>>(() =>
+  isAuthorCollection.value ? ['series'] : [],
+)
+
+const GROUP_BY_SERIES_KEY = 'listenarr.groupBySeries'
+
+// Shares the books view's preference, so "Group by series" means the same thing
+// everywhere it is offered.
+const groupBySeries = ref(readGroupBySeries())
+
+function readGroupBySeries(): boolean {
+  try {
+    return localStorage.getItem(GROUP_BY_SERIES_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+watch(groupBySeries, (value) => {
+  try {
+    localStorage.setItem(GROUP_BY_SERIES_KEY, value ? 'true' : 'false')
+  } catch {}
+  currentPage.value = 1
+})
+
+const groupSeriesInCollection = computed(
+  () => collectionGroupingOptions.value.includes('series') && groupBySeries.value,
+)
+
+const viewOptionsActive = computed(
+  () => groupSeriesInCollection.value || sortKey.value !== defaultSortForType(type.value),
+)
+
 const sortKeyProxy = computed({
   get: () => sortKey.value,
   set: (value: string) => {
@@ -1347,9 +1368,29 @@ const sortKeyProxy = computed({
   },
 })
 
+function inSeriesOrder(books: CollectionDisplayItem[]): CollectionDisplayItem[] {
+  return buildLibrarySections(books, { byAuthor: false, bySeries: true }).flatMap(
+    (section) => section.books,
+  )
+}
+
+// Grouping reorders the whole collection before it is paged, so a series stays
+// contiguous rather than reappearing on every page. Books the catalog offers but the
+// library does not hold keep their own trailing section: which books are actually here
+// is not something a series heading should hide.
+const orderedAudiobooks = computed(() => {
+  if (!groupSeriesInCollection.value) return audiobooks.value
+  if (!shouldShowAvailabilitySections.value) return inSeriesOrder(audiobooks.value)
+
+  return [
+    ...inSeriesOrder(audiobooks.value.filter((book) => book.inLibrary)),
+    ...audiobooks.value.filter((book) => !book.inLibrary),
+  ]
+})
+
 const paginatedAudiobooks = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  return audiobooks.value.slice(start, start + pageSize.value)
+  return orderedAudiobooks.value.slice(start, start + pageSize.value)
 })
 
 const totalPages = computed(() => Math.ceil(audiobooks.value.length / pageSize.value))
@@ -1401,11 +1442,13 @@ const authorHeroBiography = computed(() => {
   const raw = stripHtmlAndNormalize(authorLookup.value?.description)
   return raw || ''
 })
-const authorHeroCanToggleDescription = computed(() => authorHeroBiography.value.length > 360)
+const authorHeroCanToggleDescription = computed(
+  () => authorHeroBiography.value.length > DESCRIPTION_COLLAPSED_LENGTH,
+)
 const authorHeroDescriptionText = computed(() =>
-  showFullAuthorDescription.value || !authorHeroCanToggleDescription.value
+  showFullAuthorDescription.value
     ? authorHeroBiography.value
-    : `${authorHeroBiography.value.slice(0, 360).trimEnd()}...`,
+    : truncateAtWord(authorHeroBiography.value, DESCRIPTION_COLLAPSED_LENGTH),
 )
 const authorSimilarAuthors = computed<RelatedAuthorItem[]>(() =>
   (authorLookup.value?.similarAuthors || []).filter(
@@ -1442,11 +1485,13 @@ const seriesHeroBiography = computed(() => {
   )
   return raw || ''
 })
-const seriesHeroCanToggleDescription = computed(() => seriesHeroBiography.value.length > 360)
+const seriesHeroCanToggleDescription = computed(
+  () => seriesHeroBiography.value.length > DESCRIPTION_COLLAPSED_LENGTH,
+)
 const seriesHeroDescriptionText = computed(() =>
-  showFullSeriesDescription.value || !seriesHeroCanToggleDescription.value
+  showFullSeriesDescription.value
     ? seriesHeroBiography.value
-    : `${seriesHeroBiography.value.slice(0, 360).trimEnd()}...`,
+    : truncateAtWord(seriesHeroBiography.value, DESCRIPTION_COLLAPSED_LENGTH),
 )
 // Both series metadata actions run through Audible: refreshing re-fetches the catalog, and
 // monitoring stores a row whose every sync re-fetches it too. Without an ASIN the refresh can
@@ -1493,7 +1538,34 @@ const shouldShowAvailabilitySections = computed(
     totalAddedAudiobooks.value.length > 0 &&
     totalNotAddedAudiobooks.value.length > 0,
 )
-const paginatedAudiobookSections = computed<AvailabilitySection[]>(() => {
+const paginatedAudiobookSections = computed<DisplaySection[]>(() => {
+  if (groupSeriesInCollection.value) {
+    const page = paginatedAudiobooks.value
+    const grouped = (books: CollectionDisplayItem[]): DisplaySection[] =>
+      buildLibrarySections(books, { byAuthor: false, bySeries: true }).map((section) => ({
+        key: section.key,
+        title: section.headers[0]?.label ?? '',
+        count: section.books.length,
+        items: section.books,
+        // "Standalone" is a bucket, not a series, so it names no page to open
+        ...(section.headers[0]?.value ? { seriesName: section.headers[0].value } : {}),
+      }))
+
+    if (!shouldShowAvailabilitySections.value) return grouped(page)
+
+    const sections = grouped(page.filter((book) => book.inLibrary))
+    const notAdded = page.filter((book) => !book.inLibrary)
+    if (notAdded.length > 0) {
+      sections.push({
+        key: 'not-added',
+        title: 'Not Added',
+        count: totalNotAddedAudiobooks.value.length,
+        items: notAdded,
+      })
+    }
+    return sections
+  }
+
   if (!shouldShowAvailabilitySections.value) {
     return [
       {
@@ -1505,7 +1577,7 @@ const paginatedAudiobookSections = computed<AvailabilitySection[]>(() => {
     ]
   }
 
-  const sections: AvailabilitySection[] = []
+  const sections: DisplaySection[] = []
   const addedItems = paginatedAudiobooks.value.filter((book) => book.inLibrary)
   const notAddedItems = paginatedAudiobooks.value.filter((book) => !book.inLibrary)
 
@@ -2041,6 +2113,12 @@ async function refreshSeriesMetadata() {
 
 const goBack = () => {
   router.back()
+}
+
+function goToSeriesCollection(seriesName: string) {
+  const trimmed = safeText(seriesName)
+  if (!trimmed) return
+  void router.push(`/collection/series/${encodeURIComponent(trimmed)}`)
 }
 
 function goToRelatedAuthor(authorName: string) {
@@ -2746,21 +2824,22 @@ defineExpose({
   white-space: pre-wrap;
 }
 
+/* The toggle is the tail of the sentence it hides, not a control beside it */
 .show-more-btn {
-  margin-top: 12px;
-  padding: 8px 16px;
-  background-color: rgba(var(--brand-rgb), 0.1);
-  border: 1px solid var(--brand-500);
-  border-radius: 6px;
-  color: var(--brand-500);
-  font-size: 13px;
+  margin-left: 0.35em;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
-.show-more-btn:hover {
-  background-color: rgba(var(--brand-rgb), 0.2);
-  transform: translateY(-1px);
+.show-more-btn:hover,
+.show-more-btn:focus-visible {
+  color: #fff;
 }
 
 .author-hero-section {
@@ -2864,8 +2943,61 @@ defineExpose({
   margin-bottom: 12px;
 }
 
+/* The metadata refresh rides at the right end of the title's own line */
+.author-hero-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .author-hero-title {
   max-width: 860px;
+}
+
+.hero-refresh-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e6eef8;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.hero-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.hero-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.hero-refresh-btn:focus-visible {
+  outline: 3px solid rgba(33, 150, 243, 0.18);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .author-hero-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .hero-refresh-btn {
+    margin-top: 0;
+  }
 }
 
 .author-hero-subtitle {
@@ -3020,56 +3152,6 @@ defineExpose({
   flex-wrap: wrap;
 }
 
-.toolbar-with-monitoring .toolbar-left,
-.toolbar-with-monitoring .toolbar-right {
-  min-width: 0;
-}
-
-.author-monitoring-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.author-monitoring-context {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.author-monitoring-label {
-  color: rgba(230, 238, 248, 0.68);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.author-monitoring-pill {
-  flex-shrink: 0;
-}
-
-.author-monitoring-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.author-monitor-btn {
-  border-color: rgba(72, 187, 120, 0.3);
-}
-
-.author-monitor-btn.active {
-  border-color: rgba(72, 187, 120, 0.42);
-}
-
 .spin-icon {
   animation: collection-toolbar-spin 0.9s linear infinite;
 }
@@ -3132,42 +3214,6 @@ defineExpose({
 
 /* Mobile-friendly toolbar: hide text, show only icons on screens 1154px and below */
 @media (max-width: 1280px) {
-  .toolbar-with-monitoring {
-    flex-wrap: nowrap;
-    gap: 10px;
-    height: auto;
-    align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .toolbar-with-monitoring .toolbar-left,
-  .toolbar-with-monitoring .toolbar-right {
-    width: auto;
-    flex: 0 0 auto;
-    flex-wrap: nowrap;
-  }
-
-  .toolbar-with-monitoring .toolbar-right {
-    margin-left: auto;
-    justify-content: flex-end;
-  }
-
-  .toolbar-with-monitoring .author-monitoring-controls {
-    flex: 0 0 auto;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-  }
-
-  .toolbar-with-monitoring .author-monitoring-actions {
-    margin-left: 0;
-    flex-wrap: nowrap;
-  }
-
-  .toolbar-with-monitoring .toolbar-btn,
-  .toolbar-with-monitoring .toolbar-filters {
-    flex: 0 0 auto;
-  }
 }
 
 @media (max-width: 1154px) {
@@ -3200,34 +3246,6 @@ defineExpose({
   .select-dropdown {
     min-width: 120px;
     max-width: 160px;
-  }
-
-  .author-monitoring-controls {
-    width: 100%;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .author-monitoring-label {
-    font-size: 11px;
-  }
-
-  .author-monitoring-actions {
-    margin-left: 0;
-    width: 100%;
-    justify-content: flex-end;
-  }
-
-  .toolbar-with-monitoring .author-monitoring-controls {
-    width: auto;
-    flex: 0 0 auto;
-    justify-content: flex-start;
-  }
-
-  .toolbar-with-monitoring .author-monitoring-actions {
-    width: auto;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
   }
 }
 
@@ -3455,6 +3473,32 @@ defineExpose({
 
 .section-title {
   font-weight: 700;
+}
+
+/*
+ * A heading that names a series opens it, like the series tags elsewhere. Reset the
+ * button's own typography one property at a time rather than with `font: inherit`,
+ * which would also clear the bold .section-title above sets; letter-spacing and
+ * text-transform need naming too, since form controls do not inherit them.
+ */
+.section-title-link {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+/* No colour of its own at rest: the global .section-title brand colour has to reach it
+   the same way it reaches the plain headings beside it. */
+.section-title-link:hover,
+.section-title-link:focus-visible {
+  color: #fff;
+  text-decoration: underline;
 }
 
 .section-count {
