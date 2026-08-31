@@ -102,14 +102,17 @@
             :active="!!selectedFilterId"
             class="toolbar-filter-dropdown"
           />
-          <CustomSelect
+          <ViewOptionsDropdown
             v-model="sortKeyProxy"
+            v-model:groupByAuthor="groupByAuthor"
+            v-model:groupBySeries="groupBySeries"
             :options="sortOptions"
             :sort-order="sortOrder"
             :current-value="sortKey"
-            :active="sortKey !== (sortOptions[0]?.value || 'title') || sortOrder !== 'asc'"
+            :grouping-options="groupingOptions"
+            :active="viewOptionsActive"
             class="toolbar-custom-select"
-            aria-label="Sort by"
+            aria-label="View options"
           />
         </div>
       </div>
@@ -176,192 +179,307 @@
 
     <!-- Grouped View -->
     <div v-else-if="groupBy !== 'books'" class="grouped-view">
-      <div class="grouped-grid">
-        <div
-          v-for="collection in groupedCollections || []"
-          :key="collection.name"
-          :class="[
-            'collection-card',
-            {
+      <div v-if="viewMode === 'grid'" class="grouped-grid">
+        <template v-for="section in collectionSections" :key="`grid-${section.key}`">
+          <div
+            v-if="section.header"
+            class="group-header group-header-level-1 collection-group-header"
+          >
+            <button
+              v-if="section.header.value"
+              type="button"
+              class="group-header-label group-header-link"
+              :title="`Open ${section.header.label}`"
+              @click.stop="navigateToHeaderCollection(section.header)"
+            >
+              {{ safeText(section.header.label) }}
+            </button>
+            <span v-else class="group-header-label">{{ safeText(section.header.label) }}</span>
+            <span class="group-header-count">{{ section.header.count }} series</span>
+          </div>
+          <div
+            v-for="collection in section.collections"
+            :key="collection.name"
+            :class="[
+              'collection-card',
+              {
+                'author-collection': groupBy === 'authors',
+                'series-collection': groupBy === 'series',
+              },
+            ]"
+            @click="navigateToCollection(collection)"
+          >
+            <div class="collection-cover">
+              <template v-if="groupBy === 'authors'">
+                <div
+                  class="audiobook-poster-container author-poster"
+                  :data-author-name="collection.name"
+                  :data-author-has-cover="authorHasSpecificCoverMap[collection.name] ? '1' : ''"
+                >
+                  <div class="series-count-badge">{{ collection.count }}</div>
+                  <div
+                    class="author-placeholder"
+                    :class="{ loaded: authorImageLoaded[collection.name] }"
+                  ></div>
+                  <img
+                    class="audiobook-poster author-cover"
+                    :class="{ loaded: authorImageLoaded[collection.name] }"
+                    :src="getProtectedImageSrc(getAuthorImageUrl(collection), getPlaceholderUrl())"
+                    :alt="collection.name"
+                    loading="lazy"
+                    decoding="async"
+                    @error="handleAuthorImageError(collection.name, $event)"
+                    @load="onAuthorImageLoad(collection.name)"
+                  />
+                  <div
+                    class="author-placeholder-icon"
+                    :class="{ loaded: authorImageLoaded[collection.name] }"
+                  >
+                    <PhUser />
+                  </div>
+
+                  <div class="status-overlay hover-overlay">
+                    <div class="audiobook-title">{{ collection.name }}</div>
+                  </div>
+
+                  <div class="action-buttons">
+                    <button
+                      class="action-btn edit-btn-small"
+                      @click.stop="navigateToCollection(collection)"
+                      title="Open collection"
+                    >
+                      <PhEye />
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <template v-else-if="groupBy === 'series'">
+                <div
+                  v-if="collection.coverUrls && collection.coverUrls.length > 0"
+                  class="series-covers-container"
+                >
+                  <div class="series-covers">
+                    <!-- Single cover: blurred background + centered cover -->
+                    <template v-if="collection.coverUrls.length === 1">
+                      <img
+                        class="series-single-bg"
+                        :src="getProtectedImageSrc(collection.coverUrls[0], getPlaceholderUrl())"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        aria-hidden="true"
+                        @error="handleImageError"
+                      />
+                      <div
+                        class="series-cover-item"
+                        :style="getCoverStyle(0, collection.coverUrls.length)"
+                      >
+                        <div
+                          class="audiobook-image-placeholder"
+                          :class="{
+                            loaded: isImageLoaded(
+                              getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
+                            ),
+                          }"
+                        >
+                          <PhBookOpen class="audiobook-placeholder-icon" />
+                        </div>
+                        <img
+                          :src="getProtectedImageSrc(collection.coverUrls[0], getPlaceholderUrl())"
+                          :alt="`${collection.name} Cover`"
+                          class="series-cover-image centered cover-loading-image"
+                          :class="{
+                            loaded: isImageLoaded(
+                              getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
+                            ),
+                          }"
+                          loading="lazy"
+                          decoding="async"
+                          @load="
+                            markImageLoaded(
+                              getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
+                            )
+                          "
+                          @error="
+                            handleLazyImageError(
+                              getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
+                              $event,
+                            )
+                          "
+                        />
+                      </div>
+                    </template>
+                    <!-- Multiple covers: distribute across container using computed offset -->
+                    <template v-else>
+                      <div
+                        v-for="(coverUrl, index) in collection.coverUrls.slice(0, 8)"
+                        :key="index"
+                        class="series-cover-item"
+                        :style="getCoverStyle(index, collection.coverUrls.length)"
+                      >
+                        <div
+                          class="audiobook-image-placeholder"
+                          :class="{
+                            loaded: isImageLoaded(
+                              getSeriesImageKey(collection.name, index, coverUrl),
+                            ),
+                          }"
+                        >
+                          <PhBookOpen class="audiobook-placeholder-icon" />
+                        </div>
+                        <img
+                          :src="getProtectedImageSrc(coverUrl, getPlaceholderUrl())"
+                          :alt="`${collection.name} Cover`"
+                          class="series-cover-image cover-loading-image"
+                          :class="{
+                            loaded: isImageLoaded(
+                              getSeriesImageKey(collection.name, index, coverUrl),
+                            ),
+                          }"
+                          loading="lazy"
+                          decoding="async"
+                          @load="
+                            markImageLoaded(getSeriesImageKey(collection.name, index, coverUrl))
+                          "
+                          @error="
+                            handleLazyImageError(
+                              getSeriesImageKey(collection.name, index, coverUrl),
+                              $event,
+                            )
+                          "
+                        />
+                      </div>
+                    </template>
+                  </div>
+                  <!-- Book count counter -->
+                  <div class="series-count-badge">
+                    {{ collection.count }}
+                  </div>
+                  <!-- Hover overlay (use same status-overlay as books; show only series name) -->
+                  <div class="status-overlay hover-overlay">
+                    <div class="audiobook-title">{{ collection.name }}</div>
+                  </div>
+                </div>
+                <div v-else class="no-cover">
+                  <PhBooks />
+                </div>
+              </template>
+            </div>
+            <!-- Collection content for authors (match book grid bottom details) -->
+            <div v-if="groupBy === 'authors'" :class="{ 'collection-content': true }">
+              <div v-if="showItemDetails" class="grid-bottom-details">
+                <div class="detail-line title">{{ collection.name }}</div>
+                <div class="detail-line small">
+                  {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
+                </div>
+              </div>
+            </div>
+            <!-- Bottom placard for series (only show when item details are enabled) -->
+            <div v-if="groupBy === 'series' && showItemDetails" class="series-bottom-placard">
+              <div class="series-bottom-content">
+                <p class="series-bottom-title">{{ collection.name }}</p>
+                <p class="series-bottom-count">
+                  {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- The same collections as rows, so the view toggle means something here too -->
+      <div v-else class="grouped-list">
+        <div v-if="(groupedCollections || []).length > 0" class="collection-list-header">
+          <div class="col-cover">Cover</div>
+          <div class="col-name">{{ groupBy === 'authors' ? 'Author' : 'Series' }}</div>
+          <div class="col-count">Books</div>
+          <div class="col-actions">Actions</div>
+        </div>
+        <template v-for="section in collectionSections" :key="`list-${section.key}`">
+          <div
+            v-if="section.header"
+            class="group-header group-header-level-1 collection-group-header"
+          >
+            <button
+              v-if="section.header.value"
+              type="button"
+              class="group-header-label group-header-link"
+              :title="`Open ${section.header.label}`"
+              @click.stop="navigateToHeaderCollection(section.header)"
+            >
+              {{ safeText(section.header.label) }}
+            </button>
+            <span v-else class="group-header-label">{{ safeText(section.header.label) }}</span>
+            <span class="group-header-count">{{ section.header.count }} series</span>
+          </div>
+          <div
+            v-for="collection in section.collections"
+            :key="`collection-${collection.name}`"
+            class="collection-list-item"
+            :class="{
               'author-collection': groupBy === 'authors',
               'series-collection': groupBy === 'series',
-            },
-          ]"
-          @click="navigateToCollection(collection)"
-        >
-          <div class="collection-cover">
-            <template v-if="groupBy === 'authors'">
-              <div
-                class="audiobook-poster-container author-poster"
-                :data-author-name="collection.name"
-                :data-author-has-cover="authorHasSpecificCoverMap[collection.name] ? '1' : ''"
-              >
-                <div class="series-count-badge">{{ collection.count }}</div>
+            }"
+            tabindex="0"
+            @click="navigateToCollection(collection)"
+            @keydown.enter="navigateToCollection(collection)"
+          >
+            <div class="collection-list-thumb">
+              <template v-if="groupBy === 'authors'">
                 <div
-                  class="author-placeholder"
-                  :class="{ loaded: authorImageLoaded[collection.name] }"
-                ></div>
+                  class="author-thumb"
+                  :data-author-name="collection.name"
+                  :data-author-has-cover="authorHasSpecificCoverMap[collection.name] ? '1' : ''"
+                >
+                  <div
+                    class="author-placeholder"
+                    :class="{ loaded: authorImageLoaded[collection.name] }"
+                  ></div>
+                  <img
+                    class="author-cover"
+                    :class="{ loaded: authorImageLoaded[collection.name] }"
+                    :src="getProtectedImageSrc(getAuthorImageUrl(collection), getPlaceholderUrl())"
+                    :alt="collection.name"
+                    loading="lazy"
+                    decoding="async"
+                    @error="handleAuthorImageError(collection.name, $event)"
+                    @load="onAuthorImageLoad(collection.name)"
+                  />
+                  <div
+                    class="author-placeholder-icon"
+                    :class="{ loaded: authorImageLoaded[collection.name] }"
+                  >
+                    <PhUser />
+                  </div>
+                </div>
+              </template>
+              <template v-else>
                 <img
-                  class="audiobook-poster author-cover"
-                  :class="{ loaded: authorImageLoaded[collection.name] }"
-                  :src="getProtectedImageSrc(getAuthorImageUrl(collection), getPlaceholderUrl())"
+                  v-if="collection.coverUrls && collection.coverUrls.length > 0"
+                  :src="getProtectedImageSrc(collection.coverUrls[0], getPlaceholderUrl())"
                   :alt="collection.name"
                   loading="lazy"
                   decoding="async"
-                  @error="handleAuthorImageError(collection.name, $event)"
-                  @load="onAuthorImageLoad(collection.name)"
+                  @error="handleImageError"
                 />
-                <div
-                  class="author-placeholder-icon"
-                  :class="{ loaded: authorImageLoaded[collection.name] }"
-                >
-                  <PhUser />
-                </div>
-
-                <div class="status-overlay hover-overlay">
-                  <div class="audiobook-title">{{ collection.name }}</div>
-                </div>
-
-                <div class="action-buttons">
-                  <button
-                    class="action-btn edit-btn-small"
-                    @click.stop="navigateToCollection(collection)"
-                    title="Open collection"
-                  >
-                    <PhEye />
-                  </button>
-                </div>
-              </div>
-            </template>
-            <template v-else-if="groupBy === 'series'">
-              <div
-                v-if="collection.coverUrls && collection.coverUrls.length > 0"
-                class="series-covers-container"
+                <div v-else class="no-cover"><PhBooks /></div>
+              </template>
+            </div>
+            <div class="collection-list-name">{{ safeText(collection.name) }}</div>
+            <div class="collection-list-count">
+              {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
+            </div>
+            <div class="list-actions">
+              <button
+                class="action-btn edit-btn-small"
+                @click.stop="navigateToCollection(collection)"
+                title="Open collection"
               >
-                <div class="series-covers">
-                  <!-- Single cover: blurred background + centered cover -->
-                  <template v-if="collection.coverUrls.length === 1">
-                    <img
-                      class="series-single-bg"
-                      :src="getProtectedImageSrc(collection.coverUrls[0], getPlaceholderUrl())"
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      aria-hidden="true"
-                      @error="handleImageError"
-                    />
-                    <div
-                      class="series-cover-item"
-                      :style="getCoverStyle(0, collection.coverUrls.length)"
-                    >
-                      <div
-                        class="audiobook-image-placeholder"
-                        :class="{
-                          loaded: isImageLoaded(
-                            getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
-                          ),
-                        }"
-                      >
-                        <PhBookOpen class="audiobook-placeholder-icon" />
-                      </div>
-                      <img
-                        :src="getProtectedImageSrc(collection.coverUrls[0], getPlaceholderUrl())"
-                        :alt="`${collection.name} Cover`"
-                        class="series-cover-image centered cover-loading-image"
-                        :class="{
-                          loaded: isImageLoaded(
-                            getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
-                          ),
-                        }"
-                        loading="lazy"
-                        decoding="async"
-                        @load="
-                          markImageLoaded(
-                            getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
-                          )
-                        "
-                        @error="
-                          handleLazyImageError(
-                            getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
-                            $event,
-                          )
-                        "
-                      />
-                    </div>
-                  </template>
-                  <!-- Multiple covers: distribute across container using computed offset -->
-                  <template v-else>
-                    <div
-                      v-for="(coverUrl, index) in collection.coverUrls.slice(0, 8)"
-                      :key="index"
-                      class="series-cover-item"
-                      :style="getCoverStyle(index, collection.coverUrls.length)"
-                    >
-                      <div
-                        class="audiobook-image-placeholder"
-                        :class="{
-                          loaded: isImageLoaded(
-                            getSeriesImageKey(collection.name, index, coverUrl),
-                          ),
-                        }"
-                      >
-                        <PhBookOpen class="audiobook-placeholder-icon" />
-                      </div>
-                      <img
-                        :src="getProtectedImageSrc(coverUrl, getPlaceholderUrl())"
-                        :alt="`${collection.name} Cover`"
-                        class="series-cover-image cover-loading-image"
-                        :class="{
-                          loaded: isImageLoaded(
-                            getSeriesImageKey(collection.name, index, coverUrl),
-                          ),
-                        }"
-                        loading="lazy"
-                        decoding="async"
-                        @load="markImageLoaded(getSeriesImageKey(collection.name, index, coverUrl))"
-                        @error="
-                          handleLazyImageError(
-                            getSeriesImageKey(collection.name, index, coverUrl),
-                            $event,
-                          )
-                        "
-                      />
-                    </div>
-                  </template>
-                </div>
-                <!-- Book count counter -->
-                <div class="series-count-badge">
-                  {{ collection.count }}
-                </div>
-                <!-- Hover overlay (use same status-overlay as books; show only series name) -->
-                <div class="status-overlay hover-overlay">
-                  <div class="audiobook-title">{{ collection.name }}</div>
-                </div>
-              </div>
-              <div v-else class="no-cover">
-                <PhBooks />
-              </div>
-            </template>
-          </div>
-          <!-- Collection content for authors (match book grid bottom details) -->
-          <div v-if="groupBy === 'authors'" :class="{ 'collection-content': true }">
-            <div v-if="showItemDetails" class="grid-bottom-details">
-              <div class="detail-line title">{{ collection.name }}</div>
-              <div class="detail-line small">
-                {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
-              </div>
+                <PhEye />
+              </button>
             </div>
           </div>
-          <!-- Bottom placard for series (only show when item details are enabled) -->
-          <div v-if="groupBy === 'series' && showItemDetails" class="series-bottom-placard">
-            <div class="series-bottom-content">
-              <p class="series-bottom-title">{{ collection.name }}</p>
-              <p class="series-bottom-count">
-                {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
-              </p>
-            </div>
-          </div>
-        </div>
+        </template>
       </div>
     </div>
 
@@ -371,65 +489,279 @@
       :class="['audiobooks-scroll-container', { 'has-selection': selectedCount > 0 }]"
       @scroll="updateVisibleRange"
     >
+      <div v-if="viewMode === 'list' && audiobooks.length > 0" class="list-header">
+        <div class="col-select"></div>
+        <div class="col-cover">Cover</div>
+        <div class="col-title">Title / Author</div>
+        <div class="col-status">Status</div>
+        <div class="col-actions">Actions</div>
+      </div>
       <div class="audiobooks-scroll-spacer" :style="{ height: totalHeight + 'px' }">
         <div
           v-if="viewMode === 'grid'"
           class="audiobooks-grid"
           :style="{ transform: `translateY(${topPadding}px)` }"
         >
-          <div v-for="audiobook in visibleAudiobooks" :key="audiobook.id" class="audiobook-wrapper">
+          <template v-for="row in visibleRows" :key="row.key">
             <div
-              tabindex="0"
-              @keydown.enter="navigateToDetail(audiobook.id)"
-              class="audiobook-item"
-              :class="{
-                selected: libraryStore.isSelected(audiobook.id),
-                'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-                'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-                'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-                'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-              }"
-              @click="navigateToDetail(audiobook.id)"
+              v-if="row.type === 'header'"
+              class="group-header"
+              :class="`group-header-level-${row.header.level}`"
+              :style="{ height: `${headerVisualHeight(row.header.level)}px` }"
             >
-              <div class="row-click-target" @click="navigateToDetail(audiobook.id)" />
-              <div
-                class="selection-checkbox"
-                @click.stop="handleCheckboxClick(audiobook, $event)"
-                @mousedown.prevent
+              <button
+                v-if="row.header.value"
+                type="button"
+                class="group-header-label group-header-link"
+                :title="`Open ${row.header.label}`"
+                @click="navigateToHeaderCollection(row.header)"
               >
-                <input
-                  type="checkbox"
-                  :checked="libraryStore.isSelected(audiobook.id)"
-                  @change="onCheckboxChange(audiobook, $event)"
-                  @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
-                />
-              </div>
-              <div class="audiobook-poster-container" :class="{ 'show-details': showItemDetails }">
+                {{ safeText(row.header.label) }}
+              </button>
+              <span v-else class="group-header-label">{{ safeText(row.header.label) }}</span>
+              <span class="group-header-count"
+                >{{ row.header.count }} book{{ row.header.count !== 1 ? 's' : '' }}</span
+              >
+            </div>
+            <template v-else>
+              <div v-for="audiobook in row.books" :key="audiobook.id" class="audiobook-wrapper">
                 <div
-                  class="audiobook-image-placeholder"
-                  :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
+                  tabindex="0"
+                  @keydown.enter="navigateToDetail(audiobook.id)"
+                  class="audiobook-item"
+                  :class="{
+                    selected: libraryStore.isSelected(audiobook.id),
+                    'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
+                    'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
+                    'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
+                    'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
+                  }"
+                  @click="navigateToDetail(audiobook.id)"
                 >
-                  <PhBookOpen class="audiobook-placeholder-icon" />
-                </div>
-                <img
-                  :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
-                  :alt="audiobook.title"
-                  class="audiobook-poster cover-loading-image"
-                  :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-                  loading="lazy"
-                  decoding="async"
-                  @load="markImageLoaded(getBookImageKey(audiobook))"
-                  @error="handleLazyImageError(getBookImageKey(audiobook), $event)"
-                />
-                <div class="status-overlay">
-                  <div v-if="!showItemDetails" class="audiobook-title">
-                    {{ safeText(audiobook.title) }}
+                  <div class="row-click-target" @click="navigateToDetail(audiobook.id)" />
+                  <div
+                    class="selection-checkbox"
+                    @click.stop="handleCheckboxClick(audiobook, $event)"
+                    @mousedown.prevent
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="libraryStore.isSelected(audiobook.id)"
+                      @change="onCheckboxChange(audiobook, $event)"
+                      @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
+                    />
                   </div>
-                  <div v-if="!showItemDetails" class="audiobook-author">
+                  <div
+                    class="audiobook-poster-container"
+                    :class="{ 'show-details': showItemDetails }"
+                  >
+                    <div
+                      class="audiobook-image-placeholder"
+                      :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
+                    >
+                      <PhBookOpen class="audiobook-placeholder-icon" />
+                    </div>
+                    <img
+                      :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                      :alt="audiobook.title"
+                      class="audiobook-poster cover-loading-image"
+                      :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
+                      loading="lazy"
+                      decoding="async"
+                      @load="markImageLoaded(getBookImageKey(audiobook))"
+                      @error="handleLazyImageError(getBookImageKey(audiobook), $event)"
+                    />
+                    <div class="status-overlay">
+                      <div v-if="!showItemDetails" class="audiobook-title">
+                        {{ safeText(audiobook.title) }}
+                      </div>
+                      <div v-if="!showItemDetails" class="audiobook-author">
+                        {{
+                          audiobook.authors?.map((author) => safeText(author)).join(', ') ||
+                          'Unknown Author'
+                        }}
+                      </div>
+                      <div
+                        v-if="getQualityProfileName(audiobook.qualityProfileId)"
+                        class="quality-profile-badge"
+                      >
+                        <PhStar />
+                        {{ getQualityProfileName(audiobook.qualityProfileId) }}
+                      </div>
+                      <div class="monitored-badge" :class="{ unmonitored: !audiobook.monitored }">
+                        <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
+                        {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
+                      </div>
+                    </div>
+                    <div class="action-buttons">
+                      <button
+                        class="action-btn edit-btn-small"
+                        @click.stop="openEditModal(audiobook)"
+                        title="Edit"
+                      >
+                        <PhPencil />
+                      </button>
+                      <button
+                        class="action-btn delete-btn-small"
+                        @click.stop="confirmDelete(audiobook)"
+                        title="Delete"
+                      >
+                        <PhTrash />
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Extra details shown physically under poster when toggle is enabled -->
+                  <div v-if="showItemDetails" class="grid-bottom-details">
+                    <div class="detail-line title">{{ safeText(audiobook.title) }}</div>
+                    <div class="detail-line small">
+                      {{
+                        (audiobook.authors || [])
+                          .slice(0, 2)
+                          .map((a) => safeText(a))
+                          .join(', ') || 'Unknown Author'
+                      }}
+                      <div v-if="(audiobook.narrators || []).length">
+                        {{
+                          (audiobook.narrators || [])
+                            .slice(0, 1)
+                            .map((n) => safeText(n))
+                            .join(', ')
+                        }}
+                      </div>
+                    </div>
+                    <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
+                      Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
+                    </div>
+                    <div class="detail-line small">
+                      {{ safeText(audiobook.publisher)
+                      }}<span v-if="audiobook.publishYear">
+                        • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
+                      >
+                    </div>
+                    <div class="detail-line small">
+                      {{ statusText(getAudiobookStatus(audiobook)) }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+        </div>
+        <div v-else class="audiobooks-list" :style="{ transform: `translateY(${topPadding}px)` }">
+          <template v-for="row in visibleRows" :key="row.key">
+            <div
+              v-if="row.type === 'header'"
+              class="group-header"
+              :class="`group-header-level-${row.header.level}`"
+              :style="{ height: `${headerVisualHeight(row.header.level)}px` }"
+            >
+              <button
+                v-if="row.header.value"
+                type="button"
+                class="group-header-label group-header-link"
+                :title="`Open ${row.header.label}`"
+                @click="navigateToHeaderCollection(row.header)"
+              >
+                {{ safeText(row.header.label) }}
+              </button>
+              <span v-else class="group-header-label">{{ safeText(row.header.label) }}</span>
+              <span class="group-header-count"
+                >{{ row.header.count }} book{{ row.header.count !== 1 ? 's' : '' }}</span
+              >
+            </div>
+            <template v-else>
+              <div
+                v-for="audiobook in row.books"
+                :key="`list-${audiobook.id}`"
+                tabindex="0"
+                @keydown.enter="navigateToDetail(audiobook.id)"
+                class="audiobook-list-item"
+                :class="{
+                  selected: libraryStore.isSelected(audiobook.id),
+                  'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
+                  'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
+                  'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
+                  'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
+                }"
+                @click="navigateToDetail(audiobook.id)"
+              >
+                <div
+                  class="selection-checkbox"
+                  @click.stop="handleCheckboxClick(audiobook, $event)"
+                  @mousedown.prevent
+                >
+                  <input
+                    type="checkbox"
+                    :checked="libraryStore.isSelected(audiobook.id)"
+                    @change="onCheckboxChange(audiobook, $event)"
+                    @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
+                  />
+                </div>
+                <div class="list-thumb-container">
+                  <div
+                    class="audiobook-image-placeholder"
+                    :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
+                  >
+                    <PhBookOpen class="audiobook-placeholder-icon" />
+                  </div>
+                  <img
+                    class="list-thumb cover-loading-image"
+                    :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
+                    :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                    :alt="audiobook.title"
+                    loading="lazy"
+                    decoding="async"
+                    @load="markImageLoaded(getBookImageKey(audiobook))"
+                    @error="handleLazyImageError(getBookImageKey(audiobook), $event)"
+                  />
+                </div>
+                <div class="list-details">
+                  <div class="audiobook-title">{{ safeText(audiobook.title) }}</div>
+                  <div class="audiobook-author">
                     {{
                       audiobook.authors?.map((author) => safeText(author)).join(', ') ||
                       'Unknown Author'
                     }}
+                  </div>
+                  <div v-if="showItemDetails" class="list-extra-details">
+                    <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
+                      Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
+                    </div>
+                    <div class="detail-line small">
+                      {{
+                        (audiobook.narrators || [])
+                          .slice(0, 1)
+                          .map((n) => safeText(n))
+                          .join(', ') || ''
+                      }}
+                      <span
+                        v-if="
+                          audiobook.narrators &&
+                          audiobook.narrators.length &&
+                          (audiobook.publisher || audiobook.publishYear)
+                        "
+                      >
+                        •
+                      </span>
+                      {{ safeText(audiobook.publisher)
+                      }}<span v-if="audiobook.publishYear">
+                        • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="list-badges">
+                  <div
+                    class="status-badge"
+                    :class="getAudiobookStatus(audiobook)"
+                    role="button"
+                    tabindex="0"
+                    @click.stop="openStatusDetails(audiobook)"
+                    @keydown.enter.prevent="openStatusDetails(audiobook)"
+                    @keydown.space.prevent="openStatusDetails(audiobook)"
+                    :aria-label="`Show details for ${audiobook.title}`"
+                  >
+                    {{ statusText(getAudiobookStatus(audiobook)) }}
                   </div>
                   <div
                     v-if="getQualityProfileName(audiobook.qualityProfileId)"
@@ -443,7 +775,7 @@
                     {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
                   </div>
                 </div>
-                <div class="action-buttons">
+                <div class="list-actions">
                   <button
                     class="action-btn edit-btn-small"
                     @click.stop="openEditModal(audiobook)"
@@ -460,169 +792,8 @@
                   </button>
                 </div>
               </div>
-              <!-- Extra details shown physically under poster when toggle is enabled -->
-              <div v-if="showItemDetails" class="grid-bottom-details">
-                <div class="detail-line title">{{ safeText(audiobook.title) }}</div>
-                <div class="detail-line small">
-                  {{
-                    (audiobook.authors || [])
-                      .slice(0, 2)
-                      .map((a) => safeText(a))
-                      .join(', ') || 'Unknown Author'
-                  }}
-                  <div v-if="(audiobook.narrators || []).length">
-                    {{
-                      (audiobook.narrators || [])
-                        .slice(0, 1)
-                        .map((n) => safeText(n))
-                        .join(', ')
-                    }}
-                  </div>
-                </div>
-                <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
-                  Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
-                </div>
-                <div class="detail-line small">
-                  {{ safeText(audiobook.publisher)
-                  }}<span v-if="audiobook.publishYear">
-                    • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
-                  >
-                </div>
-                <div class="detail-line small">{{ statusText(getAudiobookStatus(audiobook)) }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div v-else class="audiobooks-list" :style="{ transform: `translateY(${topPadding}px)` }">
-          <div v-if="audiobooks.length > 0" class="list-header">
-            <div class="col-select"></div>
-            <div class="col-cover">Cover</div>
-            <div class="col-title">Title / Author</div>
-            <div class="col-status">Status</div>
-            <div class="col-actions">Actions</div>
-          </div>
-          <div
-            v-for="audiobook in visibleAudiobooks"
-            :key="`list-${audiobook.id}`"
-            tabindex="0"
-            @keydown.enter="navigateToDetail(audiobook.id)"
-            class="audiobook-list-item"
-            :class="{
-              selected: libraryStore.isSelected(audiobook.id),
-              'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-              'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-              'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-              'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-            }"
-            @click="navigateToDetail(audiobook.id)"
-          >
-            <div
-              class="selection-checkbox"
-              @click.stop="handleCheckboxClick(audiobook, $event)"
-              @mousedown.prevent
-            >
-              <input
-                type="checkbox"
-                :checked="libraryStore.isSelected(audiobook.id)"
-                @change="onCheckboxChange(audiobook, $event)"
-                @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
-              />
-            </div>
-            <div class="list-thumb-container">
-              <div
-                class="audiobook-image-placeholder"
-                :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-              >
-                <PhBookOpen class="audiobook-placeholder-icon" />
-              </div>
-              <img
-                class="list-thumb cover-loading-image"
-                :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-                :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
-                :alt="audiobook.title"
-                loading="lazy"
-                decoding="async"
-                @load="markImageLoaded(getBookImageKey(audiobook))"
-                @error="handleLazyImageError(getBookImageKey(audiobook), $event)"
-              />
-            </div>
-            <div class="list-details">
-              <div class="audiobook-title">{{ safeText(audiobook.title) }}</div>
-              <div class="audiobook-author">
-                {{
-                  audiobook.authors?.map((author) => safeText(author)).join(', ') ||
-                  'Unknown Author'
-                }}
-              </div>
-              <div v-if="showItemDetails" class="list-extra-details">
-                <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
-                  Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
-                </div>
-                <div class="detail-line small">
-                  {{
-                    (audiobook.narrators || [])
-                      .slice(0, 1)
-                      .map((n) => safeText(n))
-                      .join(', ') || ''
-                  }}
-                  <span
-                    v-if="
-                      audiobook.narrators &&
-                      audiobook.narrators.length &&
-                      (audiobook.publisher || audiobook.publishYear)
-                    "
-                  >
-                    •
-                  </span>
-                  {{ safeText(audiobook.publisher)
-                  }}<span v-if="audiobook.publishYear">
-                    • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
-                  >
-                </div>
-              </div>
-            </div>
-            <div class="list-badges">
-              <div
-                class="status-badge"
-                :class="getAudiobookStatus(audiobook)"
-                role="button"
-                tabindex="0"
-                @click.stop="openStatusDetails(audiobook)"
-                @keydown.enter.prevent="openStatusDetails(audiobook)"
-                @keydown.space.prevent="openStatusDetails(audiobook)"
-                :aria-label="`Show details for ${audiobook.title}`"
-              >
-                {{ statusText(getAudiobookStatus(audiobook)) }}
-              </div>
-              <div
-                v-if="getQualityProfileName(audiobook.qualityProfileId)"
-                class="quality-profile-badge"
-              >
-                <PhStar />
-                {{ getQualityProfileName(audiobook.qualityProfileId) }}
-              </div>
-              <div class="monitored-badge" :class="{ unmonitored: !audiobook.monitored }">
-                <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
-                {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
-              </div>
-            </div>
-            <div class="list-actions">
-              <button
-                class="action-btn edit-btn-small"
-                @click.stop="openEditModal(audiobook)"
-                title="Edit"
-              >
-                <PhPencil />
-              </button>
-              <button
-                class="action-btn delete-btn-small"
-                @click.stop="confirmDelete(audiobook)"
-                title="Delete"
-              >
-                <PhTrash />
-              </button>
-            </div>
-          </div>
+            </template>
+          </template>
         </div>
       </div>
     </div>
@@ -789,7 +960,7 @@ import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
-import CustomSelect from '@/components/form/CustomSelect.vue'
+import ViewOptionsDropdown from '@/components/ui/ViewOptionsDropdown.vue'
 import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
 import CustomFilterModal from '@/components/domain/collection/CustomFilterModal.vue'
 import { EmptyState } from '@/components/base'
@@ -801,6 +972,8 @@ import type { RuleLike } from '@/utils/customFilterEvaluator'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText } from '@/utils/textUtils'
 import { formatSeriesMemberships } from '@/utils/seriesUtils'
+import { buildCollectionSections, buildLibrarySections } from '@/utils/libraryGrouping'
+import { buildVirtualRows, findVisibleRowRange } from '@/utils/libraryVirtualRows'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { errorTracking } from '@/services/errorTracking'
 import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
@@ -1301,6 +1474,61 @@ function normalizeGroupBy(value: unknown): GroupByMode | null {
     : null
 }
 
+// Grouping *within* the books list, which is a view option rather than a route: the
+// books route keeps showing books, headed by author and/or series. Both can be on at
+// once, in which case series groups nest inside author groups.
+const GROUP_BY_AUTHOR_KEY = 'listenarr.groupByAuthor'
+const GROUP_BY_SERIES_KEY = 'listenarr.groupBySeries'
+
+const groupByAuthor = ref(readStoredFlag(GROUP_BY_AUTHOR_KEY))
+const groupBySeries = ref(readStoredFlag(GROUP_BY_SERIES_KEY))
+
+function readStoredFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function persistFlag(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, value ? 'true' : 'false')
+  } catch {}
+}
+
+watch(groupByAuthor, (v) => persistFlag(GROUP_BY_AUTHOR_KEY, v))
+watch(groupBySeries, (v) => persistFlag(GROUP_BY_SERIES_KEY, v))
+
+// What each view can be headed by. Books take both, series take an author heading over
+// the series cards, and the authors view is already grouped by author.
+const groupingOptions = computed<Array<'author' | 'series'>>(() => {
+  if (groupBy.value === 'books') return ['author', 'series']
+  if (groupBy.value === 'series') return ['author']
+  return []
+})
+
+const authorGroupingActive = computed(
+  () => groupingOptions.value.includes('author') && groupByAuthor.value,
+)
+const seriesGroupingActive = computed(
+  () => groupingOptions.value.includes('series') && groupBySeries.value,
+)
+const groupingActive = computed(() => authorGroupingActive.value || seriesGroupingActive.value)
+
+watch([groupByAuthor, groupBySeries], async () => {
+  if (groupBy.value !== 'books') return
+  resetVirtualScroller()
+  await nextTick()
+  syncMeasuredRowHeight()
+  updateVisibleRange()
+})
+
+// Author headings over the series cards, built from the authors those series belong to.
+const collectionSections = computed(() =>
+  buildCollectionSections(groupedCollections.value, authorGroupingActive.value),
+)
+
 watch(groupBy, (v) => {
   // Ensure selected sort key is valid for the new grouping; reset to sensible defaults if needed
   const allowed = sortOptions.value.map((o) => o.value)
@@ -1341,8 +1569,12 @@ const groupedCollections = computed(() => {
   const books = filteredAndSortedAudiobooks.value
   const groups = new Map<
     string,
-    { name: string; count: number; coverUrl?: string; coverUrls?: string[] }
+    { name: string; count: number; coverUrl?: string; coverUrls?: string[]; author?: string }
   >()
+
+  // Which author each series is filed under, so the series view can be headed by author.
+  // A series whose books disagree goes to whichever author wrote most of them.
+  const seriesAuthorCounts = new Map<string, Map<string, number>>()
 
   books.forEach((book) => {
     const keys =
@@ -1397,10 +1629,35 @@ const groupedCollections = computed(() => {
           group.coverUrls.push(bookCover)
         }
       }
+      if (groupBy.value === 'series') {
+        const author = (book.authors?.[0] || '').trim()
+        if (author) {
+          let counts = seriesAuthorCounts.get(key)
+          if (!counts) {
+            counts = new Map<string, number>()
+            seriesAuthorCounts.set(key, counts)
+          }
+          counts.set(author, (counts.get(author) ?? 0) + 1)
+        }
+      }
     }
   })
 
   const vals = Array.from(groups.values())
+
+  for (const group of vals) {
+    const counts = seriesAuthorCounts.get(group.name)
+    if (!counts) continue
+    let best = ''
+    let bestCount = 0
+    for (const [author, count] of counts) {
+      if (count > bestCount) {
+        best = author
+        bestCount = count
+      }
+    }
+    if (best) group.author = best
+  }
 
   // For grouped views (authors/series), respect toolbar sortKey for collection sorting
   const order = sortOrder.value === 'asc' ? 1 : -1
@@ -1448,10 +1705,9 @@ let authorCardObserver: IntersectionObserver | null = null
 
 function observeAuthorCards() {
   if (groupBy.value !== 'authors') return
+  // Matches the author cover in either layout: the card's poster and the row's thumb
   const cards = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      '.author-collection .audiobook-poster-container[data-author-name]',
-    ),
+    document.querySelectorAll<HTMLElement>('.grouped-view [data-author-name]'),
   )
   if (cards.length === 0) return
 
@@ -1530,6 +1786,15 @@ const sortOptions = computed(() => {
 })
 
 // Proxy so selecting the same key toggles sort order, selecting a new key sets ascending
+// The control reads "View", so it has to light up for anything it holds: a non-default
+// sort or any grouping.
+const viewOptionsActive = computed(
+  () =>
+    sortKey.value !== (sortOptions.value[0]?.value || 'title') ||
+    sortOrder.value !== 'asc' ||
+    groupingActive.value,
+)
+
 const sortKeyProxy = computed<string>({
   get: () => sortKey.value,
   set: (val: string) => {
@@ -1542,8 +1807,6 @@ const sortKeyProxy = computed<string>({
     }
   },
 })
-
-// toolbar select option helpers were removed in favor of CustomSelect usage per control
 
 // Raw library length (unfiltered) so we can show appropriate empty-state vs no-results
 const rawAudiobooksLength = computed(() => (libraryStore.audiobooks || []).length)
@@ -1592,17 +1855,64 @@ const GRID_DETAILS_EXTRA_HEIGHT = 64 // extra height for showing details under p
 const GRID_GAP = 20
 const BUFFER_ROWS = 2 // Extra rows to render above and below viewport
 const measuredRowHeight = ref<number | null>(null)
+const gridRowGap = ref(GRID_GAP)
 
 // Local storage key for persisting view mode
 const VIEWMODE_KEY = 'listenarr.viewMode'
 
 const viewMode = ref<'grid' | 'list'>('grid')
 
+// The layout choice is remembered for every grouping, including the collection views
+// that never build a virtual scroller.
+watch(viewMode, (v) => {
+  try {
+    localStorage.setItem(VIEWMODE_KEY, v)
+  } catch {
+    /* ignore */
+  }
+})
+
+// Switching layout replaces every author cover element, so the ones already observed are
+// gone and the new ones have to be picked up.
+watch(viewMode, async () => {
+  if (groupBy.value !== 'authors') return
+  await nextTick()
+  observeAuthorCards()
+})
+
+// Row indices into `virtualRows`, not book indices: a grouped list interleaves heading
+// rows with book rows, and only the row model knows where each one sits.
 const visibleRange = ref({ start: 0, end: DEFAULT_VISIBLE_RANGE_END })
 
-const visibleAudiobooks = computed(() => {
-  return audiobooks.value.slice(visibleRange.value.start, visibleRange.value.end)
-})
+// Height of a heading as drawn. In grid view the container's row gap sits above and
+// below it as well, which the layout below adds on top of this.
+const GROUP_HEADER_VISUAL_HEIGHT: Record<1 | 2, number> = { 1: 44, 2: 34 }
+
+function headerVisualHeight(level: 1 | 2): number {
+  return GROUP_HEADER_VISUAL_HEIGHT[level]
+}
+
+const librarySections = computed(() =>
+  buildLibrarySections(audiobooks.value, {
+    byAuthor: groupBy.value === 'books' && authorGroupingActive.value,
+    bySeries: groupBy.value === 'books' && seriesGroupingActive.value,
+  }),
+)
+
+const virtualRows = computed(() =>
+  buildVirtualRows(librarySections.value, viewMode.value === 'grid' ? ITEMS_PER_ROW.value : 1, {
+    itemRow: getRowHeight(),
+    header: (level) =>
+      headerVisualHeight(level) + (viewMode.value === 'grid' ? gridRowGap.value : 0),
+  }),
+)
+
+/** The books in the order they are drawn, headings flattened away. */
+const displayedAudiobooks = computed(() => librarySections.value.flatMap((s) => s.books))
+
+const visibleRows = computed(() =>
+  virtualRows.value.rows.slice(visibleRange.value.start, visibleRange.value.end),
+)
 
 function recalcItemsPerRow() {
   if (!scrollContainer.value) return
@@ -1698,7 +2008,8 @@ function syncMeasuredRowHeight() {
   if (viewMode.value === 'grid') {
     const grid = scrollContainer.value.querySelector<HTMLElement>('.audiobooks-grid')
     const rowGap = grid ? Number.parseFloat(getComputedStyle(grid).rowGap || '0') : GRID_GAP
-    nextRowHeight += Number.isFinite(rowGap) ? rowGap : GRID_GAP
+    gridRowGap.value = Number.isFinite(rowGap) ? rowGap : GRID_GAP
+    nextRowHeight += gridRowGap.value
   }
 
   if (nextRowHeight <= 0) return false
@@ -1715,38 +2026,19 @@ function syncMeasuredRowHeight() {
 const updateVisibleRange = () => {
   if (!scrollContainer.value) return
 
-  const scrollTop = scrollContainer.value.scrollTop
-  const viewportHeight = scrollContainer.value.clientHeight
-
-  const rowHeight = getRowHeight()
-
-  // Calculate which rows are visible
-  const firstVisibleRow = Math.floor(scrollTop / rowHeight)
-  const visibleRowCount = Math.ceil(viewportHeight / rowHeight)
-
-  // Items per row already set (1 for list, >1 for grid)
-  const totalRows = Math.ceil(audiobooks.value.length / ITEMS_PER_ROW.value)
-  const startRow = Math.max(0, firstVisibleRow - BUFFER_ROWS)
-  const endRow = Math.min(firstVisibleRow + visibleRowCount + BUFFER_ROWS, totalRows)
-
-  // Convert to item indices
-  const startIndex = Math.max(0, startRow * ITEMS_PER_ROW.value)
-  const endIndex = Math.min(endRow * ITEMS_PER_ROW.value, audiobooks.value.length)
-
-  visibleRange.value = { start: startIndex, end: endIndex }
+  visibleRange.value = findVisibleRowRange(
+    virtualRows.value.rows,
+    scrollContainer.value.scrollTop,
+    scrollContainer.value.clientHeight,
+    BUFFER_ROWS,
+  )
 }
 
 // Padding for offset positioning
-const topPadding = computed(() => {
-  const firstVisibleRow = Math.floor(visibleRange.value.start / ITEMS_PER_ROW.value)
-  return firstVisibleRow * getRowHeight()
-})
+const topPadding = computed(() => virtualRows.value.rows[visibleRange.value.start]?.top ?? 0)
 
 // Total scroll height so the container scrollbar reflects the full list
-const totalHeight = computed(() => {
-  const totalRows = Math.ceil(audiobooks.value.length / ITEMS_PER_ROW.value)
-  return totalRows * getRowHeight()
-})
+const totalHeight = computed(() => virtualRows.value.totalHeight)
 
 const deleting = ref(false)
 const showDeleteDialog = ref(false)
@@ -1793,7 +2085,6 @@ function getAudiobookStatus(audiobook: Audiobook): AudiobookStatus {
 let resizeObserver: ResizeObserver | null = null
 let stopVisibleRangeWatch: (() => void) | null = null
 let stopViewModeWatch: (() => void) | null = null
-let stopPersistViewModeWatch: (() => void) | null = null
 
 async function initializeVirtualScroller() {
   if (!scrollContainer.value) return
@@ -1842,16 +2133,6 @@ async function initializeVirtualScroller() {
       updateVisibleRange()
     })
   }
-
-  if (!stopPersistViewModeWatch) {
-    stopPersistViewModeWatch = watch(viewMode, (v) => {
-      try {
-        localStorage.setItem(VIEWMODE_KEY, v)
-      } catch {
-        /* ignore */
-      }
-    })
-  }
 }
 
 onMounted(async () => {
@@ -1896,11 +2177,6 @@ onUnmounted(() => {
     stopViewModeWatch?.()
   } catch {}
   stopViewModeWatch = null
-
-  try {
-    stopPersistViewModeWatch?.()
-  } catch {}
-  stopPersistViewModeWatch = null
 
   try {
     authorCardObserver?.disconnect()
@@ -2016,6 +2292,12 @@ async function setGroupBy(mode: GroupByMode) {
       metadata: { mode },
     })
   }
+}
+
+// A heading names a collection, so it opens the same page an author or series card does.
+function navigateToHeaderCollection(header: { type: 'author' | 'series'; value?: string }) {
+  if (!header.value) return
+  router.push(`/collection/${header.type}/${encodeURIComponent(header.value)}`)
 }
 
 function navigateToCollection(collection: { name: string }) {
@@ -2281,7 +2563,10 @@ async function handleEditSaved() {
 }
 
 function applyCheckboxSelection(audiobook: Audiobook, shiftKey: boolean) {
-  const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
+  // Indices run over the books in the order they are drawn: shift-selecting a range has
+  // to mean the range the user can see, which grouping reorders.
+  const ordered = displayedAudiobooks.value
+  const currentIndex = ordered.findIndex((book) => book.id === audiobook.id)
   if (currentIndex < 0) return
 
   if (shiftKey && lastClickedIndex.value !== null) {
@@ -2289,7 +2574,7 @@ function applyCheckboxSelection(audiobook: Audiobook, shiftKey: boolean) {
     const endIndex = Math.max(lastClickedIndex.value, currentIndex)
     libraryStore.clearSelection()
     for (let i = startIndex; i <= endIndex; i++) {
-      const book = audiobooks.value[i]
+      const book = ordered[i]
       if (!book) continue
       libraryStore.toggleSelection(book.id)
     }
@@ -2657,6 +2942,124 @@ defineExpose({
   gap: 1rem;
 }
 
+/* Collections as rows — the list half of the view toggle on /authors and /series */
+.grouped-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.collection-list-header,
+.collection-list-item {
+  display: grid;
+  grid-template-columns: 64px 1fr auto 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.collection-list-header {
+  color: #aaa;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.collection-list-header .col-cover {
+  text-align: center;
+}
+
+.collection-list-header .col-actions {
+  text-align: right;
+}
+
+.collection-list-item {
+  background-color: transparent;
+  border-radius: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition:
+    background-color 0.12s,
+    transform 0.12s;
+}
+
+.collection-list-item:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.collection-list-item:focus,
+.collection-list-item:focus-within {
+  outline: 2px solid rgba(var(--brand-rgb), 0.18);
+  outline-offset: 2px;
+}
+
+.collection-list-thumb {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  justify-self: center;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1f1f1f;
+}
+
+.collection-list-thumb .author-thumb {
+  position: absolute;
+  inset: 0;
+}
+
+.collection-list-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The shared placeholder icon is sized for a full poster; scale it to the thumb */
+.collection-list-thumb .author-placeholder-icon svg {
+  height: 1.5em;
+  width: 1.5em;
+}
+
+.collection-list-thumb .no-cover {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9aa4b2;
+}
+
+.collection-list-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e6eef8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-list-count {
+  font-size: 12px;
+  color: #8b98a5;
+  white-space: nowrap;
+}
+
+.collection-list-item .list-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .collection-list-header,
+  .collection-list-item {
+    grid-template-columns: 48px 1fr auto;
+  }
+
+  .collection-list-header .col-actions,
+  .collection-list-item .list-actions {
+    display: none;
+  }
+}
+
 .collection-card {
   overflow: visible;
   cursor: pointer;
@@ -2866,7 +3269,9 @@ defineExpose({
   );
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 20px;
+  /* Vertical padding belongs here rather than on the grid: anything inside the spacer
+     has to be a row the virtual scroller has measured. */
+  padding: 10px 20px;
 }
 
 .audiobook-status-legend {
@@ -2970,12 +3375,90 @@ defineExpose({
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 20px;
-  padding: 10px 0;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
   will-change: transform;
+}
+
+/*
+ * Group headings. Heights here must match GROUP_HEADER_VISUAL_HEIGHT in the script: the
+ * virtual scroller places every row from those numbers, so a heading that draws taller
+ * than the model says walks the list out of sync with its scrollbar.
+ */
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 0 4px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+}
+
+/* A heading always takes the full width of the grid, so the books under it start a row */
+.audiobooks-grid .group-header,
+.grouped-grid .group-header {
+  grid-column: 1 / -1;
+}
+
+/* Collection headings are not virtualized, so they size themselves */
+.collection-group-header {
+  min-height: 44px;
+  margin-top: 8px;
+}
+
+.grouped-list .collection-group-header:first-child,
+.grouped-grid .collection-group-header:first-child {
+  margin-top: 0;
+}
+
+.group-header-level-1 .group-header-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e6eef8;
+}
+
+.group-header-level-2 .group-header-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #b8c4d0;
+  padding-left: 12px;
+}
+
+.group-header-level-2 {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+
+.group-header-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-header-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+}
+
+.group-header-link:hover,
+.group-header-link:focus-visible {
+  color: var(--brand-500);
+  text-decoration: underline;
+}
+
+.group-header-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #8b98a5;
 }
 
 .audiobook-item {

@@ -35,6 +35,14 @@ describe('formatSeriesMemberships', () => {
 })
 
 describe('isSeriesRestatement', () => {
+  it('sees through a leading "The" on either side', () => {
+    // Audible writes "The Sun Eater 1" against a series badge that reads "Sun Eater"
+    expect(isSeriesRestatement('The Sun Eater 1', ['Sun Eater'])).toBe(true)
+    expect(isSeriesRestatement('Sun Eater, Book 1', ['The Sun Eater'])).toBe(true)
+    // A subtitle that adds something of its own still survives
+    expect(isSeriesRestatement('A Tale of the Sun Eater', ['Sun Eater'])).toBe(false)
+  })
+
   it('recognises a subtitle that only repeats the series and position', () => {
     expect(isSeriesRestatement('Paragon Space, Book 1', ['Paragon Space'])).toBe(true)
     expect(isSeriesRestatement('Paragon Space Book 1', ['Paragon Space'])).toBe(true)

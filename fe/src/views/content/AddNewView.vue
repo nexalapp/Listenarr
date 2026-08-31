@@ -3640,6 +3640,15 @@ onMounted(async () => {
   // Initialize added status on mount
   await checkExistingInLibrary()
 
+  // The header search hands its query over here when the library has no match for it,
+  // so land on results rather than on an empty box the user has to retype into.
+  const handedOver = typeof route.query.q === 'string' ? route.query.q.trim() : ''
+  if (handedOver) {
+    searchQuery.value = handedOver
+    void router.replace({ name: 'add-new' })
+    await performSearch()
+  }
+
   // Subscribe to server-side search progress updates (ignore automatic background searches by default)
   type ProgressPayload = {
     message: string

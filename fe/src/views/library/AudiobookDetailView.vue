@@ -108,17 +108,86 @@
           />
         </div>
         <div class="info-section">
-          <h1 class="title">{{ safeText(audiobook.title) }}</h1>
-          <div class="subtitle" v-if="audiobook.subtitle">{{ audiobook.subtitle }}</div>
+          <div class="hero-title-row">
+            <h1 class="title">{{ safeText(audiobook.title) }}</h1>
+            <button
+              class="hero-refresh-btn"
+              :disabled="rescanningMetadata"
+              @click="rescanMetadata"
+              title="Re-fetch this book's metadata from its provider"
+            >
+              <component
+                :is="rescanningMetadata ? PhSpinner : PhArrowClockwise"
+                :class="rescanningMetadata ? 'ph-spin' : undefined"
+              />
+              {{ rescanningMetadata ? 'Refreshing...' : 'Refresh Metadata' }}
+            </button>
+          </div>
+          <div class="subtitle" v-if="showSubtitle">{{ safeText(audiobook.subtitle) }}</div>
+          <div v-if="displaySeriesMemberships.length > 0" class="hero-series">
+            <div
+              v-for="(membership, index) in displaySeriesMemberships"
+              :key="`hero-series-${membership.seriesName}-${membership.seriesNumber || index}`"
+              class="detail-series-membership"
+            >
+              <button
+                type="button"
+                class="tag-badge detail-link-tag"
+                @click="goToSeriesCollection(membership.seriesName)"
+              >
+                {{ safeText(membership.seriesName) }}
+              </button>
+              <span v-if="membership.seriesNumber" class="detail-series-number">
+                #{{ membership.seriesNumber }}
+              </span>
+              <span
+                v-if="membership.isPrimary && displaySeriesMemberships.length > 1"
+                class="identifier-badge primary"
+              >
+                Primary
+              </span>
+            </div>
+          </div>
 
           <div class="meta-info">
+            <span class="authors" v-if="audiobook.authors?.length">
+              <PhUser />
+              <span class="meta-author-list">
+                <template v-for="(author, index) in audiobook.authors" :key="author">
+                  <span v-if="index > 0" class="meta-author-sep">,&nbsp;</span>
+                  <button
+                    type="button"
+                    class="meta-author-link"
+                    :title="`Open ${author}`"
+                    @click="goToAuthorCollection(author)"
+                  >
+                    {{ safeText(author) }}
+                  </button>
+                </template>
+              </span>
+            </span>
             <span class="runtime" v-if="audiobook.runtime">
               <PhClock />
               {{ formatRuntime(audiobook.runtime) }}
             </span>
+            <span class="formats" v-if="fileFormats.length > 0">
+              <PhFileAudio />
+              {{ fileFormats.join(', ') }}
+            </span>
           </div>
 
+          <!-- One row of facts about this book, led by the control that changes one -->
           <div class="key-details">
+            <Pill
+              class="hero-monitor-pill"
+              interactive
+              :variant="audiobook.monitored ? 'primary' : 'default'"
+              :title="audiobook.monitored ? 'Stop monitoring this book' : 'Monitor this book'"
+              @click="toggleMonitored"
+            >
+              <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
+              {{ audiobook.monitored ? 'Monitored' : 'Not Monitored' }}
+            </Pill>
             <div class="detail-item" v-if="displayBasePath">
               <PhFolder />
               <span class="file-path">{{ displayBasePath }}</span>
@@ -135,24 +204,15 @@
               <PhGlobe />
               <span>{{ capitalizeFirst(audiobook.language) }}</span>
             </div>
-            <div class="detail-item">
+            <!-- Abridged is the exception worth flagging; every other book being
+                 "Unabridged" says nothing. Matches how the modals badge it. -->
+            <div class="detail-item" v-if="audiobook.abridged">
               <PhTag />
-              <span>{{ audiobook.abridged ? 'Abridged' : 'Unabridged' }}</span>
+              <span>Abridged</span>
             </div>
-          </div>
-
-          <div class="status-badges">
-            <Pill variant="primary" v-if="audiobook.monitored">
-              <PhBookmark weight="fill" />
-              Monitored
-            </Pill>
             <Pill variant="success" v-if="assignedProfileName">
               <PhStar />
               Quality: {{ assignedProfileName }}
-            </Pill>
-            <Pill variant="info">
-              <PhChatCircle />
-              {{ capitalizeFirst(audiobook.language) || 'English' }}
             </Pill>
             <Pill variant="default" v-if="audiobook.version">
               <PhMusicNotes />
@@ -164,20 +224,17 @@
             </Pill>
           </div>
 
-          <div class="description" v-if="audiobook.description">
-            <div class="description-content" :class="{ expanded: showFullDescription }">
-              {{ stripHtmlAndNormalize(audiobook.description) }}
+          <div class="description" v-if="descriptionText">
+            <div class="description-content">
+              {{ displayedDescription
+              }}<button
+                v-if="canToggleDescription"
+                class="show-more-btn"
+                @click="showFullDescription = !showFullDescription"
+              >
+                {{ showFullDescription ? 'Show Less' : 'Show More' }}
+              </button>
             </div>
-            <button
-              v-if="!showFullDescription"
-              class="show-more-btn"
-              @click="showFullDescription = true"
-            >
-              Show More
-            </button>
-            <button v-else class="show-more-btn" @click="showFullDescription = false">
-              Show Less
-            </button>
           </div>
         </div>
       </div>
@@ -678,7 +735,8 @@ import type {
   History,
   SearchResult,
 } from '@/types'
-import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
+import { safeText, stripHtmlAndNormalize, truncateAtWord } from '@/utils/textUtils'
+import { isSeriesRestatement } from '@/utils/seriesUtils'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
 import { useProtectedImages } from '@/composables/useProtectedImages'
@@ -698,8 +756,10 @@ import {
   PhSpinner,
   PhMagnifyingGlass,
   PhFolderOpen,
+  PhFileMagnifyingGlass,
   PhTrash,
   PhClock,
+  PhUser,
   PhFolder,
   PhDatabase,
   PhSpeakerHigh,
@@ -707,7 +767,6 @@ import {
   PhTag,
   PhBookmarkSimple,
   PhStar,
-  PhChatCircle,
   PhMusicNotes,
   PhInfo,
   PhFile,
@@ -750,6 +809,44 @@ const deleting = ref(false)
 const deleteFilesOnDisk = ref(false)
 const deleteFolderOnDisk = ref(false)
 const showFullDescription = ref(false)
+
+// Collapsing by character count rather than by height, so the toggle can follow the
+// last word it hides instead of floating under a fade.
+const DESCRIPTION_COLLAPSED_LENGTH = 420
+
+/*
+ * The containers this book is actually made of. Read off the files rather than the
+ * `formats` field, which the detail endpoint leaves empty — only the library listing
+ * fills it, and this page prefers the detail endpoint. Falls back to `formats` for the
+ * store-backed path, and shows nothing for a book with no files yet.
+ */
+const fileFormats = computed(() => {
+  const found = new Set<string>()
+
+  for (const file of audiobook.value?.files || []) {
+    const match = /\.([a-z0-9]{1,5})$/i.exec(file.path || '')
+    if (match?.[1]) found.add(`.${match[1].toLowerCase()}`)
+  }
+
+  if (found.size === 0) {
+    for (const format of audiobook.value?.formats || []) {
+      const trimmed = (format || '').trim()
+      if (trimmed) found.add(`.${trimmed.toLowerCase()}`)
+    }
+  }
+
+  return Array.from(found).sort()
+})
+
+const descriptionText = computed(() => stripHtmlAndNormalize(audiobook.value?.description) || '')
+const canToggleDescription = computed(
+  () => descriptionText.value.length > DESCRIPTION_COLLAPSED_LENGTH,
+)
+const displayedDescription = computed(() =>
+  showFullDescription.value
+    ? descriptionText.value
+    : truncateAtWord(descriptionText.value, DESCRIPTION_COLLAPSED_LENGTH),
+)
 const scanning = ref(false)
 const rescanningMetadata = ref(false)
 const trackedScanJob = computed(() => {
@@ -794,17 +891,6 @@ const mobileTabOptions = computed(() => [
 
 const topActions = computed<DetailTopAction[]>(() => [
   {
-    key: 'refresh',
-    label: 'Refresh',
-    title: 'Refresh',
-    ariaLabel: 'Refresh',
-    icon: PhArrowClockwise,
-    desktopGroup: 'primary',
-    onClick: () => {
-      void refresh()
-    },
-  },
-  {
     key: 'manual-search',
     label: 'Manual Search',
     title: 'Manual Search',
@@ -822,26 +908,15 @@ const topActions = computed<DetailTopAction[]>(() => [
         ? 'Scanning...'
         : scanQueued.value
           ? 'Scan queued'
-          : 'Scan Folder',
+          : "Re-read this book's folder on disk for file changes",
     ariaLabel: 'Scan Folder',
-    icon: scanning.value ? PhSpinner : scanQueued.value ? PhClock : PhFolderOpen,
+    icon: scanning.value ? PhSpinner : scanQueued.value ? PhClock : PhFileMagnifyingGlass,
     iconClass: scanning.value ? 'ph-spin' : undefined,
     disabled: scanning.value || scanQueued.value || !filesystemReadinessStore.filesystemReady,
     desktopGroup: 'primary',
     onClick: () => {
       void scanFiles()
     },
-  },
-  {
-    key: 'monitor',
-    label: audiobook.value?.monitored ? 'Monitored' : 'Monitor',
-    title: audiobook.value?.monitored ? 'Unmonitor' : 'Monitor',
-    ariaLabel: 'Toggle Monitor',
-    icon: PhBookmark,
-    iconProps: { weight: audiobook.value?.monitored ? 'fill' : 'regular' },
-    desktopGroup: 'primary',
-    desktopClass: 'primary',
-    onClick: toggleMonitored,
   },
   {
     key: 'convert',
@@ -878,19 +953,6 @@ const topActions = computed<DetailTopAction[]>(() => [
     desktopGroup: 'secondary',
     desktopClass: 'primary',
     onClick: openEditModal,
-  },
-  {
-    key: 'rescan-metadata',
-    label: rescanningMetadata.value ? 'Rescanning Metadata...' : 'Rescan Metadata',
-    title: rescanningMetadata.value ? 'Rescanning Metadata...' : 'Rescan Metadata',
-    ariaLabel: 'Rescan Metadata',
-    icon: rescanningMetadata.value ? PhSpinner : PhArrowClockwise,
-    iconClass: rescanningMetadata.value ? 'ph-spin' : undefined,
-    disabled: rescanningMetadata.value || !audiobook.value,
-    desktopGroup: 'secondary',
-    onClick: () => {
-      void rescanMetadata()
-    },
   },
   {
     key: 'organize',
@@ -1059,6 +1121,26 @@ const displayIdentifiers = computed<DetailIdentifierItem[]>(() => {
     return a.value.localeCompare(b.value)
   })
 })
+
+/*
+ * The series always shows under the title. Audible often sets a book's subtitle to
+ * nothing but its series and position ("Sun Eater, Book 3" for a book already filed
+ * under Sun Eater #3), and printing that above the chips would say the series twice.
+ * Such a subtitle is dropped; one that carries its own meaning ("An Ender Story") is
+ * kept and reads above the chips.
+ */
+const subtitleRestatesSeries = computed(
+  () =>
+    displaySeriesMemberships.value.length > 0 &&
+    isSeriesRestatement(
+      audiobook.value?.subtitle || '',
+      displaySeriesMemberships.value.map((membership) => membership.seriesName),
+    ),
+)
+
+const showSubtitle = computed(
+  () => Boolean(audiobook.value?.subtitle) && !subtitleRestatesSeries.value,
+)
 
 const displaySeriesMemberships = computed<AudiobookSeriesMembership[]>(() => {
   const book = audiobook.value
@@ -1456,14 +1538,6 @@ function goToGenreCollection(genre: string | undefined | null) {
   if (!normalizedGenre) return
 
   router.push(`/collection/genre/${encodeURIComponent(normalizedGenre)}`)
-}
-
-async function refresh() {
-  await loadAudiobook()
-  // Reload history if history tab is active
-  if (activeTab.value === 'history') {
-    await loadHistory()
-  }
 }
 
 /**
@@ -2337,6 +2411,59 @@ function formatDate(dateString?: string): string {
   min-width: 0;
 }
 
+/* The metadata refresh rides at the right end of the title's own line */
+.hero-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hero-refresh-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e6eef8;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.hero-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.hero-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.hero-refresh-btn:focus-visible {
+  outline: 3px solid rgba(33, 150, 243, 0.18);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .hero-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .hero-refresh-btn {
+    margin-top: 0;
+  }
+}
+
 .title {
   font-size: 3rem;
   font-weight: 500;
@@ -2358,10 +2485,28 @@ function formatDate(dateString?: string): string {
   margin-bottom: 20px;
 }
 
+/* Sits under the title, below the subtitle when there is one worth keeping */
+.hero-series {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* Tighten the gap when the two stack, so they read as one block */
+.subtitle + .hero-series {
+  margin-top: -10px;
+}
+
 @media (max-width: 768px) {
   .subtitle {
     font-size: 1rem;
     text-align: center;
+  }
+
+  .hero-series {
+    justify-content: center;
   }
 }
 
@@ -2379,6 +2524,31 @@ function formatDate(dateString?: string): string {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/*
+ * Authors read as one sentence, so the list and its separators flow inline rather than
+ * becoming flex items of the surrounding meta row.
+ */
+.meta-info .meta-author-list,
+.meta-info .meta-author-sep {
+  display: inline;
+}
+
+/* Each author opens its collection, like the author tags further down the page */
+.meta-author-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.meta-author-link:hover,
+.meta-author-link:focus-visible {
+  color: var(--brand-500);
+  text-decoration: underline;
 }
 
 .runtime i,
@@ -2401,6 +2571,9 @@ function formatDate(dateString?: string): string {
 
 .key-details {
   display: flex;
+  flex-wrap: wrap;
+  /* Stretch, so every box in the row ends up the height of the tallest */
+  align-items: stretch;
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -2412,6 +2585,18 @@ function formatDate(dateString?: string): string {
   padding: 10px 14px;
   background-color: rgba(255, 255, 255, 0.05);
   border-radius: 6px;
+  font-size: 14px;
+  /* Let a long path ellipsis rather than push the row onto a second line */
+  min-width: 0;
+}
+
+/*
+ * The pills share this row with the detail boxes, so they take the same metrics and
+ * the row sits level. Keep in step with .detail-item above.
+ */
+.key-details .pill {
+  gap: 10px;
+  padding: 10px 14px;
   font-size: 14px;
 }
 
@@ -2425,14 +2610,6 @@ function formatDate(dateString?: string): string {
   color: var(--brand-500);
 }
 
-/* Status badges - Now using Pill component from @/components/base */
-.status-badges {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
 .description {
   color: #ccc;
   line-height: 1.6;
@@ -2441,53 +2618,25 @@ function formatDate(dateString?: string): string {
 }
 
 .description-content {
-  position: relative;
-  max-height: 140px;
-  overflow: hidden;
-  transition: max-height 0.3s ease;
   white-space: pre-wrap;
 }
 
-@media (max-width: 768px) {
-  .description-content {
-    max-height: 100px;
-  }
-}
-
-.description-content:not(.expanded)::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
-  pointer-events: none;
-}
-
-.description-content:not(.expanded) {
-  mask-image: linear-gradient(to bottom, white 70%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, white 70%, transparent 100%);
-}
-
-.description-content.expanded {
-  max-height: none;
-}
-
+/* The toggle is the tail of the sentence it hides, not a control beside it */
 .show-more-btn {
-  margin-top: 12px;
-  padding: 8px 16px;
-  background-color: rgba(var(--brand-rgb), 0.1);
-  border: 1px solid var(--brand-500);
-  border-radius: 6px;
-  color: var(--brand-500);
-  font-size: 13px;
+  margin-left: 0.35em;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
-.show-more-btn:hover {
-  background-color: rgba(var(--brand-rgb), 0.2);
-  transform: translateY(-1px);
+.show-more-btn:hover,
+.show-more-btn:focus-visible {
+  color: #fff;
 }
 
 .description :deep(p) {
