@@ -17,7 +17,6 @@
  */
 using System.Diagnostics;
 using Listenarr.Application.Audiobooks.Conversion;
-using Listenarr.Domain.Audiobooks.Conversion;
 using Listenarr.Infrastructure.Ffmpeg.Conversion;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,6 +85,48 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
             new(path, Path.GetFileName(path), TimeSpan.FromSeconds(seconds), 64_000, sampleRate, channels);
 
         private string OutputPath => Path.Combine(_workingDirectory, "out.m4b");
+
+        /// <summary>Rewrite a source MP3 with ID3 chapter marks, the way a merge tool would.</summary>
+        private async Task<string> WriteChapteredCopyAsync(
+            string sourcePath,
+            IReadOnlyList<(string Title, int Start, int End)> chapters)
+        {
+            var metadataPath = Path.Combine(_workingDirectory, "chapters.ffmetadata");
+            var builder = new System.Text.StringBuilder(";FFMETADATA1\n");
+            foreach (var chapter in chapters)
+            {
+                builder.Append("[CHAPTER]\nTIMEBASE=1/1000\n");
+                builder.Append($"START={chapter.Start * 1000}\nEND={chapter.End * 1000}\n");
+                builder.Append($"title={chapter.Title}\n");
+            }
+
+            await File.WriteAllTextAsync(metadataPath, builder.ToString());
+
+            var target = Path.Combine(_workingDirectory, "chaptered.mp3");
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = FindOnPath("ffmpeg")!,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[]
+                     {
+                         "-hide_banner", "-loglevel", "error", "-y",
+                         "-i", sourcePath, "-i", metadataPath,
+                         "-map", "0:a", "-map_metadata", "1", "-c:a", "copy",
+                         target
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            var runner = new SystemProcessRunner(NullLogger<SystemProcessRunner>.Instance);
+            var result = await runner.RunAsync(startInfo, 30_000);
+            Assert.Equal(0, result.ExitCode);
+            return target;
+        }
 
         // ---- the happy path ---------------------------------------------------------
 
@@ -178,6 +219,43 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
             Assert.True(result.Success, result.Message);
             Assert.NotEmpty(reported);
             Assert.All(reported, f => Assert.InRange(f, 0, 1));
+        }
+
+        [EncoderFact]
+        public async Task ConvertAsync_KeepsTheChaptersOfAnAlreadyMergedFile()
+        {
+            // The library may already hold books merged into one chaptered MP3. Those
+            // marks have to survive the conversion, or converting them loses more than
+            // it gains.
+            var source = await WriteSourceMp3Async("Whole Book.mp3", 9);
+            var chaptered = await WriteChapteredCopyAsync(
+                source,
+                [("Opening", 0, 3), ("Middle", 3, 6), ("End", 6, 9)]);
+
+            var plan = ConversionPlanner.BuildPlan(
+                [
+                    Source(chaptered, 9) with
+                    {
+                        EmbeddedChapters =
+                        [
+                            new EmbeddedChapter("Opening", TimeSpan.Zero, TimeSpan.FromSeconds(3)),
+                            new EmbeddedChapter("Middle", TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(6)),
+                            new EmbeddedChapter("End", TimeSpan.FromSeconds(6), TimeSpan.FromSeconds(9)),
+                        ]
+                    }
+                ],
+                StringComparer.Ordinal);
+
+            var result = await BuildConverter().ConvertAsync(
+                new ConversionRequest(plan, OutputPath, new AudioMetadata { Title = "Merged Book" }));
+
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(3, result.ChapterCount);
+
+            var chapters = await ReadChaptersAsync(OutputPath);
+            Assert.Equal(["Opening", "Middle", "End"], chapters.Select(c => c.Title));
+            Assert.Equal(3, chapters[1].Start, 1);
+            Assert.Equal(6, chapters[2].Start, 1);
         }
 
         // ---- failure paths ----------------------------------------------------------
@@ -314,6 +392,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
             public Task<string?> GetFfprobePathAsync() => Task.FromResult(ffprobePath);
             public Task<string?> EnsureFfprobeInstalledAsync() => Task.FromResult(ffprobePath);
             public Task<string> GetLicenseAsync() => Task.FromResult(string.Empty);
+
+            public Task<IReadOnlyList<EmbeddedChapter>> ReadChaptersAsync(
+                string filePath,
+                CancellationToken cancellationToken = default) =>
+                Task.FromResult<IReadOnlyList<EmbeddedChapter>>([]);
 
             public Task<AudioMetadata> RunFfprobeAsync(string filePath) =>
                 throw new NotSupportedException();

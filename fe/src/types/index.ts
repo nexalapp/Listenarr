@@ -401,6 +401,33 @@ export interface TranslatePathResponse {
   translated: boolean
 }
 
+export type ConversionJobStatus =
+  | 'Queued'
+  | 'Running'
+  | 'RetryScheduled'
+  | 'Completed'
+  | 'Failed'
+  | 'Cancelled'
+  | 'Superseded'
+
+/** One MP3-to-M4B conversion, as the server reports it over SignalR and REST. */
+export interface ConversionJobUpdate {
+  jobId: string
+  audiobookId: number
+  status: ConversionJobStatus | string
+  phase?: string
+  progress?: number
+  trigger?: string
+  sourceFileCount?: number
+  chapterCount?: number
+  error?: string | null
+  failureKind?: string | null
+  canRetry?: boolean
+  attemptCount?: number
+  enqueuedAt?: string
+  completedAt?: string | null
+}
+
 export interface ApplicationSettings {
   version: number
   outputPath: string
@@ -425,6 +452,12 @@ export interface ApplicationSettings {
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Convert imported MP3 audiobooks into a single chaptered M4B
+  convertMp3ToM4b?: boolean
+  // What happens to the source MP3s once a conversion has been verified
+  conversionSourceDisposition?: 'archive' | 'keep' | 'delete'
+  // Where archived source MP3s are moved to
+  conversionArchivePath?: string
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean

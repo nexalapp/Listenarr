@@ -98,24 +98,44 @@ namespace Listenarr.Domain.Audiobooks.Conversion
 
             var chapters = new List<ConversionChapter>(ordered.Count);
             var cursor = TimeSpan.Zero;
-            for (var i = 0; i < ordered.Count; i++)
+            foreach (var source in ordered)
             {
-                var source = ordered[i];
-
                 // A non-positive duration would collapse the chapter onto its neighbour
                 // and make the mark unusable, so clamp it to zero and let it carry the
                 // start offset forward without moving it.
                 var duration = source.Duration > TimeSpan.Zero ? source.Duration : TimeSpan.Zero;
-                var end = cursor + duration;
 
-                chapters.Add(new ConversionChapter(
-                    i + 1,
-                    BuildChapterTitle(source, i + 1),
-                    cursor,
-                    end,
-                    source.FullPath));
+                // A file that already carries chapter marks keeps them. A book previously
+                // merged into one chaptered MP3 is the case that matters: treating it as
+                // one chapter would discard every mark it has, and the merge is exactly
+                // why someone would convert it.
+                var embedded = NormaliseEmbeddedChapters(source, duration);
+                if (embedded.Count > 0)
+                {
+                    foreach (var chapter in embedded)
+                    {
+                        chapters.Add(new ConversionChapter(
+                            chapters.Count + 1,
+                            !string.IsNullOrWhiteSpace(chapter.Title)
+                                && !TitleWithoutWords.IsMatch(chapter.Title)
+                                    ? chapter.Title.Trim()
+                                    : $"Chapter {chapters.Count + 1}",
+                            cursor + chapter.Start,
+                            cursor + chapter.End,
+                            source.FullPath));
+                    }
+                }
+                else
+                {
+                    chapters.Add(new ConversionChapter(
+                        chapters.Count + 1,
+                        BuildChapterTitle(source, chapters.Count + 1),
+                        cursor,
+                        cursor + duration,
+                        source.FullPath));
+                }
 
-                cursor = end;
+                cursor += duration;
             }
 
             return new ConversionPlan(
@@ -184,6 +204,50 @@ namespace Listenarr.Domain.Audiobooks.Conversion
 
             return Math.Min(best, 2);
         }
+
+        /// <summary>
+        /// Put a file's own chapter marks into usable shape: ordered, inside the file,
+        /// and non-empty.
+        ///
+        /// These come from whatever tool wrote the file, so they cannot be trusted to be
+        /// sorted, to stay within the audio, or to have sensible ends. A mark outside the
+        /// file would land in a neighbouring chapter's audio once offset.
+        /// </summary>
+        private static List<EmbeddedChapter> NormaliseEmbeddedChapters(
+            ConversionSource source,
+            TimeSpan duration)
+        {
+            var embedded = source.EmbeddedChapters;
+            if (embedded == null || embedded.Count == 0 || duration <= TimeSpan.Zero)
+            {
+                return [];
+            }
+
+            var results = new List<EmbeddedChapter>(embedded.Count);
+            foreach (var chapter in embedded.OrderBy(c => c.Start))
+            {
+                var start = Clamp(chapter.Start, TimeSpan.Zero, duration);
+                var end = Clamp(chapter.End, start, duration);
+                if (end <= start)
+                {
+                    continue;
+                }
+
+                results.Add(new EmbeddedChapter(chapter.Title, start, end));
+            }
+
+            // A single mark spanning the file says no more than one chapter per file
+            // already does, so fall back and let the filename supply a better title.
+            if (results.Count == 1 && results[0].Start == TimeSpan.Zero && results[0].End >= duration)
+            {
+                return [];
+            }
+
+            return results;
+        }
+
+        private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max) =>
+            value < min ? min : value > max ? max : value;
 
         /// <summary>
         /// Prefer the embedded title, fall back to the filename, and fall back again to

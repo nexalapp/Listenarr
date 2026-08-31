@@ -110,6 +110,54 @@
       </FormRow>
 
       <FormRow
+        label="Convert MP3 Audiobooks to M4B"
+        help="Fold a book's MP3 files into a single M4B with one chapter per file. Conversion runs as a background job, and the originals are left alone until the result is verified."
+      >
+        <label class="conversion-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.convertMp3ToM4b === true"
+            @change="(e) => updateField('convertMp3ToM4b', (e.target as HTMLInputElement).checked)"
+          />
+          <span>Convert automatically on import</span>
+        </label>
+        <p class="conversion-note">
+          You can always convert a single book from its page, whether or not this is on.
+        </p>
+      </FormRow>
+
+      <FormRow
+        label="After Conversion"
+        help="What happens to the source MP3s once the M4B has been read back and its chapters verified. Nothing here runs if the conversion fails."
+      >
+        <select
+          :value="settings.conversionSourceDisposition ?? 'archive'"
+          @change="
+            (e) => updateField('conversionSourceDisposition', (e.target as HTMLSelectElement).value)
+          "
+        >
+          <option value="archive">Move the MP3s to the archive path</option>
+          <option value="keep">Leave the MP3s on disk</option>
+          <option value="delete">Delete the MP3s</option>
+        </select>
+      </FormRow>
+
+      <FormRow
+        v-if="(settings.conversionSourceDisposition ?? 'archive') === 'archive'"
+        label="Conversion Archive Path"
+        help="Where source MP3s are moved after a verified conversion. Each book gets its own folder. Leave this empty and the MP3s stay where they are."
+      >
+        <input
+          type="text"
+          :value="settings.conversionArchivePath ?? ''"
+          placeholder="/mnt/user/audiobooks-archive"
+          @change="
+            (e) => updateField('conversionArchivePath', (e.target as HTMLInputElement).value)
+          "
+        />
+      </FormRow>
+
+      <FormRow
         label="Import Blacklist Extensions"
         help="Extensions to skip during library import and completed-download import. Separate values with commas or new lines, for example: .nfo, .sfv, .jpg"
       >
@@ -660,6 +708,25 @@ h3 svg {
 
 .path-length-ok {
   margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+.conversion-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.conversion-toggle input {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+.conversion-note {
+  margin: 0.5rem 0 0;
   font-size: 0.8rem;
   color: #6c757d;
 }

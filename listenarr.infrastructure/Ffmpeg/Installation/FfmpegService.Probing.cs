@@ -3,6 +3,7 @@
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Listenarr.Domain.Common;
@@ -123,6 +124,124 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
             _logger.LogDebug("Parsed metadata: Duration={Duration} seconds, Format={Format}, Bitrate={Bitrate}, SampleRate={SampleRate}, Channels={Channels}", metadata.Duration.TotalSeconds, metadata.Format, metadata.BitRate, metadata.SampleRate, metadata.Channels);
 
             return metadata;
+        }
+
+        public async Task<IReadOnlyList<EmbeddedChapter>> ReadChaptersAsync(
+            string filePath,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+            if (!File.Exists(_ffprobePath) || !File.Exists(filePath))
+            {
+                return [];
+            }
+
+            if (!FileSystemSafety.TryValidateMutationTarget(
+                    _ffprobePath,
+                    [_baseDir],
+                    out var safeFfprobePath,
+                    out _))
+            {
+                return [];
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = safeFfprobePath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-v");
+            startInfo.ArgumentList.Add("error");
+            startInfo.ArgumentList.Add("-print_format");
+            startInfo.ArgumentList.Add("json");
+            startInfo.ArgumentList.Add("-show_chapters");
+            startInfo.ArgumentList.Add(Path.GetFullPath(filePath));
+
+            ProcessResult probe;
+            try
+            {
+                probe = await _processRunner.RunAsync(startInfo, 30_000, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Could not read chapters from {File}",
+                    LogRedaction.SanitizeFilePath(filePath));
+                return [];
+            }
+
+            if (probe.TimedOut || probe.ExitCode != 0 || string.IsNullOrWhiteSpace(probe.Stdout))
+            {
+                return [];
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(probe.Stdout);
+                if (!document.RootElement.TryGetProperty("chapters", out var chapters))
+                {
+                    return [];
+                }
+
+                var results = new List<EmbeddedChapter>(chapters.GetArrayLength());
+                foreach (var chapter in chapters.EnumerateArray())
+                {
+                    if (!TryReadSeconds(chapter, "start_time", out var start)
+                        || !TryReadSeconds(chapter, "end_time", out var end))
+                    {
+                        continue;
+                    }
+
+                    string? title = null;
+                    if (chapter.TryGetProperty("tags", out var tags)
+                        && tags.TryGetProperty("title", out var titleValue))
+                    {
+                        title = titleValue.GetString();
+                    }
+
+                    results.Add(new EmbeddedChapter(
+                        title,
+                        TimeSpan.FromSeconds(start),
+                        TimeSpan.FromSeconds(end)));
+                }
+
+                return results;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Could not parse chapters from {File}",
+                    LogRedaction.SanitizeFilePath(filePath));
+                return [];
+            }
+        }
+
+        private static bool TryReadSeconds(JsonElement element, string property, out double seconds)
+        {
+            seconds = 0;
+            if (!element.TryGetProperty(property, out var value))
+            {
+                return false;
+            }
+
+            // ffprobe writes these as strings, but a build that emits numbers should not
+            // silently produce a book with no chapters.
+            return value.ValueKind switch
+            {
+                JsonValueKind.String => double.TryParse(
+                    value.GetString(),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out seconds),
+                JsonValueKind.Number => value.TryGetDouble(out seconds),
+                _ => false
+            };
         }
 
         public string FfprobePath

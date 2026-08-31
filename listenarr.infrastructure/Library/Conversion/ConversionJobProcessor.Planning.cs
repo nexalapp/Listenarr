@@ -68,6 +68,11 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 // the same convention the importer uses.
                 bookTags ??= HasUsableTags(metadata) ? metadata : null;
 
+                // A file may already carry chapter marks — a book previously merged into
+                // one chaptered MP3 keeps them in ID3 CHAP frames. Reading them is what
+                // stops the conversion from flattening that book into one chapter.
+                var embeddedChapters = await ffmpegService.ReadChaptersAsync(path, cancellationToken);
+
                 sources.Add(new ConversionSource(
                     path,
                     BuildRelativePath(audiobook, path),
@@ -75,7 +80,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     metadata.BitRate,
                     metadata.SampleRate,
                     metadata.Channels,
-                    metadata.Title));
+                    metadata.Title,
+                    embeddedChapters));
             }
 
             if (sources.Count == 0)

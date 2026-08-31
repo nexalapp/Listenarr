@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Domain.Audiobooks.Conversion;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Domain.Audiobooks.Conversion
@@ -173,6 +172,114 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Conversion
             Assert.Equal(TimeSpan.Zero, plan.Chapters[0].End);
             Assert.Equal(TimeSpan.Zero, plan.Chapters[1].Start);
             Assert.Equal(TimeSpan.FromSeconds(30), plan.Chapters[1].End);
+        }
+
+        // ---- files that already carry chapters --------------------------------------
+
+        [Fact]
+        public void BuildPlan_KeepsChaptersOfAnAlreadyMergedFile()
+        {
+            // A book previously merged into one chaptered MP3. Treating it as a single
+            // chapter would discard every mark it has, and that merge is exactly why
+            // someone would convert it to M4B.
+            var merged = Source("Whole Book.mp3", seconds: 90) with
+            {
+                EmbeddedChapters =
+                [
+                    new EmbeddedChapter("Opening", TimeSpan.Zero, TimeSpan.FromSeconds(30)),
+                    new EmbeddedChapter("Middle", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60)),
+                    new EmbeddedChapter("End", TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(90)),
+                ]
+            };
+
+            var plan = ConversionPlanner.BuildPlan([merged], StringComparer.Ordinal);
+
+            Assert.Equal(["Opening", "Middle", "End"], plan.Chapters.Select(c => c.Title));
+            Assert.Equal([1, 2, 3], plan.Chapters.Select(c => c.Number));
+            Assert.Equal(TimeSpan.FromSeconds(30), plan.Chapters[1].Start);
+            Assert.Equal(TimeSpan.FromSeconds(90), plan.TotalDuration);
+        }
+
+        [Fact]
+        public void BuildPlan_OffsetsEmbeddedChaptersByThePrecedingFiles()
+        {
+            var first = Source("01.mp3", seconds: 20);
+            var second = Source("02.mp3", seconds: 60) with
+            {
+                EmbeddedChapters =
+                [
+                    new EmbeddedChapter("Part A", TimeSpan.Zero, TimeSpan.FromSeconds(30)),
+                    new EmbeddedChapter("Part B", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60)),
+                ]
+            };
+
+            var plan = ConversionPlanner.BuildPlan([first, second], StringComparer.Ordinal);
+
+            Assert.Equal(3, plan.Chapters.Count);
+            // The second file's own marks are relative to itself and have to shift by the
+            // 20 seconds that play before it.
+            Assert.Equal(TimeSpan.FromSeconds(20), plan.Chapters[1].Start);
+            Assert.Equal("Part A", plan.Chapters[1].Title);
+            Assert.Equal(TimeSpan.FromSeconds(50), plan.Chapters[2].Start);
+            Assert.Equal(TimeSpan.FromSeconds(80), plan.TotalDuration);
+        }
+
+        [Fact]
+        public void BuildPlan_IgnoresASingleChapterSpanningTheWholeFile()
+        {
+            // Some tools write one mark covering everything, which says no more than
+            // one-chapter-per-file already does and has a worse title.
+            var source = Source("A Long Expected Party.mp3", seconds: 60) with
+            {
+                EmbeddedChapters =
+                [
+                    new EmbeddedChapter("track 1", TimeSpan.Zero, TimeSpan.FromSeconds(60)),
+                ]
+            };
+
+            var plan = ConversionPlanner.BuildPlan([source], StringComparer.Ordinal);
+
+            Assert.Single(plan.Chapters);
+            Assert.Equal("A Long Expected Party", plan.Chapters[0].Title);
+        }
+
+        [Fact]
+        public void BuildPlan_OrdersAndClampsUntrustworthyEmbeddedChapters()
+        {
+            // The marks come from whatever tool wrote the file: they can arrive unsorted,
+            // run past the end of the audio, or be empty. A mark past the end would land
+            // in the next file's audio once offset.
+            var source = Source("Whole Book.mp3", seconds: 60) with
+            {
+                EmbeddedChapters =
+                [
+                    new EmbeddedChapter("Second", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(120)),
+                    new EmbeddedChapter("First", TimeSpan.Zero, TimeSpan.FromSeconds(30)),
+                    new EmbeddedChapter("Empty", TimeSpan.FromSeconds(45), TimeSpan.FromSeconds(45)),
+                ]
+            };
+
+            var plan = ConversionPlanner.BuildPlan([source], StringComparer.Ordinal);
+
+            Assert.Equal(["First", "Second"], plan.Chapters.Select(c => c.Title));
+            Assert.Equal(TimeSpan.FromSeconds(60), plan.Chapters[1].End);
+        }
+
+        [Fact]
+        public void BuildPlan_NamesAnUntitledEmbeddedChapterByItsNumber()
+        {
+            var source = Source("Whole Book.mp3", seconds: 60) with
+            {
+                EmbeddedChapters =
+                [
+                    new EmbeddedChapter(null, TimeSpan.Zero, TimeSpan.FromSeconds(30)),
+                    new EmbeddedChapter("  ", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60)),
+                ]
+            };
+
+            var plan = ConversionPlanner.BuildPlan([source], StringComparer.Ordinal);
+
+            Assert.Equal(["Chapter 1", "Chapter 2"], plan.Chapters.Select(c => c.Title));
         }
 
         // ---- encode parameters ------------------------------------------------------

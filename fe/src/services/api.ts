@@ -17,6 +17,7 @@
  */
 import type {
   SearchResult,
+  ConversionJobUpdate,
   Download,
   ApiConfiguration,
   DownloadClientConfiguration,
@@ -1457,6 +1458,27 @@ class ApiService {
     blockingJobIds: string[]
   }> {
     return this.request(`/library/${audiobookId}/move/recovery`)
+  }
+
+  /** Queue a manual MP3-to-M4B conversion for one book. */
+  async convertAudiobook(
+    audiobookId: number,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/conversion/audiobooks/${audiobookId}`, { method: 'POST' })
+  }
+
+  /** Re-run a conversion that failed. */
+  async retryConversion(
+    jobId: string,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/conversion/jobs/${encodeURIComponent(jobId)}/retry`, {
+      method: 'POST',
+    })
+  }
+
+  /** Active conversions plus recently finished ones. */
+  async getConversionJobs(): Promise<ConversionJobUpdate[]> {
+    return this.request<ConversionJobUpdate[]>('/conversion/jobs')
   }
 
   async requeueMoveJob(jobId: string): Promise<{ message: string; jobId: string }> {

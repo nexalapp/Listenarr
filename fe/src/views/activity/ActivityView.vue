@@ -205,7 +205,12 @@
           <ul class="block-reason-list">
             <li v-for="(line, index) in blockDetailLines" :key="index">{{ line }}</li>
           </ul>
-          <p class="warning-text">
+          <p v-if="blockDetailsIsConversion" class="warning-text">
+            <PhInfo />
+            Retrying re-runs the conversion from the original files, which have been left exactly as
+            they were. Nothing in the library was replaced.
+          </p>
+          <p v-else class="warning-text">
             <PhInfo />
             Retrying re-runs the import against the same files. If the path is not reachable from
             Listenarr, add a remote path mapping for this client in Settings first.
@@ -313,6 +318,7 @@ import { signalRService } from '@/services/signalr'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore, type TrackedMoveJob } from '@/stores/moveJobs'
+import { useConversionJobsStore, type TrackedConversionJob } from '@/stores/conversionJobs'
 import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
@@ -321,6 +327,7 @@ import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
 const moveJobsStore = useMoveJobsStore()
+const conversionJobsStore = useConversionJobsStore()
 const configStore = useConfigurationStore()
 
 const filterText = ref('')
@@ -574,6 +581,48 @@ const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
   canRemove: false,
 })
 
+/**
+ * A conversion reports the same way an import does: one row, a progress bar while
+ * it runs, and on failure a clickable status carrying the reason and a retry.
+ */
+const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem => {
+  const failed = job.status === 'Failed'
+  const phaseLabel = CONVERSION_PHASE_LABELS[job.phase] ?? 'Converting'
+
+  return {
+    id: `conversion:${job.jobId}`,
+    title: 'Convert to M4B',
+    audiobookId: job.audiobookId,
+    status: failed ? 'importblocked' : job.status === 'Running' ? 'processing' : 'queued',
+    progress: job.progress,
+    size: 0,
+    downloaded: 0,
+    downloadSpeed: 0,
+    eta: undefined,
+    quality: '',
+    downloadClient: failed
+      ? 'MP3 to M4B'
+      : `MP3 to M4B · ${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
+    downloadClientId: 'LISTENARR_CONVERSION',
+    downloadClientType: 'conversion',
+    addedAt: '',
+    errorMessage: job.error ?? undefined,
+    canPause: false,
+    canRemove: false,
+    canRetryImport: failed && job.canRetry,
+  }
+}
+
+// Phase names come from the server as enum names; these are what an operator reads.
+const CONVERSION_PHASE_LABELS: Record<string, string> = {
+  None: 'Waiting',
+  Probing: 'Reading source files',
+  Encoding: 'Encoding',
+  Verifying: 'Verifying',
+  Publishing: 'Publishing',
+  RetiringSources: 'Tidying up sources',
+}
+
 // Read user preference from configuration store
 const showCompletedExternalDownloads = computed(
   () => configStore.applicationSettings?.showCompletedExternalDownloads ?? false,
@@ -685,6 +734,16 @@ const allActivityItems = computed(() => {
       finalMap.set(item.id, item)
     }
   }
+  // Active conversions, plus failed ones: a failure the operator has to act on
+  // must stay on screen. Completed conversions drop out like any finished work.
+  for (const job of conversionJobsStore.jobs) {
+    if (job.status === 'Completed' || job.status === 'Cancelled' || job.status === 'Superseded') {
+      continue
+    }
+
+    const item = convertConversionJobToQueueItem(job)
+    finalMap.set(item.id, item)
+  }
   for (const it of combined) finalMap.set(it.id, it)
   for (const it of completedExternal) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
   for (const it of failedFromDownloads) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
@@ -738,6 +797,10 @@ const blockDetailLines = computed(() =>
     .filter(Boolean),
 )
 
+const blockDetailsIsConversion = computed(
+  () => blockDetailsItem.value?.id.startsWith('conversion:') ?? false,
+)
+
 const openBlockDetails = (item: QueueItem) => {
   blockDetailsItem.value = item
 }
@@ -745,7 +808,12 @@ const openBlockDetails = (item: QueueItem) => {
 const retryImport = async (item: QueueItem) => {
   retryingImportId.value = item.id
   try {
-    await apiService.retryImport(item.id)
+    if (item.id.startsWith('conversion:')) {
+      await conversionJobsStore.retry(item.id.slice('conversion:'.length))
+    } else {
+      await apiService.retryImport(item.id)
+    }
+
     blockDetailsItem.value = null
     await refreshQueue()
   } catch (err) {
@@ -855,6 +923,7 @@ const formatEta = (seconds: number): string => {
 // Subscribe to SignalR for real-time updates
 onMounted(async () => {
   moveJobsStore.start()
+  conversionJobsStore.start()
   updateActivityLayoutMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleViewportResize, { passive: true })

@@ -70,6 +70,38 @@ server itself against local disk. See `deploy/unraid/README.md`.
 root folder is configured, and the existing library has not been validated
 against the scanner. Drop `:ro` only after a scan looks correct.
 
+**ffmpeg is enough for M4B; m4b-tool is not needed.** Verified by inspecting the
+bytes ffmpeg produces: it writes the `desc` atom (the whole reason for this fork),
+`chpl` Nero chapters *and* a QuickTime chapter track, and `covr` cover art. What
+m4b-tool would add — libfdk_aac, silence-based chapter splitting, an AAC remux
+path — is irrelevant under a 128k cap, for one-file-per-chapter sources, and for
+MP3 input. It would cost a PHP runtime plus mp4v2 in an image that has neither.
+
+**Conversion uses ffmpeg's concat *filter*, never the concat demuxer.** The
+demuxer adopts the first input's sample rate and channel layout for the whole
+book — a 44.1kHz stereo chapter after a 22kHz mono one is silently downmixed,
+with no error — and its output drifts from the nominal duration, walking the
+chapter marks out of sync over a long book. Measured: 110ms of drift over two
+files through the demuxer, 0ms through the filter.
+
+**A source file's own chapters are preserved.** ffprobe reads ID3 CHAP frames, so
+a book already merged into one chaptered MP3 keeps its marks (offset by the files
+before it). Converting such a book is the *most* valuable case here, because ID3
+cannot carry `desc` at all.
+
+**Conversion writes outside the library, then publishes through `FileMover`.**
+`BackendArchitectureTests.LibraryFilesystem_HasNoListenarrScratchNamespaceProtocol`
+forbids a scratch namespace in the library filesystem, and a half-written encode
+beside the book is exactly what that prevents — nothing reading the directory can
+tell it from a real file.
+
+**Conversion hooks scan completion, because that is where the two import paths
+converge.** The download path goes through `IDownloadImportService`; the
+manual/library path does not (`ManualImportController` composes its own
+dependencies). Both finish by calling `IScanQueueService.EnqueueScanAsync` with
+the audiobook. Hooking file registration instead would fire once per file and put
+a side effect inside the registration lease's rollback path.
+
 **Parsing is derived from the configured naming pattern, not hardcoded.**
 `PathMetadataParser` previously used a fixed regex that could never match the
 folders the renamer produces under the default pattern. It now builds a matcher

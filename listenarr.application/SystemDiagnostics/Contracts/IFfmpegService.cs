@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Conversion;
+
 namespace Listenarr.Application.SystemDiagnostics.Contracts
 {
     public interface IFfmpegService
@@ -61,6 +63,17 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
         /// mapping the separate public media identity.
         /// </summary>
         Task<AudioMetadata> RunFfprobeAsync(MetadataFileSource fileSource);
+
+        /// <summary>
+        /// Read the chapter marks a file already carries, in file order.
+        ///
+        /// Returns an empty list when it has none. A book previously merged into one
+        /// chaptered MP3 keeps its marks in ID3 CHAP frames, and a conversion that did
+        /// not read them would collapse the whole book into a single chapter.
+        /// </summary>
+        Task<IReadOnlyList<EmbeddedChapter>> ReadChaptersAsync(
+            string filePath,
+            CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Give license notice content from FFprobe

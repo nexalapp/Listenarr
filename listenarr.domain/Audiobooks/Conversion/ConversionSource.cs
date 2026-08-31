@@ -32,6 +32,11 @@ namespace Listenarr.Domain.Audiobooks.Conversion
     /// <param name="SampleRate">Source sample rate in Hz, when known.</param>
     /// <param name="Channels">Source channel count, when known.</param>
     /// <param name="EmbeddedTitle">Embedded title tag, used as a chapter name when meaningful.</param>
+    /// <param name="EmbeddedChapters">
+    /// Chapter marks the file already carries, relative to its own start. A book that
+    /// was previously merged into one chaptered MP3 keeps those marks in ID3 CHAP
+    /// frames, and treating that file as a single chapter would throw them away.
+    /// </param>
     public sealed record ConversionSource(
         string FullPath,
         string? RelativePath,
@@ -39,7 +44,13 @@ namespace Listenarr.Domain.Audiobooks.Conversion
         int? BitRate,
         int? SampleRate,
         int? Channels,
-        string? EmbeddedTitle = null);
+        string? EmbeddedTitle = null,
+        IReadOnlyList<EmbeddedChapter>? EmbeddedChapters = null);
+
+    /// <summary>
+    /// A chapter mark read from a source file, with times relative to that file.
+    /// </summary>
+    public sealed record EmbeddedChapter(string? Title, TimeSpan Start, TimeSpan End);
 
     /// <summary>
     /// One chapter in the output, in the order it will be written.

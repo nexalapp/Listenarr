@@ -44,6 +44,13 @@ namespace Listenarr.Tests.Mocks
             return _ffmpegPath;
         }
 
+        public Task<IReadOnlyList<EmbeddedChapter>> ReadChaptersAsync(
+            string filePath,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<EmbeddedChapter>>([]);
+        }
+
         public async Task<string> GetLicenseAsync()
         {
             return "LICENSED Listenarr mock corp. V0";
