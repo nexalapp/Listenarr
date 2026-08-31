@@ -177,6 +177,7 @@
 
           <div class="status-badges author-hero-badges">
             <Pill
+              v-if="!seriesIsLibraryOnly || isCurrentSeriesMonitored"
               interactive
               :variant="isCurrentSeriesMonitored ? 'primary' : 'default'"
               :disabled="seriesMonitoringBusy || seriesMetadataRefreshBusy"
@@ -189,11 +190,27 @@
               <component v-else :is="isCurrentSeriesMonitored ? PhEye : PhEyeSlash" />
               {{ isCurrentSeriesMonitored ? 'Monitoring Series' : 'Not Monitored' }}
             </Pill>
+            <Pill
+              v-if="seriesMonitoringLastError"
+              variant="warning"
+              :title="seriesMonitoringLastError"
+            >
+              Last sync failed
+            </Pill>
+            <Pill
+              v-if="seriesIsLibraryOnly"
+              variant="info"
+              title="Audible has no series under this name, so there is no catalog to refresh or monitor. The books below come from your library."
+            >
+              Not on Audible
+            </Pill>
             <Pill variant="success"> {{ seriesLibraryCount }} in library </Pill>
             <Pill v-if="seriesNotAddedCount > 0" variant="warning">
               {{ seriesNotAddedCount }} ready to add
             </Pill>
-            <Pill variant="primary"> {{ seriesCatalogTotalCount }} total books </Pill>
+            <Pill v-if="!seriesIsLibraryOnly" variant="primary">
+              {{ seriesCatalogTotalCount }} total books
+            </Pill>
             <Pill variant="info">
               {{ seriesLanguageLabel }}
             </Pill>
@@ -307,6 +324,7 @@
         <div v-else-if="isSeriesCollection" class="author-monitoring-controls">
           <div class="author-monitoring-actions">
             <button
+              v-if="!seriesIsLibraryOnly"
               class="toolbar-btn author-refresh-btn"
               :disabled="seriesMetadataRefreshBusy"
               @click="refreshSeriesMetadata"
@@ -317,6 +335,7 @@
               Refresh Series Metadata
             </button>
             <button
+              v-if="!seriesIsLibraryOnly || isCurrentSeriesMonitored"
               class="toolbar-btn author-monitor-btn"
               :class="{ active: isCurrentSeriesMonitored }"
               :disabled="seriesMonitoringBusy || seriesMetadataRefreshBusy"
@@ -897,6 +916,10 @@ const authorMetadataRefreshBusy = ref(false)
 const seriesCatalog = ref<SeriesCatalogResponse | null>(null)
 const seriesCatalogLoading = ref(false)
 const seriesCatalogError = ref<string | null>(null)
+// True only once Audible has answered that it has no catalog under this name — the shape a
+// series that exists solely in this library takes. A failed request leaves it false, because
+// "we could not ask" is not "the answer is no".
+const seriesCatalogUnmatched = ref(false)
 const seriesCatalogRequestId = ref(0)
 const seriesLookup = ref<SeriesLookupResponse | null>(null)
 const seriesLookupLoading = ref(false)
@@ -1425,6 +1448,20 @@ const seriesHeroDescriptionText = computed(() =>
     ? seriesHeroBiography.value
     : `${seriesHeroBiography.value.slice(0, 360).trimEnd()}...`,
 )
+// Both series metadata actions run through Audible: refreshing re-fetches the catalog, and
+// monitoring stores a row whose every sync re-fetches it too. Without an ASIN the refresh can
+// only 404 and the monitor can only accumulate sync failures, so a series Audible has never
+// heard of is offered neither. Requires a definitive "no" — a failed lookup keeps both on.
+const seriesHasAudibleMatch = computed(() =>
+  Boolean(seriesHeroAsin.value || seriesMonitoringStatus.value?.seriesAsin),
+)
+const seriesIsLibraryOnly = computed(
+  () => isSeriesCollection.value && seriesCatalogUnmatched.value && !seriesHasAudibleMatch.value,
+)
+// A monitored series whose sync keeps failing looks identical to a healthy one otherwise:
+// the pill says "Monitoring Series" and nothing ever arrives.
+const seriesMonitoringLastError = computed(() => seriesMonitoringStatus.value?.lastError || '')
+
 const seriesHeroPosterBooks = computed(() =>
   audiobooks.value.filter((book) => Boolean(book.imageUrl)).slice(0, 8),
 )
@@ -1659,6 +1696,7 @@ async function loadSeriesCatalog(refresh = false): Promise<SeriesCatalogResponse
   if (!isSeriesCollection.value) {
     seriesCatalog.value = null
     seriesCatalogError.value = null
+    seriesCatalogUnmatched.value = false
     seriesCatalogLoading.value = false
     return null
   }
@@ -1677,13 +1715,16 @@ async function loadSeriesCatalog(refresh = false): Promise<SeriesCatalogResponse
     if (requestId !== seriesCatalogRequestId.value) return null
 
     if (!response) {
+      // Audible knows no series by this name. That is a fact about the series, not an error
+      // to report: the collection still renders from the library books that named it.
       if (!refresh) {
         seriesCatalog.value = null
       }
-      seriesCatalogError.value = 'Failed to load the full series catalog.'
+      seriesCatalogUnmatched.value = true
       return null
     }
 
+    seriesCatalogUnmatched.value = false
     seriesCatalog.value = response
     return response
   } catch (err) {
@@ -1694,6 +1735,7 @@ async function loadSeriesCatalog(refresh = false): Promise<SeriesCatalogResponse
     } else {
       seriesCatalog.value = previousCatalog
     }
+    seriesCatalogUnmatched.value = false
     seriesCatalogError.value =
       err instanceof Error ? err.message : 'Failed to load the full series catalog.'
     errorTracking.captureException(err as Error, {
@@ -1855,6 +1897,7 @@ async function loadCollectionData(forceLibrary = false, forceAuthorMetadataRefre
     authorMonitoringStatus.value = null
     seriesCatalog.value = null
     seriesCatalogError.value = null
+    seriesCatalogUnmatched.value = false
     seriesLookup.value = null
     seriesLookupLoading.value = false
     seriesMonitoringStatus.value = null
@@ -1947,6 +1990,9 @@ async function refreshAuthorMetadata() {
 
 async function refreshSeriesMetadata() {
   if (!isSeriesCollection.value || seriesMetadataRefreshBusy.value) return
+  // Nothing to refresh against: the request would 404 and toast a failure the user can do
+  // nothing about.
+  if (seriesIsLibraryOnly.value) return
 
   seriesMetadataRefreshBusy.value = true
   try {
@@ -2078,6 +2124,9 @@ async function toggleAuthorMonitoring() {
 
 async function toggleSeriesMonitoring() {
   if (!isSeriesCollection.value || seriesMonitoringBusy.value) return
+  // Turning monitoring OFF stays available whatever the series is; turning it on for a series
+  // with no catalog would only store a row that fails every sync.
+  if (seriesIsLibraryOnly.value && !seriesMonitoringStatus.value) return
 
   seriesMonitoringBusy.value = true
   try {
@@ -2326,6 +2375,9 @@ watch([type, name], async () => {
   lastClickedIndex.value = null
   showFullAuthorDescription.value = false
   showFullSeriesDescription.value = false
+  // The previous series' answer says nothing about this one. Held across an in-flight
+  // reload of the same series, though, so the metadata actions do not flicker back.
+  seriesCatalogUnmatched.value = false
   libraryStore.clearSelection()
   await loadCollectionData(false)
 })

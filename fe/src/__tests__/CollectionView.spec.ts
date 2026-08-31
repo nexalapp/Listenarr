@@ -1386,6 +1386,204 @@ describe('CollectionView', () => {
     expect(mockToastSuccess).toHaveBeenCalled()
   })
 
+  it('offers no Audible-only actions for a series Audible has never heard of', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    mockGetApplicationSettings.mockResolvedValue({
+      defaultSearchRegion: 'us',
+      defaultSearchLanguage: 'english',
+    })
+    // Both metadata endpoints 404 for a series that only exists in this library.
+    mockGetSeriesCatalog.mockResolvedValue(null)
+    mockGetSeriesLookup.mockResolvedValue(null)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+
+    await router.push('/collection/series/Homemade%20Saga')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    const localLibrary = [
+      {
+        id: 1,
+        title: 'Book One',
+        authors: ['Some Author'],
+        series: 'Homemade Saga',
+        seriesNumber: '1',
+        imageUrl: 'b1.jpg',
+        files: [],
+      },
+      {
+        id: 2,
+        title: 'Book Two',
+        authors: ['Some Author'],
+        series: 'Homemade Saga',
+        seriesNumber: '2',
+        imageUrl: 'b2.jpg',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks = localLibrary
+    mockGetLibrary.mockResolvedValue(localLibrary)
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+
+    await flushPromises()
+
+    // The page itself is not gated on Audible: hero and library books still render.
+    expect(wrapper.find('.series-hero-section').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Homemade Saga')
+    expect(wrapper.text()).toContain('Book One')
+    expect(wrapper.text()).toContain('Book Two')
+    expect(wrapper.text()).toContain('2 in library')
+
+    // The two actions that can only fail are gone, and their absence is explained.
+    expect(wrapper.find('.author-refresh-btn').exists()).toBe(false)
+    expect(wrapper.find('.author-monitor-btn').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Not on Audible')
+    expect(wrapper.text()).not.toContain('Not Monitored')
+    // "N total books" would just restate the library count.
+    expect(wrapper.text()).not.toContain('total books')
+  })
+
+  it('keeps the series actions when the catalog request fails rather than 404s', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    mockGetApplicationSettings.mockResolvedValue({
+      defaultSearchRegion: 'us',
+      defaultSearchLanguage: 'english',
+    })
+    // A transient failure is not an answer about the series, so nothing may be withdrawn.
+    mockGetSeriesCatalog.mockRejectedValue(new Error('Network error'))
+    mockGetSeriesLookup.mockRejectedValue(new Error('Network error'))
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+
+    await router.push('/collection/series/Mistborn')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    const localLibrary = [
+      {
+        id: 1,
+        title: 'The Final Empire',
+        authors: ['Brandon Sanderson'],
+        series: 'Mistborn',
+        seriesNumber: '1',
+        imageUrl: 'book1.jpg',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks = localLibrary
+    mockGetLibrary.mockResolvedValue(localLibrary)
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('.author-refresh-btn').exists()).toBe(true)
+    expect(wrapper.find('.author-monitor-btn').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Not on Audible')
+  })
+
+  it('surfaces the last sync failure of a monitored series', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    mockGetApplicationSettings.mockResolvedValue({
+      defaultSearchRegion: 'us',
+      defaultSearchLanguage: 'english',
+    })
+    mockGetSeriesCatalog.mockResolvedValue(null)
+    mockGetSeriesLookup.mockResolvedValue(null)
+    // A series monitored before it was known to be library-only: every sync since has failed.
+    mockGetSeriesMonitoringStatus.mockResolvedValue({
+      isMonitored: true,
+      monitoredSeries: {
+        id: 4,
+        seriesName: 'Homemade Saga',
+        region: 'us',
+        language: 'english',
+        createdAt: '2026-03-18T00:00:00Z',
+        updatedAt: '2026-03-18T00:00:00Z',
+        lastError: 'Series catalog could not be loaded.',
+      },
+    })
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+
+    await router.push('/collection/series/Homemade%20Saga')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    const localLibrary = [
+      {
+        id: 1,
+        title: 'Book One',
+        authors: ['Some Author'],
+        series: 'Homemade Saga',
+        seriesNumber: '1',
+        imageUrl: 'b1.jpg',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks = localLibrary
+    mockGetLibrary.mockResolvedValue(localLibrary)
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Last sync failed')
+    // Monitoring can still be turned off, even though it could not be turned on here.
+    const monitorButton = wrapper.find('.author-monitor-btn')
+    expect(monitorButton.exists()).toBe(true)
+    expect(monitorButton.text()).toContain('Monitoring Series')
+
+    await monitorButton.trigger('click')
+    await flushPromises()
+
+    expect(mockUnmonitorSeries).toHaveBeenCalledWith(4)
+  })
+
   it('refreshes author metadata on demand with forced author lookups and catalog reloads', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
