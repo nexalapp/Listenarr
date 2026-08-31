@@ -115,3 +115,21 @@ export function stripHtmlAndNormalize(text: string | undefined | null): string {
 
   return decodeHtmlEntities(raw)
 }
+
+/**
+ * Shortens text for a collapsed block, ending on a word boundary so the "Show More"
+ * that follows it does not read as the tail of a chopped-up word. Returns the text
+ * unchanged when it already fits.
+ */
+export function truncateAtWord(text: string, limit: number): string {
+  const subject = (text || '').trim()
+  if (subject.length <= limit) return subject
+
+  // Back up to the last word break, unless doing so would throw away most of the
+  // window — a single very long run has no break worth honouring.
+  const window = subject.slice(0, limit)
+  const lastBreak = window.search(/\s\S*$/)
+  const cut = lastBreak > limit * 0.25 ? window.slice(0, lastBreak) : window
+
+  return `${cut.trimEnd().replace(/[.,;:!?]+$/, '')}...`
+}

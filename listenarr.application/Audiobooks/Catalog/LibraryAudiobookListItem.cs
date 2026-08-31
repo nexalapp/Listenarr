@@ -42,6 +42,16 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public string? FilePath { get; set; }
         public long? FileSize { get; set; }
         public int FileCount { get; set; }
+
+        /// <summary>
+        /// Distinct container formats of the book's files, uppercase and sorted — for
+        /// example ["MP3"] or ["M4B", "MP3"] for a book part-way through a conversion.
+        ///
+        /// A list rather than one value because a book can legitimately hold more than
+        /// one, and collapsing that would make it invisible to a filter. Empty when the
+        /// book has no registered files.
+        /// </summary>
+        public string[] Formats { get; set; } = [];
         public string? Quality { get; set; }
         public int? QualityProfileId { get; set; }
         public string[]? AuthorAsins { get; set; }

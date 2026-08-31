@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 import { describe, expect, it } from 'vitest'
-import { decodeHtmlEntities, stripHtmlAndNormalize } from '@/utils/textUtils'
+import { decodeHtmlEntities, stripHtmlAndNormalize, truncateAtWord } from '@/utils/textUtils'
 
 describe('textUtils', () => {
   it('decodes common named HTML entities', () => {
@@ -37,5 +37,28 @@ describe('textUtils', () => {
     expect(stripHtmlAndNormalize('<p>Hello&nbsp;<strong>world</strong></p><br>Next')).toBe(
       'Hello world\n\nNext',
     )
+  })
+})
+
+describe('truncateAtWord', () => {
+  it('leaves text that already fits alone', () => {
+    expect(truncateAtWord('Short enough.', 40)).toBe('Short enough.')
+    expect(truncateAtWord('', 40)).toBe('')
+  })
+
+  it('ends on a word boundary rather than mid-word', () => {
+    // A hard cut at 20 would land inside "internationally"
+    expect(truncateAtWord('He is the internationally acclaimed author', 20)).toBe('He is the...')
+  })
+
+  it('drops trailing punctuation so the ellipsis reads cleanly', () => {
+    expect(truncateAtWord('One sentence ends. Another begins here', 19)).toBe(
+      'One sentence ends...',
+    )
+  })
+
+  it('falls back to a hard cut when there is no usable break', () => {
+    const runOn = `${'x'.repeat(30)} tail`
+    expect(truncateAtWord(runOn, 10)).toBe('xxxxxxxxxx...')
   })
 })

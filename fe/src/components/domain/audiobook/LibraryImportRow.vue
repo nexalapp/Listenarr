@@ -18,13 +18,16 @@
 <template>
   <tr
     class="import-row"
-    :class="{ selected: item.selected, 'no-match': item.hasSearched && !item.selectedMatch }"
+    :class="{
+      selected: item.selected,
+      'no-match': item.hasSearched && !item.selectedMatch && !item.fileMetadata,
+    }"
   >
     <td class="cell-check">
       <input
         type="checkbox"
         :checked="item.selected"
-        :disabled="!item.selectedMatch"
+        :disabled="!item.selectedMatch && !item.fileMetadata"
         @change="store.toggleSelect(item.id)"
       />
     </td>
@@ -97,9 +100,33 @@
           </button>
         </div>
 
+        <div v-else-if="item.fileMetadata" class="match-status matched from-file">
+          <PhFileAudio :size="14" class="match-icon-file" />
+          <div class="match-text">
+            <span class="match-title">{{ item.fileMetadata.title || bookDisplayTitle }}</span>
+            <span v-if="fileMetadataAuthor" class="match-author">{{ fileMetadataAuthor }}</span>
+          </div>
+          <span class="from-file-badge" title="Read from the file's own tags">from file</span>
+          <button
+            class="btn-clear-match"
+            title="Clear file metadata"
+            @click="store.clearMatch(item.id)"
+          >
+            x
+          </button>
+        </div>
+
         <div v-else-if="item.hasSearched" class="match-status no-match">
           <PhWarningCircle :size="14" class="match-icon-warn" />
           <span>No match found</span>
+          <button
+            class="btn-use-file"
+            title="Use the title, author, narrator and cover stored in the file"
+            :disabled="item.isSearching"
+            @click="applyFileMetadata"
+          >
+            Use file metadata
+          </button>
         </div>
 
         <div v-else class="match-status unsearched">
@@ -127,8 +154,15 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { PhSpinner, PhCheckCircle, PhWarningCircle, PhMagnifyingGlass } from '@phosphor-icons/vue'
+import {
+  PhSpinner,
+  PhCheckCircle,
+  PhWarningCircle,
+  PhMagnifyingGlass,
+  PhFileAudio,
+} from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
+import { useToast } from '@/services/toastService'
 import type { LibraryImportItem } from '@/stores/libraryImport'
 import type { SearchResult } from '@/types'
 import LibraryImportSearchModal from './LibraryImportSearchModal.vue'
@@ -136,6 +170,7 @@ import LibraryImportSearchModal from './LibraryImportSearchModal.vue'
 const props = defineProps<{ item: LibraryImportItem }>()
 
 const store = useLibraryImportStore()
+const toast = useToast()
 const showSearchModal = ref(false)
 
 const bookDisplayTitle = computed(() => props.item.detectedTitle?.trim() || props.item.folderName)
@@ -152,6 +187,15 @@ function isAuthorMismatch(item: LibraryImportItem): boolean {
 
 function applyMatch(result: SearchResult) {
   store.selectMatch(props.item.id, result)
+}
+
+const fileMetadataAuthor = computed(() => props.item.fileMetadata?.authors?.[0] ?? '')
+
+async function applyFileMetadata() {
+  const metadata = await store.useFileMetadata(props.item.id)
+  if (!metadata) {
+    toast.error('No file metadata', 'No metadata could be read from this file.')
+  }
 }
 
 function formatGroupedFileLabel(sourceFile: string): string {
@@ -411,6 +455,42 @@ function formatGroupedFileLabel(sourceFile: string): string {
 
 .match-status.unsearched {
   color: #555;
+}
+
+.btn-use-file {
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+  background-color: rgba(148, 163, 184, 0.12);
+  color: var(--text-muted, #cfcfcf);
+  font-size: 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-use-file:hover:not(:disabled) {
+  background-color: rgba(148, 163, 184, 0.25);
+}
+
+.btn-use-file:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.from-file-badge {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background-color: rgba(148, 163, 184, 0.15);
+  color: var(--text-muted, #cfcfcf);
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
+.match-icon-file {
+  color: #94a3b8;
+  flex-shrink: 0;
 }
 
 .btn-clear-match {

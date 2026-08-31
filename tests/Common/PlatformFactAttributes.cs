@@ -65,6 +65,48 @@ public sealed class ReadOnlyBindMountFactAttribute : FactAttribute
     }
 }
 
+public sealed class CrossVolumeFactAttribute : FactAttribute
+{
+    public const string DestinationPathEnvironmentVariable =
+        "LISTENARR_CROSS_VOLUME_DESTINATION_PATH";
+
+    public CrossVolumeFactAttribute()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            Skip = "This test requires native Linux cross-volume storage.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
+                DestinationPathEnvironmentVariable)))
+        {
+            Skip = "The native test runner did not provide a destination on another filesystem.";
+        }
+    }
+}
+
+public sealed class NetworkStorageTheoryAttribute : TheoryAttribute
+{
+    public const string PathEnvironmentVariable =
+        "LISTENARR_NETWORK_STORAGE_PATH";
+
+    public NetworkStorageTheoryAttribute()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            Skip = "This test requires a native Linux network filesystem mount.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
+                PathEnvironmentVariable)))
+        {
+            Skip = "The native test runner did not provide a network filesystem mount.";
+        }
+    }
+}
+
 public sealed class DirectoryLinkFactAttribute : FactAttribute
 {
     public DirectoryLinkFactAttribute()
@@ -134,5 +176,52 @@ public sealed class LinuxDirectoryAndFileLinkFactAttribute : FactAttribute
         {
             Skip = decision.SkipReason;
         }
+    }
+}
+
+/// <summary>
+/// Requires ffmpeg and ffprobe on PATH. The Docker dev environment installs both;
+/// a host without an encoder cannot prove anything about conversion either way, so
+/// the test is skipped rather than failed there.
+/// </summary>
+public sealed class EncoderFactAttribute : FactAttribute
+{
+    public EncoderFactAttribute()
+    {
+        if (FindOnPath("ffmpeg") == null || FindOnPath("ffprobe") == null)
+        {
+            Skip = "This test requires ffmpeg and ffprobe on PATH.";
+        }
+    }
+
+    internal static string? FindOnPath(string binary)
+    {
+        var searchPath = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(searchPath))
+        {
+            return null;
+        }
+
+        var name = OperatingSystem.IsWindows() ? binary + ".exe" : binary;
+        foreach (var entry in searchPath.Split(
+                     Path.PathSeparator,
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                var candidate = Path.Combine(entry.Trim(), name);
+                if (File.Exists(candidate))
+                {
+                    return Path.GetFullPath(candidate);
+                }
+            }
+            catch (Exception ex) when (
+                ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // A malformed PATH entry is not a reason to stop searching.
+            }
+        }
+
+        return null;
     }
 }

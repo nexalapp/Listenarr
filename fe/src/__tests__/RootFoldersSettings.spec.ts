@@ -197,7 +197,7 @@ describe('RootFoldersSettings', () => {
     expect(wrapper.get('.relocation-affected summary').text()).toContain(
       '14 audiobooks need attention',
     )
-    expect(wrapper.get('a[href="/audiobooks/32"]').text()).toBe('Audiobook #32')
+    expect(wrapper.get('a[href="/books/32"]').text()).toBe('Audiobook #32')
     expect(wrapper.text()).toContain('Tracked file paths collide at this destination.')
     expect(wrapper.text()).not.toContain('Case-sensitive file paths collide')
     expect(
@@ -381,6 +381,27 @@ describe('RootFoldersSettings', () => {
     const details = wrapper.get('.storage-detail')
     expect(details.text()).toContain('Technical storage details')
     expect(details.text()).toContain('statx omitted birth time')
+    wrapper.unmount()
+  })
+
+  it('states that weak-storage moves copy and retain the source', async () => {
+    vi.mocked(apiService.getRootFolders).mockResolvedValue([
+      {
+        ...rootFolder(null),
+        storageState: 'Limited',
+        storageReason: 'IdentityUnsupported',
+        storageMessage: 'Durable file identity is unavailable.',
+        canPublishNewFiles: true,
+        canMutateFilesystem: false,
+      },
+    ])
+    const pinia = createReadyPinia()
+    const wrapper = mount(RootFoldersSettings, { global: { plugins: [pinia] } })
+    await flushPromises()
+
+    const policy = wrapper.get('[data-cy="compatibility-publication-message"]')
+    expect(policy.text()).toContain('will copy files into this storage and retain the source')
+    expect(policy.text()).toContain('will not attempt source cleanup')
     wrapper.unmount()
   })
 

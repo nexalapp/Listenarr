@@ -18,7 +18,7 @@
 <template>
   <div class="add-new-view">
     <div class="page-header">
-      <h1><PhPlusCircle /> Add New Audiobook</h1>
+      <h1><PhPlusCircle /> Add Audiobooks &amp; Series</h1>
     </div>
 
     <!-- Unified Search -->
@@ -44,6 +44,7 @@
               >
               <p class="search-help">
                 Enter an ASIN (e.g., B08G9PRS1K) or search by title and author.<br />
+                Use <strong>Advanced</strong> to search by series, narrator, or ISBN.
               </p>
             </div>
             <form
@@ -182,6 +183,21 @@
                   />
                 </div>
                 <div class="form-group">
+                  <label for="adv-narrator">Narrator</label>
+                  <input
+                    id="adv-narrator"
+                    aria-label="Narrator"
+                    v-model="advancedSearchParams.narrator"
+                    type="text"
+                    placeholder="e.g., Stephen Fry"
+                    class="form-input"
+                    @keydown.enter.prevent="performAdvancedSearch"
+                  />
+                  <div class="form-hint">
+                    <div>Searches Audible's narrator field, not just the title text.</div>
+                  </div>
+                </div>
+                <div class="form-group">
                   <label for="adv-series">Series</label>
                   <input
                     id="adv-series"
@@ -192,6 +208,9 @@
                     class="form-input"
                     @keydown.enter.prevent="performAdvancedSearch"
                   />
+                  <div class="form-hint">
+                    <div>Returns matching series you can monitor, plus the books in them.</div>
+                  </div>
                 </div>
               </div>
 
@@ -692,94 +711,139 @@
                 @error="handleLazyImageError"
               />
             </div>
+
             <div class="result-info">
-              <h3>
-                {{ safeText(book.title) }}
-              </h3>
-              <p v-if="book.searchResult?.subtitle" class="result-subtitle">
-                {{ safeText(book.searchResult.subtitle) }}
-              </p>
-              <p class="result-author">by {{ formatAuthors(book) }}</p>
+              <!-- Title, with the series it belongs to on the same line -->
+              <div class="result-headline">
+                <h3>
+                  <button
+                    v-if="libraryIdFor(book) !== null"
+                    type="button"
+                    class="entity-link result-title-link"
+                    title="Open this audiobook in your library"
+                    @click="openAudiobook(libraryIdFor(book) as number)"
+                  >
+                    {{ safeText(book.title) }}
+                  </button>
+                  <template v-else>{{ safeText(book.title) }}</template>
+                </h3>
 
-              <!-- Audiobook metadata from enriched results -->
-              <p v-if="book.searchResult?.narrator" class="result-narrator">
-                Narrated by {{ book.searchResult.narrator }}
+                <div v-if="seriesNamesFor(book).length > 0" class="series-group">
+                  <button
+                    type="button"
+                    class="series-chip series-chip-link"
+                    :title="`Browse ${seriesNamesFor(book).join(', ')}`"
+                    @click="openCollection('series', seriesNamesFor(book)[0] as string)"
+                  >
+                    {{ seriesLabelFor(book) }}
+                  </button>
+                  <button
+                    v-for="seriesName in seriesNamesFor(book)"
+                    :key="seriesName"
+                    type="button"
+                    class="series-chip monitor-chip"
+                    :class="{ monitoring: isMonitored('series', seriesName) }"
+                    :disabled="isMonitorBusy('series', seriesName)"
+                    :title="
+                      isMonitored('series', seriesName)
+                        ? `Stop monitoring ${seriesName}`
+                        : `Monitor ${seriesName} and add any books you are missing`
+                    "
+                    @click="toggleMonitor('series', seriesName)"
+                  >
+                    <PhArrowClockwise v-if="isMonitorBusy('series', seriesName)" class="ph-spin" />
+                    <span
+                      v-else-if="isMonitored('series', seriesName)"
+                      class="monitor-dot"
+                      aria-hidden="true"
+                    />
+                    {{ monitorChipLabel('series', seriesName, seriesNamesFor(book).length > 1) }}
+                  </button>
+                </div>
+              </div>
+
+              <p v-if="subtitleFor(book)" class="result-subtitle">
+                {{ safeText(subtitleFor(book)) }}
               </p>
 
-              <div class="result-stats">
-                <span
-                  v-if="book.searchResult?.runtime || book.searchResult?.lengthMinutes"
-                  class="stat-item"
-                >
-                  <PhClock />
-                  {{
-                    formatRuntime(
-                      book.searchResult?.lengthMinutes ?? book.searchResult?.runtime ?? 0,
-                    )
-                  }}
+              <!-- Author and narrator share a line; each author carries its own monitor toggle -->
+              <p class="result-byline">
+                <span class="byline-label">by</span>
+                <template v-if="authorNamesFor(book).length > 0">
+                  <span
+                    v-for="(authorName, i) in authorNamesFor(book)"
+                    :key="authorName"
+                    class="byline-entity"
+                  >
+                    <button
+                      type="button"
+                      class="entity-link"
+                      @click="openCollection('author', authorName)"
+                    >
+                      {{ authorName }}</button
+                    ><span v-if="i < authorNamesFor(book).length - 1">,</span>
+                    <button
+                      type="button"
+                      class="monitor-chip"
+                      :class="{ monitoring: isMonitored('author', authorName) }"
+                      :disabled="isMonitorBusy('author', authorName)"
+                      :title="
+                        isMonitored('author', authorName)
+                          ? `Stop monitoring ${authorName}`
+                          : `Monitor ${authorName} and add any books you are missing`
+                      "
+                      @click="toggleMonitor('author', authorName)"
+                    >
+                      <PhArrowClockwise
+                        v-if="isMonitorBusy('author', authorName)"
+                        class="ph-spin"
+                      />
+                      <span
+                        v-else-if="isMonitored('author', authorName)"
+                        class="monitor-dot"
+                        aria-hidden="true"
+                      />
+                      {{ monitorChipLabel('author', authorName, authorNamesFor(book).length > 1) }}
+                    </button>
+                  </span>
+                </template>
+                <span v-else>{{ formatAuthors(book) }}</span>
+
+                <template v-if="narratorNamesFor(book).length > 0">
+                  <span class="byline-dot" aria-hidden="true">·</span>
+                  <span class="byline-label">narrated by</span>
+                  <span
+                    v-for="(narratorName, i) in narratorNamesFor(book)"
+                    :key="narratorName"
+                    class="byline-entity"
+                  >
+                    <button
+                      type="button"
+                      class="entity-link"
+                      :title="`Browse audiobooks narrated by ${narratorName}`"
+                      @click="openCollection('narrator', narratorName)"
+                    >
+                      {{ narratorName }}</button
+                    ><span v-if="i < narratorNamesFor(book).length - 1">,</span>
+                  </span>
+                </template>
+              </p>
+
+              <p v-if="blurbFor(book)" class="result-blurb">{{ blurbFor(book) }}</p>
+
+              <!-- Runtime, language, publisher, year and where the metadata came from -->
+              <div class="result-facts">
+                <span v-if="runtimeMinutesFor(book)" class="fact">
+                  {{ formatRuntime(runtimeMinutesFor(book)) }}
                 </span>
-                <span v-if="book.searchResult?.language" class="stat-item">
-                  <PhGlobe />
+                <span v-if="book.searchResult?.language" class="fact">
                   {{ capitalizeLanguage(book.searchResult.language) }}
                 </span>
-              </div>
-
-              <!-- Series badges on separate line -->
-              <div
-                v-if="
-                  (Array.isArray(book.searchResult?.seriesList) &&
-                    book.searchResult.seriesList.some(
-                      (s) => typeof s === 'string' && s.trim().length > 0,
-                    )) ||
-                  (typeof book.searchResult?.series === 'string' &&
-                    book.searchResult.series.trim().length > 0)
-                "
-                class="result-series"
-              >
-                <span
-                  class="series-badge"
-                  :title="
-                    Array.isArray(book.searchResult?.seriesList) &&
-                    book.searchResult.seriesList.some(
-                      (s) => typeof s === 'string' && s.trim().length > 0,
-                    )
-                      ? book.searchResult.seriesList
-                          .filter((s) => typeof s === 'string' && s.trim().length > 0)
-                          .join(', ')
-                      : `${book.searchResult?.series}${book.searchResult?.seriesNumber ? ` #${book.searchResult.seriesNumber}` : ''}`
-                  "
-                >
-                  <PhBook />
-                  {{
-                    safeText(
-                      Array.isArray(book.searchResult?.seriesList) &&
-                        book.searchResult.seriesList.some(
-                          (s) => typeof s === 'string' && s.trim().length > 0,
-                        )
-                        ? book.searchResult.seriesList.find(
-                            (s) => typeof s === 'string' && s.trim().length > 0,
-                          )
-                        : book.searchResult?.series,
-                    )
-                  }}<span v-if="book.searchResult?.seriesNumber">
-                    #{{ book.searchResult.seriesNumber }}</span
-                  >
-                </span>
-              </div>
-
-              <!-- Metadata badges -->
-              <div class="metadata-badges">
-                <span v-if="book.publisher?.length" class="metadata-badge">
-                  <PhBuilding />
+                <span v-if="book.publisher?.length" class="fact">
                   {{ safeText(book.publisher[0]) }}
                 </span>
-                <span v-if="book.searchResult?.publishedDate" class="metadata-badge">
-                  <PhCalendar />
-                  {{ formatDate(book.searchResult.publishedDate) }}
-                </span>
-                <span v-else-if="book.first_publish_year" class="metadata-badge">
-                  <PhCalendar />
-                  {{ book.first_publish_year }}
+                <span v-if="releaseYearFor(book)" class="fact" :title="releaseDateFor(book)">
+                  {{ releaseYearFor(book) }}
                 </span>
                 <span
                   v-if="
@@ -789,99 +853,84 @@
                       (book.searchResult?.metadataSource &&
                         book.searchResult.metadataSource.toLowerCase().includes('openlibrary')))
                   "
-                  class="metadata-badge"
+                  class="fact"
                 >
-                  <PhBarcode />
                   {{ book.searchResult.id }}
                 </span>
-              </div>
 
-              <div class="result-meta">
-                <a
-                  v-if="getSharedMetadataSourceUrl(book)"
-                  :href="getSharedMetadataSourceUrl(book)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="metadata-source-link source-link combined-source-link"
-                  :data-source="getBookMetadataSource(book)"
-                >
-                  <PhGlobe />
-                  <PhCloud />
-                  {{ getMetadataSourceLabel(getBookMetadataSource(book)) }}
-                </a>
-                <template v-else>
+                <div class="result-meta">
                   <a
-                    v-if="getBookMetadataSource(book) && getMetadataSourceUrl(book)"
-                    :href="getMetadataSourceUrl(book)"
+                    v-if="getSharedMetadataSourceUrl(book)"
+                    :href="getSharedMetadataSourceUrl(book)"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="metadata-source-link"
+                    class="metadata-source-link source-link combined-source-link"
                     :data-source="getBookMetadataSource(book)"
                   >
                     <PhGlobe />
+                    <PhCloud />
                     {{ getMetadataSourceLabel(getBookMetadataSource(book)) }}
                   </a>
-                  <span
-                    v-else-if="getBookMetadataSource(book)"
-                    class="metadata-source-badge"
-                    :data-source="getBookMetadataSource(book)"
-                  >
-                    <PhGlobe />
-                    {{ getMetadataSourceLabel(getBookMetadataSource(book)) }}
-                  </span>
+                  <template v-else>
+                    <a
+                      v-if="getBookMetadataSource(book) && getMetadataSourceUrl(book)"
+                      :href="getMetadataSourceUrl(book)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="metadata-source-link"
+                      :data-source="getBookMetadataSource(book)"
+                    >
+                      <PhGlobe />
+                      {{ getMetadataSourceLabel(getBookMetadataSource(book)) }}
+                    </a>
+                    <span
+                      v-else-if="getBookMetadataSource(book)"
+                      class="metadata-source-badge"
+                      :data-source="getBookMetadataSource(book)"
+                    >
+                      <PhGlobe />
+                      {{ getMetadataSourceLabel(getBookMetadataSource(book)) }}
+                    </span>
 
-                  <!-- Prefer to show Audible as product source when metadata comes from Audible -->
-                  <a
-                    v-if="getSourceUrl(book)"
-                    :href="getSourceUrl(book)"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="source-link"
-                  >
-                    <PhCloud />
-                    {{
-                      isAudibleHost(getSourceUrl(book))
-                        ? 'Audible'
-                        : book.searchResult?.source || getBookMetadataSource(book) || 'OpenLibrary'
-                    }}
-                  </a>
-                  <span v-else-if="book.searchResult?.source" class="source-badge">
-                    <PhCloud />
-                    Source: {{ book.searchResult.source }}
-                  </span>
-                </template>
+                    <!-- Prefer to show Audible as product source when metadata comes from Audible -->
+                    <a
+                      v-if="getSourceUrl(book)"
+                      :href="getSourceUrl(book)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="source-link"
+                    >
+                      <PhCloud />
+                      {{
+                        isAudibleHost(getSourceUrl(book))
+                          ? 'Audible'
+                          : book.searchResult?.source ||
+                            getBookMetadataSource(book) ||
+                            'OpenLibrary'
+                      }}
+                    </a>
+                    <span v-else-if="book.searchResult?.source" class="source-badge">
+                      <PhCloud />
+                      Source: {{ book.searchResult.source }}
+                    </span>
+                  </template>
+                </div>
               </div>
             </div>
 
             <div class="result-actions">
               <button
-                :class="[
-                  'btn',
-                  !!(getAsin(book) && addedAsins.has(getAsin(book)!)) ||
-                  (!!book.searchResult?.id && addedOpenLibraryIds.has(book.searchResult.id))
-                    ? 'btn-success'
-                    : 'btn-primary',
-                ]"
+                :class="['btn', isAdded(book) ? 'btn-success' : 'btn-primary']"
                 @click="selectTitleResult(book)"
-                :disabled="
-                  !!(getAsin(book) && addedAsins.has(getAsin(book)!)) ||
-                  (!!book.searchResult?.id && addedOpenLibraryIds.has(book.searchResult.id))
+                :disabled="isAdded(book)"
+                :title="
+                  isAdded(book)
+                    ? 'This book is in your library, so Listenarr keeps looking for it'
+                    : 'Add this book to your library and monitor it'
                 "
               >
-                <component
-                  :is="
-                    !!(getAsin(book) && addedAsins.has(getAsin(book)!)) ||
-                    (!!book.searchResult?.id && addedOpenLibraryIds.has(book.searchResult.id))
-                      ? PhCheck
-                      : PhPlus
-                  "
-                />
-                {{
-                  !!(getAsin(book) && addedAsins.has(getAsin(book)!)) ||
-                  (!!book.searchResult?.id && addedOpenLibraryIds.has(book.searchResult.id))
-                    ? 'Added'
-                    : 'Add to Library'
-                }}
+                <component :is="isAdded(book) ? PhCheck : PhPlus" />
+                {{ isAdded(book) ? 'Monitoring book' : 'Monitor book' }}
               </button>
             </div>
           </div>
@@ -969,7 +1018,6 @@ import {
   PhFunnelSimple,
   PhCalendar,
   PhBuilding,
-  PhBarcode,
   PhWarning,
   PhScissors,
   PhCaretLeft,
@@ -984,6 +1032,8 @@ import type {
   AudibleNarrator,
   AudibleGenre,
   AudibleSearchResult,
+  MonitorAuthorResponse,
+  MonitorSeriesResponse,
 } from '@/types'
 import { apiService } from '@/services/api'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -1004,7 +1054,8 @@ import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useLibraryStore } from '@/stores/library'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import { useToast } from '@/services/toastService'
-import { safeText } from '@/utils/textUtils'
+import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
+import { isSeriesRestatement } from '@/utils/seriesUtils'
 import { logger } from '@/utils/logger'
 import { buildAmazonProductUrl, buildAudibleProductUrl } from '@/utils/marketDomains'
 import { useSearch } from '@/composables/useSearch'
@@ -1058,6 +1109,7 @@ type TitleSearchResult = Omit<OpenLibraryBook, 'isbn'> & {
   searchResult?: Partial<SearchResult> // Store the enriched SearchResult from intelligent search
   imageUrl?: string // For results that have direct image URLs
   metadataSource?: string // Store which metadata source was used
+  description?: string // Publisher blurb, flattened from the provider payload
   isbn?: string | string[] // Normalized ISBN (string or array for OpenLibrary compatibility)
   region?: string // Audible/Amazon market region from the search result
 }
@@ -1255,6 +1307,265 @@ const emptyStateTitleMessage = computed(() => {
 
 // Pagination / candidate limits for advanced results
 const resultsPerPage = ref<number>(50)
+
+// ─── Monitor authors and series from any result ─────────────────────────────
+// Monitor toggles live on the result cards so an author or series can be monitored
+// from any search, rather than only when the library already contains one of
+// their books. Monitoring status is a local database read, so it is safe to
+// resolve one per distinct name.
+type MonitorKind = 'author' | 'series'
+
+const monitoredIds = ref<Record<string, number>>({})
+const monitorBusy = ref<Record<string, boolean>>({})
+
+function monitorKey(kind: MonitorKind, name: string): string {
+  return `${kind}:${name.trim().toLowerCase()}`
+}
+
+function isMonitored(kind: MonitorKind, name: string): boolean {
+  return !!monitoredIds.value[monitorKey(kind, name)]
+}
+
+function isMonitorBusy(kind: MonitorKind, name: string): boolean {
+  return !!monitorBusy.value[monitorKey(kind, name)]
+}
+
+function authorNamesFor(book: TitleSearchResult): string[] {
+  const raw = Array.isArray(book.author_name)
+    ? book.author_name
+    : typeof book.author_name === 'string'
+      ? [book.author_name]
+      : [book.searchResult?.artist ?? '']
+  return dedupeNames(raw)
+}
+
+function seriesNamesFor(book: TitleSearchResult): string[] {
+  const list = Array.isArray(book.searchResult?.seriesList) ? book.searchResult.seriesList : []
+  const single = typeof book.searchResult?.series === 'string' ? [book.searchResult.series] : []
+  return dedupeNames([...list, ...single] as unknown[]).map(stripSeriesPosition)
+}
+
+/**
+ * Series entries often carry this book's position, e.g. "Harry Potter #1". The
+ * position belongs to the book, not the series, so it must not reach a
+ * collection route or a monitoring request - monitoring "Harry Potter #1" would
+ * register a series that does not exist.
+ */
+function stripSeriesPosition(name: string): string {
+  return name.replace(/\s*#\s*[\d.]+\s*$/, '').trim()
+}
+
+/**
+ * Audible often sets the subtitle to the series and position alone - "Paragon
+ * Space, Book 1" - which the card already shows as its own badge. Hide the
+ * subtitle in that case so the series appears once; a subtitle carrying anything
+ * else is kept.
+ */
+function subtitleFor(book: TitleSearchResult): string {
+  const subtitle = typeof book.searchResult?.subtitle === 'string' ? book.searchResult.subtitle : ''
+  if (!subtitle.trim()) return ''
+  return isSeriesRestatement(subtitle, seriesNamesFor(book)) ? '' : subtitle
+}
+
+/**
+ * The series shown beside the title, carrying this book's position in it -
+ * "Sun Eater #4". A book in more than one series shows the first here; the rest
+ * are still reachable through their own monitor chips.
+ */
+function seriesLabelFor(book: TitleSearchResult): string {
+  const name = seriesNamesFor(book)[0]
+  if (!name) return ''
+  const position = book.searchResult?.seriesNumber
+  return position ? `${safeText(name)} #${position}` : safeText(name)
+}
+
+/**
+ * "Monitor series" reads well when there is one of them; with several, the chips
+ * have to name which is which.
+ */
+function monitorChipLabel(kind: MonitorKind, name: string, useName: boolean): string {
+  const subject = useName ? name : kind
+  return isMonitored(kind, name) ? `Monitoring ${subject}` : `Monitor ${subject}`
+}
+
+/** The publisher's blurb, as plain text - providers send it with HTML in it. */
+function blurbFor(book: TitleSearchResult): string {
+  const raw =
+    typeof book.description === 'string' && book.description
+      ? book.description
+      : typeof book.searchResult?.description === 'string'
+        ? book.searchResult.description
+        : ''
+  return stripHtmlAndNormalize(raw)
+}
+
+function runtimeMinutesFor(book: TitleSearchResult): number {
+  const minutes = book.searchResult?.lengthMinutes ?? book.searchResult?.runtime ?? 0
+  return typeof minutes === 'number' && minutes > 0 ? minutes : 0
+}
+
+/** The facts line has room for the year; the full date stays in the tooltip. */
+function releaseYearFor(book: TitleSearchResult): string {
+  const published = book.searchResult?.publishedDate
+  if (typeof published === 'string' && published.length >= 4) {
+    const year = published.slice(0, 4)
+    if (/^\d{4}$/.test(year)) return year
+  }
+  return book.first_publish_year ? String(book.first_publish_year) : ''
+}
+
+function releaseDateFor(book: TitleSearchResult): string {
+  const published = book.searchResult?.publishedDate
+  return typeof published === 'string' && published ? formatDate(published) : ''
+}
+
+/** True once this result has been added to the library, whichever id identifies it. */
+function isAdded(book: TitleSearchResult): boolean {
+  const asin = getAsin(book)
+  if (asin && addedAsins.value.has(asin)) return true
+  const openLibraryId = book.searchResult?.id
+  return !!openLibraryId && addedOpenLibraryIds.value.has(openLibraryId)
+}
+
+function narratorNamesFor(book: TitleSearchResult): string[] {
+  const list = Array.isArray(book.searchResult?.narrators) ? book.searchResult.narrators : []
+  if (list.length > 0) return dedupeNames(list as unknown[])
+  // Enriched results often carry a single pre-joined string instead of an array.
+  const joined = typeof book.searchResult?.narrator === 'string' ? book.searchResult.narrator : ''
+  return dedupeNames(joined.split(','))
+}
+
+function dedupeNames(values: unknown[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const value of values) {
+    // Providers return either bare strings or { name } objects depending on the
+    // endpoint, so accept both rather than silently dropping the object form.
+    const raw =
+      typeof value === 'string'
+        ? value
+        : value &&
+            typeof value === 'object' &&
+            typeof (value as { name?: unknown }).name === 'string'
+          ? (value as { name: string }).name
+          : null
+    if (raw === null) continue
+    const trimmed = raw.trim()
+    if (!trimmed || trimmed.toLowerCase() === 'unknown author') continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(trimmed)
+  }
+  return out
+}
+
+async function refreshMonitorStates(books: TitleSearchResult[]): Promise<void> {
+  const wanted = new Map<string, { kind: MonitorKind; name: string }>()
+  for (const book of books) {
+    for (const name of authorNamesFor(book))
+      wanted.set(monitorKey('author', name), { kind: 'author', name })
+    for (const name of seriesNamesFor(book))
+      wanted.set(monitorKey('series', name), { kind: 'series', name })
+  }
+  if (wanted.size === 0) return
+
+  const region = normalizeSearchRegion(searchLanguage.value)
+  const resolved: Record<string, number> = {}
+  await Promise.all(
+    Array.from(wanted.entries()).map(async ([key, entry]) => {
+      try {
+        if (entry.kind === 'author') {
+          const status = await apiService.getAuthorMonitoringStatus(entry.name, region, 'all')
+          if (status.isMonitored && status.monitoredAuthor)
+            resolved[key] = status.monitoredAuthor.id
+        } else {
+          const status = await apiService.getSeriesMonitoringStatus(entry.name, region, 'all')
+          if (status.isMonitored && status.monitoredSeries)
+            resolved[key] = status.monitoredSeries.id
+        }
+      } catch {
+        /* unknown state reads as not monitored */
+      }
+    }),
+  )
+  monitoredIds.value = { ...monitoredIds.value, ...resolved }
+}
+
+async function toggleMonitor(kind: MonitorKind, name: string): Promise<void> {
+  const key = monitorKey(kind, name)
+  if (monitorBusy.value[key]) return
+  monitorBusy.value = { ...monitorBusy.value, [key]: true }
+
+  try {
+    const region = normalizeSearchRegion(searchLanguage.value)
+    const existingId = monitoredIds.value[key]
+
+    if (existingId) {
+      if (kind === 'author') await apiService.unmonitorAuthor(existingId)
+      else await apiService.unmonitorSeries(existingId)
+      const remaining = { ...monitoredIds.value }
+      delete remaining[key]
+      monitoredIds.value = remaining
+      toast.success(
+        `Stopped monitoring ${name}`,
+        `"${name}" will no longer be checked for new books.`,
+      )
+      return
+    }
+
+    const response =
+      kind === 'author'
+        ? await apiService.monitorAuthor({ name, region, language: 'all' })
+        : await apiService.monitorSeries({ name, region, language: 'all' })
+    const id =
+      kind === 'author'
+        ? (response as MonitorAuthorResponse).monitoredAuthor.id
+        : (response as MonitorSeriesResponse).monitoredSeries.id
+    monitoredIds.value = { ...monitoredIds.value, [key]: id }
+
+    const added = response.addedCount ?? 0
+    toast.success(
+      `Monitoring ${name}`,
+      added > 0
+        ? `Added ${added} audiobook${added === 1 ? '' : 's'} you were missing.`
+        : 'No new audiobooks needed to be added.',
+    )
+  } catch (e) {
+    toast.error('Could not update monitoring', e instanceof Error ? e.message : String(e))
+  } finally {
+    const stillBusy = { ...monitorBusy.value }
+    delete stillBusy[key]
+    monitorBusy.value = stillBusy
+  }
+}
+
+function libraryIdFor(book: TitleSearchResult): number | null {
+  const asin = getAsin(book)
+  if (!asin) return null
+  const match = libraryStore.audiobooks.find(
+    (a) => typeof a.asin === 'string' && a.asin.toLowerCase() === asin.toLowerCase(),
+  )
+  return match ? match.id : null
+}
+
+function openAudiobook(id: number): void {
+  router.push(`/books/${id}`)
+}
+
+function openCollection(kind: MonitorKind | 'narrator', name: string): void {
+  router.push(`/collection/${kind}/${encodeURIComponent(name)}`)
+}
+
+// Watching the results covers every path that populates them - fresh searches,
+// pagination, and restore-from-cache - rather than each call site individually.
+watch(
+  titleResults,
+  (books) => {
+    if (books.length > 0) void refreshMonitorStates(books)
+  },
+  { immediate: true },
+)
 const currentAdvancedPage = ref<number>(1)
 
 const totalPages = computed(() =>
@@ -1809,13 +2120,15 @@ const performAdvancedSearch = async () => {
       series?: string
       isbn?: string
       asin?: string
+      narrator?: string
     }
     const hasAny = Boolean(
       (p.title && p.title.trim()) ||
       (p.author && p.author.trim()) ||
       (p.series && p.series.trim()) ||
       (p.isbn && p.isbn.trim()) ||
-      (p.asin && p.asin.trim()),
+      (p.asin && p.asin.trim()) ||
+      (p.narrator && p.narrator.trim()),
     )
     if (!hasAny) {
       advancedSearchError.value = 'Please enter a search term'
@@ -1837,6 +2150,7 @@ const performAdvancedSearch = async () => {
       if (p.author && p.author.trim()) params.author = p.author.trim()
       if (p.isbn && p.isbn.trim()) params.isbn = p.isbn.trim()
       if (p.asin && p.asin.trim()) params.asin = p.asin.trim()
+      if (p.narrator && p.narrator.trim()) params.narrator = p.narrator.trim()
       params.region = searchLanguage.value
       if (languageFilter) params.language = languageFilter
 
@@ -3326,6 +3640,15 @@ onMounted(async () => {
   // Initialize added status on mount
   await checkExistingInLibrary()
 
+  // The header search hands its query over here when the library has no match for it,
+  // so land on results rather than on an empty box the user has to retype into.
+  const handedOver = typeof route.query.q === 'string' ? route.query.q.trim() : ''
+  if (handedOver) {
+    searchQuery.value = handedOver
+    void router.replace({ name: 'add-new' })
+    await performSearch()
+  }
+
   // Subscribe to server-side search progress updates (ignore automatic background searches by default)
   type ProgressPayload = {
     message: string
@@ -4106,6 +4429,52 @@ select.form-input:focus {
 }
 
 /* Results */
+.result-title-link {
+  font: inherit;
+  color: inherit;
+}
+
+.result-title-link:hover {
+  color: var(--accent-color, #3b82f6);
+}
+
+.entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-right: 0.4rem;
+}
+
+.entity-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-color, #3b82f6);
+  cursor: pointer;
+  text-align: left;
+}
+
+.entity-link:hover {
+  text-decoration: underline;
+}
+
+.monitor-badge {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.monitor-badge:disabled {
+  cursor: default;
+}
+
+.monitor-badge.monitoring {
+  color: var(--accent-color, #3b82f6);
+  border-color: var(--accent-color, #3b82f6);
+}
+
 .search-results h2 {
   color: white;
   margin-bottom: 1.5rem;
@@ -4215,11 +4584,9 @@ select.form-input:focus {
   margin: 0;
   font-style: italic;
   font-size: 0.9rem;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  /* Full-cast titles list a dozen narrators; wrapping beats hiding all but the first. */
+  display: block;
+  overflow-wrap: anywhere;
 }
 
 .result-stats {
@@ -4495,8 +4862,9 @@ select.form-input:focus {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  min-width: 150px;
+  min-width: 170px;
   align-self: flex-start;
+  margin-top: 0;
 }
 
 .title-result-card .result-actions .btn {
@@ -4524,6 +4892,181 @@ select.form-input:focus {
   margin: 0 0 0.75rem 0;
   font-size: 1rem;
   font-weight: 500;
+}
+
+/* Title search result row: title + series, byline, blurb, facts, actions */
+.result-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.result-headline h3 {
+  margin: 0;
+}
+
+.series-group {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.series-group > * + * {
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.series-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  padding: 0.25rem 0.6rem;
+  font-family:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.82rem;
+  color: #e6edf3;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.series-chip-link:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--accent-color, #3b82f6);
+}
+
+.monitor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-size: 0.78rem;
+  color: #8b949e;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.monitor-chip:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.07);
+  color: #e6edf3;
+}
+
+.monitor-chip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.monitor-chip.monitoring {
+  color: var(--accent-color, #3b82f6);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.monitor-chip svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Segments of the series pill share its border rather than carrying their own. */
+.series-group .monitor-chip {
+  border: none;
+  border-radius: 0;
+  font-family: inherit;
+}
+
+.series-group .monitor-chip.monitoring {
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
+.monitor-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  flex-shrink: 0;
+}
+
+.result-subtitle {
+  margin: 0 0 0.35rem 0;
+  color: #adb5bd;
+  font-size: 0.95rem;
+}
+
+.result-byline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.4rem;
+  margin: 0 0 0.4rem 0;
+  color: #adb5bd;
+  font-size: 0.95rem;
+}
+
+.byline-label {
+  color: #8b949e;
+}
+
+.byline-entity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.byline-dot {
+  color: #5c636a;
+}
+
+.result-blurb {
+  margin: 0 0 0.55rem 0;
+  color: #9aa3ad;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.result-facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  /* Sits on the bottom edge of the row so it lines up with the cover. */
+  margin-top: auto;
+  color: #8b949e;
+  font-size: 0.85rem;
+}
+
+.result-facts .fact {
+  font-family:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  white-space: nowrap;
+}
+
+.result-facts .fact + .fact::before {
+  content: '\00b7';
+  margin-right: 0.5rem;
+  color: #5c636a;
+}
+
+.result-facts .result-meta {
+  margin: 0;
 }
 
 /* Empty States */
@@ -4642,6 +5185,17 @@ select.form-input:focus {
   .result-meta {
     margin: 0.25rem auto;
     justify-content: center;
+  }
+
+  /* The stacked card centres its text, so the row's lines centre with it. */
+  .result-headline,
+  .result-byline,
+  .result-facts {
+    justify-content: center;
+  }
+
+  .result-blurb {
+    text-align: center;
   }
 
   .result-series,

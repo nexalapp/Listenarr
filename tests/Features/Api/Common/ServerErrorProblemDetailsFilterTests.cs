@@ -88,6 +88,46 @@ public sealed class ServerErrorProblemDetailsFilterTests
         Assert.Equal("trace-bare-500", problem.Extensions["traceId"]);
     }
 
+    [Fact]
+    public async Task Production_LeavesAnExplicitProblemDetailUntouched()
+    {
+        // The filter blanks the detail of any other 5xx body outside Development, so a
+        // handler with a reason worth showing states it as ProblemDetails itself. Download
+        // submission does exactly that: its failures name the stage and the remedy, and
+        // are meant for the person who asked for the grab.
+        var filter = new ServerErrorProblemDetailsFilter(
+            new TestHostEnvironment(Environments.Production));
+        var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-502" };
+        httpContext.Request.Path = "/api/v1/download/send";
+
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status502BadGateway,
+            Title = "Failed to send usenet to download client",
+            Detail = "Read payload: The post was thanked but no search string could be read from it.",
+            Instance = "/api/v1/download/send"
+        };
+        problem.Extensions["code"] = "download_submission_failed";
+
+        var context = new ResultExecutingContext(
+            new ActionContext(httpContext, new RouteData(), new ActionDescriptor()),
+            [],
+            new ObjectResult(problem) { StatusCode = StatusCodes.Status502BadGateway },
+            controller: null!);
+
+        await filter.OnResultExecutionAsync(context, () =>
+            Task.FromResult(new ResultExecutedContext(
+                context, [], context.Result, controller: null!)));
+
+        var result = Assert.IsType<ObjectResult>(context.Result);
+        var preserved = Assert.IsType<ProblemDetails>(result.Value);
+        Assert.Equal(
+            "Read payload: The post was thanked but no search string could be read from it.",
+            preserved.Detail);
+        Assert.Equal("Failed to send usenet to download client", preserved.Title);
+        Assert.Equal("download_submission_failed", preserved.Extensions["code"]);
+    }
+
     private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = environmentName;

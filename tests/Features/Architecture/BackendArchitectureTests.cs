@@ -1289,6 +1289,10 @@ public sealed class BackendArchitectureTests : BaseTests
             "listenarr.application/Configuration/Core/StartupConfigService.cs",
             "listenarr.infrastructure/DependencyInjection/InfrastructureStartupCompositionExtensions.cs",
             "listenarr.infrastructure/Ffmpeg/Installation/FfmpegService.cs",
+            // Promotes binaries within the application's own bundled ffmpeg directory.
+            // Split out of FfmpegService above and allow-listed for the same reason: the
+            // paths are the app's own, never a user library volume.
+            "listenarr.infrastructure/Ffmpeg/Installation/FfmpegBinaryPromoter.cs",
             "listenarr.infrastructure/FileSystem/FileSystemSafety.cs",
             // Remote path mapping translates client-reported paths to local native paths and
             // uses host-native semantics only to keep relative joins inside the mapped local base.

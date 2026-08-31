@@ -42,6 +42,13 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 c => c == null ? null : JsonSerializer.Deserialize<List<WebhookConfiguration>>(JsonSerializer.Serialize(c, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)
             );
 
+        private static ValueComparer<List<TagMapping>?> TagMappingListComparer() =>
+            new ValueComparer<List<TagMapping>?>(
+                (c1, c2) => JsonSerializer.Serialize(c1, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(c2, (JsonSerializerOptions?)null),
+                c => c == null ? 0 : JsonSerializer.Serialize(c, (JsonSerializerOptions?)null).GetHashCode(),
+                c => c == null ? null : JsonSerializer.Deserialize<List<TagMapping>>(JsonSerializer.Serialize(c, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)
+            );
+
         public void Configure(EntityTypeBuilder<ApplicationSettings> builder)
         {
             builder.Property(e => e.Version).IsConcurrencyToken();
@@ -81,6 +88,24 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 );
             builder.Property(e => e.Webhooks)
                 .Metadata.SetValueComparer(WebhookListComparer());
+
+            // The existing library's files mostly already carry cover art, so this only
+            // ever fills a gap. Defaulted at the column so an install that predates the
+            // setting gets the same answer as a fresh one rather than silently off.
+            builder.Property(e => e.EmbedCoverArtInTags).HasDefaultValue(true);
+
+            // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
+            // written before this feature existed has no mapping, and that has to read
+            // back as "use the shipped defaults" rather than as "write no tags".
+            builder.Property(e => e.TagMappings)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => string.IsNullOrWhiteSpace(v)
+                        ? null
+                        : JsonSerializer.Deserialize<List<TagMapping>>(v, (JsonSerializerOptions?)null)
+                );
+            builder.Property(e => e.TagMappings)
+                .Metadata.SetValueComparer(TagMappingListComparer());
         }
     }
 }

@@ -288,3 +288,6 @@ listenarr.api/config/appsettings/appsettings.json
 /docs/plans
 /docs/design
 /docs/adr
+
+# Default mount target for LISTENARR_DEV_DOWNLOADS; real downloads live elsewhere
+dev-downloads/

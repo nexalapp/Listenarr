@@ -38,6 +38,7 @@ namespace Listenarr.Api.Features.Library
         bool CanChangePath,
         bool CanReadFilesystem,
         bool CanScanFilesystem,
+        bool CanPublishNewFiles,
         bool CanMutateFilesystem,
         string? ConfirmationToken,
         DateTime CreatedAt,
@@ -75,6 +76,7 @@ namespace Listenarr.Api.Features.Library
         private readonly IFileSystemSemanticsResolver _semanticsResolver;
         private readonly IRootFolderRelocationService _relocationService;
         private readonly IRootFolderStorageHealthResolver _storageHealthResolver;
+        private readonly IEmbeddedFileMetadataService _embeddedFileMetadata;
         private readonly IRootFolderStorageConfirmationService _storageConfirmationService;
         private readonly ILibraryFilesystemReadiness _filesystemReadiness;
         private readonly ILibraryFilesystemMutationGate _filesystemMutationGate;
@@ -90,7 +92,8 @@ namespace Listenarr.Api.Features.Library
             IRootFolderStorageHealthResolver storageHealthResolver,
             IRootFolderStorageConfirmationService storageConfirmationService,
             ILibraryFilesystemReadiness filesystemReadiness,
-            ILibraryFilesystemMutationGate filesystemMutationGate)
+            ILibraryFilesystemMutationGate filesystemMutationGate,
+            IEmbeddedFileMetadataService embeddedFileMetadata)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
@@ -100,6 +103,7 @@ namespace Listenarr.Api.Features.Library
             _semanticsResolver = semanticsResolver;
             _relocationService = relocationService ?? throw new ArgumentNullException(nameof(relocationService));
             _storageHealthResolver = storageHealthResolver ?? throw new ArgumentNullException(nameof(storageHealthResolver));
+            _embeddedFileMetadata = embeddedFileMetadata ?? throw new ArgumentNullException(nameof(embeddedFileMetadata));
             _storageConfirmationService = storageConfirmationService ?? throw new ArgumentNullException(nameof(storageConfirmationService));
             _filesystemReadiness = filesystemReadiness
                 ?? throw new ArgumentNullException(nameof(filesystemReadiness));

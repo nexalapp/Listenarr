@@ -126,3 +126,113 @@ describe('FileManagementSection', () => {
     expect(ok.text()).toContain('/ 259 characters')
   })
 })
+
+describe('FileManagementSection - conversion settings', () => {
+  const mountWith = async (settings: Record<string, unknown>) => {
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
+    return mount(FileManagementSection, { props: { settings } })
+  }
+
+  const lastEmitted = (wrapper: ReturnType<typeof mount>) => {
+    const events = wrapper.emitted()['update:settings']!
+    return events[events.length - 1][0] as Record<string, unknown>
+  }
+
+  it('shows the archive path when the disposition is Archive', async () => {
+    // The API serialises the enum by name, so the option values must match its
+    // casing exactly. Comparing against "archive" hid this input entirely.
+    const wrapper = await mountWith({ conversionSourceDisposition: 'Archive' })
+
+    expect(wrapper.find('#conversion-archive-path').exists()).toBe(true)
+  })
+
+  it('shows the archive path by default, since Archive is the default', async () => {
+    const wrapper = await mountWith({})
+
+    expect(wrapper.find('#conversion-archive-path').exists()).toBe(true)
+  })
+
+  it('hides the archive path for dispositions that never archive', async () => {
+    for (const disposition of ['Keep', 'Delete']) {
+      const wrapper = await mountWith({ conversionSourceDisposition: disposition })
+      expect(wrapper.find('#conversion-archive-path').exists()).toBe(false)
+    }
+  })
+
+  it('offers exactly the values the API accepts', async () => {
+    const wrapper = await mountWith({ conversionSourceDisposition: 'Archive' })
+    const options = wrapper
+      .findAll('option')
+      .map((o) => o.attributes('value'))
+      .filter((v) => v === 'Archive' || v === 'Keep' || v === 'Delete')
+
+    expect(options).toEqual(['Archive', 'Keep', 'Delete'])
+  })
+
+  it('emits the archive path as typed', async () => {
+    const wrapper = await mountWith({ conversionSourceDisposition: 'Archive' })
+    const input = wrapper.find('#conversion-archive-path')
+
+    await input.setValue('/mnt/user/archive')
+    await input.trigger('change')
+
+    expect(lastEmitted(wrapper).conversionArchivePath).toBe('/mnt/user/archive')
+  })
+
+  it('offers a folder browser beside the archive path, like other path fields', async () => {
+    const wrapper = await mountWith({ conversionSourceDisposition: 'Archive' })
+
+    // Same shape as the root folder form: an input with a browse button next to it,
+    // so a path is picked rather than typed from memory.
+    expect(wrapper.find('.path-input-row #conversion-archive-path').exists()).toBe(true)
+    expect(wrapper.find('.path-input-row button[aria-label="Browse for folder"]').exists()).toBe(
+      true,
+    )
+  })
+
+  it('opens the browser when the browse button is used', async () => {
+    const wrapper = await mountWith({ conversionSourceDisposition: 'Archive' })
+    const browser = wrapper.findComponent({ name: 'FolderBrowserModal' })
+
+    expect(browser.props('visible')).toBe(false)
+    await wrapper.find('button[aria-label="Browse for folder"]').trigger('click')
+    expect(browser.props('visible')).toBe(true)
+  })
+
+  it('saves the path the browser returns', async () => {
+    const wrapper = await mountWith({ conversionSourceDisposition: 'Archive' })
+    const browser = wrapper.findComponent({ name: 'FolderBrowserModal' })
+
+    browser.vm.$emit('update:modelValue', '/mnt/user/audiobooks-archive')
+    await wrapper.vm.$nextTick()
+
+    expect(lastEmitted(wrapper).conversionArchivePath).toBe('/mnt/user/audiobooks-archive')
+  })
+
+  it('reflects a path changed elsewhere', async () => {
+    // The input holds local state so the browser can write to it, which would
+    // otherwise go stale when the settings prop changes underneath.
+    const wrapper = await mountWith({
+      conversionSourceDisposition: 'Archive',
+      conversionArchivePath: '/old',
+    })
+
+    await wrapper.setProps({
+      settings: { conversionSourceDisposition: 'Archive', conversionArchivePath: '/new' },
+    })
+
+    expect((wrapper.find('#conversion-archive-path').element as HTMLInputElement).value).toBe(
+      '/new',
+    )
+  })
+
+  it('emits the conversion toggle', async () => {
+    const wrapper = await mountWith({ convertMp3ToM4b: false })
+    const checkbox = wrapper.find('.conversion-toggle input[type="checkbox"]')
+
+    await checkbox.setValue(true)
+
+    expect(lastEmitted(wrapper).convertMp3ToM4b).toBe(true)
+  })
+})

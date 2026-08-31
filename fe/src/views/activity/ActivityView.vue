@@ -91,7 +91,7 @@
               <div class="title-cell">
                 <RouterLink
                   v-if="item.audiobookId"
-                  :to="`/audiobooks/${item.audiobookId}`"
+                  :to="`/books/${item.audiobookId}`"
                   class="title-link"
                   >{{ getDisplayTitle(item) }}</RouterLink
                 >
@@ -127,7 +127,16 @@
               <span v-else class="muted">-</span>
             </div>
             <div class="col-status">
-              <span :class="['status-badge', item.status]">
+              <button
+                v-if="item.errorMessage"
+                :class="['status-badge', item.status, 'status-badge-actionable']"
+                :title="`${formatStatus(item.status)} — click for details`"
+                @click="openBlockDetails(item)"
+              >
+                {{ formatStatus(item.status) }}
+                <PhInfo class="status-badge-hint" />
+              </button>
+              <span v-else :class="['status-badge', item.status]">
                 {{ formatStatus(item.status) }}
               </span>
               <span
@@ -170,6 +179,70 @@
 
     <!-- Loading State -->
     <LoadingState v-if="loading && queue.length === 0" message="Loading queue..." />
+
+    <!-- Import Block Details Modal -->
+    <div v-if="blockDetailsItem" class="modal-overlay" @click="blockDetailsItem = null">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>
+            <PhWarningCircle />
+            {{ formatStatus(blockDetailsItem.status) }}
+          </h3>
+          <button class="modal-close" @click="blockDetailsItem = null">
+            <PhX />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="remove-item-info">
+            <strong>{{ getDisplayTitle(blockDetailsItem) }}</strong>
+            <div class="item-details">
+              <span v-if="blockDetailsItem.downloadClient">
+                <PhDesktop />
+                {{ blockDetailsItem.downloadClient }}
+              </span>
+            </div>
+          </div>
+          <ul class="block-reason-list">
+            <li v-for="(line, index) in blockDetailLines" :key="index">{{ line }}</li>
+          </ul>
+          <p v-if="blockDetailsIsConversion" class="warning-text">
+            <PhInfo />
+            Retrying re-runs the conversion from the original files, which have been left exactly as
+            they were. Nothing in the library was replaced.
+          </p>
+          <p v-else-if="blockDetailsTagJobHoldsFile" class="warning-text warning-text-urgent">
+            <PhWarning />
+            This book is missing a file until this job is retried. The tagged copy was written and
+            checked, but could not be put back — it is being held and has not been deleted. Retrying
+            publishes it.
+          </p>
+          <p v-else-if="blockDetailsIsTagging" class="warning-text">
+            <PhInfo />
+            Retrying re-reads the book's files and writes the tags again. The files were left
+            exactly as they were.
+          </p>
+          <p v-else class="warning-text">
+            <PhInfo />
+            Retrying re-runs the import against the same files. If the path is not reachable from
+            Listenarr, add a remote path mapping for this client in Settings first.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="blockDetailsItem = null">Close</button>
+          <button
+            v-if="blockDetailsItem.canRetryImport"
+            class="btn btn-primary"
+            :disabled="retryingImportId === blockDetailsItem.id"
+            @click="retryImport(blockDetailsItem)"
+          >
+            <component
+              :is="retryingImportId === blockDetailsItem.id ? PhSpinner : PhArrowClockwise"
+            />
+            {{ retryingImportId === blockDetailsItem.id ? 'Retrying...' : 'Retry Import' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Remove Confirmation Modal -->
     <div v-if="showRemoveModal" class="modal-overlay" @click="showRemoveModal = false">
@@ -244,6 +317,7 @@ import {
   PhX,
   PhQueue,
   PhWarningCircle,
+  PhWarning,
   PhInfo,
   PhChartBar,
   PhTrash,
@@ -256,6 +330,8 @@ import { signalRService } from '@/services/signalr'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore, type TrackedMoveJob } from '@/stores/moveJobs'
+import { useConversionJobsStore, type TrackedConversionJob } from '@/stores/conversionJobs'
+import { useTagJobsStore, type TrackedTagJob } from '@/stores/tagJobs'
 import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
@@ -264,6 +340,8 @@ import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
 const moveJobsStore = useMoveJobsStore()
+const conversionJobsStore = useConversionJobsStore()
+const tagJobsStore = useTagJobsStore()
 const configStore = useConfigurationStore()
 
 const filterText = ref('')
@@ -465,6 +543,12 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   }
   const status = statusMap[download.status] ?? 'downloading'
 
+  // A blocked import is the one state where the operator has to act, so the row
+  // has to say why. Lead with the reason, then what it tried.
+  const blockDetail = [download.importBlockReason, ...(download.importBlockMessages ?? [])]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(' — ')
+
   const clientName = (download as unknown as Record<string, unknown>)['downloadClientName'] as
     | string
     | undefined
@@ -486,6 +570,8 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
     addedAt: download.startedAt,
     canPause: false,
     canRemove: true,
+    errorMessage: blockDetail || download.errorMessage,
+    canRetryImport: status === 'importblocked',
   }
 }
 
@@ -509,6 +595,88 @@ const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
   canRemove: false,
 })
 
+/**
+ * A conversion reports the same way an import does: one row, a progress bar while
+ * it runs, and on failure a clickable status carrying the reason and a retry.
+ */
+const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem => {
+  const failed = job.status === 'Failed'
+  const phaseLabel = CONVERSION_PHASE_LABELS[job.phase] ?? 'Converting'
+
+  return {
+    id: `conversion:${job.jobId}`,
+    title: 'Convert to M4B',
+    audiobookId: job.audiobookId,
+    status: failed ? 'importblocked' : job.status === 'Running' ? 'processing' : 'queued',
+    progress: job.progress,
+    size: 0,
+    downloaded: 0,
+    downloadSpeed: 0,
+    eta: undefined,
+    quality: '',
+    downloadClient: failed
+      ? 'MP3 to M4B'
+      : `MP3 to M4B · ${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
+    downloadClientId: 'LISTENARR_CONVERSION',
+    downloadClientType: 'conversion',
+    addedAt: '',
+    errorMessage: job.error ?? undefined,
+    canPause: false,
+    canRemove: false,
+    canRetryImport: failed && job.canRetry,
+  }
+}
+
+// Phase names come from the server as enum names; these are what an operator reads.
+const CONVERSION_PHASE_LABELS: Record<string, string> = {
+  None: 'Waiting',
+  Probing: 'Reading source files',
+  Encoding: 'Encoding',
+  Verifying: 'Verifying',
+  Publishing: 'Publishing',
+  RetiringSources: 'Tidying up sources',
+}
+
+/**
+ * A tag write reports like a conversion: one row per book, a bar while it runs, and
+ * on failure a clickable status carrying the reason and a retry.
+ */
+const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
+  const failed = job.status === 'Failed'
+  const phaseLabel = TAG_PHASE_LABELS[job.phase] ?? 'Writing tags'
+
+  return {
+    id: `tagging:${job.jobId}`,
+    title: 'Write metadata tags',
+    audiobookId: job.audiobookId,
+    status: failed ? 'importblocked' : job.status === 'Running' ? 'processing' : 'queued',
+    progress: job.progress,
+    size: 0,
+    downloaded: 0,
+    downloadSpeed: 0,
+    eta: undefined,
+    quality: '',
+    downloadClient: failed
+      ? 'Metadata tags'
+      : `Metadata tags · ${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
+    downloadClientId: 'LISTENARR_TAGGING',
+    downloadClientType: 'tagging',
+    addedAt: '',
+    errorMessage: job.error ?? undefined,
+    canPause: false,
+    canRemove: false,
+    canRetryImport: failed && job.canRetry,
+  }
+}
+
+const TAG_PHASE_LABELS: Record<string, string> = {
+  None: 'Waiting',
+  Reading: 'Reading current tags',
+  Writing: 'Writing tags',
+  Verifying: 'Verifying',
+  Publishing: 'Publishing',
+}
+
 // Read user preference from configuration store
 const showCompletedExternalDownloads = computed(
   () => configStore.applicationSettings?.showCompletedExternalDownloads ?? false,
@@ -519,11 +687,42 @@ const isDirectDownload = (downloadClientId?: string): boolean =>
   (downloadClientId || '').toString().toUpperCase() === 'DDL'
 
 const allActivityItems = computed(() => {
-  const queueItems = [...queue.value]
-  const trackedQueueIds = new Set(queueItems.map((item) => item.id))
-
   const activeDownloadsList = unref(downloadsStore.activeDownloads || [])
   const failedDownloadsList = unref(downloadsStore.failedDownloads || [])
+
+  // A download client reports 'completed' once *its* work is done, but Listenarr
+  // may still have the import to do. The queue snapshot shadows our own record by
+  // id, so without this the row is filtered out as completed and vanishes from
+  // Activity while the sidebar badge keeps counting it.
+  //
+  // Only post-transfer states override the snapshot. While a file is still moving
+  // the client is the fresher authority on transfer state, and a stale local
+  // 'Downloading' must not override its 'completed' — these are the states the
+  // client has no knowledge of at all, because they are ours.
+  const ourPostTransferStates = new Set(['importpending', 'importblocked', 'processing'])
+  const stillOurWork = new Map<string, QueueItem>()
+  for (const download of [...activeDownloadsList, ...failedDownloadsList]) {
+    const converted = convertDownloadToQueueItem(download)
+    if (ourPostTransferStates.has(converted.status)) {
+      stillOurWork.set(download.id, converted)
+    }
+  }
+
+  const queueItems = queue.value.map((item) => {
+    const ours = stillOurWork.get(item.id)
+    if (!ours || item.status !== 'completed') return item
+
+    // Keep the client's transfer figures, take our post-transfer state and the
+    // detail that goes with it — without the reason and the retry, the row tells
+    // the operator something is wrong but nothing about what or what to do.
+    return {
+      ...item,
+      status: ours.status,
+      errorMessage: ours.errorMessage ?? item.errorMessage,
+      canRetryImport: ours.canRetryImport,
+    }
+  })
+  const trackedQueueIds = new Set(queueItems.map((item) => item.id))
 
   const ddlDownloadItems = activeDownloadsList
     .filter((d) => isDirectDownload(d.downloadClientId))
@@ -589,6 +788,26 @@ const allActivityItems = computed(() => {
       finalMap.set(item.id, item)
     }
   }
+  // Active conversions, plus failed ones: a failure the operator has to act on
+  // must stay on screen. Completed conversions drop out like any finished work.
+  for (const job of conversionJobsStore.jobs) {
+    if (job.status === 'Completed' || job.status === 'Cancelled' || job.status === 'Superseded') {
+      continue
+    }
+
+    const item = convertConversionJobToQueueItem(job)
+    finalMap.set(item.id, item)
+  }
+  // Same rule for tag writes, and one more reason to keep failures on screen: a
+  // failed one may be holding the only copy of a library file it already removed.
+  for (const job of tagJobsStore.jobs) {
+    if (job.status === 'Completed' || job.status === 'Cancelled' || job.status === 'Superseded') {
+      continue
+    }
+
+    const item = convertTagJobToQueueItem(job)
+    finalMap.set(item.id, item)
+  }
   for (const it of combined) finalMap.set(it.id, it)
   for (const it of completedExternal) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
   for (const it of failedFromDownloads) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
@@ -629,6 +848,67 @@ const filteredQueue = computed(() => {
     )
   })
 })
+
+const retryingImportId = ref<string | null>(null)
+const blockDetailsItem = ref<QueueItem | null>(null)
+
+// The row is a single fixed-height line, so the reason lives here where it has
+// room to wrap and sit next to the action it calls for.
+const blockDetailLines = computed(() =>
+  (blockDetailsItem.value?.errorMessage ?? '')
+    .split(' — ')
+    .map((line) => line.trim())
+    .filter(Boolean),
+)
+
+const blockDetailsIsConversion = computed(
+  () => blockDetailsItem.value?.id.startsWith('conversion:') ?? false,
+)
+
+const blockDetailsIsTagging = computed(
+  () => blockDetailsItem.value?.id.startsWith('tagging:') ?? false,
+)
+
+/**
+ * Whether the failed tag write is holding a library file's only copy. That is not an
+ * ordinary failure and must not read like one: the book is missing a file until this
+ * job is retried.
+ */
+const blockDetailsTagJobHoldsFile = computed(() => {
+  const id = blockDetailsItem.value?.id
+  if (!id?.startsWith('tagging:')) return false
+  const jobId = id.slice('tagging:'.length).toLowerCase()
+  return tagJobsStore.jobs.some(
+    (job) => job.jobId.toLowerCase() === jobId && job.holdingUnpublishedFile,
+  )
+})
+
+const openBlockDetails = (item: QueueItem) => {
+  blockDetailsItem.value = item
+}
+
+const retryImport = async (item: QueueItem) => {
+  retryingImportId.value = item.id
+  try {
+    if (item.id.startsWith('conversion:')) {
+      await conversionJobsStore.retry(item.id.slice('conversion:'.length))
+    } else if (item.id.startsWith('tagging:')) {
+      await tagJobsStore.retry(item.id.slice('tagging:'.length))
+    } else {
+      await apiService.retryImport(item.id)
+    }
+
+    blockDetailsItem.value = null
+    await refreshQueue()
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'ActivityView',
+      operation: 'retryImport',
+    })
+  } finally {
+    retryingImportId.value = null
+  }
+}
 
 const refreshQueue = async () => {
   loading.value = true
@@ -727,6 +1007,8 @@ const formatEta = (seconds: number): string => {
 // Subscribe to SignalR for real-time updates
 onMounted(async () => {
   moveJobsStore.start()
+  conversionJobsStore.start()
+  tagJobsStore.start()
   updateActivityLayoutMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleViewportResize, { passive: true })
@@ -1084,6 +1366,35 @@ onUnmounted(() => {
 }
 
 /* Status badges */
+.status-badge-actionable {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-badge-actionable:hover,
+.status-badge-actionable:focus-visible {
+  filter: brightness(1.25);
+}
+
+.status-badge-hint {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.block-reason-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .status-badge {
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
@@ -1323,6 +1634,14 @@ onUnmounted(() => {
   margin-top: 0.1rem;
   width: 18px;
   height: 18px;
+}
+
+/* A book that is missing a file until this job is retried is not a yellow-notice
+   problem, and reading like one would get it left for later. */
+.warning-text-urgent {
+  color: #ff6b6b;
+  background-color: rgba(255, 107, 107, 0.12);
+  border-color: rgba(255, 107, 107, 0.3);
 }
 
 .modal-footer {

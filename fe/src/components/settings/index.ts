@@ -22,6 +22,7 @@ export { default as DownloadSettingsSection } from './DownloadSettingsSection.vu
 export { default as ExternalRequestsSection } from './ExternalRequestsSection.vue'
 export { default as FeaturesSection } from './FeaturesSection.vue'
 export { default as FileManagementSection } from './FileManagementSection.vue'
+export { default as MetadataTagsSection } from './MetadataTagsSection.vue'
 export { default as FormRow } from './FormRow.vue'
 export { default as FormSection } from './FormSection.vue'
 export { default as IndexerFormModal } from './IndexerFormModal.vue'

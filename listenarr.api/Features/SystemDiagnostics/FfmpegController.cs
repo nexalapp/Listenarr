@@ -45,7 +45,7 @@ namespace Listenarr.Api.Features.SystemDiagnostics
         }
 
         /// <summary>
-        /// Get the path to the bundled ffprobe binary and the associated license notice.
+        /// Get the paths to the bundled ffprobe and ffmpeg binaries and the associated license notice.
         /// </summary>
         /// <remarks>Restricted to local or admin callers.</remarks>
         [HttpGet("info")]
@@ -54,6 +54,7 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             return Ok(new
             {
                 ffprobePath = await _ffmpegService.GetFfprobePathAsync(),
+                ffmpegPath = await _ffmpegService.GetFfmpegPathAsync(),
                 licenseNotice = await _ffmpegService.GetLicenseAsync()
             });
         }

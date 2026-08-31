@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.HostedServices;
+using Listenarr.Infrastructure.Search.NzbKing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -40,6 +41,7 @@ internal static class WorkerRegistrationExtensions
 
         AddHostedProcessor<AutomaticSearchProcessor, IAutomaticSearchProcessor, AutomaticSearchService>(services);
         AddHostedProcessor<AuthorMonitoringProcessor, IAuthorMonitoringProcessor, AuthorMonitoringBackgroundService>(services);
+        AddHostedProcessor<NzbKingKeepaliveProcessor, INzbKingKeepaliveProcessor, NzbKingKeepaliveBackgroundService>(services);
         AddHostedProcessor<SeriesMonitoringProcessor, ISeriesMonitoringProcessor, SeriesMonitoringBackgroundService>(services);
         AddHostedProcessor<FfmpegInstallProcessor, IFfmpegInstallProcessor, FfmpegInstallBackgroundService>(services);
         AddHostedProcessor<MetadataRescanProcessor, IMetadataRescanProcessor, MetadataRescanService>(services);
@@ -55,6 +57,22 @@ internal static class WorkerRegistrationExtensions
             DownloadProcessingJobCleanupProcessor,
             IDownloadProcessingJobCleanupProcessor,
             DownloadProcessingJobCleanupService>(services);
+
+        // Conversion is deliberately its own worker rather than a stage of the import
+        // processor: an encode can run for an hour, and sharing that worker would stall
+        // every other import behind it.
+        AddHostedProcessor<
+            ConversionJobProcessor,
+            IConversionJobProcessor,
+            ConversionBackgroundService>(services);
+
+        // Tag writing is its own worker for the same reason, and separate from conversion
+        // besides: a book already in M4B never touches the conversion queue, and one that
+        // does is tagged by the conversion itself.
+        AddHostedProcessor<
+            TagJobProcessor,
+            ITagJobProcessor,
+            TagBackgroundService>(services);
 
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
         return services;

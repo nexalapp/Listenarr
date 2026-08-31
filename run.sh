@@ -12,6 +12,28 @@
 #   ./run.sh help       list every target
 # ---------------------------------------------------------------------------
 
+# Machine-specific overrides live in .env.local, which is gitignored. Put the
+# folders this machine uses there once instead of exporting them per shell:
+#
+#   LISTENARR_DEV_ARCHIVE=/path/to/where/converted/sources/are/archived
+#
+# An exported value still wins, so a one-off override needs no edit.
+if [ -f ".env.local" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in '' | \#*) continue ;; esac
+        key="${line%%=*}"
+        value="${line#*=}"
+        key="${key// /}"
+        value="${value%\"}"
+        value="${value#\"}"
+        # An exported value wins, matching docker compose's own precedence, so a
+        # one-off override needs no edit to the file.
+        if [ -z "${!key:-}" ]; then
+            export "$key=$value"
+        fi
+    done <".env.local"
+fi
+
 COMPOSE_FILE="docker-compose.dev.yml"
 CONTAINER="listenarr-listenarr-dev-1"
 API_URL="http://localhost:4545"
@@ -20,6 +42,15 @@ WEB_URL="http://localhost:5173"
 # Folder bind-mounted at /audiobooks inside the container. Override per shell:
 #   LISTENARR_DEV_LIBRARY=/path/to/books ./run.sh dev
 export LISTENARR_DEV_LIBRARY="${LISTENARR_DEV_LIBRARY:-../audiobooks-test}"
+# Where the download client's completed files are readable from this machine, and the
+# path the client reports them under. Import resolves files by the client's own path,
+# so the two must line up. Mounted read-only.
+export LISTENARR_DEV_DOWNLOADS="${LISTENARR_DEV_DOWNLOADS:-./dev-downloads}"
+export LISTENARR_DEV_DOWNLOADS_TARGET="${LISTENARR_DEV_DOWNLOADS_TARGET:-/downloads}"
+# Where a conversion moves a book's source MP3s once its M4B is verified. The
+# container path is what goes in Settings -> General -> Conversion Archive Path.
+export LISTENARR_DEV_ARCHIVE="${LISTENARR_DEV_ARCHIVE:-./dev-archive}"
+export LISTENARR_DEV_ARCHIVE_TARGET="${LISTENARR_DEV_ARCHIVE_TARGET:-/archive}"
 
 
 # -- Dev environment --
@@ -28,6 +59,14 @@ dev() {
     if [ ! -d "$LISTENARR_DEV_LIBRARY" ]; then
         echo "Warning: library folder '$LISTENARR_DEV_LIBRARY' does not exist."
         echo "         Set LISTENARR_DEV_LIBRARY to point at your audiobooks."
+    fi
+    if [ "$LISTENARR_DEV_DOWNLOADS" != "./dev-downloads" ] && [ ! -d "$LISTENARR_DEV_DOWNLOADS" ]; then
+        echo "Warning: downloads folder '$LISTENARR_DEV_DOWNLOADS' does not exist."
+        echo "         Imports will find no files to import."
+    fi
+    if [ "$LISTENARR_DEV_ARCHIVE" != "./dev-archive" ] && [ ! -d "$LISTENARR_DEV_ARCHIVE" ]; then
+        echo "Warning: archive folder '$LISTENARR_DEV_ARCHIVE' does not exist."
+        echo "         Conversions will convert but leave their source files in place."
     fi
     echo "Starting Listenarr (library: $LISTENARR_DEV_LIBRARY)"
     docker compose -f "$COMPOSE_FILE" up -d
@@ -41,6 +80,15 @@ stop() {
 restart() {
     # Needed after structural C# edits: hot reload cannot apply deleted fields or
     # types and dotnet watch halts with ENC0033 rather than rebuilding.
+    #
+    # Both commands are needed, for different reasons. "up -d" applies compose
+    # changes: plain restart reuses the existing container, so a changed mount or
+    # environment variable is silently ignored and you debug a container that never
+    # picked it up. But "up -d" leaves an unchanged container running untouched,
+    # which is no use when the point is to bounce a dotnet watch that has wedged --
+    # so restart follows it. When up recreates the container, restart is a no-op
+    # against a freshly started one.
+    docker compose -f "$COMPOSE_FILE" up -d
     docker compose -f "$COMPOSE_FILE" restart
     wait_for_api
 }

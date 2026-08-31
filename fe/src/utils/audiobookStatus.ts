@@ -19,6 +19,7 @@ import type { Audiobook, AudiobookStatus } from '@/types'
 
 const AUDIOBOOK_STATUSES: AudiobookStatus[] = [
   'downloading',
+  'announced',
   'no-file',
   'quality-mismatch',
   'quality-match',
@@ -32,6 +33,8 @@ export function formatAudiobookStatus(status: AudiobookStatus): string {
   switch (status) {
     case 'downloading':
       return 'Downloading'
+    case 'announced':
+      return 'Announced'
     case 'no-file':
       return 'Missing'
     case 'quality-mismatch':

@@ -142,18 +142,29 @@ public sealed class ManualImportCompanionOwnershipTests : BaseTests
             {
                 [targetAudiobook.Id] = destinationResolution
             },
-            importBlacklist: []);
+            importBlacklist: [],
+            rootFolders: [
+                new RootFolder
+                {
+                    Id = 1,
+                    Name = "library",
+                    Path = Path.Join(testRoot, "library")
+                }
+            ]);
 
         Assert.Equal(0, imported);
         Assert.True(File.Exists(companionSource));
         Assert.False(File.Exists(companionDestination));
         mover.Verify(
-            service => service.PerformActionOn(
-                It.IsAny<FileAction>(),
+            service => service.PrepareActionForRegistrationDetailedAsync(
+                It.IsAny<FilePublicationPlan>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
-                It.IsAny<FilePublicationSourceProof>()),
+                It.IsAny<string?>(),
+                It.IsAny<FilePublicationSourceProof>(),
+                It.IsAny<bool>(),
+                It.IsAny<int?>()),
             Times.Never);
     }
 }

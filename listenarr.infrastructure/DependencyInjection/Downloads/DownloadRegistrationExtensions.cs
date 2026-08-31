@@ -76,6 +76,8 @@ internal static class DownloadRegistrationExtensions
             provider.GetRequiredService<FileMover>());
         services.AddScoped<IFilePublicationSourceCapability>(provider =>
             provider.GetRequiredService<FileMover>());
+        services.AddScoped<IFilePublicationCapabilityResolver,
+            FilePublicationCapabilityResolver>();
         services.AddScoped<IArchiveExtractor, ArchiveExtractor>();
         services.AddOptions<FileMoverOptions>()
             .Bind(configuration.GetSection("FileMover"))
@@ -102,6 +104,7 @@ internal static class DownloadRegistrationExtensions
         services.AddScoped<INzbFileDownloader, NzbFileDownloader>();
         services.AddScoped<MyAnonamouseTorrentPreparationService>();
         services.AddSingleton<IDirectDownloadSourcePolicy, InternetArchiveDirectDownloadSourcePolicy>();
+        services.AddScoped<IDownloadSourceResolver, AbookLinkSourceResolver>();
         services.AddScoped<IDownloadSourceResolver, MyAnonamouseSourceResolver>();
         services.AddScoped<IDownloadSourceResolver, GenericTorrentSourceResolver>();
         services.AddScoped<IDownloadSourceResolver, GenericUsenetSourceResolver>();

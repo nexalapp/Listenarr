@@ -99,6 +99,35 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
+        public async Task TestConnection_WithUrlBase_PrefixesApiPath()
+        {
+            var mock = _provider.GetRequiredService<QbittorrentApiMock>();
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("192.168.50.111")
+                .WithPort(8080)
+                .WithoutSsl()
+                .WithType("qbittorrent")
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithUrlBase("/qbittorrent")
+                .Build());
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            var (success, message) = await adapter.TestConnectionAsync(client);
+
+            Assert.True(success);
+            Assert.Contains("Successfully connected to qBittorrent", message, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(mock.GetLastRequest());
+
+            var uri = mock.GetLastRequest().RequestUri;
+            // Unlike Transmission's urlBase (which replaces the whole RPC path to match Transmission's
+            // own --rpc-url-base setting), qBittorrent has no equivalent server-side base path setting,
+            // so urlBase is a plain prefix: the fixed "/api/v2/..." routes must still follow it.
+            Assert.Equal("/qbittorrent/api/v2/app/version", uri.AbsolutePath);
+        }
+
+        [Fact]
         public async Task AddAsync_WhenMagnetAndTorrentUrlAreProvided_UsesVerifiedMagnetHashWithoutDownloading()
         {
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
@@ -495,6 +524,57 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Empty(items);
         }
 
+
+        // A queue response whose middle torrent carries `downloaded` in the given JSON token form.
+        // The torrents either side of it are well formed, so anything missing from the result is
+        // attributable to that one field.
+        private static string QueueWithMalformedMiddleTorrent(string malformedDownloaded) => $$"""
+        [
+            {
+                "hash": "aaaa1111", "name": "First", "progress": 0.5, "size": 1000,
+                "downloaded": 500, "state": "downloading", "save_path": "/downloads/a"
+            },
+            {
+                "hash": "bbbb2222", "name": "Second", "progress": 0.5, "size": 1000,
+                "downloaded": {{malformedDownloaded}}, "state": "downloading", "save_path": "/downloads/b"
+            },
+            {
+                "hash": "cccc3333", "name": "Third", "progress": 0.5, "size": 1000,
+                "downloaded": 700, "state": "downloading", "save_path": "/downloads/c"
+            }
+        ]
+        """;
+
+        // qBittorrent documents `downloaded` as an integer, so the typed accessor reading it is
+        // right about the normal case. It was not resilient about the abnormal one: a value in
+        // another token form threw out of the mapper, out of the loop walking the response, and
+        // took every torrent after it along with it, while the poll still reported itself as a
+        // healthy live snapshot.
+        //
+        // "600.5" is a JSON number that is not an integer (FormatException from GetInt64) and
+        // "\"600\"" is a quoted one (InvalidOperationException). The quoted form is the shape
+        // already reported against the NZBGet adapter in #618 and #619.
+        [Theory]
+        [InlineData("600.5")]
+        [InlineData("\"600\"")]
+        [InlineData("6e2")]
+        public async Task GetQueueAsync_WhenOneTorrentIsUnreadable_DropsOnlyThatTorrent(string malformedDownloaded)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = QueueWithMalformedMiddleTorrent(malformedDownloaded);
+            var gateway = (DownloadClientGateway)_provider.GetRequiredService<IDownloadClientGateway>();
+            var adapter = (QbittorrentAdapter)gateway.ResolveAdapter(_client);
+
+            var items = await adapter.GetQueueAsync(_client);
+
+            // The torrent AFTER the unreadable one is the whole point. Asserting only that the
+            // list is non-empty would pass on the truncating behaviour, because the first torrent
+            // is mapped before anything throws.
+            Assert.Contains(items, item => item.Id == "aaaa1111");
+            Assert.Contains(items, item => item.Id == "cccc3333");
+            Assert.DoesNotContain(items, item => item.Id == "bbbb2222");
+            Assert.Equal(2, items.Count);
+        }
         [Fact]
         public async Task MarkItemAsImportedAsync_SetsConfiguredPostImportCategory()
         {

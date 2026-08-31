@@ -26,6 +26,7 @@ const advancedSearch = vi.fn()
 const scanUnmatchedFiles = vi.fn()
 const getUnmatchedResults = vi.fn()
 const getSavedUnmatchedFiles = vi.fn()
+const getEmbeddedFileMetadata = vi.fn()
 let unmatchedScanHandler:
   | ((payload: { jobId: string; error?: string }) => void | Promise<void>)
   | null = null
@@ -40,6 +41,7 @@ vi.mock('@/services/api', () => ({
     scanUnmatchedFiles,
     getUnmatchedResults,
     getSavedUnmatchedFiles,
+    getEmbeddedFileMetadata,
   },
 }))
 
@@ -101,7 +103,20 @@ describe('library import store', () => {
     }
 
     store.action = 'move'
-    await store.importSelected('D:\\library')
+    startManualImport.mockResolvedValueOnce({
+      importedCount: 3,
+      totalCount: 3,
+      results: [
+        {
+          success: true,
+          sourcePath: 'C:\\incoming\\Part 1.mp3',
+          destinationPath: 'D:\\library\\Ordered Book\\Part 1.mp3',
+          warning: 'The source file was retained because durable identity is unavailable.',
+        },
+      ],
+    })
+
+    const result = await store.importSelected('D:\\library')
 
     expect(addToLibrary).toHaveBeenCalledTimes(1)
     expect(startManualImport).toHaveBeenCalledTimes(1)
@@ -117,6 +132,9 @@ describe('library import store', () => {
         { fullPath: 'C:\\incoming\\Part 10.mp3', matchedAudiobookId: 42 },
       ],
     })
+    expect(result.warnings).toEqual([
+      'The source file was retained because durable identity is unavailable.',
+    ])
   })
 
   it('registers files in place using the discovered book folder and backend success result', async () => {
@@ -176,7 +194,7 @@ describe('library import store', () => {
         },
       ],
     })
-    expect(result).toEqual({ imported: 1, errors: [] })
+    expect(result).toEqual({ imported: 1, errors: [], warnings: [] })
     expect(store.itemList).toHaveLength(0)
   })
 
@@ -400,5 +418,233 @@ describe('library import store', () => {
     expect(store.items['C:\\incoming\\Chapter 01.mp3']?.selectedMatch?.title).toBe(
       'Jack of Shadows',
     )
+  })
+
+  it('keeps a failed lookup unprocessed instead of recording it as no match', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    // A throttled provider rejects; that is not an answer about the book.
+    advancedSearch.mockRejectedValue(new Error('429 Too Many Requests'))
+
+    const path = 'C:\\incoming\\Rate Limited.mp3'
+    store.items = {
+      [path]: {
+        id: path,
+        fullPath: path,
+        sourceFiles: [path],
+        folderPath: 'C:\\incoming',
+        relativePath: 'rate-limited',
+        folderName: 'rate-limited',
+        detectedTitle: 'Rate Limited',
+        detectedAuthor: 'Some Author',
+        format: 'MP3',
+        fileCount: 1,
+        selectedMatch: null,
+        hasSearched: false,
+        searchFailed: false,
+        isSearching: false,
+        selected: false,
+      },
+    }
+
+    store.startProcessing()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const item = store.items[path]
+    expect(item?.searchFailed).toBe(true)
+    expect(item?.selectedMatch).toBeNull()
+
+    // The row must stay in the unprocessed set so the next run retries it.
+    expect(item?.hasSearched).toBe(false)
+    expect(store.hasUnprocessedItems).toBe(true)
+    expect(store.failedCount).toBe(1)
+  })
+
+  it('carries every series membership of a multi-series match into the add request', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    // A book can legitimately belong to more than one series. Audnexus returns these as
+    // seriesPrimary/seriesSecondary and the backend builds one membership per entry, so the
+    // import path has to send both rather than keeping only the first.
+    store.items = {
+      '/incoming/Two Series/Book.m4b': {
+        id: '/incoming/Two Series/Book.m4b',
+        fullPath: '/incoming/Two Series/Book.m4b',
+        sourceFiles: ['/incoming/Two Series/Book.m4b'],
+        folderPath: '/incoming/Two Series',
+        relativePath: 'Two Series',
+        folderName: 'Two Series',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: {
+          title: 'Two Series Book',
+          authors: [{ name: 'Author' }],
+          series: [
+            { asin: 'B01E633FQM', name: 'First Series', position: '0' },
+            { asin: 'B01F5TL5K4', name: 'Second Series', position: '7' },
+          ],
+        } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+    store.action = 'none'
+
+    await store.importSelected('')
+
+    const metadata = addToLibrary.mock.calls[0][0]
+    expect(metadata.seriesMemberships).toEqual([
+      {
+        seriesName: 'First Series',
+        seriesNumber: '0',
+        seriesAsin: 'B01E633FQM',
+        isPrimary: true,
+        sortOrder: 0,
+      },
+      {
+        seriesName: 'Second Series',
+        seriesNumber: '7',
+        seriesAsin: 'B01F5TL5K4',
+        isPrimary: false,
+        sortOrder: 1,
+      },
+    ])
+    // The primary is still mirrored onto the legacy scalars.
+    expect(metadata.series).toBe('First Series')
+    expect(metadata.seriesNumber).toBe('0')
+  })
+
+  it('drops a series asin that is really the series name', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    // When the search endpoint cannot re-fetch the book by ASIN it synthesizes a single
+    // series entry whose `asin` is a copy of the series name. That must not be persisted
+    // as a series ASIN.
+    store.items = {
+      '/incoming/Fallback/Book.m4b': {
+        id: '/incoming/Fallback/Book.m4b',
+        fullPath: '/incoming/Fallback/Book.m4b',
+        sourceFiles: ['/incoming/Fallback/Book.m4b'],
+        folderPath: '/incoming/Fallback',
+        relativePath: 'Fallback',
+        folderName: 'Fallback',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: {
+          title: 'Fallback Book',
+          authors: [{ name: 'Author' }],
+          series: [{ asin: 'Some Series', name: 'Some Series', position: '2' }],
+        } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+    store.action = 'none'
+
+    await store.importSelected('')
+
+    const metadata = addToLibrary.mock.calls[0][0]
+    expect(metadata.seriesMemberships).toEqual([
+      {
+        seriesName: 'Some Series',
+        seriesNumber: '2',
+        seriesAsin: undefined,
+        isPrimary: true,
+        sortOrder: 0,
+      },
+    ])
+  })
+
+  it('imports a file-metadata book unmonitored even when the page is set to monitor all', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    // A book matched from its own tags has no ASIN, so an indexer query cannot identify a
+    // release for it. Monitoring it would park it in Wanted forever, so the page-level
+    // Monitor setting must not apply to this path.
+    store.monitor = 'all'
+    store.action = 'none'
+    store.rootFolderId = 2
+
+    const fileMetadata = {
+      title: 'Chronicles of Narnia Intro',
+      authors: ['C. S. Lewis'],
+      narrators: ['Kenneth Branagh'],
+      imageUrl: 'config/cache/images/temp/embedded-abc.jpg',
+      isbn: [],
+    }
+    getEmbeddedFileMetadata.mockResolvedValue(fileMetadata)
+    addToLibrary.mockResolvedValue({ audiobook: { id: 71 } })
+    startManualImport.mockResolvedValue({ importedCount: 1, results: [{ success: true }] })
+
+    const path = '/incoming/Narnia/intro.m4b'
+    store.items = {
+      [path]: {
+        id: path,
+        fullPath: path,
+        sourceFiles: [path],
+        folderPath: '/incoming/Narnia',
+        relativePath: 'Narnia',
+        folderName: 'Narnia',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: null,
+        fileMetadata: null,
+        hasSearched: true,
+        searchFailed: false,
+        isSearching: false,
+        selected: false,
+      },
+    }
+
+    const applied = await store.useFileMetadata(path)
+    expect(applied).toEqual(fileMetadata)
+    expect(getEmbeddedFileMetadata).toHaveBeenCalledWith(2, path)
+    expect(store.items[path]?.selected).toBe(true)
+
+    const result = await store.importSelected('')
+
+    expect(result.imported).toBe(1)
+    const [sentMetadata, options] = addToLibrary.mock.calls[0]
+    expect(sentMetadata).toEqual(fileMetadata)
+    expect(options.monitored).toBe(false)
+    // There is no catalogue result to send, and sending a fabricated one would make the
+    // backend treat this as a matched book.
+    expect(options.searchResult).toBeUndefined()
+  })
+
+  it('clears file metadata along with the match so the row can be searched again', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    const path = '/incoming/Book/book.m4b'
+    store.items = {
+      [path]: {
+        id: path,
+        fullPath: path,
+        sourceFiles: [path],
+        folderPath: '/incoming/Book',
+        relativePath: 'Book',
+        folderName: 'Book',
+        format: 'M4B',
+        fileCount: 1,
+        selectedMatch: null,
+        fileMetadata: { title: 'From File', isbn: [] },
+        hasSearched: true,
+        searchFailed: false,
+        isSearching: false,
+        selected: true,
+      },
+    }
+
+    store.clearMatch(path)
+
+    expect(store.items[path]?.fileMetadata).toBeNull()
+    expect(store.items[path]?.selected).toBe(false)
   })
 })

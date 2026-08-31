@@ -132,10 +132,19 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     return;
                 }
 
-                await downloadService.UpdateAsync(
-                    download.Blocked(
-                        "Unable to import the download",
-                        $"See the log of job {job.Id} for more information"));
+                // Carry the reason itself, not a pointer to a job id the operator has
+                // no way to look up. This message is the whole of what the UI can
+                // show them about why the import stopped.
+                var blocked = download.Blocked(
+                    "Unable to import the download",
+                    job.ErrorMessage ?? $"See the log of job {job.Id} for more information");
+
+                foreach (var entry in ImportFailureNarrator.DescribeAttempts(job))
+                {
+                    blocked.AddBlockMessage(entry);
+                }
+
+                await downloadService.UpdateAsync(blocked);
             }
         }
 
@@ -303,8 +312,11 @@ namespace Listenarr.Infrastructure.Downloads.Processing
 
                 if (results.Any(result => !result.Success))
                 {
+                    // Name what actually failed. Pointing at "the log entries" asks the
+                    // operator to read a job log the UI does not expose, and this reason is
+                    // what the blocked import shows them.
                     await FailImportAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, "Unable to import at least one file for the job (see the log entries)", cancellationToken);
+                        correlationId, ImportFailureNarrator.DescribeFailedImports(results), cancellationToken);
                     return;
                 }
 
@@ -348,6 +360,10 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                         {
                             JobId = job.Id,
                             result.Action,
+                            result.RequestedAction,
+                            result.EffectiveAction,
+                            result.SourceDisposition,
+                            result.WarningCode,
                             result.SourcePath,
                             result.FinalPath,
                             result.WasRegisteredToAudiobook
@@ -355,6 +371,9 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     }, cancellationToken);
                 }
 
+                job.JobData["SourceRetained"] = results.Any(result =>
+                    result.SourceDisposition
+                        == ImportSourceDisposition.Retained);
                 job.SetCheckpoint("FilesImported", results.Count);
                 await downloadProcessingJobService.UpdateJobAsync(job);
             }
@@ -437,5 +456,7 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     correlationId, $"Unable to commit import finalization: {exception.Message}", cancellationToken);
             }
         }
+
+
     }
 }

@@ -53,6 +53,8 @@ vi.mock('@/services/signalr', () => ({
     onDownloadUpdate: vi.fn(() => () => undefined),
     onDownloadsList: vi.fn(() => () => undefined),
     onScanJobUpdate: vi.fn(() => () => undefined),
+    onConversionJobUpdate: vi.fn(() => () => undefined),
+    onTagJobUpdate: vi.fn(() => () => undefined),
   },
 }))
 
@@ -147,6 +149,230 @@ describe('AudiobookDetailView image recache behavior', () => {
     await genreTag!.trigger('click')
 
     expect(routerPushMock).toHaveBeenCalledWith('/collection/genre/Fantasy')
+  })
+
+  it('names the authors in the hero, ahead of the runtime, each opening its collection', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Detail Book',
+        authors: ['Brandon Sanderson', 'Janci Patterson'],
+        runtime: 3600,
+        files: [],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const meta = wrapper.find('.meta-info')
+    expect(meta.text().replace(/\s+/g, ' ')).toContain('Brandon Sanderson, Janci Patterson')
+
+    // The authors read before the runtime
+    const order = Array.from(meta.element.children).map((c) => c.className)
+    expect(order).toEqual(['authors', 'runtime'])
+
+    const links = wrapper.findAll('.meta-author-link')
+    expect(links).toHaveLength(2)
+
+    routerPushMock.mockClear()
+    await links[1]!.trigger('click')
+    expect(routerPushMock).toHaveBeenCalledWith('/collection/author/Janci%20Patterson')
+  })
+
+  it('drops a subtitle that only restates the series, leaving the chips', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Howling Dark',
+        subtitle: 'Sun Eater, Book 2',
+        seriesMemberships: [{ seriesName: 'Sun Eater', seriesNumber: '2', isPrimary: true }],
+        files: [],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(wrapper.find('.subtitle').exists()).toBe(false)
+    const chips = wrapper.find('.hero-series')
+    expect(chips.exists()).toBe(true)
+    expect(chips.text().replace(/\s+/g, ' ')).toContain('Sun Eater #2')
+    // "Primary" would be noise on a book with only one series
+    expect(chips.text()).not.toContain('Primary')
+
+    routerPushMock.mockClear()
+    await chips.find('.detail-link-tag').trigger('click')
+    expect(routerPushMock).toHaveBeenCalledWith('/collection/series/Sun%20Eater')
+  })
+
+  it('keeps a subtitle that says something the series does not', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'A War of Gifts',
+        subtitle: 'An Ender Story',
+        seriesMemberships: [{ seriesName: 'The Ender Saga', seriesNumber: '10', isPrimary: true }],
+        files: [],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    // A subtitle worth keeping reads above the chips, which always show
+    expect(wrapper.find('.subtitle').text()).toBe('An Ender Story')
+    expect(wrapper.find('.hero-series').text().replace(/\s+/g, ' ')).toContain('The Ender Saga #10')
+  })
+
+  it('names the language once, and only flags a book that is actually abridged', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 5, title: 'Detail Book', language: 'english', abridged: false, files: [] },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const hero = wrapper.find('.info-section').text()
+    expect(hero.match(/English/g)).toHaveLength(1)
+    // Every book being "Unabridged" says nothing; only the exception is worth a chip
+    expect(hero).not.toContain('Unabridged')
+    expect(hero).not.toContain('Abridged')
+  })
+
+  it('flags an abridged book, and invents no language for a book that has none', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 5, title: 'Detail Book', abridged: true, files: [] },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const hero = wrapper.find('.info-section').text()
+    expect(hero).toContain('Abridged')
+    expect(hero).not.toContain('English')
+  })
+
+  it('keeps the monitor toggle on the file details row rather than a row of its own', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 5, title: 'Detail Book', monitored: true, files: [] },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const rows = Array.from(wrapper.find('.info-section').element.children).map((c) => c.className)
+    expect(rows).not.toContain('status-badges')
+    expect(wrapper.find('.key-details .hero-monitor-pill').exists()).toBe(true)
+  })
+
+  it('shows the series even when the book has no subtitle, and no row when it has no series', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Series Book',
+        seriesMemberships: [{ seriesName: 'Sun Eater', seriesNumber: '4', isPrimary: true }],
+        files: [],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const withSeries = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(withSeries.find('.subtitle').exists()).toBe(false)
+    expect(withSeries.find('.hero-series').text().replace(/\s+/g, ' ')).toContain('Sun Eater #4')
+
+    store.audiobooks = [
+      { id: 5, title: 'Standalone Book', subtitle: 'A True Story', files: [] },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    const standalone = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(standalone.find('.subtitle').text()).toBe('A True Story')
+    expect(standalone.find('.hero-series').exists()).toBe(false)
+  })
+
+  it('names the file formats after the runtime, and nothing when there are no files', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Detail Book',
+        runtime: 60,
+        files: [{ path: '/audiobooks/a/Part 1.MP3' }, { path: '/audiobooks/a/Part 2.mp3' }],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const withFiles = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const meta = withFiles.find('.meta-info')
+    // Distinct containers only, and case does not make two of one format
+    expect(meta.find('.formats').text()).toBe('.mp3')
+    expect(Array.from(meta.element.children).map((c) => c.className)).toEqual([
+      'runtime',
+      'formats',
+    ])
+
+    // A book whose files the library does not hold yet claims no format
+    store.audiobooks = [
+      { id: 5, title: 'Missing Book', runtime: 60, files: [] },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    const noFiles = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(noFiles.find('.formats').exists()).toBe(false)
+  })
+
+  it('falls back to the listing formats when the payload carries no files', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [{ id: 5, title: 'Detail Book', formats: ['M4B'] }] as unknown as ReturnType<
+      typeof useLibraryStore
+    >['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(wrapper.find('.formats').text()).toBe('.m4b')
   })
 
   it('opens the edit metadata modal from the detail view action', async () => {

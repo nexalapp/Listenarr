@@ -39,6 +39,11 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></DownloadSettingsSection>
 
+        <MetadataTagsSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></MetadataTagsSection>
+
         <FeaturesSection
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
@@ -71,6 +76,7 @@ import type { ApplicationSettings, StartupConfig } from '@/types'
 
 import FileManagementSection from '@/components/settings/FileManagementSection.vue'
 import DownloadSettingsSection from '@/components/settings/DownloadSettingsSection.vue'
+import MetadataTagsSection from '@/components/settings/MetadataTagsSection.vue'
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
 import AuthenticationSection from '@/components/settings/AuthenticationSection.vue'

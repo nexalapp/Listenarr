@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Conversion;
+
 namespace Listenarr.Application.SystemDiagnostics.Contracts
 {
     public interface IFfmpegService
@@ -36,6 +38,19 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
         Task<string?> EnsureFfprobeInstalledAsync();
 
         /// <summary>
+        /// Return the full path to an ffmpeg encoder, preferring an operator-configured
+        /// path, then PATH, then the application's bundled directory. Does NOT download.
+        /// Returns null when no encoder is available.
+        /// </summary>
+        Task<string?> GetFfmpegPathAsync();
+
+        /// <summary>
+        /// Ensure an ffmpeg encoder is available, performing the download/extract/install
+        /// flow when the host provides none. Returns the resolved path or null.
+        /// </summary>
+        Task<string?> EnsureFfmpegInstalledAsync();
+
+        /// <summary>
         /// Execute the utility ffprobe against the given file
         /// </summary>
         /// <param name="filePath">File to execute ffprobe on</param>
@@ -48,6 +63,17 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
         /// mapping the separate public media identity.
         /// </summary>
         Task<AudioMetadata> RunFfprobeAsync(MetadataFileSource fileSource);
+
+        /// <summary>
+        /// Read the chapter marks a file already carries, in file order.
+        ///
+        /// Returns an empty list when it has none. A book previously merged into one
+        /// chaptered MP3 keeps its marks in ID3 CHAP frames, and a conversion that did
+        /// not read them would collapse the whole book into a single chapter.
+        /// </summary>
+        Task<IReadOnlyList<EmbeddedChapter>> ReadChaptersAsync(
+            string filePath,
+            CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Give license notice content from FFprobe

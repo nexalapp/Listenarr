@@ -163,6 +163,10 @@ export interface Download {
   metadata: Record<string, unknown>
   // Optional link to an audiobook record when the download was queued for a specific audiobook
   audiobookId?: number
+  // Why an import stopped, and what it tried, for a download in ImportBlocked
+  importBlockReason?: string
+  importBlockMessages?: string[]
+  importAttempts?: number
 }
 
 export interface QueueItem {
@@ -186,6 +190,8 @@ export interface QueueItem {
   downloadClientType: string
   addedAt: string
   errorMessage?: string
+  // Set when a blocked import can be retried from the activity row
+  canRetryImport?: boolean
   isStaleSnapshot?: boolean
   snapshotState?: string
   snapshotFailureReason?: string
@@ -328,6 +334,7 @@ export interface RootFolder {
   canChangePath?: boolean
   canReadFilesystem?: boolean
   canScanFilesystem?: boolean
+  canPublishNewFiles?: boolean
   canMutateFilesystem?: boolean
   confirmationToken?: string | null
   activeRelocation?: RootFolderPathChangeResult | null
@@ -394,6 +401,116 @@ export interface TranslatePathResponse {
   translated: boolean
 }
 
+export type ConversionJobStatus =
+  | 'Queued'
+  | 'Running'
+  | 'RetryScheduled'
+  | 'Completed'
+  | 'Failed'
+  | 'Cancelled'
+  | 'Superseded'
+
+/** One MP3-to-M4B conversion, as the server reports it over SignalR and REST. */
+export interface ConversionJobUpdate {
+  jobId: string
+  audiobookId: number
+  status: ConversionJobStatus | string
+  phase?: string
+  progress?: number
+  trigger?: string
+  sourceFileCount?: number
+  chapterCount?: number
+  error?: string | null
+  failureKind?: string | null
+  canRetry?: boolean
+  attemptCount?: number
+  enqueuedAt?: string
+  completedAt?: string | null
+}
+
+/** One tag-writing run, as the server reports it over SignalR and REST. */
+export interface TagJobUpdate {
+  jobId: string
+  audiobookId: number
+  status: ConversionJobStatus | string
+  phase?: string
+  progress?: number
+  trigger?: string
+  fileCount?: number
+  tagsWritten?: number
+  error?: string | null
+  failureKind?: string | null
+  canRetry?: boolean
+  /**
+   * The job removed a library file and is holding its only replacement. Retrying is
+   * what puts it back, so this is not an ordinary failure and must not read like one.
+   */
+  holdingUnpublishedFile?: boolean
+  attemptCount?: number
+  enqueuedAt?: string
+  completedAt?: string | null
+}
+
+/** Whether a tag may be overwritten. Serialised by enum name. */
+export type TagWriteMode = 'Never' | 'WhenEmpty' | 'Always'
+
+/** What will happen to one tag, and why. Serialised by enum name. */
+export type TagChangeAction =
+  | 'Write'
+  | 'Unchanged'
+  | 'NotConfigured'
+  | 'Deselected'
+  | 'Preserved'
+  | 'NoValue'
+
+/** One tag Listenarr can write, with its current mapping. */
+export interface TagDefinition {
+  tag: string
+  label: string
+  description: string
+  defaultPattern: string
+  defaultMode: TagWriteMode
+  isLongText: boolean
+  pattern: string
+  mode: TagWriteMode
+}
+
+/** One tag's before and after. */
+export interface TagChangePreview {
+  tag: string
+  label: string
+  current?: string | null
+  proposed?: string | null
+  action: TagChangeAction
+  reason: string
+  /** A blurb needs a textarea; an album name does not. */
+  isLongText?: boolean
+}
+
+export interface TagPreviewFile {
+  fileId: number
+  name: string
+  error?: string | null
+  changes: TagChangePreview[]
+}
+
+/** What writing tags to one book would change, before anything is written. */
+export interface TagPreview {
+  audiobookId: number
+  title?: string | null
+  canWrite: boolean
+  hasChanges: boolean
+  reason?: string | null
+  files: TagPreviewFile[]
+}
+
+/** What goes into one tag and whether it may be overwritten. */
+export interface TagMapping {
+  tag: string
+  pattern: string
+  mode: TagWriteMode
+}
+
 export interface ApplicationSettings {
   version: number
   outputPath: string
@@ -418,6 +535,20 @@ export interface ApplicationSettings {
   completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
+  // Convert imported MP3 audiobooks into a single chaptered M4B
+  convertMp3ToM4b?: boolean
+  // What happens to the source MP3s once a conversion has been verified.
+  // Serialised by enum name, so these are the exact values the API emits.
+  conversionSourceDisposition?: 'Archive' | 'Keep' | 'Delete'
+  // Where archived source MP3s are moved to
+  conversionArchivePath?: string
+  // Write the library's metadata into a book's M4B files once it lands
+  writeMetadataTags?: boolean
+  // Embed the book's cover into a file that carries none
+  embedCoverArtInTags?: boolean
+  // What goes into each tag and whether it may be overwritten. Absent means the
+  // shipped defaults, which mirror the library's own bracket convention.
+  tagMappings?: TagMapping[]
   // Failed download handling
   failedDownloadHandlingEnabled?: boolean
   failedDownloadAutoSearch?: boolean
@@ -642,6 +773,14 @@ export interface MonitorAuthorResponse {
   errorMessage?: string
 }
 
+export interface AudibleSeriesSearchItem {
+  asin?: string | null
+  name: string
+  region?: string | null
+  description?: string | null
+  image?: string | null
+}
+
 export interface MonitoredSeries {
   id: number
   seriesName: string
@@ -701,9 +840,18 @@ export interface AudiobookExternalIdentifierInput {
   source?: AudiobookExternalIdentifierSource
 }
 
-export type AudiobookStatus = 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match'
+// 'announced' is a fileless book whose release date has not arrived: derived from
+// PublishedDate server-side, not persisted. See ReleaseDateWindow.
+export type AudiobookStatus =
+  | 'downloading'
+  | 'announced'
+  | 'no-file'
+  | 'quality-mismatch'
+  | 'quality-match'
 
 export interface Audiobook {
+  /** Distinct container formats of the book's files, uppercase, e.g. ['MP3'] or ['M4B']. */
+  formats?: string[]
   id: number
   title: string
   subtitle?: string
@@ -1083,6 +1231,11 @@ export interface ManualImportResult {
   error?: string
   skipped?: boolean
   skipReason?: string
+  requestedAction?: string
+  effectiveAction?: string
+  sourceDisposition?: string
+  warningCode?: string
+  warning?: string
 }
 
 // Audible API Types
@@ -1256,4 +1409,39 @@ export interface RenameResult {
   conflict: boolean
   error?: string
   renamedFiles: FileRenameResultItem[]
+}
+
+/**
+ * NZBKing's token allowance, as Listenarr estimates it.
+ *
+ * NZBKing publishes no balance endpoint, so this is a local reckoning: one token
+ * per query, one back per hour, capped at the maximum. It can drift from what
+ * NZBKing believes, which is why a reserve is held back and why the figure is
+ * presented as an estimate rather than a reading.
+ */
+export interface NzbKingStatus {
+  configured: boolean
+  estimatedBalance: number
+  maxTokens: number
+  reserveFloor: number
+  spendable: number
+  nextRefillAt?: string | null
+  lastSuccessfulUseAt?: string | null
+  keyDeleted: boolean
+  summary: string
+  refusedRecently: number
+}
+
+export interface NzbKingAccess {
+  attemptedAt: string
+  purpose: string
+  outcome: string
+  query?: string | null
+  httpStatus?: number | null
+  balanceAfter: number
+}
+
+export interface NzbKingLedger {
+  configured: boolean
+  entries: NzbKingAccess[]
 }

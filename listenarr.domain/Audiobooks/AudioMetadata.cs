@@ -50,6 +50,33 @@ namespace Listenarr.Domain.Audiobooks
         public string? Language { get; set; }
         public string? Series { get; set; }
         public decimal? SeriesPosition { get; set; }
+
+        /// <summary>
+        /// Every series the book belongs to, in order, primary first.
+        /// <para>
+        /// <see cref="Series"/> carries only the primary one, which is all a folder name
+        /// needs. A tag does not have that limit, and the library's own files use it: a
+        /// book in two series is tagged <c>[Enderverse 07.5][Ender's Saga 1.1] Title</c>,
+        /// which the primary series alone cannot reconstruct.
+        /// </para>
+        /// </summary>
+        public List<SeriesReference>? AllSeries { get; set; }
+
+        /// <summary>
+        /// The series position exactly as the metadata source gave it.
+        /// <para>
+        /// Audible/Audnexus report a position as a string, and it is not always a number:
+        /// an omnibus can sit at "1-4", a prequel at "0", a novella at "1.5". Those values
+        /// are meaningful, but they do not all fit in <see cref="SeriesPosition"/>, so a
+        /// position that fails to parse would otherwise be indistinguishable from a book
+        /// that has no series position at all.
+        /// </para>
+        /// <para>
+        /// Naming prefers this over <see cref="SeriesPosition"/> so that a real position is
+        /// never silently replaced by a track number.
+        /// </para>
+        /// </summary>
+        public string? SeriesPositionRaw { get; set; }
         public byte[]? CoverArt { get; set; }
         public string? CoverArtUrl { get; set; }
         public Dictionary<string, object> AdditionalData { get; set; } = [];
@@ -75,6 +102,8 @@ namespace Listenarr.Domain.Audiobooks
 
             if (!SeriesPosition.HasValue && value.SeriesPosition.HasValue)
                 SeriesPosition = value.SeriesPosition;
+            if (string.IsNullOrWhiteSpace(SeriesPositionRaw) && !string.IsNullOrWhiteSpace(value.SeriesPositionRaw))
+                SeriesPositionRaw = value.SeriesPositionRaw;
             if (!TrackNumber.HasValue && value.TrackNumber.HasValue)
                 TrackNumber = value.TrackNumber;
             if (!DiscNumber.HasValue && value.DiscNumber.HasValue)
@@ -87,4 +116,10 @@ namespace Listenarr.Domain.Audiobooks
                 Format = value.Format;
         }
     }
+
+    /// <summary>
+    /// One series a book belongs to. A position is text rather than a number because
+    /// "1-4" and "0.5" are both real positions that a decimal cannot hold.
+    /// </summary>
+    public sealed record SeriesReference(string Name, string? Number);
 }

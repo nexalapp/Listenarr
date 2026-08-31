@@ -21,7 +21,12 @@ import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
-import type { SearchResult, AudibleBookMetadata, UnmatchedFileItem } from '@/types'
+import type {
+  SearchResult,
+  AudibleBookMetadata,
+  AudiobookSeriesMembership,
+  UnmatchedFileItem,
+} from '@/types'
 
 export interface LibraryImportItem {
   id: string // = fullPath (unique key)
@@ -39,11 +44,18 @@ export interface LibraryImportItem {
   fileCount: number
   // Match state
   selectedMatch: SearchResult | null
-  hasSearched: boolean // true once auto-search was attempted
+  // Metadata read out of the file itself, used when no catalogue match exists.
+  // A book imported this way is never monitored: the file is already on disk and
+  // it has no ASIN for an indexer query, so monitoring would strand it in Wanted.
+  fileMetadata: AudibleBookMetadata | null
+  hasSearched: boolean // true once auto-search completed and returned an answer
+  searchFailed: boolean // true when the lookup errored (rate limit, network) - not "no match"
   isSearching: boolean // currently in-flight
   // Selection
   selected: boolean
 }
+
+const ASIN_PATTERN = /^[A-Z0-9]{10}$/i
 
 function extractFolderName(relativePath: string): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
@@ -88,7 +100,9 @@ function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
     format: item.format,
     fileCount: item.fileCount,
     selectedMatch: null,
+    fileMetadata: null,
     hasSearched: false,
+    searchFailed: false,
     isSearching: false,
     selected: false,
   }
@@ -100,11 +114,29 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
       ? result.authors.map((a) => a.name ?? '').filter(Boolean)
       : []
 
-  // series may come back as AudibleSeries[] from the search endpoint
+  // series may come back as AudibleSeries[] from the search endpoint. A book can belong to
+  // more than one series (Audnexus seriesPrimary/seriesSecondary), so every entry becomes a
+  // membership; the scalar fields below stay populated from the primary for older consumers.
   const seriesRaw = result.series as unknown
-  const seriesItem = Array.isArray(seriesRaw)
-    ? (seriesRaw as Array<{ name?: string; asin?: string; position?: string }>)[0]
-    : null
+  const seriesEntries = Array.isArray(seriesRaw)
+    ? (seriesRaw as Array<{ name?: string; asin?: string; position?: string }>)
+    : []
+  const seriesMemberships: AudiobookSeriesMembership[] = seriesEntries
+    .filter((entry) => (entry?.name ?? '').trim().length > 0)
+    .map((entry, index) => {
+      const asin = entry.asin?.trim()
+      return {
+        seriesName: (entry.name ?? '').trim(),
+        seriesNumber: entry.position?.trim() || undefined,
+        // The search fallback branch fills `asin` with the series *name* when the ASIN
+        // re-fetch fails, so only keep a value that actually looks like an ASIN. Until now
+        // that bogus value was discarded anyway; a membership would persist it.
+        seriesAsin: asin && ASIN_PATTERN.test(asin) ? asin : undefined,
+        isPrimary: index === 0,
+        sortOrder: index,
+      }
+    })
+  const seriesItem = seriesEntries[0] ?? null
   const series = seriesItem?.name ?? (typeof seriesRaw === 'string' ? seriesRaw : undefined)
   const seriesNumber = seriesItem?.position ?? result.seriesNumber
   const seriesAsin = seriesItem?.asin ?? result.seriesAsin
@@ -117,6 +149,7 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
     series,
     seriesNumber,
     seriesAsin,
+    ...(seriesMemberships.length > 0 ? { seriesMemberships } : {}),
     description: result.description,
     publisher: result.publisher,
     language: result.language,
@@ -142,6 +175,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const action = ref<'none' | 'move' | 'hardlink/copy'>('none')
   const monitor = ref<'none' | 'all'>('all')
   const metadataFetchCount = ref(0)
+  const metadataFailureCount = ref(0)
   const importErrors = ref<string[]>([])
 
   // ─── Computed ────────────────────────────────────────────────────────────────
@@ -150,7 +184,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const selectedCount = computed(() => itemList.value.filter((i) => i.selected).length)
   const hasUnprocessedItems = computed(() => itemList.value.some((i) => !i.hasSearched))
   const processedCount = computed(() => itemList.value.filter((i) => i.hasSearched).length)
-  const matchedCount = computed(() => itemList.value.filter((i) => i.selectedMatch).length)
+  const failedCount = computed(() => itemList.value.filter((i) => i.searchFailed).length)
+  const matchedCount = computed(
+    () => itemList.value.filter((i) => i.selectedMatch || i.fileMetadata).length,
+  )
 
   // ─── Scan ─────────────────────────────────────────────────────────────────
 
@@ -170,6 +207,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             ...unmatchedToImportItem(item),
             selectedMatch: existing.selectedMatch,
             hasSearched: existing.hasSearched,
+            searchFailed: existing.searchFailed,
             isSearching: false,
             selected: existing.selected,
           }
@@ -178,6 +216,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             ...unmatchedToImportItem(item),
             selectedMatch: p.selectedMatch,
             hasSearched: p.hasSearched,
+            searchFailed: p.searchFailed ?? false,
             isSearching: false,
             selected: p.selected,
           }
@@ -288,6 +327,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             ...fresh,
             selectedMatch: existing.selectedMatch,
             hasSearched: existing.hasSearched,
+            searchFailed: existing.searchFailed,
             selected: existing.selected,
           }
         : fresh
@@ -300,6 +340,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   type PersistedEntry = {
     selectedMatch: SearchResult | null
     hasSearched: boolean
+    searchFailed?: boolean
     selected: boolean
   }
 
@@ -314,6 +355,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       state[path] = {
         selectedMatch: item.selectedMatch,
         hasSearched: item.hasSearched,
+        searchFailed: item.searchFailed,
         selected: item.selected,
       }
     }
@@ -342,6 +384,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     lookupQueue.value = unsearched
     isProcessing.value = true
     metadataFetchCount.value = 0
+    metadataFailureCount.value = 0
     processNext()
   }
 
@@ -381,18 +424,24 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             ...current,
             isSearching: false,
             hasSearched: true,
+            searchFailed: false,
             selectedMatch: first,
             selected: first !== null,
           },
         }
         _persistMatches()
       } catch {
+        // A failed lookup is not an answer. Leaving hasSearched false keeps the row in the
+        // unprocessed set so re-running Start Matching retries it, instead of recording a
+        // rate-limited request as a book that simply is not on Audible.
+        metadataFailureCount.value++
         const current = items.value[id]
         if (current)
           items.value = {
             ...items.value,
-            [id]: { ...current, isSearching: false, hasSearched: true },
+            [id]: { ...current, isSearching: false, searchFailed: true },
           }
+        _persistMatches()
       }
     }
     isProcessing.value = false
@@ -406,14 +455,19 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
     items.value[id] = { ...item, isSearching: true }
     try {
-      const isAsin = /^[A-Z0-9]{10}$/i.test(query.trim())
+      const isAsin = ASIN_PATTERN.test(query.trim())
       const results = await apiService.advancedSearch(
         isAsin ? { asin: query.trim(), cap: 5 } : { title: query, cap: 5 },
       )
-      items.value[id] = { ...items.value[id], isSearching: false, hasSearched: true }
+      items.value[id] = {
+        ...items.value[id],
+        isSearching: false,
+        hasSearched: true,
+        searchFailed: false,
+      }
       return results
     } catch {
-      items.value[id] = { ...items.value[id], isSearching: false }
+      items.value[id] = { ...items.value[id], isSearching: false, searchFailed: true }
       return []
     }
   }
@@ -430,8 +484,37 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   function clearMatch(id: string) {
     const item = items.value[id]
     if (!item) return
-    items.value[id] = { ...item, selectedMatch: null, selected: false }
+    items.value[id] = { ...item, selectedMatch: null, fileMetadata: null, selected: false }
     _persistMatches()
+  }
+
+  /**
+   * Reads the book's own tags and cover art and uses them in place of a catalogue
+   * match. This is the fallback for a book no provider knows about; the file is the
+   * only source of truth left.
+   */
+  async function useFileMetadata(id: string): Promise<AudibleBookMetadata | null> {
+    const item = items.value[id]
+    if (!item || !rootFolderId.value) return null
+
+    items.value[id] = { ...item, isSearching: true }
+    try {
+      const metadata = await apiService.getEmbeddedFileMetadata(rootFolderId.value, item.fullPath)
+      items.value[id] = {
+        ...items.value[id],
+        isSearching: false,
+        hasSearched: true,
+        searchFailed: false,
+        fileMetadata: metadata,
+        selectedMatch: null,
+        selected: true,
+      }
+      _persistMatches()
+      return metadata
+    } catch {
+      items.value[id] = { ...items.value[id], isSearching: false }
+      return null
+    }
   }
 
   // ─── Selection ────────────────────────────────────────────────────────────
@@ -444,11 +527,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   }
 
   function toggleSelectAll() {
-    const allSelected = itemList.value.filter((i) => i.selectedMatch).every((i) => i.selected)
-    for (const item of itemList.value) {
-      if (item.selectedMatch) {
-        items.value[item.id] = { ...item, selected: !allSelected }
-      }
+    const importable = itemList.value.filter((i) => i.selectedMatch || i.fileMetadata)
+    const allSelected = importable.every((i) => i.selected)
+    for (const item of importable) {
+      items.value[item.id] = { ...item, selected: !allSelected }
     }
     _persistMatches()
   }
@@ -485,26 +567,32 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
   async function importSelected(
     rootFolderPath: string,
-  ): Promise<{ imported: number; errors: string[] }> {
-    const toImport = itemList.value.filter((i) => i.selected && i.selectedMatch)
+  ): Promise<{ imported: number; errors: string[]; warnings: string[] }> {
+    const toImport = itemList.value.filter((i) => i.selected && (i.selectedMatch || i.fileMetadata))
     importErrors.value = []
+    const warnings: string[] = []
     let imported = 0
 
     for (const item of toImport) {
-      const match = item.selectedMatch!
+      const match = item.selectedMatch
       try {
         let audiobookId: number
         try {
-          const metadata = await _enrichMetadata(match)
-          const sanitizedMatch = {
-            ...match,
-            genres: normalizeGenres(match.genres),
-            series: Array.isArray(match.series)
-              ? ((match.series as Array<{ name?: string }>)[0]?.name ?? undefined)
-              : match.series,
-          }
+          // A file-metadata import has no catalogue match to enrich or send, and is
+          // never monitored: the book is already on disk, and without an ASIN an
+          // automatic search cannot identify a release for it.
+          const metadata = match ? await _enrichMetadata(match) : item.fileMetadata!
+          const sanitizedMatch = match
+            ? {
+                ...match,
+                genres: normalizeGenres(match.genres),
+                series: Array.isArray(match.series)
+                  ? ((match.series as Array<{ name?: string }>)[0]?.name ?? undefined)
+                  : match.series,
+              }
+            : undefined
           const { audiobook } = await apiService.addToLibrary(metadata, {
-            monitored: monitor.value != 'none',
+            monitored: match ? monitor.value != 'none' : false,
             destinationPath: action.value === 'none' ? item.folderPath : rootFolderPath,
             searchResult: sanitizedMatch,
           })
@@ -553,6 +641,12 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
           )
         }
 
+        for (const result of importResult.results ?? []) {
+          if (result.success && result.warning && !warnings.includes(result.warning)) {
+            warnings.push(result.warning)
+          }
+        }
+
         // Remove imported item from store only after the backend confirms every
         // source file represented by this book row was registered successfully.
         const updated = { ...items.value }
@@ -567,7 +661,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       }
     }
 
-    return { imported, errors: importErrors.value }
+    return { imported, errors: importErrors.value, warnings }
   }
 
   return {
@@ -582,6 +676,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     action,
     monitor,
     metadataFetchCount,
+    metadataFailureCount,
+    failedCount,
     importErrors,
     // Computed
     itemList,
@@ -598,6 +694,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     searchItem,
     selectMatch,
     clearMatch,
+    useFileMetadata,
     toggleSelect,
     toggleSelectAll,
     importSelected,

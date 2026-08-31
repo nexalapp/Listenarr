@@ -67,6 +67,73 @@ namespace Listenarr.Infrastructure.Images.Cache
         /// <summary>
         /// Downloads an image from a URL and caches it temporarily
         /// </summary>
+        public async Task<string?> CacheImageBytesAsync(byte[] imageBytes, string identifier, string? mediaType)
+        {
+            if (imageBytes == null || imageBytes.Length == 0 || string.IsNullOrWhiteSpace(identifier))
+            {
+                return null;
+            }
+
+            if (imageBytes.LongLength > MaxDownloadedImageBytes)
+            {
+                _logger.LogWarning(
+                    "Rejected embedded image for {Identifier}: {Bytes} bytes exceeds {MaxBytes}",
+                    LogRedaction.SanitizeText(identifier),
+                    imageBytes.LongLength,
+                    MaxDownloadedImageBytes);
+                return null;
+            }
+
+            try
+            {
+                // An already-stored cover wins: re-caching would churn the file for no gain,
+                // and a user-chosen library image must not be overwritten by the embedded one.
+                var existing = _storageLookup.FindLibraryPath(identifier)
+                    ?? _storageLookup.FindTempPath(identifier);
+                if (!string.IsNullOrEmpty(existing))
+                {
+                    return GetRelativePath(existing);
+                }
+
+                if (ImageCacheContentValidator.IsPlaceholderImage(imageBytes, mediaType, _logger))
+                {
+                    _logger.LogInformation(
+                        "Skipping placeholder embedded image for {Identifier}",
+                        LogRedaction.SanitizeText(identifier));
+                    return null;
+                }
+
+                using var _ = await _downloadLocks.LockAsync(identifier);
+
+                existing = _storageLookup.FindLibraryPath(identifier)
+                    ?? _storageLookup.FindTempPath(identifier);
+                if (!string.IsNullOrEmpty(existing))
+                {
+                    return GetRelativePath(existing);
+                }
+
+                var extension = ImageCacheContentValidator.GetImageExtension(string.Empty, mediaType);
+                var filePath = _pathResolver.BuildTempFilePath(identifier, extension, _tempCachePath);
+                if (!FileSystemSafety.TryValidateMutationTarget(filePath, [_tempCachePath], out filePath, out var reason))
+                {
+                    _logger.LogWarning(
+                        "Blocked embedded image cache write for {Identifier}: {Reason}",
+                        LogRedaction.SanitizeText(identifier),
+                        LogRedaction.SanitizeText(reason));
+                    return null;
+                }
+
+                await File.WriteAllBytesAsync(filePath, imageBytes);
+                _logger.LogInformation("Embedded image cached: {FilePath}", LogRedaction.SanitizeText(filePath));
+                return GetRelativePath(filePath);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Failed to cache embedded image for {Identifier}", LogRedaction.SanitizeText(identifier));
+                return null;
+            }
+        }
+
         public async Task<string?> DownloadAndCacheImageAsync(string imageUrl, string identifier)
         {
             if (string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(identifier))

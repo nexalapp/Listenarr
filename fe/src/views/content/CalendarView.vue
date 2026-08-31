@@ -33,6 +33,24 @@
       </div>
     </div>
 
+    <div v-if="failingMonitors.length > 0" class="monitor-alert" role="status">
+      <PhWarning :size="20" />
+      <div class="monitor-alert-body">
+        <strong>
+          {{ failingMonitors.length }}
+          {{ failingMonitors.length === 1 ? 'monitor is' : 'monitors are' }} failing.
+        </strong>
+        <span>Announced releases may be missing from this calendar.</span>
+        <ul class="monitor-alert-list">
+          <li v-for="monitor in failingMonitors" :key="`${monitor.kind}-${monitor.id}`">
+            <span class="monitor-kind">{{ monitor.kind }}</span>
+            <span class="monitor-name">{{ monitor.name }}</span>
+            <span class="monitor-error">{{ monitor.error }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
     <div class="calendar-filters">
       <div class="month-picker-wrapper">
         <button class="current-month" @click="showMonthPicker = !showMonthPicker">
@@ -92,8 +110,8 @@
                 <div
                   v-for="item in date.items.slice(0, 3)"
                   :key="item.id"
-                  class="calendar-item"
-                  :title="`${item.title}${item.author ? ' - ' + item.author : ''}`"
+                  :class="['calendar-item', `status-${item.status}`]"
+                  :title="itemTooltip(item)"
                   role="button"
                   tabindex="0"
                   @click="navigateToDetail(item.id)"
@@ -104,6 +122,118 @@
                 </div>
                 <div v-if="date.items.length > 3" class="more-items">
                   +{{ date.items.length - 3 }} more
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="impreciseItemsThisMonth.length > 0 || impreciseItemsThisYear.length > 0"
+          class="imprecise-panel"
+        >
+          <!--
+            Announcements that named only a month or a year. They are shown here rather
+            than planted on the 1st of the month, which would invent a day the publisher
+            never gave, and rather than dropped, which is what used to happen.
+          -->
+          <div v-if="impreciseItemsThisMonth.length > 0" class="imprecise-group">
+            <h4>Sometime in {{ currentMonthYear }}</h4>
+            <div class="imprecise-items">
+              <div
+                v-for="item in impreciseItemsThisMonth"
+                :key="item.id"
+                class="imprecise-item"
+                role="button"
+                tabindex="0"
+                :title="itemTooltip(item)"
+                @click="navigateToDetail(item.id)"
+                @keydown.enter="navigateToDetail(item.id)"
+                @keydown.space.prevent="navigateToDetail(item.id)"
+              >
+                <span :class="['status-badge', `status-${item.status}`]">
+                  {{ statusLabel(item) }}
+                </span>
+                <span class="imprecise-title">{{ item.title }}</span>
+                <span v-if="item.author" class="imprecise-author">{{ item.author }}</span>
+                <span class="imprecise-date">{{ item.label }}</span>
+                <div class="row-actions" @click.stop>
+                  <button
+                    v-if="!item.monitored"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Mark wanted"
+                    aria-label="Mark wanted"
+                    @click="makeWanted(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'wanted'" :size="14" class="spin" />
+                    <PhBookmarkSimple v-else :size="14" />
+                  </button>
+                  <button
+                    v-if="item.status !== 'quality-match' && item.status !== 'downloading'"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Search now"
+                    aria-label="Search now"
+                    @click="searchNow(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'search'" :size="14" class="spin" />
+                    <PhMagnifyingGlass v-else :size="14" />
+                  </button>
+                  <span v-if="actionResult[item.id]" class="row-action-result inline">
+                    {{ actionResult[item.id] }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="impreciseItemsThisYear.length > 0" class="imprecise-group">
+            <h4>Sometime in {{ selectedYearLabel }}</h4>
+            <div class="imprecise-items">
+              <div
+                v-for="item in impreciseItemsThisYear"
+                :key="item.id"
+                class="imprecise-item"
+                role="button"
+                tabindex="0"
+                :title="itemTooltip(item)"
+                @click="navigateToDetail(item.id)"
+                @keydown.enter="navigateToDetail(item.id)"
+                @keydown.space.prevent="navigateToDetail(item.id)"
+              >
+                <span :class="['status-badge', `status-${item.status}`]">
+                  {{ statusLabel(item) }}
+                </span>
+                <span class="imprecise-title">{{ item.title }}</span>
+                <span v-if="item.author" class="imprecise-author">{{ item.author }}</span>
+                <span class="imprecise-date">{{ item.label }}</span>
+                <div class="row-actions" @click.stop>
+                  <button
+                    v-if="!item.monitored"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Mark wanted"
+                    aria-label="Mark wanted"
+                    @click="makeWanted(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'wanted'" :size="14" class="spin" />
+                    <PhBookmarkSimple v-else :size="14" />
+                  </button>
+                  <button
+                    v-if="item.status !== 'quality-match' && item.status !== 'downloading'"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Search now"
+                    aria-label="Search now"
+                    @click="searchNow(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'search'" :size="14" class="spin" />
+                    <PhMagnifyingGlass v-else :size="14" />
+                  </button>
+                  <span v-if="actionResult[item.id]" class="row-action-result inline">
+                    {{ actionResult[item.id] }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -216,20 +346,166 @@
               class="agenda-item"
               role="button"
               tabindex="0"
+              :title="itemTooltip(item)"
               @click="navigateToDetail(item.id)"
               @keydown.enter="navigateToDetail(item.id)"
               @keydown.space.prevent="navigateToDetail(item.id)"
             >
-              <div class="agenda-date">{{ formatDate(item.date) }}</div>
+              <div class="agenda-date">{{ item.label }}</div>
               <div class="agenda-content">
                 <h3>{{ item.title }}</h3>
                 <p v-if="item.author">{{ item.author }}</p>
               </div>
+              <span :class="['status-badge', `status-${item.status}`]">
+                {{ statusLabel(item) }}
+              </span>
+              <div class="row-actions" @click.stop>
+                <button
+                  v-if="!item.monitored"
+                  class="row-action"
+                  :disabled="Boolean(pendingAction[item.id])"
+                  title="Mark wanted"
+                  aria-label="Mark wanted"
+                  @click="makeWanted(item)"
+                >
+                  <PhSpinner v-if="pendingAction[item.id] === 'wanted'" :size="14" class="spin" />
+                  <PhBookmarkSimple v-else :size="14" />
+                </button>
+                <button
+                  v-if="item.status !== 'quality-match' && item.status !== 'downloading'"
+                  class="row-action"
+                  :disabled="Boolean(pendingAction[item.id])"
+                  title="Search now"
+                  aria-label="Search now"
+                  @click="searchNow(item)"
+                >
+                  <PhSpinner v-if="pendingAction[item.id] === 'search'" :size="14" class="spin" />
+                  <PhMagnifyingGlass v-else :size="14" />
+                </button>
+                <span v-if="actionResult[item.id]" class="row-action-result inline">
+                  {{ actionResult[item.id] }}
+                </span>
+              </div>
             </div>
           </div>
-          <div v-else class="empty-message">
+          <div
+            v-else-if="impreciseItemsThisMonth.length === 0 && impreciseItemsThisYear.length === 0"
+            class="empty-message"
+          >
             <PhInfo :size="32" />
-            <p>No items in library</p>
+            <p>{{ emptyAgendaMessage }}</p>
+          </div>
+        </div>
+
+        <div
+          v-if="impreciseItemsThisMonth.length > 0 || impreciseItemsThisYear.length > 0"
+          class="imprecise-panel"
+        >
+          <!--
+            Announcements that named only a month or a year. They are shown here rather
+            than planted on the 1st of the month, which would invent a day the publisher
+            never gave, and rather than dropped, which is what used to happen.
+          -->
+          <div v-if="impreciseItemsThisMonth.length > 0" class="imprecise-group">
+            <h4>Sometime in {{ currentMonthYear }}</h4>
+            <div class="imprecise-items">
+              <div
+                v-for="item in impreciseItemsThisMonth"
+                :key="item.id"
+                class="imprecise-item"
+                role="button"
+                tabindex="0"
+                :title="itemTooltip(item)"
+                @click="navigateToDetail(item.id)"
+                @keydown.enter="navigateToDetail(item.id)"
+                @keydown.space.prevent="navigateToDetail(item.id)"
+              >
+                <span :class="['status-badge', `status-${item.status}`]">
+                  {{ statusLabel(item) }}
+                </span>
+                <span class="imprecise-title">{{ item.title }}</span>
+                <span v-if="item.author" class="imprecise-author">{{ item.author }}</span>
+                <span class="imprecise-date">{{ item.label }}</span>
+                <div class="row-actions" @click.stop>
+                  <button
+                    v-if="!item.monitored"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Mark wanted"
+                    aria-label="Mark wanted"
+                    @click="makeWanted(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'wanted'" :size="14" class="spin" />
+                    <PhBookmarkSimple v-else :size="14" />
+                  </button>
+                  <button
+                    v-if="item.status !== 'quality-match' && item.status !== 'downloading'"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Search now"
+                    aria-label="Search now"
+                    @click="searchNow(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'search'" :size="14" class="spin" />
+                    <PhMagnifyingGlass v-else :size="14" />
+                  </button>
+                  <span v-if="actionResult[item.id]" class="row-action-result inline">
+                    {{ actionResult[item.id] }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="impreciseItemsThisYear.length > 0" class="imprecise-group">
+            <h4>Sometime in {{ selectedYearLabel }}</h4>
+            <div class="imprecise-items">
+              <div
+                v-for="item in impreciseItemsThisYear"
+                :key="item.id"
+                class="imprecise-item"
+                role="button"
+                tabindex="0"
+                :title="itemTooltip(item)"
+                @click="navigateToDetail(item.id)"
+                @keydown.enter="navigateToDetail(item.id)"
+                @keydown.space.prevent="navigateToDetail(item.id)"
+              >
+                <span :class="['status-badge', `status-${item.status}`]">
+                  {{ statusLabel(item) }}
+                </span>
+                <span class="imprecise-title">{{ item.title }}</span>
+                <span v-if="item.author" class="imprecise-author">{{ item.author }}</span>
+                <span class="imprecise-date">{{ item.label }}</span>
+                <div class="row-actions" @click.stop>
+                  <button
+                    v-if="!item.monitored"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Mark wanted"
+                    aria-label="Mark wanted"
+                    @click="makeWanted(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'wanted'" :size="14" class="spin" />
+                    <PhBookmarkSimple v-else :size="14" />
+                  </button>
+                  <button
+                    v-if="item.status !== 'quality-match' && item.status !== 'downloading'"
+                    class="row-action"
+                    :disabled="Boolean(pendingAction[item.id])"
+                    title="Search now"
+                    aria-label="Search now"
+                    @click="searchNow(item)"
+                  >
+                    <PhSpinner v-if="pendingAction[item.id] === 'search'" :size="14" class="spin" />
+                    <PhMagnifyingGlass v-else :size="14" />
+                  </button>
+                  <span v-if="actionResult[item.id]" class="row-action-result inline">
+                    {{ actionResult[item.id] }}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -239,6 +515,9 @@
           <div class="sidebar-header">
             <PhClock :size="20" />
             Upcoming Releases
+            <span v-if="announcedCount > 0" class="sidebar-count">
+              {{ announcedCount }} announced
+            </span>
           </div>
           <div class="upcoming-list">
             <div
@@ -247,19 +526,54 @@
               class="upcoming-item"
               role="button"
               tabindex="0"
+              :title="itemTooltip(item)"
               @click="navigateToDetail(item.id)"
               @keydown.enter="navigateToDetail(item.id)"
               @keydown.space.prevent="navigateToDetail(item.id)"
             >
-              <div class="upcoming-date">{{ formatDate(item.date) }}</div>
+              <div class="upcoming-date">{{ item.label }}</div>
               <div class="upcoming-info">
                 <h4>{{ item.title }}</h4>
                 <p v-if="item.author">{{ item.author }}</p>
+                <span :class="['status-badge', `status-${item.status}`]">
+                  {{ statusLabel(item) }}
+                </span>
+              </div>
+              <div class="upcoming-actions" @click.stop>
+                <!--
+                  Both actions act on the book in place; following a release should not
+                  cost a round trip through the book's own page and back.
+                -->
+                <button
+                  v-if="!item.monitored"
+                  class="row-action"
+                  :disabled="Boolean(pendingAction[item.id])"
+                  title="Mark wanted"
+                  aria-label="Mark wanted"
+                  @click="makeWanted(item)"
+                >
+                  <PhSpinner v-if="pendingAction[item.id] === 'wanted'" :size="14" class="spin" />
+                  <PhBookmarkSimple v-else :size="14" />
+                </button>
+                <button
+                  v-if="item.status !== 'quality-match' && item.status !== 'downloading'"
+                  class="row-action"
+                  :disabled="Boolean(pendingAction[item.id])"
+                  title="Search now"
+                  aria-label="Search now"
+                  @click="searchNow(item)"
+                >
+                  <PhSpinner v-if="pendingAction[item.id] === 'search'" :size="14" class="spin" />
+                  <PhMagnifyingGlass v-else :size="14" />
+                </button>
+              </div>
+              <div v-if="actionResult[item.id]" class="row-action-result">
+                {{ actionResult[item.id] }}
               </div>
             </div>
             <div v-if="upcomingItems.length === 0" class="empty-message">
               <PhInfo :size="32" />
-              <p>No upcoming releases</p>
+              <p>{{ emptyUpcomingMessage }}</p>
             </div>
           </div>
         </div>
@@ -278,16 +592,48 @@ import {
   PhCaretDown,
   PhClock,
   PhInfo,
+  PhWarning,
+  PhMagnifyingGlass,
+  PhBookmarkSimple,
+  PhSpinner,
 } from '@phosphor-icons/vue'
 import { useLibraryStore } from '@/stores/library'
-import type { Audiobook } from '@/types'
+import { apiService } from '@/services/api'
+import { errorTracking } from '@/services/errorTracking'
+import { logger } from '@/utils/logger'
+import {
+  parseReleaseDate,
+  formatReleaseDate,
+  describeReleaseDate,
+  type ParsedReleaseDate,
+  type ReleaseDatePrecision,
+} from '@/utils/releaseDate'
+import type { Audiobook, AudiobookStatus, MonitoredAuthor, MonitoredSeries } from '@/types'
 
 interface CalendarItem {
   id: number
   title: string
   author?: string
-  dateKey: string
+  /** Only set at day precision; the grid is addressed by day and nothing else belongs in it. */
+  dateKey: string | null
   date: Date
+  precision: ReleaseDatePrecision
+  /** The date rendered at its own precision, e.g. `Jan 2028` for a month-only announcement. */
+  label: string
+  /** Longer form that spells the uncertainty out: `Sometime in Jan 2028`. */
+  description: string
+  status: AudiobookStatus
+  wanted: boolean
+  monitored: boolean
+}
+
+/** A failing monitor, flattened so series and authors render through one list. */
+interface MonitorAlert {
+  kind: 'series' | 'author'
+  id: number
+  name: string
+  error: string
+  lastCheckedAt?: string
 }
 
 interface CalendarDate {
@@ -383,6 +729,7 @@ onMounted(() => {
   if (!libraryStore.audiobooks.length) {
     void libraryStore.fetchLibrary()
   }
+  void loadMonitors()
 
   // Close picker on outside click
   if (typeof window !== 'undefined') {
@@ -403,37 +750,66 @@ const toDateKeyLocal = (date: Date): string => {
   return `${y}-${m}-${d}`
 }
 
-const extractPublishedDateKey = (book: Audiobook): string | null => {
-  if (book.publishedDate && book.publishedDate.length >= 10) {
-    return book.publishedDate.slice(0, 10)
-  }
-  return null
-}
+const toCalendarItem = (book: Audiobook, parsed: ParsedReleaseDate): CalendarItem => ({
+  id: book.id,
+  title: book.title || 'Untitled',
+  author: book.authors?.length ? book.authors.join(', ') : undefined,
+  // A month-only or year-only date has no day to file under, so it never gets a grid key.
+  dateKey: parsed.precision === 'day' ? parsed.key : null,
+  date: parsed.start,
+  precision: parsed.precision,
+  label: formatReleaseDate(parsed),
+  description: describeReleaseDate(parsed),
+  status: (book.status as AudiobookStatus) ?? 'no-file',
+  wanted: Boolean(book.wanted),
+  monitored: Boolean(book.monitored),
+})
 
 const calendarItems = computed<CalendarItem[]>(() => {
   return libraryStore.audiobooks
     .map((book) => {
-      const key = extractPublishedDateKey(book)
-      if (!key) return null
-      return {
-        id: book.id,
-        title: book.title || 'Untitled',
-        author: book.authors?.length ? book.authors.join(', ') : undefined,
-        dateKey: key,
-        date: new Date(`${key}T00:00:00Z`),
-      } as CalendarItem
+      const parsed = parseReleaseDate(book.publishedDate)
+      return parsed ? toCalendarItem(book, parsed) : null
     })
     .filter((b): b is CalendarItem => b !== null)
 })
 
+/** Day-precision releases: the only ones that can honestly occupy a square in the grid. */
+const datedItems = computed(() => calendarItems.value.filter((item) => item.dateKey !== null))
+
+/**
+ * Month- and year-precision releases. They are not dropped, they are shown beside the
+ * grid at the precision the publisher gave, because inventing a day for them would be
+ * a worse lie than admitting the day is unknown.
+ */
+const impreciseItems = computed(() => calendarItems.value.filter((item) => item.dateKey === null))
+
 const itemsByDate = computed(() => {
   const map = new Map<string, CalendarItem[]>()
-  for (const item of calendarItems.value) {
-    const list = map.get(item.dateKey) || []
+  for (const item of datedItems.value) {
+    const list = map.get(item.dateKey!) || []
     list.push(item)
-    map.set(item.dateKey, list)
+    map.set(item.dateKey!, list)
   }
   return map
+})
+
+/** Month-precision releases falling in the month on screen. */
+const impreciseItemsThisMonth = computed(() => {
+  const year = currentDate.value.getFullYear()
+  const month = currentDate.value.getMonth() + 1
+  return impreciseItems.value
+    .filter((item) => item.precision === 'month' && item.date.getUTCFullYear() === year)
+    .filter((item) => item.date.getUTCMonth() + 1 === month)
+    .sort((a, b) => a.title.localeCompare(b.title))
+})
+
+/** Year-precision releases falling in the year on screen; no month can claim them. */
+const impreciseItemsThisYear = computed(() => {
+  const year = currentDate.value.getFullYear()
+  return impreciseItems.value
+    .filter((item) => item.precision === 'year' && item.date.getUTCFullYear() === year)
+    .sort((a, b) => a.title.localeCompare(b.title))
 })
 
 const currentMonthYear = computed(() => {
@@ -517,16 +893,7 @@ const goToday = () => {
 }
 
 const navigateToDetail = (id: number) => {
-  void router.push(`/audiobooks/${id}`)
-}
-
-const formatDate = (date: Date): string => {
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
+  void router.push(`/books/${id}`)
 }
 
 // Week view computed properties
@@ -588,14 +955,172 @@ const selectedDayItems = computed(() => {
   return itemsByDate.value.get(key) || []
 })
 
-// Agenda view (items in selected month sorted by date)
+// Agenda view (items in selected month sorted by date). Day-precision only: the
+// imprecise panel below the list carries the month- and year-only announcements.
 const allItemsSorted = computed(() => {
   const year = currentDate.value.getFullYear()
   const month = currentDate.value.getMonth()
-  return [...calendarItems.value]
+  return [...datedItems.value]
     .filter((item) => item.date.getFullYear() === year && item.date.getMonth() === month)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
 })
+
+// ---------------------------------------------------------------------------
+// Monitors
+//
+// A calendar with nothing on it has two very different causes: nothing has been
+// announced, or the monitor that would have found it has been failing. Without this
+// the second reads as the first, which is the silent failure the calendar is meant
+// to prevent.
+// ---------------------------------------------------------------------------
+
+const monitoredSeries = ref<MonitoredSeries[]>([])
+const monitoredAuthors = ref<MonitoredAuthor[]>([])
+const monitorsLoaded = ref(false)
+
+const loadMonitors = async () => {
+  try {
+    const [series, authors] = await Promise.all([
+      apiService.getMonitoredSeries(),
+      apiService.getMonitoredAuthors(),
+    ])
+    monitoredSeries.value = series
+    monitoredAuthors.value = authors
+  } catch (err) {
+    // A monitor list we cannot read must not blank the calendar; the releases the
+    // library already holds are still worth showing.
+    logger.warn('Failed to load monitors for the calendar:', err)
+    errorTracking.captureException(err as Error, {
+      component: 'CalendarView',
+      operation: 'loadMonitors',
+    })
+  } finally {
+    monitorsLoaded.value = true
+  }
+}
+
+const monitorCount = computed(() => monitoredSeries.value.length + monitoredAuthors.value.length)
+
+const failingMonitors = computed<MonitorAlert[]>(() => [
+  ...monitoredSeries.value
+    .filter((monitor) => Boolean(monitor.lastError))
+    .map((monitor) => ({
+      kind: 'series' as const,
+      id: monitor.id,
+      name: monitor.seriesName,
+      error: monitor.lastError!,
+      lastCheckedAt: monitor.lastCheckedAt,
+    })),
+  ...monitoredAuthors.value
+    .filter((monitor) => Boolean(monitor.lastError))
+    .map((monitor) => ({
+      kind: 'author' as const,
+      id: monitor.id,
+      name: monitor.authorName,
+      error: monitor.lastError!,
+      lastCheckedAt: monitor.lastCheckedAt,
+    })),
+])
+
+const announcedCount = computed(
+  () => calendarItems.value.filter((item) => item.status === 'announced').length,
+)
+
+/**
+ * What the sidebar says when it has nothing to list. The three cases are genuinely
+ * different situations for the user, and collapsing them into "No upcoming releases"
+ * is what made a broken monitor look like a quiet one.
+ */
+const selectedYearLabel = computed(() => String(currentDate.value.getFullYear()))
+
+const emptyAgendaMessage = computed(() =>
+  monitorsLoaded.value && monitorCount.value === 0
+    ? 'No items in library'
+    : 'Nothing scheduled this month.',
+)
+
+const emptyUpcomingMessage = computed(() => {
+  if (failingMonitors.value.length > 0) {
+    return 'No upcoming releases — and some monitors are failing, so this list may be incomplete.'
+  }
+  if (monitorsLoaded.value && monitorCount.value === 0) {
+    return 'No monitored series or authors yet. Follow one to see its releases here.'
+  }
+  return 'Nothing announced.'
+})
+
+// ---------------------------------------------------------------------------
+// Row actions
+// ---------------------------------------------------------------------------
+
+const pendingAction = ref<Record<number, string>>({})
+const actionResult = ref<Record<number, string>>({})
+
+const clearActionResultLater = (id: number, delayMs: number) => {
+  window.setTimeout(() => {
+    delete pendingAction.value[id]
+    delete actionResult.value[id]
+  }, delayMs)
+}
+
+const makeWanted = async (item: CalendarItem) => {
+  // "Wanted" is monitored-with-no-file, so wanting a book is turning monitoring on.
+  pendingAction.value[item.id] = 'wanted'
+  try {
+    await apiService.updateAudiobook(item.id, { monitored: true })
+    await libraryStore.fetchLibrary()
+    actionResult.value[item.id] = 'Wanted'
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'CalendarView',
+      operation: 'makeWanted',
+      metadata: { itemId: item.id },
+    })
+    actionResult.value[item.id] = 'Could not mark wanted'
+  } finally {
+    clearActionResultLater(item.id, 4000)
+  }
+}
+
+const searchNow = async (item: CalendarItem) => {
+  pendingAction.value[item.id] = 'search'
+  actionResult.value[item.id] = 'Searching…'
+  try {
+    const result = await apiService.searchAndDownload(item.id)
+    actionResult.value[item.id] = result.success
+      ? `Found on ${result.indexerUsed}, downloading…`
+      : result.message || 'No matches found'
+    if (result.success) {
+      await libraryStore.fetchLibrary()
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'CalendarView',
+      operation: 'searchNow',
+      metadata: { itemId: item.id },
+    })
+    actionResult.value[item.id] = 'Search failed'
+  } finally {
+    clearActionResultLater(item.id, 5000)
+  }
+}
+
+const statusLabel = (item: CalendarItem): string => {
+  switch (item.status) {
+    case 'announced':
+      return 'Announced'
+    case 'downloading':
+      return 'Downloading'
+    case 'quality-match':
+    case 'quality-mismatch':
+      return 'In library'
+    default:
+      return item.wanted ? 'Wanted' : 'Missing'
+  }
+}
+
+const itemTooltip = (item: CalendarItem): string =>
+  `${item.title}${item.author ? ' — ' + item.author : ''} · ${statusLabel(item)} · ${item.description}`
 </script>
 
 <style scoped>
@@ -1736,5 +2261,291 @@ const allItemsSorted = computed(() => {
     min-width: 36px;
     height: 36px;
   }
+}
+/* ANNOUNCED / MONITOR-HEALTH STYLES */
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.row-action-result.inline {
+  flex-basis: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.sidebar-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #d0bfff;
+  background-color: rgba(151, 117, 250, 0.15);
+  border: 1px solid rgba(151, 117, 250, 0.4);
+  border-radius: 3px;
+  padding: 0.05rem 0.4rem;
+}
+
+.monitor-alert {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+  background-color: rgba(255, 169, 77, 0.08);
+  border: 1px solid rgba(255, 169, 77, 0.35);
+  border-left: 3px solid #ffa94d;
+  border-radius: 6px;
+  color: #ffd8a8;
+}
+
+.monitor-alert svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: #ffa94d;
+}
+
+.monitor-alert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.monitor-alert-body strong {
+  color: #ffc078;
+}
+
+.monitor-alert-list {
+  list-style: none;
+  margin: 0.35rem 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.monitor-alert-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+
+.monitor-kind {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: #ffa94d;
+  border: 1px solid rgba(255, 169, 77, 0.4);
+  border-radius: 3px;
+  padding: 0 0.35rem;
+}
+
+.monitor-name {
+  color: white;
+  font-weight: 500;
+}
+
+.monitor-error {
+  color: #adb5bd;
+  word-break: break-word;
+}
+
+.imprecise-panel {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.imprecise-group h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #868e96;
+}
+
+.imprecise-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.imprecise-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.imprecise-item:hover {
+  background-color: #2f2f2f;
+}
+
+.imprecise-title {
+  color: white;
+  font-size: 0.9rem;
+}
+
+.imprecise-author {
+  color: #868e96;
+  font-size: 0.8rem;
+}
+
+.imprecise-date {
+  margin-left: auto;
+  color: #adb5bd;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* One vocabulary of colour for release state, shared by every view on this page. */
+.status-badge {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.status-badge.status-announced {
+  color: #d0bfff;
+  background-color: rgba(151, 117, 250, 0.15);
+  border-color: rgba(151, 117, 250, 0.4);
+}
+
+.status-badge.status-no-file {
+  color: #ffd8a8;
+  background-color: rgba(255, 169, 77, 0.15);
+  border-color: rgba(255, 169, 77, 0.4);
+}
+
+.status-badge.status-quality-mismatch {
+  color: #ffec99;
+  background-color: rgba(255, 212, 59, 0.15);
+  border-color: rgba(255, 212, 59, 0.4);
+}
+
+.status-badge.status-quality-match {
+  color: #b2f2bb;
+  background-color: rgba(81, 207, 102, 0.15);
+  border-color: rgba(81, 207, 102, 0.4);
+}
+
+.status-badge.status-downloading {
+  color: #a5d8ff;
+  background-color: rgba(77, 171, 247, 0.15);
+  border-color: rgba(77, 171, 247, 0.4);
+}
+
+/*
+ * The grid is too dense for a text badge, so the chip itself carries the state.
+ * Every chip used to be the same blue, which is what made an announced book
+ * indistinguishable from one sitting in the library. Colour is not the only cue:
+ * each chip's tooltip names the state in words.
+ */
+.calendar-item.status-announced {
+  background: #7048e8;
+  border-left: 3px solid #d0bfff;
+}
+
+.calendar-item.status-no-file {
+  background: #e8590c;
+  border-left: 3px solid #ffd8a8;
+}
+
+.calendar-item.status-quality-match {
+  background: #2f9e44;
+  border-left: 3px solid #b2f2bb;
+}
+
+.calendar-item.status-quality-mismatch {
+  background: #f08c00;
+  border-left: 3px solid #ffec99;
+}
+
+.calendar-item.status-downloading {
+  background: #1971c2;
+  border-left: 3px solid #a5d8ff;
+}
+
+.upcoming-item {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.upcoming-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.upcoming-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #ced4da;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.row-action:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: white;
+}
+
+.row-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.row-action-result {
+  flex-basis: 100%;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: #adb5bd;
+}
+
+.spin {
+  animation: calendar-spin 1s linear infinite;
+}
+
+@keyframes calendar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.agenda-item {
+  align-items: center;
 }
 </style>

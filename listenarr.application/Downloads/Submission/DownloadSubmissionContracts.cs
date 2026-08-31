@@ -93,7 +93,14 @@ public sealed record PreparedUsenetSubmission(
     long Size,
     string OriginalLocator,
     byte[] NzbBytes,
-    string FileName)
+    string FileName,
+    /// <summary>
+    /// Archive password, when the release is protected. Absent for most releases; a
+    /// forum post that supplies one is describing an archive that cannot be unpacked
+    /// without it, so losing it here surfaces much later as an unexplained extraction
+    /// failure.
+    /// </summary>
+    string? Password = null)
     : PreparedDownloadSubmission(
         DownloadProtocol.Usenet,
         Title,

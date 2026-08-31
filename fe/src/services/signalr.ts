@@ -21,6 +21,8 @@ import type {
   QueueUpdatePayload,
   Audiobook,
   RootFolderPathChangeResult,
+  ConversionJobUpdate,
+  TagJobUpdate,
 } from '@/types'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { setConnected, setLastError, setReconnectAttempts } from './signalrEvents'
@@ -34,6 +36,10 @@ import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 const API_SUFFIX_REGEX = /\/api(?:\/v\d+(?:\.\d+)?)?$/i
 const KNOWN_APP_ROUTE_PREFIXES = [
   '/library-import',
+  '/books',
+  '/authors',
+  '/series',
+  // Retained so the base URL still resolves under the pre-/books library paths.
   '/audiobooks',
   '/collection',
   '/add-new',
@@ -205,6 +211,8 @@ class SignalRService {
       error?: string
     }) => void
   > = new Set()
+  private conversionJobCallbacks: Set<(job: ConversionJobUpdate) => void> = new Set()
+  private tagJobCallbacks: Set<(job: TagJobUpdate) => void> = new Set()
   private rootFolderRelocationCallbacks: Set<(update: RootFolderPathChangeResult) => void> =
     new Set()
   private filesRemovedCallbacks: Set<
@@ -446,6 +454,16 @@ class SignalRService {
             error?: string
           }
           this.moveJobCallbacks.forEach((cb) => cb(job))
+        }
+        break
+      case 'ConversionJobUpdate':
+        if (args && args[0]) {
+          this.conversionJobCallbacks.forEach((cb) => cb(args[0] as ConversionJobUpdate))
+        }
+        break
+      case 'TagJobUpdate':
+        if (args && args[0]) {
+          this.tagJobCallbacks.forEach((cb) => cb(args[0] as TagJobUpdate))
         }
         break
       case 'RootFolderRelocationUpdate':
@@ -760,6 +778,22 @@ class SignalRService {
     this.moveJobCallbacks.add(callback)
     return () => {
       this.moveJobCallbacks.delete(callback)
+    }
+  }
+
+  // Subscribe to MP3-to-M4B conversion job updates
+  onConversionJobUpdate(callback: (job: ConversionJobUpdate) => void): () => void {
+    this.conversionJobCallbacks.add(callback)
+    return () => {
+      this.conversionJobCallbacks.delete(callback)
+    }
+  }
+
+  // Subscribe to metadata tag-writing job updates
+  onTagJobUpdate(callback: (job: TagJobUpdate) => void): () => void {
+    this.tagJobCallbacks.add(callback)
+    return () => {
+      this.tagJobCallbacks.delete(callback)
     }
   }
 

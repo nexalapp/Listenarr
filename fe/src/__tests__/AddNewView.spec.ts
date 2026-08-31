@@ -171,6 +171,44 @@ describe('AddNewView pagination', () => {
     expect(subtitleEl.text()).toBe('A Heroic Saga')
   })
 
+  it('hides a subtitle that only repeats the series badge', async () => {
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
+      totalResults: 1,
+      results: [
+        {
+          asin: 'B000125',
+          title: 'Starship Salvager',
+          subtitle: 'Paragon Space, Book 1',
+          authors: [{ name: 'Jarom Strong' }],
+          imageUrl: 'http://img3',
+          runtimeLengthMin: 850,
+          language: 'english',
+          series: [{ name: 'Paragon Space', position: '1' }],
+        },
+      ],
+    })
+
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    const vm = wrapper.vm as unknown as {
+      showAdvancedSearch?: boolean
+      advancedSearchParams?: Record<string, unknown>
+      performAdvancedSearch?: () => Promise<void>
+    }
+
+    vm.showAdvancedSearch = true
+    vm.advancedSearchParams = { title: 'Starship Salvager' }
+    await vm.performAdvancedSearch()
+    await wrapper.vm.$nextTick()
+
+    const card = wrapper.find('.title-results .title-result-card')
+    expect(card.find('.result-subtitle').exists()).toBe(false)
+    // The series still shows once, as its own chip beside the title.
+    expect(card.find('.series-group').text()).toContain('Paragon Space')
+  })
+
   it('renders direct image URLs on advanced search results', async () => {
     const apiModule = await import('@/services/api')
     const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
@@ -712,7 +750,7 @@ describe('AddNewView pagination', () => {
     await vm.performAdvancedSearch()
     await wrapper.vm.$nextTick()
 
-    const statEl = wrapper.find('.title-results .title-result-card .stat-item')
+    const statEl = wrapper.find('.title-results .title-result-card .result-facts .fact')
     expect(statEl.exists()).toBe(true)
     expect(statEl.text()).toContain('10h')
     expect(statEl.text()).toContain('20m')
@@ -835,11 +873,11 @@ describe('AddNewView pagination', () => {
     expect(sourceLink.classes()).toContain('metadata-source-link')
     expect(sourceLink.findAll('svg')).toHaveLength(2)
 
-    const badgeText = wrapper
-      .findAll('.title-results .metadata-badges .metadata-badge')
-      .map((badge) => badge.text())
-    expect(badgeText).toContain('Pottermore Publishing')
-    expect(badgeText).toContain('2016')
+    const factText = wrapper
+      .findAll('.title-results .result-facts .fact')
+      .map((fact) => fact.text())
+    expect(factText).toContain('Pottermore Publishing')
+    expect(factText).toContain('2016')
   })
 
   it('shows metadata and source links for advanced Audible-backed results', async () => {
@@ -938,9 +976,9 @@ describe('AddNewView pagination', () => {
 
     await wrapper.vm.$nextTick()
 
-    const seriesBadge = wrapper.find('.title-results .title-result-card .series-badge[title]')
-    expect(seriesBadge.exists()).toBe(true)
-    expect(seriesBadge.attributes('title')).toBe('Main Series, Alt Series')
+    const seriesChip = wrapper.find('.title-results .title-result-card .series-chip-link[title]')
+    expect(seriesChip.exists()).toBe(true)
+    expect(seriesChip.attributes('title')).toContain('Main Series, Alt Series')
 
     // ASIN result case
     vm.searchType = 'asin'
@@ -954,6 +992,73 @@ describe('AddNewView pagination', () => {
     const seriesBadgeAsin = wrapper.find('.search-results .title-result-card .series-badge[title]')
     expect(seriesBadgeAsin.exists()).toBe(true)
     expect(seriesBadgeAsin.attributes('title')).toBe('X, Y')
+  })
+
+  it('lays a title result out as one row: series by the title, byline, blurb and facts', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    const vm = wrapper.vm as unknown as {
+      searchType?: string
+      titleResults?: unknown[]
+      monitoredIds?: Record<string, number>
+      checkExistingInLibrary?: () => Promise<void>
+    }
+
+    const lib = useLibraryStore()
+    lib.audiobooks = [
+      { id: 4, asin: 'B0SUN4', title: 'Kingdoms of Death', monitored: true },
+    ] as never
+
+    vm.searchType = 'title'
+    vm.titleResults = [
+      {
+        title: 'Kingdoms of Death',
+        key: 'B0SUN4',
+        author_name: ['Christopher Ruocchio'],
+        publisher: ['Recorded Books'],
+        description: '<p>Hadrian Marlowe is sent to the frontier.</p>',
+        searchResult: {
+          asin: 'B0SUN4',
+          series: 'Sun Eater',
+          seriesNumber: '4',
+          seriesList: ['Sun Eater'],
+          narrators: [{ name: 'Samuel Roukin' }],
+          lengthMinutes: 1370,
+          language: 'english',
+          publishedDate: '2022-08-30',
+        },
+      },
+    ]
+    vm.monitoredIds = { 'series:sun eater': 1 }
+
+    await vm.checkExistingInLibrary?.()
+    await wrapper.vm.$nextTick()
+
+    const card = wrapper.find('.title-results .title-result-card')
+
+    // Series sits beside the title, carrying this book's position and its monitor toggle.
+    const headline = card.find('.result-headline')
+    expect(headline.text()).toContain('Kingdoms of Death')
+    expect(headline.find('.series-chip-link').text()).toBe('Sun Eater #4')
+    expect(headline.find('.monitor-chip').text()).toBe('Monitoring series')
+
+    // Author and narrator share one line.
+    const byline = card.find('.result-byline')
+    expect(byline.text()).toContain('Christopher Ruocchio')
+    expect(byline.text()).toContain('narrated by')
+    expect(byline.text()).toContain('Samuel Roukin')
+    expect(card.find('.result-narrator').exists()).toBe(false)
+
+    // The blurb reaches the row as plain text.
+    expect(card.find('.result-blurb').text()).toBe('Hadrian Marlowe is sent to the frontier.')
+
+    // Facts read as one line, the year standing in for the full date.
+    const facts = card.findAll('.result-facts .fact').map((fact) => fact.text())
+    expect(facts).toEqual(['22h 50m', 'English', 'Recorded Books', '2022'])
+
+    // Adding the book is what monitors it, so the one action reports that state.
+    expect(card.find('.result-actions .btn').text()).toBe('Monitoring book')
+    expect(card.findAll('.result-actions .btn')).toHaveLength(1)
   })
 
   it('shows "Added" and disables add button when result is already in library', async () => {

@@ -157,6 +157,11 @@
               <PhWarning />
               <span class="detail-value error">{{ indexer.lastTestError }}</span>
             </div>
+
+            <!-- abook.link fails in ways no other source does: a forum session that
+                 lapses silently, and a metered second index that can delete its own
+                 key. Both are shown where the credentials for them are configured. -->
+            <AbookLinkDiagnosticsPanel v-if="indexer.implementation === 'AbookLink'" />
           </div>
         </div>
       </div>
@@ -310,6 +315,7 @@ import {
 } from '@phosphor-icons/vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import IndexerFormModal from '@/components/settings/IndexerFormModal.vue'
+import AbookLinkDiagnosticsPanel from '@/components/domain/nzbking/AbookLinkDiagnosticsPanel.vue'
 import FormSection from '@/components/settings/FormSection.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import PasswordInput from '@/components/form/PasswordInput.vue'

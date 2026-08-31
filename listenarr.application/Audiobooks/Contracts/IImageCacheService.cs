@@ -21,6 +21,13 @@ namespace Listenarr.Application.Audiobooks.Contracts
     public interface IImageCacheService
     {
         Task<string?> DownloadAndCacheImageAsync(string imageUrl, string identifier);
+
+        /// <summary>
+        /// Caches an image supplied as bytes rather than fetched from a URL. Used for cover
+        /// art extracted from an audiobook file, which has no URL to download from.
+        /// Returns the relative cached path, or null when the bytes are not a usable image.
+        /// </summary>
+        Task<string?> CacheImageBytesAsync(byte[] imageBytes, string identifier, string? mediaType);
         Task<string?> MoveToLibraryStorageAsync(string identifier, string? imageUrl = null);
         Task<string?> MoveToAuthorLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false);
         Task<string?> MoveToSeriesLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false);

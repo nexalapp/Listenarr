@@ -38,6 +38,14 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260810160640_AddMoveJobRelocationForeignKey";
     private const string FileMutationParentGenerationProofsMigrationId =
         "20260818132300_AddFileMutationParentGenerationProofs";
+    private const string CompatibilityFilePublicationMigrationId =
+        "20260821141235_AddCompatibilityFilePublication";
+    private const string NzbKingTokenLedgerMigrationId =
+        "20260829163019_AddNzbKingTokenLedger";
+    private const string ConversionJobsMigrationId =
+        "20260831152310_AddConversionJobs";
+    private const string TagJobsMigrationId =
+        "20260831172740_AddTagJobs";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -161,7 +169,11 @@ public class SqliteMigrationSchemaTests : BaseTests
                 ProcessExecutionLogRepairId,
                 ConsolidatedMigrationId,
                 MoveJobRelocationForeignKeyMigrationId,
-                FileMutationParentGenerationProofsMigrationId
+                FileMutationParentGenerationProofsMigrationId,
+                CompatibilityFilePublicationMigrationId,
+                NzbKingTokenLedgerMigrationId,
+                ConversionJobsMigrationId,
+                TagJobsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

@@ -17,6 +17,10 @@
  */
 import type {
   SearchResult,
+  ConversionJobUpdate,
+  TagDefinition,
+  TagJobUpdate,
+  TagPreview,
   Download,
   ApiConfiguration,
   DownloadClientConfiguration,
@@ -42,11 +46,14 @@ import type {
   SearchSortDirection,
   AudibleSearchResponse,
   AudibleBookMetadata,
+  AudibleSeriesSearchItem,
   AuthorCatalogResponse,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
   MonitorAuthorResponse,
   MonitorSeriesResponse,
+  MonitoredAuthor,
+  MonitoredSeries,
   SeriesMonitoringStatusResponse,
   SeriesCatalogResponse,
   SeriesLookupResponse,
@@ -62,6 +69,8 @@ import type {
   RenamePreview,
   RenameOperation,
   RenameResult,
+  NzbKingStatus,
+  NzbKingLedger,
 } from '@/types'
 import { getStartupConfigCached, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -99,6 +108,12 @@ const buildApiRequestUrl = (endpoint: string): string => {
 }
 
 type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: number }
+
+// A 404 from a metadata lookup is an answer ("Audible has no such thing"), not a failure.
+// Every other error — network, 500, auth — leaves the question open, so callers must be able
+// to tell the two apart rather than reading both as "not found".
+const isNotFoundError = (err: unknown): boolean =>
+  typeof err === 'object' && err !== null && (err as ErrorWithStatus).status === 404
 
 class ApiService {
   private antiforgeryToken: string | null = null
@@ -370,9 +385,12 @@ class ApiService {
   }
 
   // Audible series helpers (proxied through backend)
-  async searchAudibleSeries(name: string, region: string = 'us'): Promise<unknown> {
+  async searchAudibleSeries(
+    name: string,
+    region: string = 'us',
+  ): Promise<AudibleSeriesSearchItem[]> {
     const params = new URLSearchParams({ name, region })
-    return this.request<unknown>(`/search/audible/series?${params}`)
+    return this.request<AudibleSeriesSearchItem[]>(`/search/audible/series?${params}`)
   }
 
   async getAudibleSeriesBooks(seriesAsin: string, region: string = 'us'): Promise<unknown> {
@@ -461,8 +479,11 @@ class ApiService {
       const params = new URLSearchParams({ name, region })
       if (asin) params.append('asin', asin)
       return await this.request<SeriesLookupResponse>(`/metadata/series?${params.toString()}`)
-    } catch {
-      return null
+    } catch (err) {
+      // Null means Audible has no such series; anything else propagates so the caller can
+      // keep treating the series as possibly-Audible-backed.
+      if (isNotFoundError(err)) return null
+      throw err
     }
   }
 
@@ -483,9 +504,20 @@ class ApiService {
       return await this.request<SeriesCatalogResponse>(
         `/metadata/series/books?${params.toString()}`,
       )
-    } catch {
-      return null
+    } catch (err) {
+      // Null means Audible has no catalog for this series name — the shape a library-only
+      // series takes. Transient failures propagate rather than masquerading as that.
+      if (isNotFoundError(err)) return null
+      throw err
     }
+  }
+
+  /**
+   * Every monitored author. The calendar reads this to tell "nothing announced"
+   * apart from "the monitor has been failing".
+   */
+  async getMonitoredAuthors(): Promise<MonitoredAuthor[]> {
+    return this.request<MonitoredAuthor[]>('/authors/monitoring')
   }
 
   async getAuthorMonitoringStatus(
@@ -515,6 +547,11 @@ class ApiService {
     return this.request<{ message: string }>(`/authors/monitoring/${id}`, {
       method: 'DELETE',
     })
+  }
+
+  /** Every monitored series. See {@link getMonitoredAuthors}. */
+  async getMonitoredSeries(): Promise<MonitoredSeries[]> {
+    return this.request<MonitoredSeries[]>('/series/monitoring')
   }
 
   async getSeriesMonitoringStatus(
@@ -569,6 +606,7 @@ class ApiService {
     isbn?: string
     series?: string
     asin?: string
+    narrator?: string
     region?: string
     language?: string
     pagination?: { page?: number; limit?: number }
@@ -583,6 +621,7 @@ class ApiService {
     if (params.isbn) (body as Record<string, unknown>).isbn = params.isbn
     if (params.series) (body as Record<string, unknown>).series = params.series
     if (params.asin) (body as Record<string, unknown>).asin = params.asin
+    if (params.narrator) (body as Record<string, unknown>).narrator = params.narrator
     const region =
       params.region || (params.language ? getRegionFromLanguage(params.language) : undefined)
     if (region) (body as Record<string, unknown>).region = region
@@ -776,6 +815,22 @@ class ApiService {
   async getQueue(): Promise<QueueSnapshot> {
     const response = await this.request<QueueSnapshot | QueueItem[]>('/download/queue')
     return normalizeQueueSnapshot(response)
+  }
+
+  async getNzbKingStatus(): Promise<NzbKingStatus> {
+    return this.request<NzbKingStatus>('/abook/nzbking-status')
+  }
+
+  async getNzbKingLedger(limit = 25): Promise<NzbKingLedger> {
+    return this.request<NzbKingLedger>(`/abook/nzbking-ledger?limit=${limit}`)
+  }
+
+  async diagnoseAbookLogin(): Promise<Record<string, string>> {
+    return this.request<Record<string, string>>('/abook/diagnose-login')
+  }
+
+  async retryImport(downloadId: string): Promise<void> {
+    await this.request(`/downloads/${downloadId}/retry-import`, { method: 'POST' })
   }
 
   async removeFromQueue(
@@ -984,6 +1039,19 @@ class ApiService {
   async deleteRootFolder(id: number, reassignTo?: number): Promise<{ message?: string }> {
     const qs = reassignTo ? `?reassignTo=${reassignTo}` : ''
     return this.request<{ message?: string }>(`/rootfolders/${id}${qs}`, { method: 'DELETE' })
+  }
+
+  /**
+   * Reads the metadata an audiobook file carries inside it (tags plus embedded cover
+   * art), for a book no metadata provider can match. The result is the same shape
+   * addToLibrary accepts, so it can be edited and submitted unchanged.
+   */
+  async getEmbeddedFileMetadata(rootFolderId: number, path: string): Promise<AudibleBookMetadata> {
+    const response = await this.request<{ metadata: AudibleBookMetadata }>(
+      `/rootfolders/${rootFolderId}/embedded-metadata`,
+      { method: 'POST', body: JSON.stringify({ path }) },
+    )
+    return response.metadata
   }
 
   async scanUnmatchedFiles(rootFolderId: number): Promise<{ jobId: string }> {
@@ -1420,6 +1488,75 @@ class ApiService {
     blockingJobIds: string[]
   }> {
     return this.request(`/library/${audiobookId}/move/recovery`)
+  }
+
+  /** Queue a manual MP3-to-M4B conversion for one book. */
+  async convertAudiobook(
+    audiobookId: number,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/conversion/audiobooks/${audiobookId}`, { method: 'POST' })
+  }
+
+  /** Re-run a conversion that failed. */
+  async retryConversion(
+    jobId: string,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/conversion/jobs/${encodeURIComponent(jobId)}/retry`, {
+      method: 'POST',
+    })
+  }
+
+  /** Active conversions plus recently finished ones. */
+  async getConversionJobs(): Promise<ConversionJobUpdate[]> {
+    return this.request<ConversionJobUpdate[]>('/conversion/jobs')
+  }
+
+  /** The tags Listenarr can write, with their current mapping. */
+  async getTagDefinitions(): Promise<TagDefinition[]> {
+    return this.request<TagDefinition[]>('/tagging/tags')
+  }
+
+  /**
+   * What writing tags to one book would change. Reads the files' real tags, writes
+   * nothing and queues nothing.
+   */
+  async previewTags(audiobookId: number, tags?: string[]): Promise<TagPreview> {
+    const query = tags?.length
+      ? '?' + tags.map((tag) => `tags=${encodeURIComponent(tag)}`).join('&')
+      : ''
+    return this.request<TagPreview>(`/tagging/audiobooks/${audiobookId}/preview${query}`)
+  }
+
+  /**
+   * Queue a tag write. Omit `tags` for every tag the mapping allows.
+   *
+   * `values` carries what the operator typed in the preview, replacing what those
+   * tags' patterns would produce. Sending the values they actually saw — not just the
+   * tag names — is what makes the write the diff they approved.
+   */
+  async writeTags(
+    audiobookId: number,
+    tags?: string[],
+    values?: Record<string, string>,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}`, {
+      method: 'POST',
+      body: JSON.stringify({ tags: tags ?? null, values: values ?? null }),
+    })
+  }
+
+  /** Re-run a tag write that failed. */
+  async retryTagWrite(
+    jobId: string,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/jobs/${encodeURIComponent(jobId)}/retry`, {
+      method: 'POST',
+    })
+  }
+
+  /** Active tag writes plus recently finished ones. */
+  async getTagJobs(): Promise<TagJobUpdate[]> {
+    return this.request<TagJobUpdate[]>('/tagging/jobs')
   }
 
   async requeueMoveJob(jobId: string): Promise<{ message: string; jobId: string }> {

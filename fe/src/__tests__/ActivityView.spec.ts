@@ -22,6 +22,8 @@ type ActivityItem = {
   id: string
   title?: string
   status?: string
+  errorMessage?: string
+  canRetryImport?: boolean
   downloadClientId?: string
   downloadClient?: string
   downloadClientType?: string
@@ -38,6 +40,12 @@ type ActivityViewVm = {
   queueHealthClients: Array<{ name: string; isUnavailable?: boolean }>
   removeFromQueue: (item: ActivityItem) => Promise<void> | void
   confirmRemove: () => Promise<void>
+  retryImport: (item: ActivityItem) => Promise<void>
+  openBlockDetails: (item: ActivityItem) => void
+  blockDetailsItem: ActivityItem | null
+  blockDetailLines: string[]
+  blockDetailsIsTagging: boolean
+  blockDetailsTagJobHoldsFile: boolean
 }
 
 const mockSignalR = () => {
@@ -53,6 +61,7 @@ const mockApi = (overrides: Record<string, unknown> = {}) => {
     getQueue: vi.fn(async () => []),
     removeFromQueue: vi.fn(async () => undefined),
     cancelDownload: vi.fn(async () => undefined),
+    retryImport: vi.fn(async () => undefined),
     ...overrides,
   }
 
@@ -90,6 +99,38 @@ const mockMoveJobsStore = (overrides: Record<string, unknown> = {}) => {
   }
 
   return currentMoveJobsStore
+}
+
+let currentConversionJobsStore: Record<string, unknown>
+
+const mockConversionJobsStore = (overrides: Record<string, unknown> = {}) => {
+  currentConversionJobsStore = {
+    jobs: [],
+    activeJobs: [],
+    getJobForAudiobook: vi.fn(() => undefined),
+    retry: vi.fn(async () => ({ queued: true })),
+    refresh: vi.fn(async () => undefined),
+    start: vi.fn(),
+    ...overrides,
+  }
+
+  return currentConversionJobsStore
+}
+
+let currentTagJobsStore: Record<string, unknown>
+
+const mockTagJobsStore = (overrides: Record<string, unknown> = {}) => {
+  currentTagJobsStore = {
+    jobs: [],
+    activeJobs: [],
+    getJobForAudiobook: vi.fn(() => undefined),
+    retry: vi.fn(async () => ({ queued: true })),
+    refresh: vi.fn(async () => undefined),
+    start: vi.fn(),
+    ...overrides,
+  }
+
+  return currentTagJobsStore
 }
 
 const mockDownloadsStore = (overrides: Record<string, unknown> = {}) => {
@@ -132,6 +173,14 @@ describe('ActivityView', () => {
     vi.doMock('@/stores/moveJobs', () => ({
       useMoveJobsStore: () => currentMoveJobsStore,
     }))
+    mockConversionJobsStore()
+    vi.doMock('@/stores/conversionJobs', () => ({
+      useConversionJobsStore: () => currentConversionJobsStore,
+    }))
+    mockTagJobsStore()
+    vi.doMock('@/stores/tagJobs', () => ({
+      useTagJobsStore: () => currentTagJobsStore,
+    }))
     vi.spyOn(globalThis, 'setInterval').mockReturnValue(
       1 as unknown as ReturnType<typeof setInterval>,
     )
@@ -168,6 +217,471 @@ describe('ActivityView', () => {
     expect(move).toMatchObject({ status: 'moving', progress: 37.5 })
     expect(wrapper.text()).toContain('38%')
     expect(wrapper.text()).toContain('Moving')
+  })
+
+  it('shows a running conversion with its phase and progress', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-1',
+          audiobookId: 42,
+          status: 'Running',
+          phase: 'Encoding',
+          progress: 42,
+          sourceFileCount: 12,
+          chapterCount: 0,
+          error: null,
+          canRetry: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const conversion = vm.allActivityItems.find((item) => item.id === 'conversion:conv-1')
+
+    expect(conversion).toMatchObject({ status: 'processing', progress: 42 })
+    expect(conversion?.downloadClient).toContain('Encoding')
+    expect(conversion?.downloadClient).toContain('12 files')
+  })
+
+  it('explains a failed conversion on the row and offers a retry', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-2',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          sourceFileCount: 12,
+          chapterCount: 0,
+          error: 'Source file is missing: Chapter 7.mp3',
+          failureKind: 'SourceUnreadable',
+          canRetry: true,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const conversion = vm.allActivityItems.find((item) => item.id === 'conversion:conv-2')
+
+    // The reason has to reach the operator, not only the log.
+    expect(conversion?.errorMessage).toBe('Source file is missing: Chapter 7.mp3')
+    expect(conversion?.canRetryImport).toBe(true)
+
+    vm.openBlockDetails(conversion!)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Chapter 7.mp3')
+    // A conversion never replaced anything, so it must not borrow the import copy.
+    expect(wrapper.text()).toContain('left exactly')
+    expect(wrapper.text()).not.toContain('remote path mapping')
+  })
+
+  it('routes a conversion retry to the conversion queue, not the import retry', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    const conversionStore = mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-3',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          sourceFileCount: 3,
+          chapterCount: 0,
+          error: 'ffmpeg exited with code 1',
+          canRetry: true,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const conversion = vm.allActivityItems.find((item) => item.id === 'conversion:conv-3')
+
+    await vm.retryImport(conversion!)
+
+    expect(conversionStore.retry).toHaveBeenCalledWith('conv-3')
+  })
+
+  it('drops a completed conversion from the activity list', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-4',
+          audiobookId: 42,
+          status: 'Completed',
+          phase: 'None',
+          progress: 100,
+          sourceFileCount: 12,
+          chapterCount: 12,
+          error: null,
+          canRetry: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    expect(vm.allActivityItems.find((item) => item.id === 'conversion:conv-4')).toBeUndefined()
+  })
+
+  it('shows a running tag write with its phase and progress', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-1',
+          audiobookId: 42,
+          status: 'Running',
+          phase: 'Writing',
+          progress: 60,
+          fileCount: 2,
+          tagsWritten: 0,
+          error: null,
+          canRetry: false,
+          holdingUnpublishedFile: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const tagWrite = vm.allActivityItems.find((item) => item.id === 'tagging:tag-1')
+
+    expect(tagWrite).toMatchObject({ status: 'processing', progress: 60 })
+    expect(tagWrite?.downloadClient).toContain('Writing tags')
+    expect(tagWrite?.downloadClient).toContain('2 files')
+  })
+
+  it('routes a tag-write retry to the tag queue, not the import retry', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    const tagStore = mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-2',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          fileCount: 1,
+          tagsWritten: 0,
+          error: 'The tagged copy could not be published.',
+          canRetry: true,
+          holdingUnpublishedFile: true,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const tagWrite = vm.allActivityItems.find((item) => item.id === 'tagging:tag-2')
+
+    await vm.retryImport(tagWrite!)
+
+    expect(tagStore.retry).toHaveBeenCalledWith('tag-2')
+  })
+
+  it("flags a failed tag write that is holding a library file's only copy", async () => {
+    // The book is missing a file until this job is retried. Reading like an ordinary
+    // failure is how it would get left for later.
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-3',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          fileCount: 1,
+          tagsWritten: 0,
+          error: 'The tagged copy could not be published.',
+          canRetry: true,
+          holdingUnpublishedFile: true,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const tagWrite = vm.allActivityItems.find((item) => item.id === 'tagging:tag-3')
+
+    vm.openBlockDetails(tagWrite!)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.blockDetailsIsTagging).toBe(true)
+    expect(vm.blockDetailsTagJobHoldsFile).toBe(true)
+    expect(wrapper.find('.warning-text-urgent').exists()).toBe(true)
+  })
+
+  it('does not flag an ordinary failed tag write as holding a file', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-4',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          fileCount: 1,
+          tagsWritten: 0,
+          error: 'The file could not be read.',
+          canRetry: true,
+          holdingUnpublishedFile: false,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    vm.openBlockDetails(vm.allActivityItems.find((item) => item.id === 'tagging:tag-4')!)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.blockDetailsIsTagging).toBe(true)
+    expect(vm.blockDetailsTagJobHoldsFile).toBe(false)
+    expect(wrapper.find('.warning-text-urgent').exists()).toBe(false)
+  })
+
+  it('drops a completed tag write from the activity list', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      jobs: [
+        {
+          jobId: 'tag-5',
+          audiobookId: 42,
+          status: 'Completed',
+          phase: 'None',
+          progress: 100,
+          fileCount: 1,
+          tagsWritten: 14,
+          error: null,
+          canRetry: false,
+          holdingUnpublishedFile: false,
+          trigger: 'Automatic',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    expect(vm.allActivityItems.find((item) => item.id === 'tagging:tag-5')).toBeUndefined()
+  })
+
+  it('keeps a download the client calls completed while Listenarr is still importing', async () => {
+    // NZBGet reports 'completed' the moment its own work is done, but Listenarr
+    // still has the import to do. Both records share an id, so the queue snapshot
+    // shadows ours; the 'hide completed external downloads' rule then dropped the
+    // row entirely while the sidebar badge kept counting it.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-1',
+          title: 'Starship Raider',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      activeDownloads: [
+        {
+          id: 'dl-1',
+          title: 'Starship Raider',
+          status: 'ImportPending',
+          progress: 100,
+          downloadClientId: 'client-1',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const row = vm.allActivityItems.find((item) => item.id === 'dl-1')
+
+    expect(row).toMatchObject({ status: 'importpending' })
+    expect(wrapper.text()).toContain('Importing')
+  })
+
+  it('still hides an external download once Listenarr has no work left for it', async () => {
+    // The guard above must not defeat the preference: with nothing of ours
+    // outstanding, a completed external download stays hidden as before.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-2',
+          title: 'Already Imported',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+
+    expect(vm.allActivityItems.find((item) => item.id === 'dl-2')).toBeUndefined()
+  })
+
+  it('explains a blocked import on the row and offers a retry', async () => {
+    // A blocked import is the one state the operator has to act on, so the row
+    // has to say why and give them the action. Previously it showed a bare
+    // "Import Blocked" badge with no reason and no way forward.
+    mockSignalR()
+    const api = mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      failedDownloads: [
+        {
+          id: 'dl-3',
+          title: 'Starship Raider',
+          status: 'ImportBlocked',
+          progress: 100,
+          downloadClientId: 'client-1',
+          importBlockReason: 'Unable to import the download',
+          importBlockMessages: ['No importable files found', 'Looked for files in /downloads/x'],
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const row = vm.allActivityItems.find((item) => item.id === 'dl-3')
+
+    expect(row?.status).toBe('importblocked')
+    expect(row?.errorMessage).toContain('No importable files found')
+    expect(row?.errorMessage).toContain('/downloads/x')
+    expect(row?.canRetryImport).toBe(true)
+
+    // The row is a single fixed-height line, so the reason is one click away
+    // rather than clipped into the status column.
+    expect(wrapper.text()).not.toContain('No importable files found')
+    vm.openBlockDetails(row!)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.blockDetailLines).toEqual([
+      'Unable to import the download',
+      'No importable files found',
+      'Looked for files in /downloads/x',
+    ])
+    expect(wrapper.text()).toContain('No importable files found')
+    expect(wrapper.text()).toContain('Looked for files in /downloads/x')
+
+    await vm.retryImport(row!)
+    expect(api.retryImport).toHaveBeenCalledWith('dl-3')
+    expect(vm.blockDetailsItem).toBeNull()
+  })
+
+  it('keeps the block reason and retry when a queue snapshot shadows the record', async () => {
+    // The client still lists the item as completed, and that snapshot wins on
+    // transfer figures. It must not strip the reason or the retry with it.
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [
+        {
+          id: 'dl-4',
+          title: 'Starship Raider',
+          status: 'completed',
+          progress: 100,
+          downloadClientId: 'client-1',
+          downloadClient: 'NZBGet',
+          downloadClientType: 'nzbget',
+          canRemove: true,
+        },
+      ]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      failedDownloads: [
+        {
+          id: 'dl-4',
+          title: 'Starship Raider',
+          status: 'ImportBlocked',
+          progress: 100,
+          downloadClientId: 'client-1',
+          importBlockReason: 'Unable to import the download',
+          importBlockMessages: ['No importable files found'],
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const row = vm.allActivityItems.find((item) => item.id === 'dl-4')
+
+    expect(row?.status).toBe('importblocked')
+    expect(row?.errorMessage).toContain('No importable files found')
+    expect(row?.canRetryImport).toBe(true)
   })
 
   it('includes completed external downloads from the downloads store in the unified list', async () => {

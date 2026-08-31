@@ -17,6 +17,7 @@
  */
 
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 
 namespace Listenarr.Domain.Audiobooks
 {
@@ -95,15 +96,67 @@ namespace Listenarr.Domain.Audiobooks
                 Language = !string.IsNullOrWhiteSpace(Language) ? Language : null,
                 Asin = !string.IsNullOrWhiteSpace(Asin) ? Asin : null,
                 Series = Series,
+                // Every series the book belongs to, primary first. A folder name uses
+                // only the primary one; a tag can carry all of them, and the library's
+                // own files do.
+                AllSeries = BuildSeriesReferences(),
+                // The blurb is the reason the fork exists: it is the MP4 'desc' atom that
+                // Plex reads an album summary from, and nothing downstream can supply it.
+                Description = !string.IsNullOrWhiteSpace(Description) ? Description : null,
+                Genre = Genres?.FirstOrDefault(g => !string.IsNullOrWhiteSpace(g))?.Trim() ?? string.Empty,
                 // Prefer audiobook's publish year when available
                 Year = int.TryParse(PublishYear, out var py) ? py : (int?)null,
-                // Series position / number
-                SeriesPosition = !string.IsNullOrWhiteSpace(SeriesNumber) && decimal.TryParse(SeriesNumber, out var sp) ? sp : (decimal?)null,
+                // Series position / number.
+                // Parsed with InvariantCulture: the source value always uses '.' as the
+                // decimal separator, so parsing under the server's culture would read a
+                // position of "1.5" as 15 wherever '.' is the group separator.
+                // SeriesPositionRaw keeps the original either way -- a position such as
+                // "1-4" (an omnibus) is real, but is not a decimal.
+                SeriesPosition = !string.IsNullOrWhiteSpace(SeriesNumber)
+                    && decimal.TryParse(SeriesNumber, NumberStyles.Number, CultureInfo.InvariantCulture, out var sp)
+                        ? sp
+                        : (decimal?)null,
+                SeriesPositionRaw = !string.IsNullOrWhiteSpace(SeriesNumber) ? SeriesNumber.Trim() : null,
                 // Quality string from audiobook record
                 // Map into Bitrate/Format heuristically if useful; for now store textual quality
                 // We'll put it into AdditionalData so FileNamingService can use Format/Bitrate/Quality
                 AdditionalData = new Dictionary<string, object> { { "Quality", Quality ?? string.Empty } }
             };
+        }
+
+        /// <summary>
+        /// The book's series memberships as plain references, primary first.
+        ///
+        /// Falls back to the legacy <see cref="Series"/>/<see cref="SeriesNumber"/> pair
+        /// when no memberships are stored, because books added before memberships existed
+        /// still carry their series only in those two columns.
+        /// </summary>
+        private List<SeriesReference>? BuildSeriesReferences()
+        {
+            if (SeriesMemberships is { Count: > 0 })
+            {
+                var references = SeriesMemberships
+                    .Where(membership => !string.IsNullOrWhiteSpace(membership.SeriesName))
+                    .OrderByDescending(membership => membership.IsPrimary)
+                    .ThenBy(membership => membership.SortOrder)
+                    .Select(membership => new SeriesReference(
+                        membership.SeriesName!.Trim(),
+                        string.IsNullOrWhiteSpace(membership.SeriesNumber)
+                            ? null
+                            : membership.SeriesNumber.Trim()))
+                    .ToList();
+
+                if (references.Count > 0)
+                {
+                    return references;
+                }
+            }
+
+            return string.IsNullOrWhiteSpace(Series)
+                ? null
+                : [new SeriesReference(
+                    Series.Trim(),
+                    string.IsNullOrWhiteSpace(SeriesNumber) ? null : SeriesNumber.Trim())];
         }
     }
 }

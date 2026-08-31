@@ -93,7 +93,7 @@
                 <span v-if="hasActiveDownload(item)" class="download-indicator" title="Downloading">
                   <PhDownloadSimple :size="14" weight="fill" />
                 </span>
-                <RouterLink :to="`/audiobooks/${item.id}`" class="title-link">{{
+                <RouterLink :to="`/books/${item.id}`" class="title-link">{{
                   safeText(item.title)
                 }}</RouterLink>
               </div>

@@ -64,6 +64,7 @@
                     <option value="publisher">Publisher</option>
                     <option value="qualityProfileId">Quality Profile</option>
                     <option value="publishYear">Published Year</option>
+                    <option value="format">Format</option>
                     <option value="path">Path</option>
                     <option value="files">Files</option>
                     <option value="filesize">Filesize</option>
@@ -104,6 +105,12 @@
                       <option v-for="p in qualityProfiles" :key="p.id" :value="String(p.id)">
                         {{ p.name }}
                       </option>
+                    </select>
+                  </template>
+                  <template v-else-if="r.field === 'format'">
+                    <select v-model="r.value" class="form-select value-select">
+                      <option value="">(choose)</option>
+                      <option v-for="f in formats" :key="f" :value="f">{{ f }}</option>
                     </select>
                   </template>
                   <template v-else-if="r.field === 'language'">
@@ -212,6 +219,7 @@ const props = defineProps<{
   // accept profiles with optional id to match upstream type shape
   qualityProfiles?: Array<{ id?: number; name: string }>
   languages?: string[]
+  formats?: string[]
   years?: Array<string | number>
 }>()
 const emit = defineEmits(['save', 'close'])
