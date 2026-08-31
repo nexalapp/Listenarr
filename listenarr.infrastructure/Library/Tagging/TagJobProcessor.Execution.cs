@@ -88,6 +88,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 .GetApplicationSettingsAsync();
             var mappings = TagCatalog.Reconcile(settings.TagMappings);
             var selection = TagQueueService.DeserializeSelection(job.SelectedTagsJson);
+            var overrides = TagQueueService.DeserializeValues(job.OverriddenValuesJson);
 
             var planner = services.GetRequiredService<AudiobookTagPlanner>();
             var writer = services.GetRequiredService<IAudiobookTagWriter>();
@@ -137,7 +138,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 }
 
                 var metadata = AudiobookTagMetadata.Create(audiobook, existing.Tags);
-                var plan = planner.Plan(metadata, mappings, existing.Tags, selection);
+                var plan = planner.Plan(metadata, mappings, existing.Tags, selection, overrides);
 
                 if (!plan.HasChanges)
                 {

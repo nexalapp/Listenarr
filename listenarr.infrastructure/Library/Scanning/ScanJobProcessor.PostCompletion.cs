@@ -185,6 +185,7 @@ public partial class ScanJobProcessor
                 audiobook.Id,
                 TagTrigger.Automatic,
                 selectedTags: null,
+                values: null,
                 cancellationToken);
 
             if (result.Queued)

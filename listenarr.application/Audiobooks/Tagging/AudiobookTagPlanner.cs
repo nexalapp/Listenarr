@@ -48,11 +48,18 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// allows. A choice made in a preview applies to that run only; it is not a
         /// silent edit of the settings that would change every later book.
         /// </param>
+        /// <param name="overrides">
+        /// Values the operator typed in the preview, replacing what the pattern would
+        /// have produced. A pattern cannot know that a provider has the series position
+        /// wrong, and a preview that could only be accepted or rejected would leave
+        /// correcting it as a settings exercise for a fault in one book.
+        /// </param>
         public TagPlan Plan(
             AudioMetadata metadata,
             IReadOnlyList<TagMapping> mappings,
             IReadOnlyDictionary<string, string>? existingTags,
-            IReadOnlySet<string>? selectedTags = null)
+            IReadOnlySet<string>? selectedTags = null,
+            IReadOnlyDictionary<string, string>? overrides = null)
         {
             ArgumentNullException.ThrowIfNull(metadata);
             ArgumentNullException.ThrowIfNull(mappings);
@@ -85,7 +92,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 }
 
                 current.TryGetValue(mapping.Tag, out var existing);
-                var change = Resolve(metadata, mapping, definition, existing, selectedTags);
+                var change = Resolve(
+                    metadata,
+                    mapping,
+                    definition,
+                    existing,
+                    selectedTags,
+                    TryGetOverride(overrides, definition.Tag));
                 changes.Add(change);
 
                 if (!change.IsWrite)
@@ -102,18 +115,47 @@ namespace Listenarr.Application.Audiobooks.Tagging
             return new TagPlan(changes, finalTags);
         }
 
+        /// <summary>
+        /// The operator's value for one tag, if they supplied one. Sanitised here rather
+        /// than at the edge so every path into the planner gets the same treatment.
+        /// </summary>
+        private static string? TryGetOverride(
+            IReadOnlyDictionary<string, string>? overrides,
+            string tag)
+        {
+            if (overrides == null || !overrides.TryGetValue(tag, out var value))
+            {
+                return null;
+            }
+
+            var sanitized = TagValue.Sanitize(value);
+            return string.IsNullOrEmpty(sanitized) ? null : sanitized;
+        }
+
         private TagChange Resolve(
             AudioMetadata metadata,
             TagMapping mapping,
             TagDefinition definition,
             string? existing,
-            IReadOnlySet<string>? selectedTags)
+            IReadOnlySet<string>? selectedTags,
+            string? overridden)
         {
             TagChange Skip(TagChangeAction action, string reason, string? proposed = null) =>
-                new(definition.Tag, definition.Label, existing, proposed, action, reason);
+                new(
+                    definition.Tag,
+                    definition.Label,
+                    existing,
+                    proposed,
+                    action,
+                    reason,
+                    definition.IsLongText,
+                    overridden != null);
 
             if (mapping.Mode == TagWriteMode.Never)
             {
+                // The one refusal an operator's typed value does not override. "Never" is
+                // a standing decision that this tag is not Listenarr's to touch, and a
+                // preview is not the place to reverse it by accident.
                 return Skip(
                     TagChangeAction.NotConfigured,
                     "Left as it is: this tag is set never to be written.");
@@ -127,20 +169,27 @@ namespace Listenarr.Application.Audiobooks.Tagging
             }
 
             string proposed;
-            try
+            if (overridden != null)
             {
-                proposed = namingService.RenderTagValue(mapping.Pattern ?? string.Empty, metadata);
+                proposed = overridden;
             }
-            catch (Exception ex) when (
-                ex is not OperationCanceledException
-                && ex is not OutOfMemoryException
-                && ex is not StackOverflowException)
+            else
             {
-                // A pattern an operator typed is untrusted input. One that cannot render
-                // must not take the whole book's tagging down with it.
-                return Skip(
-                    TagChangeAction.NoValue,
-                    $"Skipped: this tag's pattern could not be rendered ({ex.Message}).");
+                try
+                {
+                    proposed = namingService.RenderTagValue(mapping.Pattern ?? string.Empty, metadata);
+                }
+                catch (Exception ex) when (
+                    ex is not OperationCanceledException
+                    && ex is not OutOfMemoryException
+                    && ex is not StackOverflowException)
+                {
+                    // A pattern an operator typed is untrusted input. One that cannot
+                    // render must not take the whole book's tagging down with it.
+                    return Skip(
+                        TagChangeAction.NoValue,
+                        $"Skipped: this tag's pattern could not be rendered ({ex.Message}).");
+                }
             }
 
             if (string.IsNullOrWhiteSpace(proposed))
@@ -150,7 +199,12 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     "Nothing to write: this book has no value for this tag.");
             }
 
-            if (mapping.Mode == TagWriteMode.WhenEmpty && !string.IsNullOrWhiteSpace(existing))
+            // A typed value is an explicit instruction about this book, so it passes the
+            // when-empty guard. That guard exists to stop an *automatic* run replacing a
+            // hand-corrected value; somebody typing a replacement is the opposite case.
+            if (overridden == null
+                && mapping.Mode == TagWriteMode.WhenEmpty
+                && !string.IsNullOrWhiteSpace(existing))
             {
                 return Skip(
                     TagChangeAction.Preserved,
@@ -166,8 +220,14 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     existing,
                     proposed,
                     TagChangeAction.Unchanged,
-                    "Already correct.");
+                    "Already correct.",
+                    definition.IsLongText,
+                    overridden != null);
             }
+
+            var reason = overridden != null
+                ? "Will be written as edited."
+                : string.IsNullOrWhiteSpace(existing) ? "Will be added." : "Will be replaced.";
 
             return new TagChange(
                 definition.Tag,
@@ -175,7 +235,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 existing,
                 proposed,
                 TagChangeAction.Write,
-                string.IsNullOrWhiteSpace(existing) ? "Will be added." : "Will be replaced.");
+                reason,
+                definition.IsLongText,
+                overridden != null);
         }
 
     }

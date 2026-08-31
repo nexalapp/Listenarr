@@ -103,6 +103,16 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         public string? SelectedTagsJson { get; set; }
 
         /// <summary>
+        /// Values the operator typed in the preview, as a JSON object of tag to value.
+        ///
+        /// Null means every value comes from its pattern, which is what an automatic run
+        /// does. A preview is where a provider's mistake becomes visible — a wrong series
+        /// position, a title with the wrong case — and correcting it there has to survive
+        /// until the worker picks the job up.
+        /// </summary>
+        public string? OverriddenValuesJson { get; set; }
+
+        /// <summary>
         /// A verified rewrite this job produced but has not yet published, and the
         /// library path it belongs at.
         ///

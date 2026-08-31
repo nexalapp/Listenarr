@@ -54,6 +54,7 @@ const preview = (overrides: Partial<TagPreview> = {}): TagPreview => ({
           proposed: 'A short story of the Expanse.',
           action: 'Write',
           reason: 'Will be added.',
+          isLongText: true,
         },
         {
           tag: 'artist',
@@ -100,14 +101,127 @@ describe('TagPreviewModal', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows the current and proposed value for each tag that will change', async () => {
+  it('shows the current value, and the proposed one in an editable field', async () => {
     const wrapper = await mountModal()
-    const text = wrapper.text()
 
-    expect(text).toContain('Album')
-    expect(text).toContain('Drive')
-    expect(text).toContain('[The Expanse 2.7] Drive')
-    expect(text).toContain('A short story of the Expanse.')
+    expect(wrapper.text()).toContain('Album')
+    expect(wrapper.text()).toContain('Drive')
+
+    const album = wrapper.find('input.tag-value-input')
+    expect((album.element as HTMLInputElement).value).toBe('[The Expanse 2.7] Drive')
+  })
+
+  it('gives a long value a textarea rather than a single line', async () => {
+    // A blurb typed into a one-line box cannot be read, let alone corrected.
+    const wrapper = await mountModal()
+
+    const blurb = wrapper.find('textarea.tag-value-input')
+    expect(blurb.exists()).toBe(true)
+    expect((blurb.element as HTMLTextAreaElement).value).toBe('A short story of the Expanse.')
+  })
+
+  it('sends an edited value instead of the one it proposed', async () => {
+    // The point of the inputs: a provider gets a series position wrong often enough
+    // that correcting one book should not mean editing the mapping every book shares.
+    const wrapper = await mountModal()
+
+    await wrapper.find('input.tag-value-input').setValue('[The Expanse 0.5] Drive')
+    expect(wrapper.text()).toContain('Will be written as edited.')
+
+    await wrapper.find('.btn-primary').trigger('click')
+
+    const payload = wrapper.emitted('confirm')![0][0] as {
+      tags: string[]
+      values: Record<string, string>
+    }
+    expect(payload.values.album).toBe('[The Expanse 0.5] Drive')
+  })
+
+  it('sends the values it displayed even when nothing was edited', async () => {
+    // The write is then the diff the operator approved, rather than whatever the
+    // patterns happen to render by the time the worker gets to it.
+    const wrapper = await mountModal()
+
+    await wrapper.find('.btn-primary').trigger('click')
+
+    const payload = wrapper.emitted('confirm')![0][0] as {
+      tags: string[]
+      values: Record<string, string>
+    }
+    expect(payload.values).toEqual({
+      album: '[The Expanse 2.7] Drive',
+      description: 'A short story of the Expanse.',
+    })
+  })
+
+  it('can undo an edit and go back to the proposal', async () => {
+    const wrapper = await mountModal()
+
+    await wrapper.find('input.tag-value-input').setValue('Something else')
+    expect(wrapper.find('.tag-edited-badge').exists()).toBe(true)
+
+    await wrapper.find('.tag-value-revert').trigger('click')
+
+    expect(wrapper.find('.tag-edited-badge').exists()).toBe(false)
+    expect((wrapper.find('input.tag-value-input').element as HTMLInputElement).value).toBe(
+      '[The Expanse 2.7] Drive',
+    )
+  })
+
+  it('lets a typed value rescue a tag the preview would have skipped', async () => {
+    // "No value for this book" is a statement about what Listenarr knows, not about
+    // what the operator knows.
+    const wrapper = await mountModal(
+      preview({
+        files: [
+          {
+            fileId: 1,
+            name: 'Drive.m4b',
+            error: null,
+            changes: [
+              {
+                tag: 'SUBTITLE',
+                label: 'Subtitle',
+                current: null,
+                proposed: null,
+                action: 'NoValue',
+                reason: 'Nothing to write: this book has no value for this tag.',
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    await wrapper.find('.tag-show-all input').setValue(true)
+    expect(wrapper.text()).toContain('0 of 0 tag(s) selected')
+
+    await wrapper.find('input.tag-value-input').setValue('An Expanse Short Story')
+
+    expect(wrapper.text()).toContain('1 of 1 tag(s) selected')
+
+    await wrapper.find('.btn-primary').trigger('click')
+    const payload = wrapper.emitted('confirm')![0][0] as {
+      tags: string[]
+      values: Record<string, string>
+    }
+    expect(payload.tags).toEqual(['SUBTITLE'])
+    expect(payload.values.SUBTITLE).toBe('An Expanse Short Story')
+  })
+
+  it('will not let a typed value reverse a never-write mapping', async () => {
+    // That is a standing decision in Settings, and a preview is not the place to
+    // undo it by accident.
+    const wrapper = await mountModal()
+    await wrapper.find('.tag-show-all input').setValue(true)
+
+    const copyright = wrapper
+      .findAll('.tag-change')
+      .find((row) => row.text().includes('Copyright'))!
+    const input = copyright.find('.tag-value-input')
+
+    expect((input.element as HTMLInputElement).disabled).toBe(true)
+    expect(copyright.find('.tag-checkbox').attributes('disabled')).toBeDefined()
   })
 
   it('hides tags that will not change until asked for them', async () => {
@@ -153,7 +267,7 @@ describe('TagPreviewModal', () => {
 
     const emitted = wrapper.emitted('confirm')
     expect(emitted).toBeTruthy()
-    expect(emitted![0][0]).toEqual(['description'])
+    expect((emitted![0][0] as { tags: string[] }).tags).toEqual(['description'])
   })
 
   it('cannot confirm with nothing ticked', async () => {

@@ -1570,13 +1570,13 @@ const writeTagsTitle = computed(() => {
     : "Write the library's metadata into this book's M4B files"
 })
 
-async function writeTags(tags: string[]) {
+async function writeTags(payload: { tags: string[]; values: Record<string, string> }) {
   if (!audiobook.value) return
 
   showTagPreviewModal.value = false
   const toast = useToast()
   try {
-    const response = await tagJobsStore.write(audiobook.value.id, tags)
+    const response = await tagJobsStore.write(audiobook.value.id, payload.tags, payload.values)
     if (response.queued) {
       toast.success(
         'Tag write queued',

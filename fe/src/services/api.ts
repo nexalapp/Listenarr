@@ -1500,14 +1500,21 @@ class ApiService {
     return this.request<TagPreview>(`/tagging/audiobooks/${audiobookId}/preview${query}`)
   }
 
-  /** Queue a tag write. Omit `tags` for every tag the mapping allows. */
+  /**
+   * Queue a tag write. Omit `tags` for every tag the mapping allows.
+   *
+   * `values` carries what the operator typed in the preview, replacing what those
+   * tags' patterns would produce. Sending the values they actually saw — not just the
+   * tag names — is what makes the write the diff they approved.
+   */
   async writeTags(
     audiobookId: number,
     tags?: string[],
+    values?: Record<string, string>,
   ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
     return this.request(`/tagging/audiobooks/${audiobookId}`, {
       method: 'POST',
-      body: JSON.stringify({ tags: tags ?? null }),
+      body: JSON.stringify({ tags: tags ?? null, values: values ?? null }),
     })
   }
 

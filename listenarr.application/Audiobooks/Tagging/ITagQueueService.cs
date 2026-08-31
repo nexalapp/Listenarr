@@ -62,12 +62,15 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// </summary>
         /// <remarks>
         /// <c>selectedTags</c> names the tags to write, or is null for every tag the
-        /// mapping allows. A preview narrows it for one run without touching the settings.
+        /// mapping allows. <c>values</c> carries what the operator typed in the preview,
+        /// replacing what those tags' patterns would produce. Both narrow this run only
+        /// and neither touches the settings.
         /// </remarks>
         Task<TagEnqueueResult> EnqueueAsync(
             int audiobookId,
             TagTrigger trigger,
             IReadOnlyCollection<string>? selectedTags = null,
+            IReadOnlyDictionary<string, string>? values = null,
             CancellationToken cancellationToken = default);
 
         /// <summary>Re-queue a terminal job that is allowed to retry.</summary>

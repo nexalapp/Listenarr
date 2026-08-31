@@ -1821,6 +1821,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("NextAttemptAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("OverriddenValuesJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PendingDestinationPath")
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");

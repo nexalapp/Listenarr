@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Text.Json;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -27,7 +26,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
     /// Enqueueing is cheap and always returns: the decision about whether a book is worth
     /// rewriting is made here, but the rewrite itself belongs to a worker.
     /// </summary>
-    public sealed class TagQueueService(
+    public sealed partial class TagQueueService(
         ITagJobRepository repository,
         IAudiobookRepository audiobookRepository,
         IConfigurationService configurationService,
@@ -63,6 +62,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
             int audiobookId,
             TagTrigger trigger,
             IReadOnlyCollection<string>? selectedTags = null,
+            IReadOnlyDictionary<string, string>? values = null,
             CancellationToken cancellationToken = default)
         {
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
@@ -118,6 +118,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 Trigger = trigger,
                 FileCount = taggable,
                 SelectedTagsJson = SerializeSelection(selectedTags),
+                OverriddenValuesJson = SerializeValues(values),
                 ActiveDeduplicationKey = TagJob.BuildDeduplicationKey(audiobookId),
                 EnqueuedAt = timeProvider.GetUtcNow().UtcDateTime
             };
@@ -183,6 +184,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 target.CompletedAt = null;
                 target.StartedAt = null;
                 target.TagsWritten = 0;
+                // The selection and the typed values are kept: they were the operator's
+                // decisions about this book, and re-running should honour them.
                 target.ActiveDeduplicationKey = TagJob.BuildDeduplicationKey(target.AudiobookId);
                 target.EnqueuedAt = now;
             }, cancellationToken);
@@ -411,50 +414,6 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// </summary>
         private static int CountTaggableFiles(Audiobook audiobook) =>
             audiobook.Files?.Count(file => TaggableFile.IsTaggable(file.Path)) ?? 0;
-
-        /// <summary>
-        /// Persist the operator's per-run tag selection. Unknown tag names are dropped
-        /// here rather than at the worker: a selection naming nothing real would silently
-        /// become "write no tags", which is not what anyone asked for.
-        /// </summary>
-        internal static string? SerializeSelection(IReadOnlyCollection<string>? selectedTags)
-        {
-            if (selectedTags == null)
-            {
-                return null;
-            }
-
-            var known = selectedTags
-                .Where(TagCatalog.IsKnown)
-                .Select(tag => TagCatalog.Find(tag)!.Tag)
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
-
-            return JsonSerializer.Serialize(known);
-        }
-
-        /// <summary>Read back a stored selection. Null means every tag the mapping allows.</summary>
-        public static IReadOnlySet<string>? DeserializeSelection(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return null;
-            }
-
-            try
-            {
-                var tags = JsonSerializer.Deserialize<List<string>>(json);
-                return tags == null
-                    ? null
-                    : new HashSet<string>(tags, StringComparer.OrdinalIgnoreCase);
-            }
-            catch (JsonException)
-            {
-                // A selection that cannot be read is not a reason to write every tag the
-                // operator may have deliberately excluded.
-                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            }
-        }
 
         private async Task BroadcastAsync(TagJob job, CancellationToken cancellationToken)
         {

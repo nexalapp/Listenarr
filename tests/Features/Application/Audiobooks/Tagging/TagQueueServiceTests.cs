@@ -265,6 +265,86 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
         }
 
         [Fact]
+        public async Task EnqueueAsync_RecordsTheValuesTheOperatorTyped()
+        {
+            GivenSettings(automaticTagging: true);
+            GivenWriterAvailable();
+            GivenAudiobook("Book.m4b");
+            GivenNoActiveJob();
+
+            TagJob? stored = null;
+            _repository
+                .Setup(repository => repository.AddAsync(It.IsAny<TagJob>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob job, CancellationToken _) =>
+                {
+                    stored = job;
+                    return job;
+                });
+
+            await BuildService().EnqueueAsync(
+                7,
+                TagTrigger.Manual,
+                [TagCatalog.Album],
+                new Dictionary<string, string> { [TagCatalog.Album] = "[The Expanse 0.5] Drive" });
+
+            Assert.NotNull(stored);
+            var values = TagQueueService.DeserializeValues(stored!.OverriddenValuesJson);
+            Assert.NotNull(values);
+            Assert.Equal("[The Expanse 0.5] Drive", values![TagCatalog.Album]);
+        }
+
+        [Fact]
+        public void SerializeValues_DropsTagsThatDoNotExist()
+        {
+            var json = TagQueueService.SerializeValues(new Dictionary<string, string>
+            {
+                ["something_invented"] = "nonsense",
+                [TagCatalog.Album] = "Drive"
+            });
+
+            var values = TagQueueService.DeserializeValues(json);
+            Assert.NotNull(values);
+            Assert.Single(values!);
+            Assert.Equal("Drive", values![TagCatalog.Album]);
+        }
+
+        [Fact]
+        public void SerializeValues_SanitisesBeforeAnythingReachesAnAtom()
+        {
+            // A value typed into a form is untrusted input, and a stray control
+            // character would corrupt the atom carrying it.
+            var json = TagQueueService.SerializeValues(new Dictionary<string, string>
+            {
+                [TagCatalog.Album] = "  Drive\u0000  "
+            });
+
+            var values = TagQueueService.DeserializeValues(json);
+            Assert.Equal("Drive", values![TagCatalog.Album]);
+        }
+
+        [Fact]
+        public void SerializeValues_OfBlanksOnly_StoresNothing()
+        {
+            // Nothing here ever writes an empty value, so a cleared box falls back to
+            // the pattern rather than being read as "delete this tag".
+            Assert.Null(TagQueueService.SerializeValues(new Dictionary<string, string>
+            {
+                [TagCatalog.Album] = "   "
+            }));
+        }
+
+        [Fact]
+        public void DeserializeValues_OfUnreadableJson_WritesNoOverriddenValueAtAll()
+        {
+            // Falling back to the patterns the operator deliberately overrode would
+            // write the values they had just corrected.
+            var values = TagQueueService.DeserializeValues("{not json");
+
+            Assert.NotNull(values);
+            Assert.Empty(values!);
+        }
+
+        [Fact]
         public void DeserializeSelection_OfUnreadableJson_WritesNothingRatherThanEverything()
         {
             // A selection that cannot be read is not a reason to write every field the

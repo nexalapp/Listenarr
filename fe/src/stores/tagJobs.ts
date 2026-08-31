@@ -148,8 +148,8 @@ export const useTagJobsStore = defineStore('tagJobs', () => {
     }
   }
 
-  async function write(audiobookId: number, tags?: string[]) {
-    const response = await apiService.writeTags(audiobookId, tags)
+  async function write(audiobookId: number, tags?: string[], values?: Record<string, string>) {
+    const response = await apiService.writeTags(audiobookId, tags, values)
     if (response.queued) {
       // Refresh rather than synthesising a row: the server owns the job's shape, and a
       // guessed one would show the wrong file count until the first update.

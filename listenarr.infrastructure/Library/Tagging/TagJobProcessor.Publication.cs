@@ -137,9 +137,8 @@ namespace Listenarr.Infrastructure.Library.Tagging
 
                 if (registrationLease == null)
                 {
-                    return HoldForRetry(
-                        job,
-                        scratchPath,
+                    return await HoldOrRestoreAsync(
+                        job, scratchPath, destinationPath, services, queue,
                         "The rewritten file could not be published into the library.");
                 }
 
@@ -162,9 +161,8 @@ namespace Listenarr.Infrastructure.Library.Tagging
 
                 if (!registered)
                 {
-                    return HoldForRetry(
-                        job,
-                        scratchPath,
+                    return await HoldOrRestoreAsync(
+                        job, scratchPath, destinationPath, services, queue,
                         "The rewritten file could not be registered in the library.");
                 }
 
@@ -179,9 +177,8 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     await audiobookFileService.RollbackPublishedGenerationIfStaleAsync(
                         audiobook,
                         registrationLease);
-                    return HoldForRetry(
-                        job,
-                        scratchPath,
+                    return await HoldOrRestoreAsync(
+                        job, scratchPath, destinationPath, services, queue,
                         "The rewritten file could not be committed into the library.");
                 }
 
@@ -210,36 +207,148 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     "Publishing the rewritten file for audiobook {AudiobookId} was rejected",
                     audiobook.Id);
 
-                return HoldForRetry(
-                    job,
-                    scratchPath,
+                return await HoldOrRestoreAsync(
+                    job, scratchPath, destinationPath, services, queue,
                     $"The rewritten file could not be published into the library: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Report a publication failure without discarding the rewrite.
+        /// Handle a publication failure without ever leaving the book without a file.
         ///
-        /// The original is already gone, so the held file is the book's only copy. The
-        /// message has to be actionable on its own: an operator reading Activity needs to
-        /// know the book is missing a file and that retrying is what puts it back.
+        /// <para>
+        /// The original is already gone, so the held rewrite is the book's only copy.
+        /// While attempts remain this holds it and lets the queue retry on its backoff:
+        /// the usual causes — a share that blinked, a lock that has since gone — clear
+        /// themselves within a retry or two.
+        /// </para>
+        /// <para>
+        /// On the last attempt it stops waiting and puts the file back itself. A host
+        /// where publication cannot succeed is not hypothetical — it is every macOS dev
+        /// machine, where a bind mount reports two mount IDs for one inode and the
+        /// pinned-parent check rejects every written file — and on one of those, holding
+        /// and retrying means a book stays short a file until a human reads a log.
+        /// </para>
         /// </summary>
-        private PublicationOutcome HoldForRetry(TagJob job, string scratchPath, string reason)
+        private async Task<PublicationOutcome> HoldOrRestoreAsync(
+            TagJob job,
+            string scratchPath,
+            string destinationPath,
+            IServiceProvider services,
+            ITagQueueService queue,
+            string reason)
         {
-            logger.LogError(
-                "Tag write {JobId} is holding the only copy of a library file at {Path}: {Reason}",
-                job.Id,
-                LogRedaction.SanitizeFilePath(scratchPath),
-                reason);
+            var roots = await GetRootPathsAsync(services);
 
-            // Transient, so the queue retries this on its own backoff rather than waiting
-            // for someone to notice. The book is short a file until the held copy lands,
-            // and the usual causes — a share that blinked, a lock that has since gone —
-            // clear themselves within a retry or two. A manual retry still remains once
-            // the attempts run out.
+            // Whatever publication left at the destination is ours: this job removed what
+            // was there. Clearing it matters beyond tidiness — the publication stack
+            // refuses a destination whose content differs from the source, so a staged
+            // remnant would make every later attempt fail for a second, confusing reason.
+            DiscardFailedDestination(destinationPath, roots);
+
+            if (job.AttemptCount < job.MaxAttempts)
+            {
+                logger.LogError(
+                    "Tag write {JobId} is holding the only copy of a library file at {Path}: {Reason}",
+                    job.Id,
+                    LogRedaction.SanitizeFilePath(scratchPath),
+                    reason);
+
+                return PublicationOutcome.Failed(
+                    TagWriteFailureKind.Transient,
+                    $"{reason} The rewritten file is being held and has not been deleted; retrying puts it back.");
+            }
+
+            if (!TryRestoreHeldFile(scratchPath, destinationPath, roots))
+            {
+                logger.LogError(
+                    "Tag write {JobId} could not put the held file back at {Path}. It remains at {Held} and will not be removed.",
+                    job.Id,
+                    LogRedaction.SanitizeFilePath(destinationPath),
+                    LogRedaction.SanitizeFilePath(scratchPath));
+
+                return PublicationOutcome.Failed(
+                    TagWriteFailureKind.OutputRejected,
+                    $"{reason} The rewritten file could not be put back either; it is being held and has not been deleted. Check the log for its location.");
+            }
+
+            await queue.ClearPendingPublicationAsync(job.Id, CancellationToken.None);
+            TryDeleteScratch(scratchPath);
+
+            logger.LogWarning(
+                "Tag write {JobId} could not register its rewrite, so the tagged file was put back at {Path} directly. The library's record of that file is now stale until the book is rescanned.",
+                job.Id,
+                LogRedaction.SanitizeFilePath(destinationPath));
+
             return PublicationOutcome.Failed(
-                TagWriteFailureKind.Transient,
-                $"{reason} The rewritten file is being held and has not been deleted; retrying puts it back.");
+                TagWriteFailureKind.OutputRejected,
+                $"{reason} The tags were written and the file was put back, but the library could not record it — rescan this book so it picks the file up again.");
+        }
+
+        /// <summary>
+        /// Put the held rewrite back where the original was.
+        ///
+        /// A direct write rather than a publication, which is the whole reason it is a
+        /// last resort: nothing proves afterwards that the file at that path is the file
+        /// we created, and the book's stored physical identity is stale until a scan
+        /// reconciles it. That is a worse library record than a publication would leave,
+        /// and a far better one than no file at all — and what goes back carries the
+        /// original's audio, chapters and cover, because it is a copy of it.
+        /// </summary>
+        private bool TryRestoreHeldFile(
+            string scratchPath,
+            string destinationPath,
+            IReadOnlyList<string> roots)
+        {
+            try
+            {
+                if (!File.Exists(scratchPath))
+                {
+                    return false;
+                }
+
+                if (!TryResolveLibraryTarget(destinationPath, roots, out var safePath))
+                {
+                    return false;
+                }
+
+                File.Copy(scratchPath, safePath, overwrite: true);
+
+                // Proof enough for a fallback: a short copy is the failure worth catching,
+                // and the bytes were verified before they were ever written.
+                return new FileInfo(safePath).Length == new FileInfo(scratchPath).Length;
+            }
+            catch (Exception ex) when (IsNonFatal(ex))
+            {
+                logger.LogWarning(
+                    ex,
+                    "Could not put the held file back at {Path}",
+                    LogRedaction.SanitizeFilePath(destinationPath));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Remove what a failed publication left at the destination. Only ever called
+        /// after this job removed the original, so anything there now is this job's.
+        /// </summary>
+        private void DiscardFailedDestination(string destinationPath, IReadOnlyList<string> roots)
+        {
+            try
+            {
+                if (TryResolveLibraryTarget(destinationPath, roots, out var safePath)
+                    && File.Exists(safePath))
+                {
+                    File.Delete(safePath);
+                }
+            }
+            catch (Exception ex) when (IsNonFatal(ex))
+            {
+                logger.LogWarning(
+                    ex,
+                    "Could not remove the unpublished destination {Path}",
+                    LogRedaction.SanitizeFilePath(destinationPath));
+            }
         }
 
         /// <summary>
@@ -251,29 +360,14 @@ namespace Listenarr.Infrastructure.Library.Tagging
             string destinationPath,
             IServiceProvider services)
         {
-            string? error;
             try
             {
-                var allRoots = await services.GetRequiredService<IRootFolderService>().GetAllAsync();
-                var roots = allRoots
-                    .Select(root => root.Path)
-                    .Where(path => !string.IsNullOrWhiteSpace(path))
-                    .ToList();
-
-                var reason = "no configured root folder contains it";
-                if (roots.Count == 0
-                    || !FileSystemSafety.TryValidateMutationTarget(
-                        destinationPath,
-                        roots,
-                        out var safePath,
-                        out reason))
+                var roots = await GetRootPathsAsync(services);
+                if (!TryResolveLibraryTarget(destinationPath, roots, out var safePath))
                 {
-                    error = "The file to be replaced is not inside a configured root folder, so it was left alone.";
-                    logger.LogWarning(
-                        "Refused to replace {Path}: {Reason}",
-                        LogRedaction.SanitizeFilePath(destinationPath),
-                        LogRedaction.SanitizeText(reason));
-                    return (false, error);
+                    return (
+                        false,
+                        "The file to be replaced is not inside a configured root folder, so it was left alone.");
                 }
 
                 services.GetRequiredService<IFileSystem>().DeleteFile(safePath);
@@ -285,9 +379,53 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     ex,
                     "Could not remove {Path} to make room for its rewrite",
                     LogRedaction.SanitizeFilePath(destinationPath));
-                error = $"The file being replaced could not be removed: {ex.Message}";
-                return (false, error);
+                return (false, $"The file being replaced could not be removed: {ex.Message}");
             }
+        }
+
+        private static async Task<IReadOnlyList<string>> GetRootPathsAsync(IServiceProvider services)
+        {
+            var roots = await services.GetRequiredService<IRootFolderService>().GetAllAsync();
+            return [.. roots
+                .Select(root => root.Path)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path!)];
+        }
+
+        /// <summary>
+        /// Resolve a library path this job may write to, proving first that it is inside a
+        /// configured root folder. A path that has drifted outside the library is not
+        /// ours to touch, whatever the database says.
+        /// </summary>
+        private bool TryResolveLibraryTarget(
+            string destinationPath,
+            IReadOnlyList<string> roots,
+            out string safePath)
+        {
+            safePath = destinationPath;
+
+            if (roots.Count == 0)
+            {
+                logger.LogWarning(
+                    "Refused to touch {Path}: no configured root folder contains it",
+                    LogRedaction.SanitizeFilePath(destinationPath));
+                return false;
+            }
+
+            if (!FileSystemSafety.TryValidateMutationTarget(
+                    destinationPath,
+                    roots,
+                    out safePath,
+                    out var reason))
+            {
+                logger.LogWarning(
+                    "Refused to touch {Path}: {Reason}",
+                    LogRedaction.SanitizeFilePath(destinationPath),
+                    LogRedaction.SanitizeText(reason));
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>

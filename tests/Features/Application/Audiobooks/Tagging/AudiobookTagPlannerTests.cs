@@ -192,6 +192,145 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             Assert.Equal("Old album", plan.FinalTags[TagCatalog.Album]);
         }
 
+        // ---- values the operator typed over the proposal ------------------------------
+
+        [Fact]
+        public void AnOperatorsValue_ReplacesWhatThePatternWouldProduce()
+        {
+            // The preview is where a provider's mistake becomes visible. Correcting it
+            // for one book must not mean editing the mapping every book shares.
+            var plan = CreatePlanner().Plan(
+                Book(),
+                TagCatalog.CreateDefaultMappings(),
+                Tags((TagCatalog.Album, "Drive")),
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Album] = "[The Expanse 0.5] Drive"
+                });
+
+            var album = Change(plan, TagCatalog.Album);
+            Assert.Equal(TagChangeAction.Write, album.Action);
+            Assert.True(album.WasEdited);
+            Assert.Equal("[The Expanse 0.5] Drive", plan.FinalTags[TagCatalog.Album]);
+
+            // And only that tag: everything else still comes from its pattern.
+            Assert.Equal("The Expanse 2.7 - Drive", plan.FinalTags[TagCatalog.SortAlbum]);
+        }
+
+        [Fact]
+        public void AnOperatorsValue_WritesATagThisBookHasNothingFor()
+        {
+            // "No value" is a statement about what Listenarr knows, not about what the
+            // operator knows.
+            var book = Book();
+            book.Subtitle = null;
+
+            var plan = CreatePlanner().Plan(
+                book,
+                TagCatalog.CreateDefaultMappings(),
+                null,
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Subtitle] = "An Expanse Short Story"
+                });
+
+            Assert.Equal(TagChangeAction.Write, Change(plan, TagCatalog.Subtitle).Action);
+            Assert.Equal("An Expanse Short Story", plan.FinalTags[TagCatalog.Subtitle]);
+        }
+
+        [Fact]
+        public void AnOperatorsValue_PassesTheWhenEmptyGuard()
+        {
+            // That guard stops an *automatic* run replacing a hand-corrected value.
+            // Somebody typing a replacement is the opposite case.
+            var plan = CreatePlanner().Plan(
+                Book(),
+                [new TagMapping(TagCatalog.Album, "{Title}", TagWriteMode.WhenEmpty)],
+                Tags((TagCatalog.Album, "A hand-corrected name")),
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Album] = "A better name"
+                });
+
+            Assert.Equal(TagChangeAction.Write, Change(plan, TagCatalog.Album).Action);
+            Assert.Equal("A better name", plan.FinalTags[TagCatalog.Album]);
+        }
+
+        [Fact]
+        public void AnOperatorsValue_DoesNotReverseANeverWriteMapping()
+        {
+            // A standing decision that this tag is not Listenarr's to touch. A preview is
+            // not the place to undo it by accident.
+            var plan = CreatePlanner().Plan(
+                Book(),
+                [new TagMapping(TagCatalog.Copyright, string.Empty, TagWriteMode.Never)],
+                Tags((TagCatalog.Copyright, "\u00a92012")),
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Copyright] = "Something else"
+                });
+
+            Assert.Equal(TagChangeAction.NotConfigured, Change(plan, TagCatalog.Copyright).Action);
+            Assert.Equal("\u00a92012", plan.FinalTags[TagCatalog.Copyright]);
+        }
+
+        [Fact]
+        public void AnOperatorsValue_MatchingTheFile_IsStillNoChange()
+        {
+            var plan = CreatePlanner().Plan(
+                Book(),
+                TagCatalog.CreateDefaultMappings(),
+                Tags((TagCatalog.Album, "Whatever they typed")),
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Album] = "Whatever they typed"
+                });
+
+            Assert.Equal(TagChangeAction.Unchanged, Change(plan, TagCatalog.Album).Action);
+        }
+
+        [Fact]
+        public void AnEmptyOperatorValue_FallsBackToThePattern()
+        {
+            // Clearing the box is not an instruction to clear the tag: nothing here ever
+            // writes an empty value, and reading it as "delete this" would be a
+            // destructive interpretation of a keystroke.
+            var plan = CreatePlanner().Plan(
+                Book(),
+                TagCatalog.CreateDefaultMappings(),
+                null,
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Album] = "   "
+                });
+
+            var album = Change(plan, TagCatalog.Album);
+            Assert.False(album.WasEdited);
+            Assert.Equal("[The Expanse 2.7] Drive", plan.FinalTags[TagCatalog.Album]);
+        }
+
+        [Fact]
+        public void AnOperatorsValue_IsStrippedOfWhatWouldCorruptTheAtom()
+        {
+            var plan = CreatePlanner().Plan(
+                Book(),
+                TagCatalog.CreateDefaultMappings(),
+                null,
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Album] = "  Drive\u0000\u0007  "
+                });
+
+            Assert.Equal("Drive", plan.FinalTags[TagCatalog.Album]);
+        }
+
         // ---- re-runnable -------------------------------------------------------------
 
         [Fact]

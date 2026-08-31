@@ -483,6 +483,8 @@ export interface TagChangePreview {
   proposed?: string | null
   action: TagChangeAction
   reason: string
+  /** A blurb needs a textarea; an album name does not. */
+  isLongText?: boolean
 }
 
 export interface TagPreviewFile {

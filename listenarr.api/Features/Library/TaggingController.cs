@@ -19,10 +19,20 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
 {
-    /// <summary>What one tagging run should write. Null tags means every tag the mapping allows.</summary>
+    /// <summary>
+    /// What one tagging run should write.
+    /// </summary>
+    /// <remarks>
+    /// <c>Tags</c> names the tags to write, or is null for every tag the mapping allows.
+    /// <c>Values</c> carries what the operator typed in the preview, replacing what
+    /// those tags' patterns would produce — a provider's wrong series position is
+    /// correctable for one book without editing the mapping every book shares.
+    /// </remarks>
     public sealed class WriteTagsRequest
     {
         public List<string>? Tags { get; set; }
+
+        public Dictionary<string, string>? Values { get; set; }
     }
 
     /// <summary>
@@ -107,7 +117,10 @@ namespace Listenarr.Api.Features.Library
                         current = change.Current,
                         proposed = change.Proposed,
                         action = change.Action.ToString(),
-                        reason = change.Reason
+                        reason = change.Reason,
+                        // A blurb typed into a single-line box cannot be read, let alone
+                        // corrected, so the preview needs to know which is which.
+                        isLongText = change.IsLongText
                     })
                 })
             });
@@ -135,6 +148,7 @@ namespace Listenarr.Api.Features.Library
                 audiobookId,
                 TagTrigger.Manual,
                 request?.Tags is { Count: > 0 } selected ? selected : null,
+                request?.Values is { Count: > 0 } values ? values : null,
                 cancellationToken);
 
             logger.LogInformation(

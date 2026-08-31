@@ -44,5 +44,46 @@ namespace Listenarr.Domain.Audiobooks.Tagging
 
         public static bool AreEquivalent(string? left, string? right) =>
             string.Equals(Normalize(left), Normalize(right), StringComparison.Ordinal);
+
+        /// <summary>
+        /// The longest value that may be written into one tag.
+        ///
+        /// Generous — a blurb runs to a few thousand characters — but not unbounded: an
+        /// operator-typed value arrives from a form, and a tag is not the place to
+        /// discover how large a metadata box a player will tolerate.
+        /// </summary>
+        public const int MaxLength = 16_384;
+
+        /// <summary>
+        /// Make an operator-typed value fit to write.
+        ///
+        /// A value rendered from a pattern has already been through this; one typed into
+        /// the preview has not, and a stray control character would corrupt the atom
+        /// carrying it. Newlines survive, because a blurb has paragraphs.
+        /// </summary>
+        public static string Sanitize(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var builder = new System.Text.StringBuilder(value.Length);
+            foreach (var c in value)
+            {
+                if (c == '\r')
+                {
+                    continue;
+                }
+
+                if (c == '\n' || !char.IsControl(c))
+                {
+                    builder.Append(c);
+                }
+            }
+
+            var sanitized = builder.ToString().Trim();
+            return sanitized.Length > MaxLength ? sanitized[..MaxLength].TrimEnd() : sanitized;
+        }
     }
 }

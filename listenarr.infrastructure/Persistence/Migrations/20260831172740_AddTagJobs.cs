@@ -45,6 +45,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     FileCount = table.Column<int>(type: "INTEGER", nullable: false),
                     TagsWritten = table.Column<int>(type: "INTEGER", nullable: false),
                     SelectedTagsJson = table.Column<string>(type: "TEXT", nullable: true),
+                    OverriddenValuesJson = table.Column<string>(type: "TEXT", nullable: true),
                     PendingOutputPath = table.Column<string>(type: "TEXT", maxLength: 2000, nullable: true),
                     PendingOutputLength = table.Column<long>(type: "INTEGER", nullable: true),
                     PendingDestinationPath = table.Column<string>(type: "TEXT", maxLength: 2000, nullable: true),

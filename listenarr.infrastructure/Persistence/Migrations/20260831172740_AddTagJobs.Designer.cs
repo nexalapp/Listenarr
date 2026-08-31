@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260831162423_AddTagJobs")]
+    [Migration("20260831172740_AddTagJobs")]
     partial class AddTagJobs
     {
         /// <inheritdoc />
@@ -1822,6 +1822,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(3);
 
                     b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OverriddenValuesJson")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PendingDestinationPath")

@@ -47,8 +47,9 @@
           <div class="info-section">
             <PhInfo />
             <p>
-              Tick the tags to write. Anything left unticked keeps the value the file already has.
-              This choice applies to this run only — it does not change the mapping in Settings.
+              Tick the tags to write, and correct any value that is wrong before writing it.
+              Anything left unticked keeps the value the file already has. Both the ticks and the
+              edits apply to this run only — they do not change the mapping in Settings.
             </p>
           </div>
 
@@ -86,7 +87,7 @@
                 v-for="change in visibleChanges(file)"
                 :key="change.tag"
                 class="tag-change"
-                :class="{ 'tag-change--inactive': change.action !== 'Write' }"
+                :class="{ 'tag-change--inactive': !isWritable(change) }"
               >
                 <label class="tag-change-header">
                   <input
@@ -98,7 +99,8 @@
                   />
                   <span class="tag-change-label">{{ change.label }}</span>
                   <code class="tag-change-key">{{ change.tag }}</code>
-                  <span class="tag-change-reason">{{ change.reason }}</span>
+                  <span v-if="isEdited(change)" class="tag-edited-badge">edited</span>
+                  <span class="tag-change-reason">{{ reasonFor(change) }}</span>
                 </label>
 
                 <div class="tag-change-values">
@@ -109,10 +111,36 @@
                     }}</span>
                   </div>
                   <div class="tag-value">
-                    <span class="tag-value-label">After</span>
-                    <span class="tag-value-text tag-value-text--proposed">{{
-                      change.proposed || '—'
-                    }}</span>
+                    <span class="tag-value-label" :for="`tag-value-${file.fileId}-${change.tag}`">
+                      After
+                    </span>
+                    <textarea
+                      v-if="change.isLongText"
+                      :id="`tag-value-${file.fileId}-${change.tag}`"
+                      class="tag-value-input tag-value-input--long"
+                      rows="5"
+                      :disabled="change.action === 'NotConfigured'"
+                      :value="valueFor(change)"
+                      @input="edit(change, ($event.target as HTMLTextAreaElement).value)"
+                    ></textarea>
+                    <input
+                      v-else
+                      :id="`tag-value-${file.fileId}-${change.tag}`"
+                      type="text"
+                      class="tag-value-input"
+                      :disabled="change.action === 'NotConfigured'"
+                      :value="valueFor(change)"
+                      @input="edit(change, ($event.target as HTMLInputElement).value)"
+                    />
+                    <button
+                      v-if="isEdited(change)"
+                      type="button"
+                      class="tag-value-revert"
+                      @click="revert(change)"
+                    >
+                      <PhArrowCounterClockwise :size="13" />
+                      Undo edit
+                    </button>
                   </div>
                 </div>
               </li>
@@ -155,6 +183,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
+  PhArrowCounterClockwise,
   PhCheckCircle,
   PhFileAudio,
   PhInfo,
@@ -175,7 +204,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'close'): void
-  (event: 'confirm', tags: string[]): void
+  (event: 'confirm', payload: { tags: string[]; values: Record<string, string> }): void
 }>()
 
 const loading = ref(false)
@@ -186,11 +215,33 @@ const selected = ref(new Set<string>())
 const showUnchanged = ref(false)
 
 /**
- * Only a tag the preview would actually write can be ticked. A tag the mapping is set
- * never to write, or that this book has no value for, is shown with its reason so the
- * absence is explained rather than merely absent.
+ * What each tag will be written as. Seeded from the server's proposal and then owned by
+ * the operator: a provider gets a series position wrong often enough that a preview you
+ * can only accept or reject would leave correcting one book as a settings exercise.
  */
-const isWritable = (change: TagChangePreview) => change.action === 'Write'
+const values = ref<Record<string, string>>({})
+
+const proposedFor = (change: TagChangePreview) => change.proposed ?? ''
+
+const valueFor = (change: TagChangePreview) =>
+  values.value[change.tag] ?? proposedFor(change)
+
+const isEdited = (change: TagChangePreview) =>
+  change.tag in values.value && values.value[change.tag] !== proposedFor(change)
+
+/**
+ * A tag can be written when the preview says so, or when the operator has typed
+ * something for it. The one exception is a tag the mapping is set never to write: that
+ * is a standing decision, and a preview is not the place to reverse it by accident.
+ */
+const isWritable = (change: TagChangePreview) => {
+  if (change.action === 'NotConfigured') return false
+  if (change.action === 'Write') return true
+  return isEdited(change) && valueFor(change).trim().length > 0
+}
+
+const reasonFor = (change: TagChangePreview) =>
+  isEdited(change) ? 'Will be written as edited.' : change.reason
 
 const writableTags = computed(() => {
   const tags = new Set<string>()
@@ -202,10 +253,48 @@ const writableTags = computed(() => {
   return Array.from(tags)
 })
 
+function edit(change: TagChangePreview, value: string) {
+  values.value = { ...values.value, [change.tag]: value }
+
+  // Typing a value into a row the preview would have skipped is how an operator says
+  // they want it written; ticking it as well would be a second, pointless step.
+  const next = new Set(selected.value)
+  if (isWritable(change)) {
+    next.add(change.tag)
+  } else {
+    next.delete(change.tag)
+  }
+  selected.value = next
+}
+
+function revert(change: TagChangePreview) {
+  const next = { ...values.value }
+  delete next[change.tag]
+  values.value = next
+
+  const selection = new Set(selected.value)
+  if (isWritable(change)) {
+    selection.add(change.tag)
+  } else {
+    selection.delete(change.tag)
+  }
+  selected.value = selection
+}
+
 const selectedCount = computed(() => selected.value.size)
 
 const visibleChanges = (file: TagPreviewFile) =>
   showUnchanged.value ? file.changes : file.changes.filter(isWritable)
+
+const changeByTag = computed(() => {
+  const map = new Map<string, TagChangePreview>()
+  for (const file of preview.value?.files ?? []) {
+    for (const change of file.changes) {
+      map.set(change.tag, change)
+    }
+  }
+  return map
+})
 
 function toggle(tag: string) {
   const next = new Set(selected.value)
@@ -235,6 +324,8 @@ async function load() {
   try {
     const result = await apiService.previewTags(props.audiobookId)
     preview.value = result
+    // A fresh proposal, so nothing is edited yet.
+    values.value = {}
     // Everything the mapping would write starts ticked: the operator is narrowing a
     // proposal, not assembling one from nothing.
     selected.value = new Set(
@@ -256,7 +347,20 @@ function confirm() {
   if (selectedCount.value === 0) return
   queueing.value = true
   try {
-    emit('confirm', Array.from(selected.value))
+    const tags = Array.from(selected.value)
+
+    // Send the values the operator actually saw, edited or not, rather than only the
+    // tag names. The write is then the diff they approved instead of whatever the
+    // patterns happen to render when the worker gets to it.
+    const chosen: Record<string, string> = {}
+    for (const tag of tags) {
+      const change = changeByTag.value.get(tag)
+      if (change) {
+        chosen[tag] = valueFor(change)
+      }
+    }
+
+    emit('confirm', { tags, values: chosen })
   } finally {
     queueing.value = false
   }
@@ -468,8 +572,60 @@ watch(
   color: var(--text-secondary, #adb5bd);
 }
 
-.tag-value-text--proposed {
+.tag-value-input {
+  width: 100%;
+  font-size: 0.8125rem;
   color: #51cf66;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border-color, #343a40);
+  border-radius: 4px;
+  background-color: var(--bg-tertiary, #2b3035);
+  font-family: inherit;
+}
+
+.tag-value-input--long {
+  resize: vertical;
+  min-height: 5rem;
+  line-height: 1.45;
+}
+
+.tag-value-input:disabled {
+  opacity: 0.5;
+  color: var(--text-secondary, #adb5bd);
+}
+
+.tag-value-input:focus {
+  outline: none;
+  border-color: #51cf66;
+}
+
+.tag-edited-badge {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background-color: rgba(255, 212, 59, 0.15);
+  border: 1px solid rgba(255, 212, 59, 0.35);
+  color: #ffd43b;
+}
+
+.tag-value-revert {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #adb5bd);
+}
+
+.tag-value-revert:hover {
+  color: var(--text-primary, #f8f9fa);
 }
 
 .tag-show-all {

@@ -44,13 +44,22 @@ namespace Listenarr.Application.Audiobooks.Tagging
     }
 
     /// <summary>One tag's before and after, with the reason behind it.</summary>
+    /// <remarks>
+    /// <c>IsLongText</c> is carried so a preview can offer the right size of input: a
+    /// blurb typed into a single-line box cannot be read, let alone corrected.
+    /// <c>WasEdited</c> marks a value the operator supplied rather than one a pattern
+    /// produced, which is the difference between "Listenarr proposes this" and
+    /// "somebody typed this".
+    /// </remarks>
     public sealed record TagChange(
         string Tag,
         string Label,
         string? Current,
         string? Proposed,
         TagChangeAction Action,
-        string Reason)
+        string Reason,
+        bool IsLongText = false,
+        bool WasEdited = false)
     {
         public bool IsWrite => Action == TagChangeAction.Write;
     }
