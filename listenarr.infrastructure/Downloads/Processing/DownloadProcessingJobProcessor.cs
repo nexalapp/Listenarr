@@ -139,7 +139,7 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     "Unable to import the download",
                     job.ErrorMessage ?? $"See the log of job {job.Id} for more information");
 
-                foreach (var entry in DescribeAttempts(job))
+                foreach (var entry in ImportFailureNarrator.DescribeAttempts(job))
                 {
                     blocked.AddBlockMessage(entry);
                 }
@@ -316,7 +316,7 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     // operator to read a job log the UI does not expose, and this reason is
                     // what the blocked import shows them.
                     await FailImportAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
-                        correlationId, DescribeFailedImports(results), cancellationToken);
+                        correlationId, ImportFailureNarrator.DescribeFailedImports(results), cancellationToken);
                     return;
                 }
 
@@ -457,45 +457,6 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             }
         }
 
-        /// <summary>
-        /// Summarise what the job actually tried, so a blocked import explains itself
-        /// without the operator needing access to the job log.
-        /// </summary>
-        private static IEnumerable<string> DescribeAttempts(DownloadProcessingJob job)
-        {
-            if (!string.IsNullOrWhiteSpace(job.SourcePath))
-            {
-                yield return $"Looked for files in {job.SourcePath}";
-            }
-
-            if (job.RetryCount > 0)
-            {
-                yield return $"Gave up after {job.RetryCount} of {job.MaxRetries} attempts";
-            }
-        }
-
-
-        /// <summary>
-        /// Turns the failed import results into one reason an operator can act on, rather
-        /// than a count of failures and a pointer to a log they cannot open.
-        /// </summary>
-        internal static string DescribeFailedImports(IReadOnlyCollection<ImportResult> results)
-        {
-            var reasons = results
-                .Where(result => !result.Success && !string.IsNullOrWhiteSpace(result.Message))
-                .Select(result => result.Message!.Trim())
-                .Distinct(StringComparer.Ordinal)
-                .Take(3)
-                .ToList();
-
-            var failed = results.Count(result => !result.Success);
-            if (reasons.Count == 0)
-            {
-                return $"Unable to import {failed} of {results.Count} file(s); the import reported no reason";
-            }
-
-            return $"Unable to import {failed} of {results.Count} file(s): {string.Join("; ", reasons)}";
-        }
 
     }
 }

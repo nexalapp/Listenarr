@@ -15,7 +15,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
                 new() { Success = true, Message = "Imported" }
             };
 
-            var description = DownloadProcessingJobProcessor.DescribeFailedImports(results);
+            var description = ImportFailureNarrator.DescribeFailedImports(results);
 
             Assert.Contains("changed beneath its pinned parent", description);
             Assert.Contains("1 of 2", description);
@@ -35,7 +35,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
                 new() { Success = false, Message = "Destination is read-only" }
             };
 
-            var description = DownloadProcessingJobProcessor.DescribeFailedImports(results);
+            var description = ImportFailureNarrator.DescribeFailedImports(results);
 
             Assert.Equal(1, description.Split("Destination is read-only").Length - 1);
             Assert.Contains("3 of 3", description);
@@ -53,7 +53,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
                 new() { Success = false, Message = "   " }
             };
 
-            var description = DownloadProcessingJobProcessor.DescribeFailedImports(results);
+            var description = ImportFailureNarrator.DescribeFailedImports(results);
 
             Assert.Contains("2 of 2", description);
             Assert.Contains("no reason", description);

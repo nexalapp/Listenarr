@@ -109,8 +109,14 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             // The block messages are all the operator gets in the UI, so they must
             // carry the reason itself rather than a job id they cannot look up.
             Assert.Contains(download.ImportBlockMessages, m => m == job.ErrorMessage);
-            Assert.Contains(download.ImportBlockMessages, m => m.Contains(job.SourcePath!, StringComparison.OrdinalIgnoreCase));
             Assert.Contains(download.ImportBlockMessages, m => m.Contains($"{job.MaxRetries} attempts", StringComparison.OrdinalIgnoreCase));
+
+            // The searched path is only reported when there is one. This scenario is
+            // "missing source", and one of its cases has no SourcePath at all.
+            if (!string.IsNullOrWhiteSpace(job.SourcePath))
+            {
+                Assert.Contains(download.ImportBlockMessages, m => m.Contains(job.SourcePath, StringComparison.OrdinalIgnoreCase));
+            }
             Assert.DoesNotContain(download.ImportBlockMessages, m => m.Contains($"See the log of job {job.Id}", StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain(download.ImportBlockMessages, m => m.Contains("{job.Id}", StringComparison.OrdinalIgnoreCase));
         }
