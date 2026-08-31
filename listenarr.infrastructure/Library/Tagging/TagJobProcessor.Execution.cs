@@ -154,7 +154,10 @@ namespace Listenarr.Infrastructure.Library.Tagging
 
                 // Only fill an empty cover; replacing existing art is never automatic,
                 // because the file's own art may be the better one and nothing here can
-                // tell.
+                // tell. It rides along with a tag change rather than causing one: a file
+                // whose tags are already correct is not rewritten at all, cover or no
+                // cover, because rewriting several hundred megabytes for a picture
+                // nothing asked about is not a decision to make on a book's behalf.
                 var cover = existing.HasCoverArt ? null : coverArtPath;
 
                 var scratchPath = Path.Combine(

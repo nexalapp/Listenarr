@@ -82,11 +82,15 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 destinationPath,
                 CancellationToken.None);
 
-            if (!TryRemoveOriginal(destinationPath, services, out var removalError))
+            var removal = await TryRemoveOriginalAsync(destinationPath, services);
+            if (!removal.Removed)
             {
+                // Nothing was removed, so the library is intact and the rewrite is only
+                // taking up space. Clearing the row first keeps the sweeper free to
+                // reclaim it.
                 await queue.ClearPendingPublicationAsync(job.Id, CancellationToken.None);
                 TryDeleteScratch(scratchPath);
-                return PublicationOutcome.Failed(TagWriteFailureKind.Transient, removalError!);
+                return PublicationOutcome.Failed(TagWriteFailureKind.Transient, removal.Error!);
             }
 
             return await PublishRewriteAsync(
@@ -228,9 +232,14 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 LogRedaction.SanitizeFilePath(scratchPath),
                 reason);
 
+            // Transient, so the queue retries this on its own backoff rather than waiting
+            // for someone to notice. The book is short a file until the held copy lands,
+            // and the usual causes — a share that blinked, a lock that has since gone —
+            // clear themselves within a retry or two. A manual retry still remains once
+            // the attempts run out.
             return PublicationOutcome.Failed(
-                TagWriteFailureKind.OutputRejected,
-                $"{reason} The rewritten file is being held and has not been deleted; retry this job to put it back.");
+                TagWriteFailureKind.Transient,
+                $"{reason} The rewritten file is being held and has not been deleted; retrying puts it back.");
         }
 
         /// <summary>
@@ -238,17 +247,15 @@ namespace Listenarr.Infrastructure.Library.Tagging
         /// configured root folder. A path that has drifted outside the library is not
         /// ours to delete, whatever the database says.
         /// </summary>
-        private bool TryRemoveOriginal(
+        private async Task<(bool Removed, string? Error)> TryRemoveOriginalAsync(
             string destinationPath,
-            IServiceProvider services,
-            out string? error)
+            IServiceProvider services)
         {
+            string? error;
             try
             {
-                var roots = services.GetRequiredService<IRootFolderService>()
-                    .GetAllAsync()
-                    .GetAwaiter()
-                    .GetResult()
+                var allRoots = await services.GetRequiredService<IRootFolderService>().GetAllAsync();
+                var roots = allRoots
                     .Select(root => root.Path)
                     .Where(path => !string.IsNullOrWhiteSpace(path))
                     .ToList();
@@ -266,12 +273,11 @@ namespace Listenarr.Infrastructure.Library.Tagging
                         "Refused to replace {Path}: {Reason}",
                         LogRedaction.SanitizeFilePath(destinationPath),
                         LogRedaction.SanitizeText(reason));
-                    return false;
+                    return (false, error);
                 }
 
                 services.GetRequiredService<IFileSystem>().DeleteFile(safePath);
-                error = null;
-                return true;
+                return (true, null);
             }
             catch (Exception ex) when (IsNonFatal(ex))
             {
@@ -280,7 +286,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     "Could not remove {Path} to make room for its rewrite",
                     LogRedaction.SanitizeFilePath(destinationPath));
                 error = $"The file being replaced could not be removed: {ex.Message}";
-                return false;
+                return (false, error);
             }
         }
 

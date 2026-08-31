@@ -1,5 +1,7 @@
 using Listenarr.Api.Startup;
+using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Infrastructure.DependencyInjection;
+using Listenarr.Infrastructure.Library.Tagging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 
@@ -74,6 +76,12 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(MetadataRescanService),
                 typeof(DownloadProcessingJobProcessor),
                 typeof(IDownloadImportProcessor),
+                // The tag worker holds a scope factory and nothing scoped, the same
+                // shape as the conversion worker. A scoped capture here would be a
+                // DbContext shared across every rewrite the process ever runs.
+                typeof(TagJobProcessor),
+                typeof(ITagJobProcessor),
+                typeof(TagBackgroundService),
                 typeof(UnmatchedScanBackgroundService)
             ];
             foreach (var serviceType in affectedSingletonServiceTypes)
@@ -95,7 +103,14 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(IAudiobookFileIdentityReconciler),
                 typeof(IAudiobookFilesystemDeleteService),
                 typeof(IRenameService),
-                typeof(IRootFolderStorageConfirmationService)
+                typeof(IRootFolderStorageConfirmationService),
+                // Everything on the tag-writing path holds a DbContext through a
+                // repository or the configuration service, directly or transitively.
+                typeof(ITagJobRepository),
+                typeof(ITagQueueService),
+                typeof(IAudiobookTagWriter),
+                typeof(ITagPreviewService),
+                typeof(AudiobookTagPlanner)
             ];
             foreach (var serviceType in affectedScopedServiceTypes)
             {
@@ -113,6 +128,7 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(MetadataRescanService),
                 typeof(DownloadProcessingJobProcessor),
                 typeof(UnmatchedScanBackgroundService),
+                typeof(TagBackgroundService),
                 typeof(StartupDbNormalizer)
             ];
             Assert.All(

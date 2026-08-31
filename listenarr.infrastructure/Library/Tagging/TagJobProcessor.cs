@@ -286,10 +286,12 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 var toasts = services.GetRequiredService<IToastService>();
                 var title = outcome.AudiobookTitle is { Length: > 0 } name ? name : "Audiobook";
 
-                if (outcome.TagsWritten == 0)
+                if (outcome.FilesWritten == 0)
                 {
                     // Worth saying: an operator who asked for this and saw nothing happen
-                    // would otherwise assume it failed.
+                    // would otherwise assume it failed. Keyed on files rather than tags,
+                    // because a resumed publication rewrites a file without this run
+                    // having decided any of its tags.
                     await toasts.PublishToastAsync(
                         "info",
                         "Tags already correct",
