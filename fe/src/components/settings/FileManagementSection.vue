@@ -131,19 +131,19 @@
         help="What happens to the source MP3s once the M4B has been read back and its chapters verified. Nothing here runs if the conversion fails."
       >
         <select
-          :value="settings.conversionSourceDisposition ?? 'archive'"
+          :value="settings.conversionSourceDisposition ?? 'Archive'"
           @change="
             (e) => updateField('conversionSourceDisposition', (e.target as HTMLSelectElement).value)
           "
         >
-          <option value="archive">Move the MP3s to the archive path</option>
-          <option value="keep">Leave the MP3s on disk</option>
-          <option value="delete">Delete the MP3s</option>
+          <option value="Archive">Move the MP3s to the archive path</option>
+          <option value="Keep">Leave the MP3s on disk</option>
+          <option value="Delete">Delete the MP3s</option>
         </select>
       </FormRow>
 
       <FormRow
-        v-if="(settings.conversionSourceDisposition ?? 'archive') === 'archive'"
+        v-if="(settings.conversionSourceDisposition ?? 'Archive') === 'Archive'"
         label="Conversion Archive Path"
         help="Where source MP3s are moved after a verified conversion. Each book gets its own folder. Leave this empty and the MP3s stay where they are."
       >

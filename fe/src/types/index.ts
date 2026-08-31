@@ -454,8 +454,9 @@ export interface ApplicationSettings {
   showCompletedExternalDownloads?: boolean
   // Convert imported MP3 audiobooks into a single chaptered M4B
   convertMp3ToM4b?: boolean
-  // What happens to the source MP3s once a conversion has been verified
-  conversionSourceDisposition?: 'archive' | 'keep' | 'delete'
+  // What happens to the source MP3s once a conversion has been verified.
+  // Serialised by enum name, so these are the exact values the API emits.
+  conversionSourceDisposition?: 'Archive' | 'Keep' | 'Delete'
   // Where archived source MP3s are moved to
   conversionArchivePath?: string
   // Failed download handling
