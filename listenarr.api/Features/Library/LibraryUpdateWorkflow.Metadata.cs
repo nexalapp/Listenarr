@@ -22,6 +22,14 @@ public sealed partial class LibraryUpdateWorkflow
             return new NotFoundObjectResult(new { message = "Audiobook not found" });
         }
 
+        // Resolved before anything is assigned: an auto-lock is decided by comparing the
+        // request against what is still stored, and one field of the comparison disappears
+        // the moment the assignments below run.
+        existingAudiobook.LockedFields = ResolveLockedFields(
+            existingAudiobook,
+            request,
+            suppressStaleImageUrl);
+
         var legacyIdentifierFieldsTouched = false;
         if (request.Title != null) existingAudiobook.Title = request.Title;
         if (request.Subtitle != null) existingAudiobook.Subtitle = request.Subtitle;

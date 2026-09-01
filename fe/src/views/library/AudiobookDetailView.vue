@@ -266,6 +266,10 @@
             <PhFile />
             Files
           </button>
+          <button class="tab" :class="{ active: activeTab === 'tags' }" @click="activeTab = 'tags'">
+            <PhTag />
+            Tags
+          </button>
           <button
             class="tab"
             :class="{ active: activeTab === 'history' }"
@@ -544,6 +548,18 @@
         </div>
       </div>
 
+      <!-- Tags Tab -->
+      <div id="tags" v-if="activeTab === 'tags'" class="tags-content">
+        <AudiobookTagsPanel
+          v-if="audiobook"
+          ref="tagsPanel"
+          :audiobookId="audiobook.id"
+          :disabled="tagWriteInFlight"
+          :disabledReason="writeTagsTitle"
+          @write="writeTags"
+        />
+      </div>
+
       <!-- History Tab -->
       <div id="history" v-if="activeTab === 'history'" class="history-content">
         <div class="history-header">
@@ -744,6 +760,7 @@ import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsCo
 import { buildAudibleProductUrl } from '@/utils/marketDomains'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import TagPreviewModal from '@/components/domain/tagging/TagPreviewModal.vue'
+import AudiobookTagsPanel from '@/components/domain/tagging/AudiobookTagsPanel.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
@@ -797,7 +814,7 @@ const conversionJobsStore = useConversionJobsStore()
 const tagJobsStore = useTagJobsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
-type DetailTab = 'details' | 'files' | 'history'
+type DetailTab = 'details' | 'files' | 'tags' | 'history'
 
 const audiobook = ref<Audiobook | null>(null)
 const loading = ref(true)
@@ -886,6 +903,7 @@ const expandedFileAccordions = ref<Set<number>>(new Set())
 const mobileTabOptions = computed(() => [
   { value: 'details', label: 'Details', icon: PhInfo },
   { value: 'files', label: 'Files', icon: PhFile },
+  { value: 'tags', label: 'Tags', icon: PhTag },
   { value: 'history', label: 'History', icon: PhClockCounterClockwise },
 ])
 
@@ -1299,7 +1317,12 @@ function normalizeDetailTabCandidate(value: unknown): DetailTab | null {
   if (typeof value !== 'string') return null
   const normalized = value.trim().toLowerCase()
   if (normalized === 'downloads') return 'history'
-  if (normalized === 'details' || normalized === 'files' || normalized === 'history') {
+  if (
+    normalized === 'details' ||
+    normalized === 'files' ||
+    normalized === 'tags' ||
+    normalized === 'history'
+  ) {
     return normalized
   }
   return null
@@ -1606,6 +1629,13 @@ async function convertToM4b() {
 
 const showTagPreviewModal = ref(false)
 
+/**
+ * The Tags tab's panel, held so a finished write can re-read the files. The values it
+ * shows are read off disk, so leaving them as they were after a successful write would
+ * show the old tags beside a book that no longer has them.
+ */
+const tagsPanel = ref<InstanceType<typeof AudiobookTagsPanel> | null>(null)
+
 const hasTaggableFiles = computed(
   () =>
     audiobook.value?.files?.some((file) => {
@@ -1671,6 +1701,15 @@ async function writeTags(payload: { tags: string[]; values: Record<string, strin
   }
 }
 
+watch(
+  () => activeTagWrite.value?.status,
+  (status, previous) => {
+    if (status === 'Completed' && previous && previous !== 'Completed') {
+      void tagsPanel.value?.load()
+    }
+  },
+)
+
 async function rescanMetadata() {
   if (!audiobook.value || rescanningMetadata.value) return
 
@@ -1683,6 +1722,12 @@ async function rescanMetadata() {
     const details: string[] = []
     if (response?.source) details.push(`Source: ${response.source}`)
     if (response?.asin) details.push(`ASIN: ${response.asin}`)
+
+    // Pinned fields are named, not counted. A rescan that looks like it changed nothing
+    // should say which locks are the reason before the operator goes hunting for a bug.
+    if (response?.keptFields?.length) {
+      details.push(`Kept your ${response.keptFields.join(', ')}`)
+    }
 
     toast.success(
       'Metadata rescanned',
@@ -3044,6 +3089,7 @@ a.identifier-link:hover {
 }
 
 .files-content,
+.tags-content,
 .history-content {
   background-color: #2a2a2a;
   border: 1px solid #333;

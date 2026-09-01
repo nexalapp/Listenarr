@@ -44,9 +44,64 @@ namespace Listenarr.Api.Features.Library
     public sealed class TaggingController(
         ITagQueueService tagQueue,
         ITagPreviewService previewService,
+        ILibraryTagIndexService tagIndex,
         IConfigurationService configurationService,
         ILogger<TaggingController> logger) : ControllerBase
     {
+        /// <summary>
+        /// Every audio file in the library with the tags it actually carries.
+        /// </summary>
+        /// <remarks>
+        /// One row per file rather than per book: a book split into parts can have one
+        /// part tagged differently from the rest, and a per-book table is exactly the
+        /// shape that hides it.
+        /// <para>
+        /// The whole library comes back in one response, uncapped, because sorting a tag
+        /// table by a tag means sorting by a value that only exists once every file has
+        /// been read — paging it server-side would buy nothing and cost the client the
+        /// ability to re-sort without a round trip. Reads are cached per file against its
+        /// size and modification time, so only a cold load touches the disk.
+        /// </para>
+        /// </remarks>
+        /// <param name="refresh">Re-probe every file instead of trusting the cache.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        [HttpGet("library")]
+        public async Task<IActionResult> GetLibraryTags(
+            [FromQuery] bool refresh = false,
+            CancellationToken cancellationToken = default)
+        {
+            var index = await tagIndex.BuildAsync(refresh, cancellationToken);
+
+            return Ok(new
+            {
+                generatedAt = index.GeneratedAtUtc,
+                filesRead = index.FilesRead,
+                // The catalog travels with the rows so the table can build its columns
+                // from the same list the settings screen and the writer use, rather than
+                // from whichever tags happened to appear in the data.
+                columns = TagCatalog.Definitions.Select(definition => new
+                {
+                    tag = definition.Tag,
+                    label = definition.Label,
+                    isLongText = definition.IsLongText
+                }),
+                rows = index.Rows.Select(row => new
+                {
+                    audiobookId = row.AudiobookId,
+                    fileId = row.FileId,
+                    bookTitle = row.BookTitle,
+                    fileName = row.FileName,
+                    path = row.RelativePath,
+                    extension = row.Extension,
+                    writable = row.Writable,
+                    tags = row.Tags,
+                    expected = row.Expected,
+                    mismatched = row.Mismatched,
+                    error = row.Error
+                })
+            });
+        }
+
         /// <summary>
         /// The tags Listenarr can write, with their current mapping.
         /// </summary>

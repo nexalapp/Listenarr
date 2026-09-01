@@ -61,6 +61,13 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .HasColumnType("TEXT");
             tagsProp.Metadata.SetValueComparer(tagsComparer);
 
+            var lockedFieldsConverter = (ValueConverter<List<string>?, string>)new JsonValueConverter<List<string>?>();
+            var lockedFieldsComparer = JsonValueComparer.Create<List<string>?>();
+            var lockedFieldsProp = builder.Property(e => e.LockedFields)
+                .HasConversion(lockedFieldsConverter)
+                .HasColumnType("TEXT");
+            lockedFieldsProp.Metadata.SetValueComparer(lockedFieldsComparer);
+
             var narratorsConverter = (ValueConverter<List<string>?, string>)new JsonValueConverter<List<string>?>();
             var narratorsComparer = JsonValueComparer.Create<List<string>?>();
             var narratorsProp = builder.Property(e => e.Narrators)

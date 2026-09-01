@@ -28,6 +28,18 @@ public sealed record AudiobookUpdateRequest
     public string? Description { get; init; }
     public List<string>? Genres { get; init; }
     public List<string>? Tags { get; init; }
+
+    /// <summary>
+    /// The complete set of fields to pin against a metadata rescan, or null to leave the
+    /// book's existing locks alone.
+    /// </summary>
+    /// <remarks>
+    /// The whole set rather than a delta, because the padlocks are a picture of a state
+    /// and sending "what is now on" is the only version of that with no ambiguity about
+    /// what an absent field means. Any field this request also changes is locked on top,
+    /// unless this list is what unlocked it — see the update workflow.
+    /// </remarks>
+    public List<string>? LockedFields { get; init; }
     public List<string>? Narrators { get; init; }
     public List<string>? Isbn { get; init; }
     public string? Asin { get; init; }

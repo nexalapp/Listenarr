@@ -39,6 +39,19 @@ namespace Listenarr.Domain.Audiobooks
         public string? Description { get; set; }
         public List<string>? Genres { get; set; }
         public List<string>? Tags { get; set; }
+
+        /// <summary>
+        /// Fields a metadata rescan may not overwrite, named as in
+        /// <see cref="Metadata.LockableFields"/>.
+        ///
+        /// <para>
+        /// Held on the book rather than in a settings table because the decision is about
+        /// this book: a provider that has one title wrong has the rest of them right, and a
+        /// library-wide "never take titles from upstream" would be a much blunter
+        /// instrument than the problem calls for.
+        /// </para>
+        /// </summary>
+        public List<string>? LockedFields { get; set; }
         public List<string>? Narrators { get; set; }
         public List<string>? Isbn { get; set; }
         public string? Asin { get; set; }
@@ -79,8 +92,16 @@ namespace Listenarr.Domain.Audiobooks
         /// <summary>
         /// Create AudioMetadata from the Audiobook as a basic metadata for imported files
         /// </summary>
+        /// <param name="seriesMemberships">
+        /// The book's series memberships, for a caller that loaded them in one batch rather
+        /// than through this entity's navigation property. Passing them here rather than
+        /// assigning <see cref="SeriesMemberships"/> keeps a read from writing to a tracked
+        /// entity — a library-wide read touches every book, and one that dirtied the change
+        /// tracker on the way past would be a strange thing to have to debug later.
+        /// </param>
         /// <returns>AudioMetada based on the audiobook retrieved metadata</returns>
-        public AudioMetadata CreateBasicAudioMetadata()
+        public AudioMetadata CreateBasicAudioMetadata(
+            IReadOnlyList<AudiobookSeriesMembership>? seriesMemberships = null)
         {
             return new AudioMetadata
             {
@@ -99,7 +120,7 @@ namespace Listenarr.Domain.Audiobooks
                 // Every series the book belongs to, primary first. A folder name uses
                 // only the primary one; a tag can carry all of them, and the library's
                 // own files do.
-                AllSeries = BuildSeriesReferences(),
+                AllSeries = BuildSeriesReferences(seriesMemberships ?? SeriesMemberships),
                 // The blurb is the reason the fork exists: it is the MP4 'desc' atom that
                 // Plex reads an album summary from, and nothing downstream can supply it.
                 Description = !string.IsNullOrWhiteSpace(Description) ? Description : null,
@@ -131,11 +152,12 @@ namespace Listenarr.Domain.Audiobooks
         /// when no memberships are stored, because books added before memberships existed
         /// still carry their series only in those two columns.
         /// </summary>
-        private List<SeriesReference>? BuildSeriesReferences()
+        private List<SeriesReference>? BuildSeriesReferences(
+            IReadOnlyList<AudiobookSeriesMembership>? memberships)
         {
-            if (SeriesMemberships is { Count: > 0 })
+            if (memberships is { Count: > 0 })
             {
-                var references = SeriesMemberships
+                var references = memberships
                     .Where(membership => !string.IsNullOrWhiteSpace(membership.SeriesName))
                     .OrderByDescending(membership => membership.IsPrimary)
                     .ThenBy(membership => membership.SortOrder)

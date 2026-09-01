@@ -64,6 +64,15 @@ const routes = [
     meta: { requiresAuth: true, libraryGroup: 'series' },
   },
   {
+    // The tag table is its own route rather than a fourth grouping of the library: it
+    // reads files rather than records, and a cold load costs seconds, which is not
+    // something a grouping toggle should ever do.
+    path: '/tags',
+    name: 'library-tags',
+    component: () => import('../views/library/TagsView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/books/:id',
     name: 'audiobook-detail',
     component: () => import('../views/library/AudiobookDetailView.vue'),
