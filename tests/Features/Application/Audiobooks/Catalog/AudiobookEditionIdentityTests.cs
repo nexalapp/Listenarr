@@ -15,8 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Audiobooks.Catalog;
-using Listenarr.Application.Audiobooks.Contracts.Repositories;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Application.Audiobooks.Catalog
