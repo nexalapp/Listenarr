@@ -84,6 +84,8 @@
               item.eta,
               item.downloadSpeed,
               item.downloadClient,
+              item.actionLabel,
+              item.actionDetail,
             ]"
             class="queue-row"
           >
@@ -96,6 +98,16 @@
                   >{{ getDisplayTitle(item) }}</RouterLink
                 >
                 <span v-else class="title-text">{{ getDisplayTitle(item) }}</span>
+                <div class="action-cell">
+                  <span
+                    :class="['action-label', `action-${item.downloadClientType || 'download'}`]"
+                  >
+                    {{ getActionLabel(item) }}
+                  </span>
+                  <span v-if="getActionDetail(item)" class="action-detail">
+                    {{ getActionDetail(item) }}
+                  </span>
+                </div>
               </div>
             </div>
             <div class="col-quality">
@@ -555,6 +567,8 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   return {
     id: download.id,
     title: download.title,
+    actionLabel: 'Download',
+    actionDetail: clientName ?? download.downloadClientId ?? undefined,
     audiobookId: download.audiobookId,
     status: status,
     progress: download.progress,
@@ -586,6 +600,8 @@ const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
   downloadSpeed: 0,
   eta: undefined,
   quality: '',
+  actionLabel: 'Library move',
+  actionDetail: job.phase || undefined,
   downloadClient: job.phase ? `Library move · ${job.phase}` : 'Library move',
   downloadClientId: 'LISTENARR_MOVE',
   downloadClientType: 'move',
@@ -614,6 +630,10 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
     downloadSpeed: 0,
     eta: undefined,
     quality: '',
+    actionLabel: 'Convert to M4B',
+    actionDetail: failed
+      ? undefined
+      : `${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
     downloadClient: failed
       ? 'MP3 to M4B'
       : `MP3 to M4B · ${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
@@ -656,6 +676,10 @@ const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
     downloadSpeed: 0,
     eta: undefined,
     quality: '',
+    actionLabel: 'Write tags',
+    actionDetail: failed
+      ? undefined
+      : `${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
     downloadClient: failed
       ? 'Metadata tags'
       : `Metadata tags · ${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
@@ -832,6 +856,30 @@ const getDisplayTitle = (item: QueueItem): string => {
   return item.title
 }
 
+/**
+ * What is happening to this book. Queue-snapshot rows arrive from the server without
+ * an explicit label, so fall back to the client type rather than leaving the row
+ * silent about what it is doing.
+ */
+const ACTION_LABELS_BY_TYPE: Record<string, string> = {
+  move: 'Library move',
+  conversion: 'Convert to M4B',
+  tagging: 'Write tags',
+}
+
+const getActionLabel = (item: QueueItem): string =>
+  item.actionLabel ??
+  ACTION_LABELS_BY_TYPE[(item.downloadClientType || '').toLowerCase()] ??
+  'Download'
+
+const getActionDetail = (item: QueueItem): string | undefined => {
+  if (item.actionDetail) return item.actionDetail
+  // For a download the client is the useful detail; it is never shown in the row today.
+  const client = item.downloadClient
+  if (!client || client === 'Unknown Client') return undefined
+  return getActionLabel(item) === 'Download' ? client : undefined
+}
+
 // Filter by text search across title, client, status
 const filteredQueue = computed(() => {
   const text = filterText.value.trim().toLowerCase()
@@ -843,6 +891,8 @@ const filteredQueue = computed(() => {
       (displayTitle && displayTitle.toLowerCase().includes(text)) ||
       (item.title && item.title.toLowerCase().includes(text)) ||
       (item.downloadClient && item.downloadClient.toLowerCase().includes(text)) ||
+      getActionLabel(item).toLowerCase().includes(text) ||
+      (getActionDetail(item) ?? '').toLowerCase().includes(text) ||
       (item.status && item.status.toLowerCase().includes(text)) ||
       (item.quality && item.quality.toLowerCase().includes(text))
     )
@@ -1281,9 +1331,59 @@ onUnmounted(() => {
 /* Title cell */
 .title-cell {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  /* The action sits under the book title, so the cell stacks rather than sits in a row. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
   min-width: 0;
+}
+
+.action-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Colour separates the kinds of work at a glance; the word itself carries the meaning. */
+.action-label {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  color: #a5d8ff;
+  background-color: rgba(77, 171, 247, 0.12);
+  border: 1px solid rgba(77, 171, 247, 0.35);
+}
+
+.action-label.action-conversion {
+  color: #d0bfff;
+  background-color: rgba(151, 117, 250, 0.12);
+  border-color: rgba(151, 117, 250, 0.35);
+}
+
+.action-label.action-tagging {
+  color: #b2f2bb;
+  background-color: rgba(81, 207, 102, 0.12);
+  border-color: rgba(81, 207, 102, 0.35);
+}
+
+.action-label.action-move {
+  color: #ffd8a8;
+  background-color: rgba(255, 169, 77, 0.12);
+  border-color: rgba(255, 169, 77, 0.35);
+}
+
+.action-detail {
+  font-size: 0.75rem;
+  color: #868e96;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .title-text,
