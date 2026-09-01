@@ -114,6 +114,38 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     string.Equals(i.ValueNormalized, normalizedIsbn, StringComparison.OrdinalIgnoreCase))));
         }
 
+        public async Task<IReadOnlyList<Audiobook>> GetAllByAsinAsync(string asin)
+        {
+            var normalizedAsin = NormalizeAsin(asin);
+            if (string.IsNullOrWhiteSpace(normalizedAsin)) return [];
+
+            return await _db.Audiobooks
+                .Include(a => a.ExternalIdentifiers)
+                .Where(a =>
+                    (a.Asin != null && a.Asin.ToUpper() == normalizedAsin) ||
+                    (a.ExternalIdentifiers != null && a.ExternalIdentifiers.Any(i =>
+                        i.Type == AudiobookExternalIdentifierType.Asin &&
+                        i.ValueNormalized == normalizedAsin)))
+                .ToListAsync();
+        }
+
+        public async Task<IReadOnlyList<Audiobook>> GetAllByIsbnAsync(string isbn)
+        {
+            var normalizedIsbn = NormalizeIsbn(isbn);
+            if (string.IsNullOrWhiteSpace(normalizedIsbn)) return [];
+
+            var audiobooks = await _db.Audiobooks
+                .Include(a => a.ExternalIdentifiers)
+                .ToListAsync();
+
+            return audiobooks.Where(a =>
+                (a.Isbn != null && a.Isbn.Any(i => NormalizeIsbn(i) == normalizedIsbn)) ||
+                (a.ExternalIdentifiers != null && a.ExternalIdentifiers.Any(i =>
+                    i.Type == AudiobookExternalIdentifierType.Isbn &&
+                    string.Equals(i.ValueNormalized, normalizedIsbn, StringComparison.OrdinalIgnoreCase))))
+                .ToList();
+        }
+
         public async Task<Audiobook?> GetByIdAsync(int id)
         {
             // Include QualityProfile and Files for callers that need full audiobook details
