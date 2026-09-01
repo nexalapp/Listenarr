@@ -84,35 +84,6 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToDictionary(g => g.Key, g => g.ToList());
         }
 
-        public async Task<Audiobook?> GetByAsinAsync(string asin)
-        {
-            var normalizedAsin = NormalizeAsin(asin);
-            if (string.IsNullOrWhiteSpace(normalizedAsin)) return null;
-
-            return await _db.Audiobooks
-                .Include(a => a.ExternalIdentifiers)
-                .FirstOrDefaultAsync(a =>
-                    (a.Asin != null && a.Asin.ToUpper() == normalizedAsin) ||
-                    (a.ExternalIdentifiers != null && a.ExternalIdentifiers.Any(i =>
-                        i.Type == AudiobookExternalIdentifierType.Asin &&
-                        i.ValueNormalized == normalizedAsin)));
-        }
-
-        public async Task<Audiobook?> GetByIsbnAsync(string isbn)
-        {
-            var normalizedIsbn = NormalizeIsbn(isbn);
-            if (string.IsNullOrWhiteSpace(normalizedIsbn)) return null;
-
-            var audiobooks = await _db.Audiobooks
-                .Include(a => a.ExternalIdentifiers)
-                .ToListAsync();
-
-            return audiobooks.FirstOrDefault(a =>
-                (a.Isbn != null && a.Isbn.Any(i => NormalizeIsbn(i) == normalizedIsbn)) ||
-                (a.ExternalIdentifiers != null && a.ExternalIdentifiers.Any(i =>
-                    i.Type == AudiobookExternalIdentifierType.Isbn &&
-                    string.Equals(i.ValueNormalized, normalizedIsbn, StringComparison.OrdinalIgnoreCase))));
-        }
 
         public async Task<Audiobook?> GetByIdAsync(int id)
         {

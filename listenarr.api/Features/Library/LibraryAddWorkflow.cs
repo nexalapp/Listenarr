@@ -111,24 +111,15 @@ namespace Listenarr.Api.Features.Library
 
             TryExtractPublishYear(request);
 
-            if (!string.IsNullOrEmpty(metadata.Asin))
+            // One rule with the application add path: a shared identifier is not by
+            // itself evidence of the same book. See AudiobookEditionIdentity.
+            var existingEdition = await AudiobookEditionIdentity.FindExistingEditionAsync(_repo, metadata);
+            if (existingEdition != null)
             {
-                var existingByAsin = await _repo.GetByAsinAsync(metadata.Asin);
-                if (existingByAsin != null)
-                {
-                    return new ConflictObjectResult(new { message = "Audiobook already exists in library", audiobook = existingByAsin });
-                }
+                return new ConflictObjectResult(new { message = "Audiobook already exists in library", audiobook = existingEdition });
             }
 
             var firstIsbn = (metadata.Isbn != null && metadata.Isbn.Any()) ? metadata.Isbn.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i)) : null;
-            if (!string.IsNullOrWhiteSpace(firstIsbn))
-            {
-                var existingByIsbn = await _repo.GetByIsbnAsync(firstIsbn);
-                if (existingByIsbn != null)
-                {
-                    return new ConflictObjectResult(new { message = "Audiobook already exists in library", audiobook = existingByIsbn });
-                }
-            }
 
             var audiobook = metadata.ToAudiobook();
 
@@ -291,10 +282,10 @@ namespace Listenarr.Api.Features.Library
                 firstIsbn = metadata.Isbn.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i));
                 if (!string.IsNullOrWhiteSpace(firstIsbn))
                 {
-                    var existingByIsbn = await _repo.GetByIsbnAsync(firstIsbn);
-                    if (existingByIsbn != null)
+                    var conflicting = await AudiobookEditionIdentity.FindExistingEditionAsync(_repo, metadata);
+                    if (conflicting != null)
                     {
-                        throw new LibraryAddConflictException(existingByIsbn);
+                        throw new LibraryAddConflictException(conflicting);
                     }
                 }
 

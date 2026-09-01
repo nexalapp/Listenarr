@@ -102,37 +102,20 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(metadata.Asin))
+            var duplicate = await AudiobookEditionIdentity.FindExistingEditionAsync(
+                _repo, metadata, cancellationToken);
+            if (duplicate != null)
             {
-                var existingByAsin = await _repo.GetByAsinAsync(metadata.Asin);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (existingByAsin != null)
+                return new LibraryAddOperationResult
                 {
-                    return new LibraryAddOperationResult
-                    {
-                        AlreadyExists = true,
-                        Message = "Audiobook already exists in library",
-                        Audiobook = existingByAsin
-                    };
-                }
+                    AlreadyExists = true,
+                    Message = "Audiobook already exists in library",
+                    Audiobook = duplicate
+                };
             }
 
             var firstIsbn = (metadata.Isbn ?? Enumerable.Empty<string>())
                 .FirstOrDefault(i => !string.IsNullOrWhiteSpace(i));
-            if (!string.IsNullOrWhiteSpace(firstIsbn))
-            {
-                var existingByIsbn = await _repo.GetByIsbnAsync(firstIsbn);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (existingByIsbn != null)
-                {
-                    return new LibraryAddOperationResult
-                    {
-                        AlreadyExists = true,
-                        Message = "Audiobook already exists in library",
-                        Audiobook = existingByIsbn
-                    };
-                }
-            }
 
             var audiobook = metadata.ToAudiobook();
 
@@ -184,7 +167,6 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     audiobook,
                     metadata,
                     request,
-                    firstIsbn,
                     preparedImage,
                     preparedAuthorImages,
                     token),
@@ -218,31 +200,17 @@ namespace Listenarr.Application.Audiobooks.Catalog
             Audiobook audiobook,
             AudibleBookMetadata metadata,
             LibraryAddOperationRequest request,
-            string? firstIsbn,
             PreparedLibraryImage preparedImage,
             IReadOnlyList<string> preparedAuthorImages,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!string.IsNullOrWhiteSpace(metadata.Asin))
+            var duplicate = await AudiobookEditionIdentity.FindExistingEditionAsync(
+                _repo, metadata, cancellationToken);
+            if (duplicate != null)
             {
-                var existingByAsin = await _repo.GetByAsinAsync(metadata.Asin);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (existingByAsin != null)
-                {
-                    return AlreadyExists(existingByAsin);
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(firstIsbn))
-            {
-                var existingByIsbn = await _repo.GetByIsbnAsync(firstIsbn);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (existingByIsbn != null)
-                {
-                    return AlreadyExists(existingByIsbn);
-                }
+                return AlreadyExists(duplicate);
             }
 
             var destinationFailure = await ResolveAndValidateDestinationAsync(

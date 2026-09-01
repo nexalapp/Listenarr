@@ -41,6 +41,19 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);
         Task<Audiobook?> GetByAsinAsync(string asin);
         Task<Audiobook?> GetByIsbnAsync(string isbn);
+
+        /// <summary>
+        /// Every audiobook carrying this identifier, not just the first.
+        /// </summary>
+        /// <remarks>
+        /// An identifier is not unique in this library. Audible publishes several
+        /// novellas under one collection ASIN, and two narrations of one book can be
+        /// filed against the same product, so deciding whether an incoming book is
+        /// already held means comparing against all of its namesakes rather than
+        /// whichever one the database happened to return first.
+        /// </remarks>
+        Task<IReadOnlyList<Audiobook>> GetAllByAsinAsync(string asin);
+        Task<IReadOnlyList<Audiobook>> GetAllByIsbnAsync(string isbn);
         Task<Audiobook?> GetByIdAsync(int id);
         Task<Audiobook?> GetByIdSnapshotAsync(int id, CancellationToken ct = default);
         Task<Audiobook?> GetForUpdateSnapshotAsync(int id, CancellationToken ct = default);
