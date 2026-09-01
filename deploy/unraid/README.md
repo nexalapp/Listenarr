@@ -10,7 +10,7 @@ namespace, share paths, and PUID/PGID are specific to this install.
 | Host | `root@10.10.10.10` (unraid, `NAS`) |
 | URL | http://10.10.10.10:4545 |
 | Compose project | `/boot/config/plugins/compose.manager/projects/listenarr/` |
-| Config volume | `/mnt/user/appdata/listenarr` → `/app/config` (rw) |
+| Config volume | `/mnt/cache/appdata/listenarr` → `/app/config` (rw) |
 | Library volume | `/mnt/user/audiobooks` → `/audiobooks` (**ro**) |
 
 The app listens on 4545 (`EXPOSE 4545`, `ASPNETCORE_URLS=http://*:4545`). To
@@ -18,6 +18,20 @@ move it, remap the host side of the port rather than editing `ASPNETCORE_URLS`.
 
 Enter `/audiobooks` — the container path — when configuring the root folder in
 the UI. The host path does not exist inside the container.
+
+### Config binds the pool, not the user share
+
+`appdata` is bound as `/mnt/cache/appdata/listenarr`, deliberately skipping
+`/mnt/user`. shfs is FUSE, and on 2026-09-01 it hit its 40960 file-descriptor
+limit - exhausted by an unrelated SMB session holding ~40k handles open. Every
+`open()` under `/mnt/user` then failed while `stat()` kept working, so the share
+listed as empty and SQLite lost its own database mid-write, corrupting a table.
+The array was healthy throughout; no disk was at fault.
+
+A SQLite database has no business behind a FUSE layer it does not need. appdata
+lives only on this pool, so `/mnt/user` adds a failure mode and nothing else.
+The library share still goes through `/mnt/user`, because it genuinely spans
+disks.
 
 ### Deliberate deviation from the rest of the stack
 

@@ -2,7 +2,7 @@ services:
   listenarr:
     # Pinned to an immutable SHA-suffixed tag, not the rolling :beta tag, so the
     # server only moves when this file changes. Roll back by editing this line.
-    image: ghcr.io/nexalapp/listenarr:beta-1.14.4-231d22c
+    image: ghcr.io/nexalapp/listenarr:beta-1.15.2-317c7ce
     container_name: listenarr
     ports:
       - "4545:4545"
@@ -12,7 +12,12 @@ services:
       - UMASK=022
       - TZ=America/Denver
     volumes:
-      - /mnt/user/appdata/listenarr:/app/config
+      # The pool directly, not the /mnt/user share. shfs is a FUSE layer, and when
+      # it ran out of file descriptors - exhausted by an unrelated SMB session -
+      # SQLite lost the ability to open its own database mid-write and corrupted a
+      # table. The app never touched a bad disk. appdata lives only on this pool,
+      # so the share buys nothing here and costs that failure mode.
+      - /mnt/cache/appdata/listenarr:/app/config
 
       # Read-only until a full scan has been eyeballed. Writable is what imports
       # need - nothing can be placed into a :ro library - but writable also lets
