@@ -48,7 +48,10 @@ public sealed class UnixOpenFlagsTests : BaseTests
             UnixOpenFlags.GetLinuxDirectorySafetyFlags(architecture));
     }
 
-    [Fact]
+    // Unlike the flag-value tests above, which are pure arithmetic over an architecture
+    // argument, these two call through to the live platform gate and it throws by design
+    // off Unix. The behaviour under test does not exist on Windows.
+    [LinuxFact]
     public void OpenReadWriteNoFollow_AsksForReadAccessWhereOpenWriteDoesNot()
     {
         // Given / When

@@ -76,6 +76,13 @@ public sealed class DownloadClientGatewayPathMappingConcurrencyTests : BaseTests
         public Task<bool> DeleteAsync(int id) => Task.FromResult(true);
     }
 
+    // The subject here is how often the mapping service is consulted, not path syntax — but
+    // GetQueueAsync validates that a client's reported path is usable on this host, and a
+    // Unix-rooted literal is not one on Windows. Build the fixture paths for whichever host
+    // is running so the batching assertions are what actually gets exercised.
+    private static string RemoteDownloadPath(params string[] segments) =>
+        FileUtils.GetAbsolutePath([.. new[] { "remote", "downloads" }, .. segments]);
+
     [Fact]
     public async Task GetQueueAsync_ResolvesClientMappingsOncePerBatch()
     {
@@ -91,8 +98,8 @@ public sealed class DownloadClientGatewayPathMappingConcurrencyTests : BaseTests
             .Select(i => new QueueItem
             {
                 Id = $"item-{i}",
-                RemotePath = $"/remote/downloads/book-{i}",
-                ContentPath = $"/remote/downloads/book-{i}/audio.m4b"
+                RemotePath = RemoteDownloadPath($"book-{i}"),
+                ContentPath = RemoteDownloadPath($"book-{i}", "audio.m4b")
             })
             .ToList();
 
@@ -133,13 +140,13 @@ public sealed class DownloadClientGatewayPathMappingConcurrencyTests : BaseTests
             .Select(i => new QueueItem
             {
                 Id = $"item-{i}",
-                RemotePath = $"/remote/downloads/book-{i}",
-                ContentPath = $"/remote/downloads/book-{i}/audio.m4b",
+                RemotePath = RemoteDownloadPath($"book-{i}"),
+                ContentPath = RemoteDownloadPath($"book-{i}", "audio.m4b"),
                 SourceFiles =
                 [
-                    $"/remote/downloads/book-{i}/01.m4b",
-                    $"/remote/downloads/book-{i}/02.m4b",
-                    $"/remote/downloads/book-{i}/03.m4b"
+                    RemoteDownloadPath($"book-{i}", "01.m4b"),
+                    RemoteDownloadPath($"book-{i}", "02.m4b"),
+                    RemoteDownloadPath($"book-{i}", "03.m4b")
                 ]
             })
             .ToList();
