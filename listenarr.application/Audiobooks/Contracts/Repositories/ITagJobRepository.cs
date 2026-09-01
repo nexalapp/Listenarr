@@ -65,6 +65,16 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             DateTime expiresAt,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Remove a job row outright. Used when an operator dismisses a finished job:
+        /// the row is what makes it visible in Activity, and with it gone the scratch
+        /// sweeper treats any file the job was keeping as orphaned and collects it.
+        /// Returns false when the job has already gone.
+        /// </summary>
+        Task<bool> DeleteAsync(
+            Guid id,
+            CancellationToken cancellationToken = default);
+
         /// <summary>Apply a change to a job and save. Returns false when the job has gone.</summary>
         Task<bool> UpdateAsync(
             Guid id,

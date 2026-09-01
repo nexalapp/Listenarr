@@ -1516,6 +1516,20 @@ class ApiService {
     })
   }
 
+  /** Stop a conversion that has not finished. */
+  async cancelConversion(jobId: string): Promise<{ ok: boolean; reason?: string }> {
+    return this.request(`/conversion/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+    })
+  }
+
+  /** Clear a finished conversion out of Activity. */
+  async dismissConversion(jobId: string): Promise<{ ok: boolean; reason?: string }> {
+    return this.request(`/conversion/jobs/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+    })
+  }
+
   /** Active conversions plus recently finished ones. */
   async getConversionJobs(): Promise<ConversionJobUpdate[]> {
     return this.request<ConversionJobUpdate[]>('/conversion/jobs')
@@ -1576,6 +1590,20 @@ class ApiService {
   ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
     return this.request(`/tagging/jobs/${encodeURIComponent(jobId)}/retry`, {
       method: 'POST',
+    })
+  }
+
+  /** Stop a tag write that has not finished. */
+  async cancelTagWrite(jobId: string): Promise<{ ok: boolean; reason?: string }> {
+    return this.request(`/tagging/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+    })
+  }
+
+  /** Clear a finished tag write out of Activity. */
+  async dismissTagWrite(jobId: string): Promise<{ ok: boolean; reason?: string }> {
+    return this.request(`/tagging/jobs/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
     })
   }
 

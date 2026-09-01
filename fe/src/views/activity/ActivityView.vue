@@ -168,6 +168,26 @@
               >
                 <PhX />
               </button>
+              <button
+                v-if="item.canCancel"
+                class="btn-icon btn-danger-icon"
+                :disabled="jobControlBusyId === item.id"
+                :title="`Cancel this ${getActionLabel(item).toLowerCase()}`"
+                @click="cancelJob(item)"
+              >
+                <PhArrowClockwise v-if="jobControlBusyId === item.id" class="ph-spin" />
+                <PhProhibit v-else />
+              </button>
+              <button
+                v-if="item.canDismiss"
+                class="btn-icon"
+                :disabled="jobControlBusyId === item.id"
+                title="Clear this finished job out of Activity"
+                @click="dismissJob(item)"
+              >
+                <PhArrowClockwise v-if="jobControlBusyId === item.id" class="ph-spin" />
+                <PhTrash v-else />
+              </button>
             </div>
           </div>
         </div>
@@ -334,6 +354,7 @@ import {
   PhChartBar,
   PhTrash,
   PhMagnifyingGlass,
+  PhProhibit,
 } from '@phosphor-icons/vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
@@ -643,6 +664,8 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
     errorMessage: job.error ?? undefined,
     canPause: false,
     canRemove: false,
+    canCancel: job.status === 'Queued' || job.status === 'Running',
+    canDismiss: job.status !== 'Queued' && job.status !== 'Running',
     canRetryImport: failed && job.canRetry,
   }
 }
@@ -689,6 +712,8 @@ const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
     errorMessage: job.error ?? undefined,
     canPause: false,
     canRemove: false,
+    canCancel: job.status === 'Queued' || job.status === 'Running',
+    canDismiss: job.status !== 'Queued' && job.status !== 'Running',
     canRetryImport: failed && job.canRetry,
   }
 }
@@ -959,6 +984,75 @@ const retryImport = async (item: QueueItem) => {
     retryingImportId.value = null
   }
 }
+
+/**
+ * Conversion and tagging rows carry their job id in the row id, because a row is
+ * synthesised from a job rather than fetched as one. This is what turns it back.
+ */
+const jobControlTargetFor = (
+  item: QueueItem,
+): { kind: 'conversion' | 'tagging'; jobId: string } | null => {
+  const id = String(item.id || '')
+  if (id.startsWith('conversion:'))
+    return { kind: 'conversion', jobId: id.slice('conversion:'.length) }
+  if (id.startsWith('tagging:')) return { kind: 'tagging', jobId: id.slice('tagging:'.length) }
+  return null
+}
+
+const jobControlBusyId = ref<string | null>(null)
+
+/**
+ * A refusal is the interesting case: the server declines when a tag write is holding
+ * the book's only copy, and the operator needs that reason rather than a row that
+ * silently stays put.
+ */
+const runJobControl = async (item: QueueItem, action: 'cancel' | 'dismiss'): Promise<void> => {
+  const target = jobControlTargetFor(item)
+  if (!target || jobControlBusyId.value) return
+
+  jobControlBusyId.value = item.id
+  const toast = useToast()
+  try {
+    const call =
+      action === 'cancel'
+        ? target.kind === 'conversion'
+          ? apiService.cancelConversion(target.jobId)
+          : apiService.cancelTagWrite(target.jobId)
+        : target.kind === 'conversion'
+          ? apiService.dismissConversion(target.jobId)
+          : apiService.dismissTagWrite(target.jobId)
+
+    const result = await call
+    if (result?.ok === false) {
+      toast.error(
+        action === 'cancel' ? 'Could not cancel' : 'Could not dismiss',
+        result.reason || 'The server declined.',
+      )
+      return
+    }
+
+    if (target.kind === 'conversion') {
+      conversionJobsStore.forget(target.jobId)
+    } else {
+      tagJobsStore.forget(target.jobId)
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'ActivityView',
+      operation: action === 'cancel' ? 'cancelJob' : 'dismissJob',
+      metadata: { jobId: target.jobId, kind: target.kind },
+    })
+    toast.error(
+      action === 'cancel' ? 'Could not cancel' : 'Could not dismiss',
+      err instanceof Error ? err.message : String(err),
+    )
+  } finally {
+    jobControlBusyId.value = null
+  }
+}
+
+const cancelJob = (item: QueueItem) => runJobControl(item, 'cancel')
+const dismissJob = (item: QueueItem) => runJobControl(item, 'dismiss')
 
 const refreshQueue = async () => {
   loading.value = true
