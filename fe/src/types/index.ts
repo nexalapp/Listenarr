@@ -185,6 +185,14 @@ export interface QueueItem {
   downloadSpeed: number // bytes per second
   eta?: number // seconds remaining
   indexer?: string
+  /**
+   * What is being done to the book, for the activity row: "Download",
+   * "Convert to M4B", "Write tags", "Library move". Without it a row says which
+   * book and how far along, but never which of those is happening.
+   */
+  actionLabel?: string
+  /** The current phase or client behind {@link actionLabel}, e.g. "Encoding". */
+  actionDetail?: string
   downloadClient: string
   downloadClientId: string
   downloadClientType: string
