@@ -216,6 +216,82 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             processRunner.Verify(runner => runner.RunAsync(It.IsAny<System.Diagnostics.ProcessStartInfo>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
+        [Fact]
+        [Trait("Method", "EnsureFfmpegInstalledAsync")]
+        public async Task EnsureFfmpegInstalledAsync_FetchesTheArchiveWhenOnlyFfprobeIsInstalled()
+        {
+            // An ffprobe-only release left this exact directory behind: the probe in place,
+            // no encoder beside it. Treating that ffprobe as proof the install was complete
+            // skipped the download, so conversion stayed unavailable for good.
+            var ffmpegDirectory = FileService.GetTempDirectory("ffmpeg-probe-only");
+            var ffprobePath = Path.Join(
+                ffmpegDirectory,
+                OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe");
+            await File.WriteAllTextAsync(ffprobePath, "fake");
+            Assert.False(File.Exists(Path.Join(
+                ffmpegDirectory,
+                OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg")));
+
+            var handler = new RecordingHandler();
+            var service = new FfmpegService(
+                new Mock<ILogger<FfmpegService>>().Object,
+                new HttpClient(handler),
+                _provider.GetRequiredService<IStartupConfigService>(),
+                _provider.GetRequiredService<IProcessRunner>(),
+                Mock.Of<IApplicationPathService>(
+                    applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory));
+
+            var resolved = await service.EnsureFfmpegInstalledAsync();
+
+            // The download is stubbed out, so no encoder appears - what matters is that the
+            // install was attempted at all rather than short-circuited by the existing probe.
+            Assert.Equal(1, handler.Requests);
+            Assert.Null(resolved);
+        }
+
+        [Fact]
+        [Trait("Method", "EnsureFfprobeInstalledAsync")]
+        public async Task EnsureFfprobeInstalledAsync_StillSkipsTheDownloadWhenTheProbeIsPresent()
+        {
+            // The encoder's need to re-fetch must not turn every startup into a download.
+            var ffmpegDirectory = FileService.GetTempDirectory("ffmpeg-probe-present");
+            var ffprobePath = Path.Join(
+                ffmpegDirectory,
+                OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe");
+            await File.WriteAllTextAsync(ffprobePath, "fake");
+
+            var handler = new RecordingHandler();
+            var service = new FfmpegService(
+                new Mock<ILogger<FfmpegService>>().Object,
+                new HttpClient(handler),
+                _provider.GetRequiredService<IStartupConfigService>(),
+                _provider.GetRequiredService<IProcessRunner>(),
+                Mock.Of<IApplicationPathService>(
+                    applicationPathService => applicationPathService.FfmpegRootPath == ffmpegDirectory));
+
+            var resolved = await service.EnsureFfprobeInstalledAsync();
+
+            Assert.Equal(0, handler.Requests);
+            Assert.Equal(ffprobePath, resolved);
+        }
+
+        /// <summary>
+        /// Counts download attempts and refuses them, so the install flow is exercised up to
+        /// the point of the fetch without reaching the network.
+        /// </summary>
+        private sealed class RecordingHandler : HttpMessageHandler
+        {
+            public int Requests { get; private set; }
+
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken)
+            {
+                Requests++;
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+            }
+        }
+
         [EncoderFact]
         [Trait("Method", "ReadChaptersAsync")]
         public async Task ReadChaptersAsync_ReadsIdThreeChaptersFromAMergedMp3()
