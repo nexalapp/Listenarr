@@ -67,7 +67,17 @@
             <div class="form-control-card">
               <div class="metadata-grid">
                 <div class="metadata-field metadata-field--wide">
-                  <label class="field-label" for="metadata-title">Title</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-title"
+                      >Title</label
+                    >
+                    <FieldLockToggle
+                      field="title"
+                      name="Title"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-title"
                     v-model="formData.title"
@@ -77,7 +87,17 @@
                   />
                 </div>
                 <div class="metadata-field metadata-field--wide">
-                  <label class="field-label" for="metadata-subtitle">Subtitle</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-subtitle"
+                      >Subtitle</label
+                    >
+                    <FieldLockToggle
+                      field="subtitle"
+                      name="Subtitle"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-subtitle"
                     v-model="formData.subtitle"
@@ -87,7 +107,17 @@
                   />
                 </div>
                 <div class="metadata-field metadata-field--wide">
-                  <label class="field-label" for="metadata-authors">Authors</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-authors"
+                      >Authors</label
+                    >
+                    <FieldLockToggle
+                      field="authors"
+                      name="Authors"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <div class="tags-container author-tags-editor">
                     <div class="tags-list">
                       <span
@@ -132,7 +162,17 @@
                   </div>
                 </div>
                 <div class="metadata-field metadata-field--wide">
-                  <label class="field-label" for="metadata-narrators">Narrators</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-narrators"
+                      >Narrators</label
+                    >
+                    <FieldLockToggle
+                      field="narrators"
+                      name="Narrators"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <div class="tags-container narrator-tags-editor">
                     <div class="tags-list">
                       <span
@@ -177,7 +217,17 @@
                   </div>
                 </div>
                 <div class="metadata-field metadata-field--full">
-                  <label class="field-label" for="metadata-description">Description</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-description"
+                      >Description</label
+                    >
+                    <FieldLockToggle
+                      field="description"
+                      name="Description"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <textarea
                     id="metadata-description"
                     v-model="formData.description"
@@ -187,7 +237,17 @@
                   />
                 </div>
                 <div class="metadata-field">
-                  <label class="field-label" for="metadata-publisher">Publisher</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-publisher"
+                      >Publisher</label
+                    >
+                    <FieldLockToggle
+                      field="publisher"
+                      name="Publisher"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-publisher"
                     v-model="formData.publisher"
@@ -197,7 +257,17 @@
                   />
                 </div>
                 <div class="metadata-field">
-                  <label class="field-label" for="metadata-language">Language</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-language"
+                      >Language</label
+                    >
+                    <FieldLockToggle
+                      field="language"
+                      name="Language"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-language"
                     v-model="formData.language"
@@ -207,7 +277,17 @@
                   />
                 </div>
                 <div class="metadata-field">
-                  <label class="field-label" for="metadata-published-date">Release Date</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-published-date"
+                      >Release Date</label
+                    >
+                    <FieldLockToggle
+                      field="publishedDate"
+                      name="Release Date"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-published-date"
                     v-model="formData.publishedDate"
@@ -217,7 +297,17 @@
                   />
                 </div>
                 <div class="metadata-field">
-                  <label class="field-label" for="metadata-publish-year">Publish Year</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-publish-year"
+                      >Publish Year</label
+                    >
+                    <FieldLockToggle
+                      field="publishYear"
+                      name="Publish Year"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-publish-year"
                     v-model="formData.publishYear"
@@ -227,9 +317,17 @@
                   />
                 </div>
                 <div class="metadata-field">
-                  <label class="field-label" for="metadata-runtime"
-                    >Listening Length (minutes)</label
-                  >
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-runtime"
+                      >Listening Length (minutes)</label
+                    >
+                    <FieldLockToggle
+                      field="runtime"
+                      name="Listening Length"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-runtime"
                     v-model="formData.runtime"
@@ -254,7 +352,15 @@
                   </p>
                 </div>
                 <div class="metadata-field metadata-field--full">
-                  <label class="field-label">Series Memberships</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable">Series Memberships</label>
+                    <FieldLockToggle
+                      field="series"
+                      name="Series"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <div class="series-memberships-editor">
                     <div
                       v-for="(membership, index) in formData.seriesMemberships"
@@ -337,7 +443,17 @@
                   </p>
                 </div>
                 <div class="metadata-field metadata-field--wide">
-                  <label class="field-label" for="metadata-genres">Genres</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-genres"
+                      >Genres</label
+                    >
+                    <FieldLockToggle
+                      field="genres"
+                      name="Genres"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <div class="tags-container genre-tags-editor">
                     <div class="tags-list">
                       <span
@@ -382,7 +498,17 @@
                   </div>
                 </div>
                 <div class="metadata-field metadata-field--wide">
-                  <label class="field-label" for="metadata-image-url">Cover Image URL</label>
+                  <div class="field-label-row">
+                    <label class="field-label field-label--lockable" for="metadata-image-url"
+                      >Cover Image URL</label
+                    >
+                    <FieldLockToggle
+                      field="cover"
+                      name="Cover Image"
+                      :modelValue="formData.lockedFields"
+                      @update:modelValue="onLockToggled"
+                    />
+                  </div>
                   <input
                     id="metadata-image-url"
                     v-model="formData.imageUrl"
@@ -783,6 +909,7 @@ import type {
   AudiobookExternalIdentifierInput,
   AudiobookExternalIdentifierType,
   AudiobookExternalIdentifierSource,
+  LockableField,
 } from '@/types'
 import {
   PhX,
@@ -804,6 +931,7 @@ import Checkbox from '@/components/form/Checkbox.vue'
 import RadioCard from '@/components/settings/RadioCard.vue'
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import MoveAudiobookModal from '@/components/feedback/MoveAudiobookModal.vue'
+import FieldLockToggle from '@/components/domain/audiobook/FieldLockToggle.vue'
 // FormRow and CheckboxCard not used in this component script; UI uses local markup
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useMoveJobsStore, type MoveRecoveryState } from '@/stores/moveJobs'
@@ -834,6 +962,23 @@ interface Props {
   audiobook: Audiobook | null
 }
 
+/** Mirrors the server's `LockableFields`, in the same order. */
+const LOCKABLE_FIELDS: LockableField[] = [
+  'title',
+  'subtitle',
+  'description',
+  'authors',
+  'narrators',
+  'series',
+  'publisher',
+  'publishYear',
+  'publishedDate',
+  'language',
+  'runtime',
+  'genres',
+  'cover',
+]
+
 interface FormData {
   monitored: boolean
   qualityProfileId: number | null
@@ -852,6 +997,11 @@ interface FormData {
   genres: string[]
   imageUrl: string
   tags: string[]
+  /**
+   * Fields pinned against a metadata rescan. Held as the whole set rather than a delta,
+   * because that is what the save sends and what the padlocks are a picture of.
+   */
+  lockedFields: LockableField[]
   identifiers: EditableIdentifierRow[]
   abridged: boolean
   explicit: boolean
@@ -925,6 +1075,7 @@ const formData = ref<FormData>({
   genres: [],
   imageUrl: '',
   tags: [],
+  lockedFields: [],
   identifiers: [],
   abridged: false,
   explicit: false,
@@ -1096,12 +1247,17 @@ function hydrateFormFromAudiobook(audiobook: Audiobook) {
     genres: [...(audiobook.genres || [])],
     imageUrl: audiobook.imageUrl || '',
     tags: [...(audiobook.tags || [])],
+    lockedFields: [...(audiobook.lockedFields || [])],
     identifiers: [],
     abridged: Boolean(audiobook.abridged),
     explicit: Boolean(audiobook.explicit),
     basePath: audiobook.basePath ?? null,
     relativePath: null,
   }
+
+  // Hand-set padlocks are a decision about this editing session, not about the book. The
+  // book's own locks come back from `lockedFields` above.
+  lockedByHand.value = new Set()
 
   newAuthor.value = ''
   newNarrator.value = ''
@@ -1254,6 +1410,112 @@ function normalizeOptionalText(value: string | null | undefined): string {
   return (value || '').trim()
 }
 
+/*
+ * Field locks.
+ *
+ * Two things set them, and the form has to keep them apart. Changing a value pins it
+ * automatically — remembering a second click after correcting a value is exactly the step
+ * that gets missed, which is the whole reason locks exist. Clicking a padlock is the
+ * operator overruling that, and from then on the field is theirs: reverting the edit will
+ * not unpin it and re-editing will not re-pin it.
+ *
+ * The inference runs here rather than only on the server so the padlocks show what will
+ * happen before the save, and so the set the form submits is the set on screen.
+ */
+const lockedByHand = ref(new Set<LockableField>())
+
+function onLockToggled(next: LockableField[]) {
+  const before = new Set(formData.value.lockedFields)
+  for (const field of LOCKABLE_FIELDS) {
+    if (before.has(field) !== next.includes(field)) lockedByHand.value.add(field)
+  }
+  formData.value.lockedFields = next
+}
+
+/** Which lockable fields differ from the stored book — the mirror of the server's rule. */
+function changedLockableFields(): LockableField[] {
+  const audiobook = baselineAudiobook.value
+  if (!audiobook) return []
+
+  const changed: LockableField[] = []
+  const text = (a: string | null | undefined, b: string | null | undefined) =>
+    normalizeOptionalText(a) !== normalizeOptionalText(b)
+
+  if (text(formData.value.title, audiobook.title)) changed.push('title')
+  if (text(formData.value.subtitle, audiobook.subtitle)) changed.push('subtitle')
+  if (text(formData.value.description, audiobook.description)) changed.push('description')
+  if (text(formData.value.publisher, audiobook.publisher)) changed.push('publisher')
+  if (
+    normalizeLanguageText(formData.value.language) !== normalizeLanguageText(audiobook.language)
+  ) {
+    changed.push('language')
+  }
+  if (text(formData.value.publishedDate, audiobook.publishedDate)) changed.push('publishedDate')
+  if (text(formData.value.publishYear, audiobook.publishYear)) changed.push('publishYear')
+  if (text(formData.value.imageUrl, audiobook.imageUrl)) changed.push('cover')
+
+  if (serializeStringList(formData.value.authors) !== serializeStringList(audiobook.authors)) {
+    changed.push('authors')
+  }
+  if (serializeStringList(formData.value.narrators) !== serializeStringList(audiobook.narrators)) {
+    changed.push('narrators')
+  }
+  if (serializeStringList(formData.value.genres) !== serializeStringList(audiobook.genres)) {
+    changed.push('genres')
+  }
+
+  const runtimeInput = normalizeNumericInput(formData.value.runtime)
+  if (runtimeInput && runtimeInput !== normalizeNumericInput(audiobook.runtime?.toString())) {
+    changed.push('runtime')
+  }
+
+  if (
+    serializeSeriesMembershipRows(formData.value.seriesMemberships) !==
+    serializeSeriesMembershipRows(
+      audiobook.seriesMemberships,
+      audiobook.series,
+      audiobook.seriesNumber,
+    )
+  ) {
+    changed.push('series')
+  }
+
+  return changed
+}
+
+watch(
+  () => [
+    formData.value.title,
+    formData.value.subtitle,
+    formData.value.description,
+    formData.value.publisher,
+    formData.value.language,
+    formData.value.publishedDate,
+    formData.value.publishYear,
+    formData.value.imageUrl,
+    formData.value.runtime,
+    serializeStringList(formData.value.authors),
+    serializeStringList(formData.value.narrators),
+    serializeStringList(formData.value.genres),
+    serializeSeriesMembershipRows(formData.value.seriesMemberships),
+  ],
+  () => {
+    const audiobook = baselineAudiobook.value
+    if (!audiobook) return
+
+    const stored = new Set(audiobook.lockedFields || [])
+    const changed = new Set(changedLockableFields())
+
+    // Rebuilt rather than added to, so undoing an edit unpins the field it pinned. A
+    // field the operator has clicked keeps whatever they set it to.
+    formData.value.lockedFields = LOCKABLE_FIELDS.filter((field) =>
+      lockedByHand.value.has(field)
+        ? formData.value.lockedFields.includes(field)
+        : stored.has(field) || changed.has(field),
+    )
+  },
+)
+
 const hasChanges = computed(() => {
   const audiobook = baselineAudiobook.value
   if (!audiobook) return false
@@ -1261,6 +1523,10 @@ const hasChanges = computed(() => {
   const tagsChanged =
     JSON.stringify([...formData.value.tags].sort()) !==
     JSON.stringify([...(audiobook.tags || [])].sort())
+
+  const locksChanged =
+    JSON.stringify(LOCKABLE_FIELDS.filter((f) => formData.value.lockedFields.includes(f))) !==
+    JSON.stringify(LOCKABLE_FIELDS.filter((f) => (audiobook.lockedFields || []).includes(f)))
 
   const basePathChanged = destinationBasePathChanged()
 
@@ -1304,6 +1570,7 @@ const hasChanges = computed(() => {
     serializeStringList(formData.value.genres) !== serializeStringList(audiobook.genres) ||
     normalizeOptionalText(formData.value.imageUrl) !== normalizeOptionalText(audiobook.imageUrl) ||
     tagsChanged ||
+    locksChanged ||
     identifiersChanged ||
     formData.value.abridged !== Boolean(audiobook.abridged) ||
     formData.value.explicit !== Boolean(audiobook.explicit) ||
@@ -1899,6 +2166,31 @@ async function handleSave() {
       updates.imageUrl = normalizedImageUrl
     }
 
+    /*
+     * Sent whenever the padlocks moved, and whenever any lockable value changed even if
+     * they did not.
+     *
+     * The second half is what makes unpinning a field you are also correcting stick. The
+     * server infers a lock from a changed value when this list is absent, so a save that
+     * edited Title and turned its padlock off would come back with Title pinned again.
+     * Sending the list makes it authoritative and the screen honest.
+     *
+     * Not sent unconditionally, though: a save that only moves the book to a new folder
+     * would otherwise carry a metadata update it does not need.
+     */
+    const resolvedLocks = LOCKABLE_FIELDS.filter((field) =>
+      formData.value.lockedFields.includes(field),
+    )
+    const storedLocks = LOCKABLE_FIELDS.filter((field) =>
+      (audiobook.lockedFields || []).includes(field),
+    )
+    if (
+      JSON.stringify(resolvedLocks) !== JSON.stringify(storedLocks) ||
+      changedLockableFields().length > 0
+    ) {
+      updates.lockedFields = resolvedLocks
+    }
+
     if (JSON.stringify(normalizedTags) !== JSON.stringify(baselineTags)) {
       updates.tags = formData.value.tags
     }
@@ -2211,6 +2503,18 @@ function close() {
 </script>
 
 <style scoped>
+.field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+/* The label keeps its own spacing everywhere else; inside the row the flex gap owns it. */
+.field-label--lockable {
+  margin-bottom: 0;
+}
+
 /* Modal layout is provided by shared `modals.css` - keep component-specific scrollbars and spacing tweaks */
 
 .path-length-warning,

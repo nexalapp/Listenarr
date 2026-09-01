@@ -351,7 +351,13 @@ namespace Listenarr.Api.Features.Library
                 audiobookId = updatedAudiobook.Id,
                 source = providerSource,
                 asin = resolvedAsin,
-                region = resolvedRegion
+                region = resolvedRegion,
+                // Named rather than counted, so a rescan that appears to have done nothing
+                // says which locks are the reason before the operator goes looking.
+                keptFields = LockableFields
+                    .Normalize(updatedAudiobook.LockedFields)
+                    .Select(LockableFields.LabelFor)
+                    .Where(label => label != null)
             });
         }
 

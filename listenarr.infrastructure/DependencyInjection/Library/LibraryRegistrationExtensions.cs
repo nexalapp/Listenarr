@@ -97,6 +97,12 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<ITagQueueService, TagQueueService>();
         services.AddScoped<FfprobeTagReader>();
         services.AddScoped<IAudiobookTagWriter, M4bTagWriter>();
+        // The tag table's cache is a singleton because it outlives a request by design:
+        // the point of it is that the second load of a several-hundred-file library does
+        // not spawn a probe per file. The service that fills it stays scoped, because it
+        // reads through the repository.
+        services.AddSingleton<LibraryTagCache>();
+        services.AddScoped<ILibraryTagIndexService, LibraryTagIndexService>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
         services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();

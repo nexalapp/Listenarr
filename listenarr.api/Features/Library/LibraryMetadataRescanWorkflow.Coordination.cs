@@ -29,8 +29,14 @@ public sealed partial class LibraryMetadataRescanWorkflow
         }
 
         var legacyIdentifierFieldsTouched = ApplyMetadataRescanPatch(audiobook, metadata);
+
+        // The cover is set here rather than in the patch, because publishing it into library
+        // storage is a second step that happens after the record is saved. Its lock has to
+        // be checked in both places or the download would run and then overwrite the URL a
+        // moment after the patch declined to.
+        var coverLocked = LockableFields.AsSet(audiobook.LockedFields).Contains(LockableFields.Cover);
         var fallbackImageUrl = audiobook.ImageUrl;
-        if (!string.IsNullOrWhiteSpace(metadata.ImageUrl))
+        if (!coverLocked && !string.IsNullOrWhiteSpace(metadata.ImageUrl))
         {
             fallbackImageUrl = metadata.ImageUrl;
             audiobook.ImageUrl = fallbackImageUrl;
@@ -48,7 +54,7 @@ public sealed partial class LibraryMetadataRescanWorkflow
                 MetadataRescanApplyStatus.NotFound);
         }
 
-        if (!string.IsNullOrWhiteSpace(metadata.ImageUrl))
+        if (!coverLocked && !string.IsNullOrWhiteSpace(metadata.ImageUrl))
         {
             var publishedImageUrl =
                 await MoveMetadataImageToLibraryStorageAsync(

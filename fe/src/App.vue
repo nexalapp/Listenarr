@@ -302,6 +302,14 @@
               >
                 <span>Series</span>
               </RouterLink>
+              <RouterLink
+                to="/tags"
+                class="nav-subitem"
+                @click="closeMobileMenu"
+                :class="{ active: route.path === '/tags' }"
+              >
+                <span>Tags</span>
+              </RouterLink>
             </div>
             <RouterLink
               to="/add-new"
@@ -1637,7 +1645,7 @@ const hideLayout = computed(() => {
 
 // The library section: its three groupings plus a book's detail page. Drives
 // both the parent nav item's active state and whether the sub-nav stays open.
-const LIBRARY_PATHS = ['/books', '/authors', '/series']
+const LIBRARY_PATHS = ['/books', '/authors', '/series', '/tags']
 const isLibraryPath = (path: string) => LIBRARY_PATHS.includes(path) || path.startsWith('/books/')
 const isLibraryRoute = computed(() => isLibraryPath(route.path))
 const libraryNavActive = computed(

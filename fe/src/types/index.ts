@@ -512,6 +512,48 @@ export interface TagPreview {
   files: TagPreviewFile[]
 }
 
+/** One column of the library tag table: a catalog tag, as a heading. */
+export interface LibraryTagColumn {
+  tag: string
+  label: string
+  isLongText: boolean
+}
+
+/**
+ * One audio file in the library tag table.
+ *
+ * `tags` is what the file really carries, read back off the disk. `expected` is what
+ * Listenarr's mapping would put there, and `mismatched` names the tags where a write
+ * would actually change something — which is the difference between "these disagree"
+ * and "this file is wrong".
+ *
+ * `writable` is false for MP3 files. They are listed anyway: which books still carry
+ * ID3, and so still have no description a player will read, is one of the things the
+ * table is for.
+ */
+export interface LibraryTagRow {
+  audiobookId: number
+  fileId: number
+  bookTitle: string
+  fileName: string
+  path?: string | null
+  extension: string
+  writable: boolean
+  tags: Record<string, string>
+  expected: Record<string, string>
+  mismatched: string[]
+  error?: string | null
+}
+
+/** The whole library's tags, with the columns to show them under. */
+export interface LibraryTagTable {
+  generatedAt: string
+  /** Files probed on this call rather than answered from the cache. */
+  filesRead: number
+  columns: LibraryTagColumn[]
+  rows: LibraryTagRow[]
+}
+
 /** What goes into one tag and whether it may be overwritten. */
 export interface TagMapping {
   tag: string
@@ -872,6 +914,8 @@ export interface Audiobook {
   description?: string
   genres?: string[]
   tags?: string[]
+  /** Fields pinned against a metadata rescan. */
+  lockedFields?: LockableField[]
   narrators?: string[]
   isbn?: string
   asin?: string
@@ -914,6 +958,28 @@ export interface Audiobook {
   status?: AudiobookStatus
 }
 
+/**
+ * A field that can be pinned against a metadata rescan.
+ *
+ * Mirrors `LockableFields` on the server, which is the authority — it is exactly the set
+ * of fields a rescan overwrites. `AudiobookFieldLockTests` asserts the server list, so a
+ * field added there fails a test that names this file.
+ */
+export type LockableField =
+  | 'title'
+  | 'subtitle'
+  | 'description'
+  | 'authors'
+  | 'narrators'
+  | 'series'
+  | 'publisher'
+  | 'publishYear'
+  | 'publishedDate'
+  | 'language'
+  | 'runtime'
+  | 'genres'
+  | 'cover'
+
 export interface AudiobookUpdateRequest {
   title?: string
   subtitle?: string
@@ -927,6 +993,11 @@ export interface AudiobookUpdateRequest {
   description?: string
   genres?: string[]
   tags?: string[]
+  /**
+   * The complete set of pinned fields, or omitted to leave the book's locks alone.
+   * Any field this request also changes is locked on top by the server.
+   */
+  lockedFields?: LockableField[]
   narrators?: string[]
   isbn?: string[]
   asin?: string
