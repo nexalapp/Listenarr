@@ -18,6 +18,7 @@
 import type {
   SearchResult,
   ConversionJobUpdate,
+  LibraryTagTable,
   TagDefinition,
   TagJobUpdate,
   TagPreview,
@@ -1320,12 +1321,20 @@ class ApiService {
     })
   }
 
+  /**
+   * Re-fetch this book's metadata from upstream and apply it.
+   *
+   * `keptFields` names the fields the book has pinned, which the rescan left alone. A
+   * rescan that appears to have done nothing should say why before the operator goes
+   * looking for a bug.
+   */
   async rescanAudiobookMetadata(id: number): Promise<{
     message: string
     audiobookId: number
     source?: string
     asin?: string
     region?: string
+    keptFields?: string[]
   }> {
     return this.request<{
       message: string
@@ -1333,6 +1342,7 @@ class ApiService {
       source?: string
       asin?: string
       region?: string
+      keptFields?: string[]
     }>(`/library/${id}/rescan-metadata`, {
       method: 'POST',
     })
@@ -1509,6 +1519,21 @@ class ApiService {
   /** Active conversions plus recently finished ones. */
   async getConversionJobs(): Promise<ConversionJobUpdate[]> {
     return this.request<ConversionJobUpdate[]>('/conversion/jobs')
+  }
+
+  /**
+   * Every audio file in the library with the tags it actually carries, beside the ones
+   * Listenarr would write.
+   *
+   * The whole table arrives in one response so the client can re-sort and re-filter
+   * without a round trip. A cold load probes every file and takes seconds; afterwards
+   * the server answers from a cache keyed on each file's size and modification time.
+   *
+   * `refresh` re-probes regardless, for the case where something outside Listenarr
+   * rewrote tags in place without disturbing either.
+   */
+  async getLibraryTags(refresh = false): Promise<LibraryTagTable> {
+    return this.request<LibraryTagTable>(`/tagging/library${refresh ? '?refresh=true' : ''}`)
   }
 
   /** The tags Listenarr can write, with their current mapping. */

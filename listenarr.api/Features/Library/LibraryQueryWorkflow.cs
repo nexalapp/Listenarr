@@ -94,6 +94,10 @@ public sealed class LibraryQueryWorkflow(
             })
             .ToList(),
         tags = audiobook.Tags,
+        // Normalised on the way out, so the edit form's padlocks come back in the catalog's
+        // order and a field dropped from the catalog does not reach a client that would
+        // then send it straight back.
+        lockedFields = LockableFields.Normalize(audiobook.LockedFields),
         files = audiobook.Files?.Select(file => new
         {
             id = file.Id,

@@ -85,23 +85,51 @@ namespace Listenarr.Api.Features.Library
             return metadata != null;
         }
 
+        /// <summary>
+        /// Overwrite the book's fields with what upstream returned, skipping every field the
+        /// operator has locked.
+        /// </summary>
+        /// <remarks>
+        /// The lock check sits here rather than at the caller because this is the only place
+        /// a rescan assigns anything: a guard further out would have to be re-derived every
+        /// time a field is added, and the field that got missed would be the one that
+        /// silently kept overwriting.
+        /// <para>
+        /// Locks generalise the preservation of a hand-chosen primary series (issue #658),
+        /// which was the same problem solved once for one field.
+        /// </para>
+        /// </remarks>
         private static bool ApplyMetadataRescanPatch(Audiobook audiobook, AudibleBookMetadata metadata)
         {
             var legacyIdentifierFieldsTouched = false;
+            var locked = LockableFields.AsSet(audiobook.LockedFields);
+            bool Unlocked(string field) => !locked.Contains(field);
 
-            if (!string.IsNullOrWhiteSpace(metadata.Title)) audiobook.Title = metadata.Title;
-            if (!string.IsNullOrWhiteSpace(metadata.Subtitle)) audiobook.Subtitle = metadata.Subtitle;
-            if (!string.IsNullOrWhiteSpace(metadata.PublishYear)) audiobook.PublishYear = metadata.PublishYear;
-            if (!string.IsNullOrWhiteSpace(metadata.PublishedDate)) audiobook.PublishedDate = metadata.PublishedDate;
-            if (!string.IsNullOrWhiteSpace(metadata.Description)) audiobook.Description = metadata.Description;
-            if (!string.IsNullOrWhiteSpace(metadata.Publisher)) audiobook.Publisher = metadata.Publisher;
-            if (!string.IsNullOrWhiteSpace(metadata.Language)) audiobook.Language = metadata.Language;
-            if (metadata.Runtime.HasValue && metadata.Runtime.Value > 0) audiobook.Runtime = metadata.Runtime;
+            if (Unlocked(LockableFields.Title)
+                && !string.IsNullOrWhiteSpace(metadata.Title)) audiobook.Title = metadata.Title;
+            if (Unlocked(LockableFields.Subtitle)
+                && !string.IsNullOrWhiteSpace(metadata.Subtitle)) audiobook.Subtitle = metadata.Subtitle;
+            if (Unlocked(LockableFields.PublishYear)
+                && !string.IsNullOrWhiteSpace(metadata.PublishYear)) audiobook.PublishYear = metadata.PublishYear;
+            if (Unlocked(LockableFields.PublishedDate)
+                && !string.IsNullOrWhiteSpace(metadata.PublishedDate)) audiobook.PublishedDate = metadata.PublishedDate;
+            if (Unlocked(LockableFields.Description)
+                && !string.IsNullOrWhiteSpace(metadata.Description)) audiobook.Description = metadata.Description;
+            if (Unlocked(LockableFields.Publisher)
+                && !string.IsNullOrWhiteSpace(metadata.Publisher)) audiobook.Publisher = metadata.Publisher;
+            if (Unlocked(LockableFields.Language)
+                && !string.IsNullOrWhiteSpace(metadata.Language)) audiobook.Language = metadata.Language;
+            if (Unlocked(LockableFields.Runtime)
+                && metadata.Runtime.HasValue && metadata.Runtime.Value > 0) audiobook.Runtime = metadata.Runtime;
+
+            // Version has no lock: nothing in the edit form sets it, so there is never a
+            // hand-entered value here for a rescan to destroy.
             if (!string.IsNullOrWhiteSpace(metadata.Version)) audiobook.Version = metadata.Version;
 
-            if ((metadata.SeriesMemberships != null && metadata.SeriesMemberships.Any()) ||
+            if (Unlocked(LockableFields.Series) &&
+                ((metadata.SeriesMemberships != null && metadata.SeriesMemberships.Any()) ||
                 !string.IsNullOrWhiteSpace(metadata.Series) ||
-                !string.IsNullOrWhiteSpace(metadata.SeriesNumber))
+                !string.IsNullOrWhiteSpace(metadata.SeriesNumber)))
             {
                 // Preserve the user's manually-chosen primary series across a rescan rather than
                 // reverting to the metadata provider's default (see issue #658).
@@ -116,16 +144,16 @@ namespace Listenarr.Api.Features.Library
                 (metadata.Authors != null && metadata.Authors.Any())
                     ? metadata.Authors
                     : (!string.IsNullOrWhiteSpace(metadata.Author) ? new List<string> { metadata.Author! } : null));
-            if (authors.Count > 0) audiobook.Authors = authors;
+            if (authors.Count > 0 && Unlocked(LockableFields.Authors)) audiobook.Authors = authors;
 
             var narrators = NormalizeMetadataStringList(
                 (metadata.Narrators != null && metadata.Narrators.Any())
                     ? metadata.Narrators
                     : (!string.IsNullOrWhiteSpace(metadata.Narrator) ? new List<string> { metadata.Narrator! } : null));
-            if (narrators.Count > 0) audiobook.Narrators = narrators;
+            if (narrators.Count > 0 && Unlocked(LockableFields.Narrators)) audiobook.Narrators = narrators;
 
             var genres = NormalizeMetadataStringList(metadata.Genres);
-            if (genres.Count > 0) audiobook.Genres = genres;
+            if (genres.Count > 0 && Unlocked(LockableFields.Genres)) audiobook.Genres = genres;
 
             var isbns = NormalizeMetadataStringList(metadata.Isbn);
             if (isbns.Count > 0)

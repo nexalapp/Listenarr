@@ -106,9 +106,22 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
         /// Ensure ffprobe is installed into the bundled directory. This performs the download
         /// and extraction flow when no bundled binary exists. Intended to be called once at startup.
         /// </summary>
-        public async Task<string?> EnsureFfprobeInstalledAsync()
+        public Task<string?> EnsureFfprobeInstalledAsync() =>
+            EnsureBundledBinariesAsync(requireEncoder: false);
+
+        /// <summary>
+        /// The shared install flow. <paramref name="requireEncoder"/> makes an existing ffprobe
+        /// insufficient to skip the download, which is what lets a config directory left behind
+        /// by an ffprobe-only release acquire an encoder.
+        /// </summary>
+        private async Task<string?> EnsureBundledBinariesAsync(bool requireEncoder)
         {
-            if (await GetFfprobePathAsync() != null)
+            // On every platform whose archive carries both binaries, the encoder arrives with
+            // ffprobe - but only on the run that actually downloads it. Older releases extracted
+            // ffprobe alone, so an install carried forward from one has ffprobe and no ffmpeg,
+            // and returning here on the strength of ffprobe alone left it that way permanently.
+            if (await GetFfprobePathAsync() != null
+                && !(requireEncoder && !File.Exists(_ffmpegPath)))
             {
                 return _ffprobePath;
             }
@@ -333,9 +346,10 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
                 return existing;
             }
 
-            // The ffprobe installer downloads and extracts the archive that carries both
-            // binaries, so running it is what makes a bundled ffmpeg appear.
-            await EnsureFfprobeInstalledAsync();
+            // The archive that carries ffprobe carries the encoder too, so running the install
+            // is what makes a bundled ffmpeg appear. Ask for it explicitly: an ffprobe that is
+            // already in place must not be taken as proof the encoder came with it.
+            await EnsureBundledBinariesAsync(requireEncoder: true);
             return await GetFfmpegPathAsync();
         }
 
