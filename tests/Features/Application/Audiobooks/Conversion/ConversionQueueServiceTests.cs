@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Audiobooks.Conversion;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -441,5 +442,106 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Conversion
                     return true;
                 });
         }
+        [Fact]
+        [Trait("Method", "CancelAsync")]
+        public async Task CancelAsync_MovesARunningJobOffRunningSoItsWorkerStops()
+        {
+            // The worker is stopped by losing its lease, and a lease is only renewable on
+            // a Running row. Moving the status is therefore the whole mechanism, so this
+            // asserts the status rather than any call into the worker.
+            var job = new ConversionJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = ConversionJobStatus.Running,
+                ActiveDeduplicationKey = ConversionJob.BuildDeduplicationKey(7)
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+            ConversionJob? mutated = null;
+            _repository
+                .Setup(repo => repo.UpdateAsync(job.Id, It.IsAny<Action<ConversionJob>>(), It.IsAny<CancellationToken>()))
+                .Callback<Guid, Action<ConversionJob>, CancellationToken>((_, mutate, _) =>
+                {
+                    mutate(job);
+                    mutated = job;
+                })
+                .ReturnsAsync(true);
+
+            var result = await BuildService().CancelAsync(job.Id);
+
+            Assert.True(result.Succeeded);
+            Assert.NotNull(mutated);
+            Assert.Equal(ConversionJobStatus.Cancelled, mutated!.Status);
+            Assert.Null(mutated.ActiveDeduplicationKey);
+        }
+
+        [Fact]
+        [Trait("Method", "CancelAsync")]
+        public async Task CancelAsync_RefusesAJobThatHasAlreadyFinished()
+        {
+            var job = new ConversionJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = ConversionJobStatus.Failed
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+
+            var result = await BuildService().CancelAsync(job.Id);
+
+            Assert.Equal(JobControlOutcome.AlreadyTerminal, result.Outcome);
+            _repository.Verify(
+                repo => repo.UpdateAsync(It.IsAny<Guid>(), It.IsAny<Action<ConversionJob>>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "DismissAsync")]
+        public async Task DismissAsync_RemovesAFailedJobSoItsKeptEncodeIsSwept()
+        {
+            var job = new ConversionJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = ConversionJobStatus.Failed,
+                VerifiedOutputPath = "/scratch/conversion-abc.m4b"
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+            _repository
+                .Setup(repo => repo.DeleteAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var result = await BuildService().DismissAsync(job.Id);
+
+            Assert.True(result.Succeeded);
+            _repository.Verify(repo => repo.DeleteAsync(job.Id, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        [Trait("Method", "DismissAsync")]
+        public async Task DismissAsync_RefusesAJobThatIsStillRunning()
+        {
+            var job = new ConversionJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = ConversionJobStatus.Running
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+
+            var result = await BuildService().DismissAsync(job.Id);
+
+            Assert.Equal(JobControlOutcome.StillActive, result.Outcome);
+            _repository.Verify(repo => repo.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
     }
 }

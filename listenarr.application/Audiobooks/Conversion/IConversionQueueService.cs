@@ -71,6 +71,24 @@ namespace Listenarr.Application.Audiobooks.Conversion
             Guid jobId,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Stop a job the operator no longer wants. A queued job simply never starts; a
+        /// running one is stopped by the same path that handles a lost lease, so its
+        /// half-written encode is discarded rather than left behind.
+        /// </summary>
+        Task<JobControlResult> CancelAsync(
+            Guid jobId,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Clear a finished job out of Activity. The encode it was keeping for a retry
+        /// goes with it - that is the point, since a failed hour-long encode otherwise
+        /// holds real disk indefinitely.
+        /// </summary>
+        Task<JobControlResult> DismissAsync(
+            Guid jobId,
+            CancellationToken cancellationToken = default);
+
         Task<ConversionJob?> GetJobAsync(Guid jobId, CancellationToken cancellationToken = default);
 
         /// <summary>The active job for one book, if any. Drives the book page's button state.</summary>

@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -365,5 +366,107 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             Assert.Single(selection!);
             Assert.Contains(TagCatalog.Album, selection!);
         }
+        [Fact]
+        [Trait("Method", "DismissAsync")]
+        public async Task DismissAsync_RefusesAJobHoldingTheBooksOnlyCopy()
+        {
+            // Past the point of removing the original, this row is the only record of
+            // where the replacement is. Deleting it would hand the book's only file to
+            // the next scratch sweep, so the refusal is the safety property, not a
+            // convenience.
+            var job = new TagJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = TagJobStatus.Failed,
+                PendingOutputPath = "/scratch/tagging-abc-593.m4b",
+                PendingDestinationPath = "/audiobooks/Book/Book.m4b",
+                PendingFileId = 593
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+
+            var result = await BuildService().DismissAsync(job.Id);
+
+            Assert.Equal(JobControlOutcome.HoldsOnlyCopy, result.Outcome);
+            Assert.Contains("only copy", result.Reason ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            _repository.Verify(
+                repo => repo.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "CancelAsync")]
+        public async Task CancelAsync_RefusesAJobHoldingTheBooksOnlyCopy()
+        {
+            var job = new TagJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = TagJobStatus.Running,
+                PendingOutputPath = "/scratch/tagging-abc-593.m4b"
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+
+            var result = await BuildService().CancelAsync(job.Id);
+
+            Assert.Equal(JobControlOutcome.HoldsOnlyCopy, result.Outcome);
+            _repository.Verify(
+                repo => repo.UpdateAsync(It.IsAny<Guid>(), It.IsAny<Action<TagJob>>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "DismissAsync")]
+        public async Task DismissAsync_RemovesAFailedJobThatHoldsNothing()
+        {
+            var job = new TagJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = TagJobStatus.Failed
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+            _repository
+                .Setup(repo => repo.DeleteAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var result = await BuildService().DismissAsync(job.Id);
+
+            Assert.True(result.Succeeded);
+            _repository.Verify(repo => repo.DeleteAsync(job.Id, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        [Trait("Method", "CancelAsync")]
+        public async Task CancelAsync_MovesARunningJobOffRunningSoItsWorkerStops()
+        {
+            var job = new TagJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = TagJobStatus.Running,
+                ActiveDeduplicationKey = TagJob.BuildDeduplicationKey(7)
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+            _repository
+                .Setup(repo => repo.UpdateAsync(job.Id, It.IsAny<Action<TagJob>>(), It.IsAny<CancellationToken>()))
+                .Callback<Guid, Action<TagJob>, CancellationToken>((_, mutate, _) => mutate(job))
+                .ReturnsAsync(true);
+
+            var result = await BuildService().CancelAsync(job.Id);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal(TagJobStatus.Cancelled, job.Status);
+            Assert.Null(job.ActiveDeduplicationKey);
+        }
+
     }
 }

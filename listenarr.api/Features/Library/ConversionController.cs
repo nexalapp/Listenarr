@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Audiobooks.Conversion;
 using Listenarr.Domain.Audiobooks.Conversion;
 using Microsoft.AspNetCore.Mvc;
@@ -75,6 +76,47 @@ namespace Listenarr.Api.Features.Library
             var result = await conversionQueue.RetryAsync(jobId, cancellationToken);
             return ToResponse(result);
         }
+
+        /// <summary>
+        /// Stop a conversion that has not finished.
+        /// </summary>
+        /// <response code="200">The conversion was cancelled.</response>
+        /// <response code="404">No such job.</response>
+        /// <response code="409">It had already finished, or it cannot be abandoned safely.</response>
+        [HttpPost("jobs/{jobId:guid}/cancel")]
+        public async Task<IActionResult> Cancel(
+            Guid jobId,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await conversionQueue.CancelAsync(jobId, cancellationToken);
+            return ToControlResponse(result);
+        }
+
+        /// <summary>
+        /// Clear a finished conversion out of Activity.
+        /// </summary>
+        /// <response code="200">The job was removed.</response>
+        /// <response code="404">No such job.</response>
+        /// <response code="409">It is still running, or it cannot be removed safely.</response>
+        [HttpDelete("jobs/{jobId:guid}")]
+        public async Task<IActionResult> Dismiss(
+            Guid jobId,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await conversionQueue.DismissAsync(jobId, cancellationToken);
+            return ToControlResponse(result);
+        }
+
+        /// <summary>
+        /// A refusal carries the reason the operator needs, because they are looking at
+        /// the row they asked about and it is still there.
+        /// </summary>
+        private IActionResult ToControlResponse(JobControlResult result) => result.Outcome switch
+        {
+            JobControlOutcome.Done => Ok(new { ok = true }),
+            JobControlOutcome.NotFound => NotFound(new { ok = false, reason = result.Reason }),
+            _ => Conflict(new { ok = false, reason = result.Reason })
+        };
 
         /// <summary>
         /// Every conversion worth showing: active jobs, plus recently finished ones.
