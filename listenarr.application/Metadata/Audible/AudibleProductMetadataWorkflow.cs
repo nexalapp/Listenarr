@@ -105,6 +105,16 @@ namespace Listenarr.Application.Metadata.Audible
                         {
                             results[mapped.Asin!] = mapped;
                         }
+                        else
+                        {
+                            // Distinguishes "Audible has no such product" from "Audible is not
+                            // answering properly for this host": if every lookup logs this, the
+                            // ASINs are fine and the catalog API is the problem.
+                            _logger.LogWarning(
+                                "Audible returned a product document with no usable title for chunk starting {Asin} in region {Region}; treating it as not found",
+                                LogRedaction.SanitizeText(chunk[0]),
+                                LogRedaction.SanitizeText(normalizedRegion));
+                        }
                     }
                 }
             }
