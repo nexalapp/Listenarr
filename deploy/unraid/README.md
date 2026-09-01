@@ -11,7 +11,7 @@ namespace, share paths, and PUID/PGID are specific to this install.
 | URL | http://10.10.10.10:4545 |
 | Compose project | `/boot/config/plugins/compose.manager/projects/listenarr/` |
 | Config volume | `/mnt/cache/appdata/listenarr` → `/app/config` (rw) |
-| Library volume | `/mnt/user/audiobooks` → `/audiobooks` (**ro**) |
+| Library volume | `/mnt/user/audiobooks` → `/audiobooks` (rw) |
 
 The app listens on 4545 (`EXPOSE 4545`, `ASPNETCORE_URLS=http://*:4545`). To
 move it, remap the host side of the port rather than editing `ASPNETCORE_URLS`.
