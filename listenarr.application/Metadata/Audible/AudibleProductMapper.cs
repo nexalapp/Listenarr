@@ -35,10 +35,22 @@ namespace Listenarr.Application.Metadata.Audible
                 return null;
             }
 
+            // Audible answers 200 with a stub — {"asin":…,"asset_details":[],"is_vvab":false} and
+            // response_groups ["always-returned"] — for an ASIN it has no product for, rather than
+            // 404. Accepting that on the ASIN alone produced a titleless "book": the lookup UI
+            // rendered it as "Unknown Title", and the series monitor would have added it to the
+            // library as one. A real product always carries a title, so its absence is the signal
+            // that nothing came back.
+            var title = GetString(product, "title");
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return null;
+            }
+
             return new AudibleBookResponse
             {
                 Asin = asin,
-                Title = GetString(product, "title"),
+                Title = title,
                 Subtitle = GetString(product, "subtitle"),
                 Authors = GetArray(product, "authors")
                     .Select(author => new AudibleAuthor
