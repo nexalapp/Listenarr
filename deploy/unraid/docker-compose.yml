@@ -2,7 +2,7 @@ services:
   listenarr:
     # Pinned to an immutable SHA-suffixed tag, not the rolling :beta tag, so the
     # server only moves when this file changes. Roll back by editing this line.
-    image: ghcr.io/nexalapp/listenarr:beta-1.3.2-b155c81
+    image: ghcr.io/nexalapp/listenarr:beta-1.14.0-6e832ff
     container_name: listenarr
     ports:
       - "4545:4545"
@@ -14,12 +14,17 @@ services:
     volumes:
       - /mnt/user/appdata/listenarr:/app/config
 
-      # Writable so imports can land. This was read-only for the first validation
-      # pass, which also meant nothing could ever be imported; a scan of 1,119 books
-      # can now rename, move and retag, so take a backup of the share before the
-      # first import if the layout still has not been eyeballed.
-      - /mnt/user/audiobooks:/audiobooks
+      # Read-only until a full scan has been eyeballed. Writable is what imports
+      # need - nothing can be placed into a :ro library - but writable also lets
+      # the renamer move every one of the 439G of existing files, and that scan
+      # has not been checked against the path parsing yet. Drop the :ro (and take
+      # a backup of the share) once it has.
+      - /mnt/user/audiobooks:/audiobooks:ro
 
+      # Lowercase: the share is /mnt/user/downloads, and nzbget binds that same
+      # source at this same destination. Capitalised, Docker silently creates an
+      # empty /mnt/user/Downloads and every import fails looking into it.
+      #
       # Mounted at /downloads to match the path the download client reports, so no
       # remote path mapping is needed: NZBGet says
       # /downloads/completed/<category>/<release> and Listenarr resolves exactly
@@ -28,7 +33,7 @@ services:
       #
       # Read-write on purpose. The mover renames rather than copies when source and
       # destination share a volume, and a rename needs to remove the original.
-      - /mnt/user/Downloads:/downloads
+      - /mnt/user/downloads:/downloads
     restart: unless-stopped
     labels:
       net.unraid.docker.managed: composeman
