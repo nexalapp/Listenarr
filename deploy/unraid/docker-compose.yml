@@ -19,12 +19,14 @@ services:
       # so the share buys nothing here and costs that failure mode.
       - /mnt/cache/appdata/listenarr:/app/config
 
-      # Read-only until a full scan has been eyeballed. Writable is what imports
-      # need - nothing can be placed into a :ro library - but writable also lets
-      # the renamer move every one of the 439G of existing files, and that scan
-      # has not been checked against the path parsing yet. Drop the :ro (and take
-      # a backup of the share) once it has.
-      - /mnt/user/audiobooks:/audiobooks:ro
+      # Writable. Imports need it - nothing can be placed into a :ro library - and
+      # so does conversion: it encodes to scratch outside the library, then
+      # publishes the m4b back in through FileMover, which a read-only mount fails
+      # at the last step, after the whole encode has been spent.
+      #
+      # The cost is that the renamer may now move any of the 439G of existing
+      # files. Watch the first renames against the configured naming pattern.
+      - /mnt/user/audiobooks:/audiobooks
 
       # Lowercase: the share is /mnt/user/downloads, and nzbget binds that same
       # source at this same destination. Capitalised, Docker silently creates an
