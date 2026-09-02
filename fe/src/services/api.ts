@@ -1530,6 +1530,19 @@ class ApiService {
     })
   }
 
+  /**
+   * Complete an interrupted organize that recovery parked, so the audiobook's files
+   * can be changed again. Refuses unless the file at the destination is the one the
+   * organize moved.
+   */
+  async repairOrganizeRecovery(
+    audiobookId: number,
+  ): Promise<{ repaired: boolean; reason?: string }> {
+    return this.request(`/library/${audiobookId}/organize-recovery/repair`, {
+      method: 'POST',
+    })
+  }
+
   /** Active conversions plus recently finished ones. */
   async getConversionJobs(): Promise<ConversionJobUpdate[]> {
     return this.request<ConversionJobUpdate[]>('/conversion/jobs')
