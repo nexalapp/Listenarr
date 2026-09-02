@@ -370,6 +370,57 @@ public sealed partial class PinnedDirectoryCreationTests : BaseTests
         Assert.True(Directory.Exists(Path.Join(parent, "published", "child")));
     }
 
+    [LinuxFact]
+    public async Task PublishByLinking_MovesTheFileAndRemovesTheNameItCameFrom()
+    {
+        // The fallback taken when a filesystem rejects RENAME_NOREPLACE. Exercised
+        // directly because the filesystem a test host happens to use usually supports
+        // the flag, so the fallback would otherwise never run here.
+        var sourceParent = FileService.GetTempDirectory("pinned-link-publish-source");
+        var destinationParent = FileService.GetTempDirectory("pinned-link-publish-destination");
+        await FileService.GetFileAsync(sourceParent, "book.m4b", "verified audio");
+        using var sourceAnchor = PinnedDirectoryCreation.OpenPinnedDirectoryNoFollow(sourceParent);
+        using var destinationAnchor = PinnedDirectoryCreation.OpenPinnedDirectoryNoFollow(destinationParent);
+
+        var error = PinnedDirectoryCreation.TryPublishByLinkingLinux(
+            sourceAnchor.DuplicateHandleForOperation(),
+            "book.m4b",
+            destinationAnchor.DuplicateHandleForOperation(),
+            "book.m4b");
+
+        Assert.Equal(0, error);
+        Assert.False(File.Exists(Path.Join(sourceParent, "book.m4b")));
+        Assert.Equal(
+            "verified audio",
+            await File.ReadAllTextAsync(Path.Join(destinationParent, "book.m4b")));
+    }
+
+    [LinuxFact]
+    public async Task PublishByLinking_RefusesAnExistingDestinationAndChangesNothing()
+    {
+        // This is the guarantee RENAME_NOREPLACE was providing, and the reason the
+        // fallback is linkat rather than a plain rename: EEXIST comes from the
+        // filesystem, so nothing here has to check first and race the answer.
+        var sourceParent = FileService.GetTempDirectory("pinned-link-collision-source");
+        var destinationParent = FileService.GetTempDirectory("pinned-link-collision-destination");
+        await FileService.GetFileAsync(sourceParent, "book.m4b", "source");
+        await FileService.GetFileAsync(destinationParent, "book.m4b", "destination");
+        using var sourceAnchor = PinnedDirectoryCreation.OpenPinnedDirectoryNoFollow(sourceParent);
+        using var destinationAnchor = PinnedDirectoryCreation.OpenPinnedDirectoryNoFollow(destinationParent);
+
+        var error = PinnedDirectoryCreation.TryPublishByLinkingLinux(
+            sourceAnchor.DuplicateHandleForOperation(),
+            "book.m4b",
+            destinationAnchor.DuplicateHandleForOperation(),
+            "book.m4b");
+
+        Assert.Equal(17, error); // EEXIST
+        Assert.Equal("source", await File.ReadAllTextAsync(Path.Join(sourceParent, "book.m4b")));
+        Assert.Equal(
+            "destination",
+            await File.ReadAllTextAsync(Path.Join(destinationParent, "book.m4b")));
+    }
+
     [Fact]
     public async Task MoveExistingFileTo_PublishesOpenedFileBetweenPinnedParents()
     {

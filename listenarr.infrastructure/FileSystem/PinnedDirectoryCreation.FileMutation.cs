@@ -172,7 +172,24 @@ internal sealed partial class PinnedDirectoryCreation
                     destinationName);
                 if (nativeError != 0)
                 {
-                    return new PinnedRenameAttempt(false, nativeError);
+                    // RENAME_NOREPLACE is a flag the filesystem driver has to implement,
+                    // and FUSE does not: shfs, which is what an unraid user share is,
+                    // answers EINVAL. Publishing by linking keeps the guarantee the flag
+                    // was there for, because linkat refuses an existing name with EEXIST.
+                    if (!IsUnsupportedRenameFlagError(nativeError))
+                    {
+                        return new PinnedRenameAttempt(false, nativeError);
+                    }
+
+                    var linkError = TryPublishByLinkingLinux(
+                        _parentHandle,
+                        _fileName,
+                        destinationHandle,
+                        destinationName);
+                    if (linkError != 0)
+                    {
+                        return new PinnedRenameAttempt(false, linkError);
+                    }
                 }
             }
             else
@@ -182,7 +199,8 @@ internal sealed partial class PinnedDirectoryCreation
                     _fileHandle,
                     _fileName,
                     destinationHandle,
-                    destinationName);
+                    destinationName,
+                    entryIsDirectory: false);
             }
 
             using var published = OperatingSystem.IsWindows()
@@ -232,7 +250,8 @@ internal sealed partial class PinnedDirectoryCreation
                 _fileHandle,
                 _fileName,
                 _parentHandle,
-                destinationName);
+                destinationName,
+                entryIsDirectory: false);
             using var published = OperatingSystem.IsWindows()
                 ? OpenRelativeFileWindows(
                     _parentHandle,
