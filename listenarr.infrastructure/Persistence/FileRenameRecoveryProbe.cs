@@ -1,4 +1,3 @@
-using Listenarr.Application.Downloads.Contracts;
 using Listenarr.Domain.Audiobooks.Enumerations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
