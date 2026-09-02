@@ -250,7 +250,8 @@ internal sealed partial class PinnedDirectoryCreation
             _directoryHandle,
             _childName,
             destinationHandle,
-            finalName);
+            finalName,
+            entryIsDirectory: true);
         var publishedPath = Path.Join(destinationParent.FullPath, finalName);
         var publishedAnchor = new PinnedDirectoryAnchor(
             DuplicateSafeHandle(_directoryHandle),
