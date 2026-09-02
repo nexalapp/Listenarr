@@ -125,6 +125,90 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
         await AssertRecoveredAsync(scenario);
     }
 
+
+    [LinuxFact]
+    public async Task ReconcileAsync_RenameLandedBeforeInterruption_AdoptsItInsteadOfStranding()
+    {
+        // The state an interrupted organize actually leaves behind on the shipped
+        // deployment: the rename reached the filesystem, the process went away before the
+        // row could say so. Reading that as unresumable stranded the book, and nothing in
+        // the application could release it afterwards.
+        var scenario = await CreateScenarioAsync("adopt-landed-rename");
+        File.Move(scenario.Source, scenario.Destination);
+        Assert.False(File.Exists(scenario.Source));
+        Assert.Equal(scenario.SourceIdentity, GetFileIdentity(scenario.Destination));
+
+        await SeedInterruptedJournalAsync(scenario, FileMutationJournalState.TargetIdentityPersisted);
+
+        await _provider.GetRequiredService<IFileRenameRecoveryReconciler>().ReconcileAsync();
+
+        await AssertStoredPathAsync(scenario.FileId, scenario.Destination);
+        await AssertJournalStateAsync(
+            scenario.OperationId,
+            FileMutationJournalState.OwnerMetadataReconciled);
+    }
+
+    [LinuxFact]
+    public async Task ReconcileAsync_JournalAlreadyParked_IsTriedAgainRatherThanLeftForever()
+    {
+        // NeedsAttention used to be a one-way door: the reconciler returned on sight of
+        // it, so a book stranded by a bug stayed stranded even once the bug was fixed.
+        var scenario = await CreateScenarioAsync("retry-parked-journal");
+        File.Move(scenario.Source, scenario.Destination);
+        await SeedInterruptedJournalAsync(scenario, FileMutationJournalState.NeedsAttention);
+
+        await _provider.GetRequiredService<IFileRenameRecoveryReconciler>().ReconcileAsync();
+
+        await AssertStoredPathAsync(scenario.FileId, scenario.Destination);
+        await AssertJournalStateAsync(
+            scenario.OperationId,
+            FileMutationJournalState.OwnerMetadataReconciled);
+    }
+
+    [LinuxFact]
+    public async Task ReconcileAsync_DestinationHoldsSomeOtherFile_IsNotAdopted()
+    {
+        // The safety property the adoption rests on. A destination that merely has the
+        // right name is not the moved file, and treating it as one would point the
+        // registration at something the library never verified.
+        var scenario = await CreateScenarioAsync("reject-foreign-destination");
+        File.Delete(scenario.Source);
+        await File.WriteAllTextAsync(scenario.Destination, "some other file");
+        await SeedInterruptedJournalAsync(scenario, FileMutationJournalState.TargetIdentityPersisted);
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => _provider.GetRequiredService<IFileRenameRecoveryReconciler>().ReconcileAsync());
+
+        await AssertJournalStateAsync(
+            scenario.OperationId,
+            FileMutationJournalState.NeedsAttention);
+        await AssertStoredPathAsync(scenario.FileId, scenario.Source);
+    }
+
+    /// <summary>
+    /// A journal left mid-flight by an interruption: the source identity recorded, the
+    /// target never verified, which is what a crash between rename and commit leaves.
+    /// </summary>
+    private async Task SeedInterruptedJournalAsync(
+        Scenario scenario,
+        FileMutationJournalState state)
+    {
+        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        db.FileMutationJournals.Add(new FileMutationJournal
+        {
+            OperationId = scenario.OperationId,
+            Action = FileAction.Move,
+            SourcePath = scenario.Source,
+            DestinationPath = scenario.Destination,
+            SourcePhysicalObjectIdentity = scenario.SourceIdentity,
+            AudiobookId = scenario.AudiobookId,
+            AudiobookFileId = scenario.FileId,
+            State = state
+        });
+        await db.SaveChangesAsync();
+    }
+
     [LinuxFact]
     public async Task ReconcileAsync_TargetReplacedAfterRecoveryProbe_DoesNotCommitOwnerMetadata()
     {

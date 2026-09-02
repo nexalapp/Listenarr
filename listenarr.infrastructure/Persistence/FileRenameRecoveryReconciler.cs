@@ -25,23 +25,6 @@ public sealed partial class FileRenameRecoveryReconciler(
     {
         await EnsureCurrentOwnerRecoveryProtocolAsync(cancellationToken);
         await using var readContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var attentionOperationId = await readContext.FileMutationJournals
-            .AsNoTracking()
-            .Where(journal =>
-                journal.Action == FileAction.Move
-                && journal.AudiobookId != null
-                && journal.AudiobookFileId != null
-                && journal.State == FileMutationJournalState.NeedsAttention)
-            .OrderBy(journal => journal.CreatedAt)
-            .ThenBy(journal => journal.OperationId)
-            .Select(journal => (Guid?)journal.OperationId)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (attentionOperationId.HasValue)
-        {
-            throw new InvalidOperationException(
-                $"Owner-bound file organize journal {attentionOperationId.Value} requires operator repair before filesystem mutations can resume.");
-        }
-
         var operationIds = await readContext.FileMutationJournals
             .AsNoTracking()
             .Where(journal =>
@@ -63,6 +46,27 @@ public sealed partial class FileRenameRecoveryReconciler(
             cancellationToken.ThrowIfCancellationRequested();
             await ReconcileOperationAsync(operationId, cancellationToken);
         }
+
+        // Only now, having given every journal a fresh attempt, is anything still parked
+        // genuinely unresolved. Refusing before the pass meant one stranded book blocked
+        // recovery for the whole library, including the books that would have resolved.
+        await using var attentionContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var unresolved = await attentionContext.FileMutationJournals
+            .AsNoTracking()
+            .Where(journal =>
+                journal.Action == FileAction.Move
+                && journal.AudiobookId != null
+                && journal.AudiobookFileId != null
+                && journal.State == FileMutationJournalState.NeedsAttention)
+            .OrderBy(journal => journal.CreatedAt)
+            .ThenBy(journal => journal.OperationId)
+            .Select(journal => (Guid?)journal.OperationId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (unresolved.HasValue)
+        {
+            throw new InvalidOperationException(
+                $"Owner-bound file organize journal {unresolved.Value} requires operator repair before filesystem mutations can resume.");
+        }
     }
 
     private async Task ReconcileOperationAsync(
@@ -79,8 +83,13 @@ public sealed partial class FileRenameRecoveryReconciler(
             journal = await context.FileMutationJournals
                 .AsNoTracking()
                 .SingleAsync(candidate => candidate.OperationId == operationId, cancellationToken);
-            if (journal.State is FileMutationJournalState.OwnerMetadataReconciled
-                or FileMutationJournalState.NeedsAttention)
+            // NeedsAttention is deliberately not terminal. It records that a pass could
+            // not resolve this journal, not that no pass ever will: the cause is usually
+            // outside the row - a filesystem that could not be written, a move whose
+            // outcome could not be read - and once that clears, another attempt settles
+            // it. Returning here instead is what let a single interrupted organize wedge
+            // a book for good, with nothing in the application able to release it.
+            if (journal.State is FileMutationJournalState.OwnerMetadataReconciled)
             {
                 return;
             }
@@ -149,11 +158,30 @@ public sealed partial class FileRenameRecoveryReconciler(
 
             if (!resumed)
             {
-                await MarkNeedsAttentionAsync(
-                    operationId,
-                    "The interrupted organize file mutation could not be resumed safely.",
-                    cancellationToken);
-                return;
+                // A resume fails when the source is not where the journal left it, and
+                // the likeliest reason for that is that the rename landed. Ask before
+                // concluding otherwise: a destination carrying the source's object
+                // identity is the same file, arrived, and adopting it is what keeps an
+                // interrupted organize from stranding a book whose files are fine.
+                var adopted = !FileMutationOwner.IsCompanionFile(ownerAudiobookFileId)
+                    && audiobookFile != null
+                    && !string.IsNullOrWhiteSpace(journal.SourcePhysicalObjectIdentity)
+                    && await fileMover.TryAdoptCompletedMoveAsync(
+                        journal.DestinationPath,
+                        journal.SourcePhysicalObjectIdentity,
+                        journal.OperationId,
+                        ownerAudiobookId,
+                        audiobookFile.Id,
+                        cancellationToken);
+
+                if (!adopted)
+                {
+                    await MarkNeedsAttentionAsync(
+                        operationId,
+                        "The interrupted organize file mutation could not be resumed safely.",
+                        cancellationToken);
+                    return;
+                }
             }
         }
 
