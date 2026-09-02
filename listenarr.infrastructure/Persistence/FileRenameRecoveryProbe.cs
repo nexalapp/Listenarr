@@ -1,11 +1,13 @@
+using Listenarr.Application.Downloads.Contracts;
 using Listenarr.Domain.Audiobooks.Enumerations;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Listenarr.Infrastructure.Persistence;
 
 public sealed class FileRenameRecoveryProbe(
     IDbContextFactory<ListenArrDbContext> dbContextFactory,
-    IFileMover fileMover) :
+    IServiceScopeFactory scopeFactory) :
     IFileRenameRecoveryProbe
 {
     public async Task<bool> HasBlockingAsync(
@@ -56,6 +58,11 @@ public sealed class FileRenameRecoveryProbe(
             return new RenameRecoveryRepairResult(
                 RenameRecoveryRepairOutcome.NothingToRepair);
         }
+
+        // The mover is scoped and this probe is not, so it is resolved per repair rather
+        // than held. A repair is an operator action, not a hot path.
+        using var scope = scopeFactory.CreateScope();
+        var fileMover = scope.ServiceProvider.GetRequiredService<IFileMover>();
 
         foreach (var journal in parked)
         {
