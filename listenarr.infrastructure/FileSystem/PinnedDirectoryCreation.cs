@@ -8,6 +8,12 @@ internal sealed partial class PinnedDirectoryCreation : IDisposable
 {
     private const int UnixAlreadyExists = 17;
     private const int UnixNoEntry = 2;
+
+    // Errnos a kernel uses for "this filesystem cannot do that", which is how a FUSE
+    // mount answers renameat2's RENAME_NOREPLACE.
+    private const int Einval = 22;
+    private const int Enosys = 38;
+    private const int Eopnotsupp = 95;
     private const uint UnixDirectoryMode = 0x1FF;
     private const uint UnixFileMode = 0x180;
     private const int AtRemovedirLinux = 0x200;
