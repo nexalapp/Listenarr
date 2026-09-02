@@ -7,7 +7,7 @@ namespace Listenarr.Application.Search.Metadata;
 /// <summary>
 /// Converts external metadata API responses to internal AudibleBookMetadata and SearchResult models.
 /// </summary>
-public class MetadataConverters
+public partial class MetadataConverters
 {
     private readonly IImageCacheService? _imageCacheService;
     private readonly ILogger<MetadataConverters> _logger;
@@ -73,6 +73,8 @@ public class MetadataConverters
             Explicit = audibleData.Explicit ?? false
         };
 
+        ApplyRatings(metadata, audibleData);
+
         metadata.SeriesMemberships = BuildSeriesMemberships(audibleData.Series);
         ApplyPrimarySeriesFields(metadata);
 
@@ -135,7 +137,10 @@ public class MetadataConverters
             Isbn = !string.IsNullOrWhiteSpace(audnexusData.Isbn) ? new List<string> { audnexusData.Isbn! } : new List<string>(),
             ImageUrl = audnexusData.Image,
             Abridged = audnexusData.FormatType?.Contains("abridged", StringComparison.OrdinalIgnoreCase) ?? false,
-            Explicit = audnexusData.IsAdult ?? false
+            Explicit = audnexusData.IsAdult ?? false,
+
+            // Audnexus' only rating, kept in its own column. See MetadataConverters.Ratings.
+            AudnexusRating = ParseAudnexusRating(audnexusData.Rating)
         };
 
         var audnexusSeriesMemberships = new List<AudiobookSeriesMembership>();

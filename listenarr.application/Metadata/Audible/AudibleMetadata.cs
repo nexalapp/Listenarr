@@ -24,6 +24,50 @@ namespace Listenarr.Application.Metadata.Audible
         public string? ContentDeliveryType { get; set; }
         public string? EpisodeType { get; set; }
         public string? Sku { get; set; }
+
+        /// <summary>
+        /// Listener ratings, from the "rating" response group.
+        /// </summary>
+        public AudibleRating? Rating { get; set; }
+
+        /// <summary>
+        /// Audnexus' own rating, carried here because this type doubles as the shared
+        /// carrier for an Audnexus lookup (see <c>AudiobookMetadataService</c>).
+        ///
+        /// <para>
+        /// Kept separate from <see cref="Rating"/> rather than folded into its overall
+        /// distribution: Audnexus publishes one rounded number and no count, so a value
+        /// parked in an Audible-shaped distribution would claim a precision and a
+        /// provenance it does not have.
+        /// </para>
+        /// </summary>
+        public double? AudnexusRating { get; set; }
+    }
+
+    /// <summary>
+    /// The "rating" response group. Audible scores three things independently — the book
+    /// overall, the narration, and the writing — and an audiobook library cares about the
+    /// split: it is what separates a good book read badly from the reverse.
+    /// </summary>
+    public class AudibleRating
+    {
+        public AudibleRatingDistribution? Overall { get; set; }
+        public AudibleRatingDistribution? Performance { get; set; }
+        public AudibleRatingDistribution? Story { get; set; }
+
+        /// <summary>
+        /// Written reviews, which is a different and much smaller population than the
+        /// star ratings in each distribution — 47,698 against 310,988 on B08G9PRS1K at
+        /// the time of writing. Not a substitute for
+        /// <see cref="AudibleRatingDistribution.NumRatings"/>.
+        /// </summary>
+        public int? NumReviews { get; set; }
+    }
+
+    public class AudibleRatingDistribution
+    {
+        public double? AverageRating { get; set; }
+        public int? NumRatings { get; set; }
     }
 
     public class AudibleAuthor { public string? Asin { get; set; } public string? Name { get; set; } public string? Region { get; set; } }

@@ -73,6 +73,19 @@ public sealed class LibraryQueryWorkflow(
         version = audiobook.Version,
         @explicit = audiobook.Explicit,
         abridged = audiobook.Abridged,
+
+        // Ratings, each distribution kept separate on the wire as it is in the column.
+        // Collapsing them to one number here would throw away the narration/writing split,
+        // which is the part worth showing on a book's own page.
+        audibleRatingOverall = audiobook.AudibleRatingOverall,
+        audibleRatingOverallCount = audiobook.AudibleRatingOverallCount,
+        audibleRatingPerformance = audiobook.AudibleRatingPerformance,
+        audibleRatingPerformanceCount = audiobook.AudibleRatingPerformanceCount,
+        audibleRatingStory = audiobook.AudibleRatingStory,
+        audibleRatingStoryCount = audiobook.AudibleRatingStoryCount,
+        audibleReviewCount = audiobook.AudibleReviewCount,
+        audnexusRating = audiobook.AudnexusRating,
+
         monitored = audiobook.Monitored,
         quality = audiobook.Quality,
         qualityProfileId = audiobook.QualityProfileId,

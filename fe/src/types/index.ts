@@ -932,6 +932,25 @@ export interface Audiobook {
   imageUrl?: string
   explicit?: boolean
   abridged?: boolean
+  /**
+   * Listener ratings, refreshed by a metadata rescan rather than edited.
+   *
+   * Audible scores the book, the narration and the writing separately, so the three are
+   * kept apart: a well-written book read badly averages to an unremarkable overall score
+   * that hides the reason. Counts are star ratings; `audibleReviewCount` counts written
+   * reviews and is a much smaller number.
+   *
+   * `audnexusRating` is a fallback, set only when Audnexus answered instead of Audible.
+   * It is Audible's overall average rounded to one decimal, with no count.
+   */
+  audibleRatingOverall?: number
+  audibleRatingOverallCount?: number
+  audibleRatingPerformance?: number
+  audibleRatingPerformanceCount?: number
+  audibleRatingStory?: number
+  audibleRatingStoryCount?: number
+  audibleReviewCount?: number
+  audnexusRating?: number
   monitored?: boolean
   filePath?: string
   fileSize?: number
@@ -1013,6 +1032,25 @@ export interface AudiobookUpdateRequest {
   version?: string
   explicit?: boolean
   abridged?: boolean
+  /**
+   * Listener ratings, refreshed by a metadata rescan rather than edited.
+   *
+   * Audible scores the book, the narration and the writing separately, so the three are
+   * kept apart: a well-written book read badly averages to an unremarkable overall score
+   * that hides the reason. Counts are star ratings; `audibleReviewCount` counts written
+   * reviews and is a much smaller number.
+   *
+   * `audnexusRating` is a fallback, set only when Audnexus answered instead of Audible.
+   * It is Audible's overall average rounded to one decimal, with no count.
+   */
+  audibleRatingOverall?: number
+  audibleRatingOverallCount?: number
+  audibleRatingPerformance?: number
+  audibleRatingPerformanceCount?: number
+  audibleRatingStory?: number
+  audibleRatingStoryCount?: number
+  audibleReviewCount?: number
+  audnexusRating?: number
   monitored?: boolean
   filePath?: string
   fileSize?: number

@@ -47,6 +47,34 @@ namespace Listenarr.Domain.Audiobooks
         public string? Version { get; set; }
         public bool Explicit { get; set; }
         public bool Abridged { get; set; }
+
+        // Listener ratings. See the matching properties on Audiobook for why the three
+        // distributions, the review count and the Audnexus value are all kept apart.
+        public double? AudibleRatingOverall { get; set; }
+        public int? AudibleRatingOverallCount { get; set; }
+        public double? AudibleRatingPerformance { get; set; }
+        public int? AudibleRatingPerformanceCount { get; set; }
+        public double? AudibleRatingStory { get; set; }
+        public int? AudibleRatingStoryCount { get; set; }
+        public int? AudibleReviewCount { get; set; }
+        public double? AudnexusRating { get; set; }
+
+        /// <summary>
+        /// True when this metadata carries Audible's ratings.
+        ///
+        /// <para>
+        /// Gates the write as a block, so a rescan served by a provider that has no ratings
+        /// leaves the stored ones alone instead of nulling them. Deliberately ignores
+        /// <see cref="AudnexusRating"/>: an Audnexus answer must not be able to clear
+        /// Audible's distributions on its way past.
+        /// </para>
+        /// </summary>
+        public bool HasAudibleRating =>
+            AudibleRatingOverall.HasValue
+            || AudibleRatingPerformance.HasValue
+            || AudibleRatingStory.HasValue
+            || AudibleReviewCount.HasValue;
+
         // Legacy fields for compatibility
         public string? Author { get; set; }
         public string? Narrator { get; set; }
@@ -80,7 +108,15 @@ namespace Listenarr.Domain.Audiobooks
                 Edition = Edition,
                 Version = Version,
                 Explicit = Explicit,
-                Abridged = Abridged
+                Abridged = Abridged,
+                AudibleRatingOverall = AudibleRatingOverall,
+                AudibleRatingOverallCount = AudibleRatingOverallCount,
+                AudibleRatingPerformance = AudibleRatingPerformance,
+                AudibleRatingPerformanceCount = AudibleRatingPerformanceCount,
+                AudibleRatingStory = AudibleRatingStory,
+                AudibleRatingStoryCount = AudibleRatingStoryCount,
+                AudibleReviewCount = AudibleReviewCount,
+                AudnexusRating = AudnexusRating
             };
 
             AudiobookSeriesMembershipHelper.ApplyToAudiobook(

@@ -174,6 +174,19 @@
               <PhFileAudio />
               {{ fileFormats.join(', ') }}
             </span>
+            <span class="rating" v-if="listenerRating" :title="ratingTooltip">
+              <PhStar />
+              {{ listenerRating.overall }}
+              <span class="rating-count" v-if="listenerRating.count">
+                ({{ listenerRating.count.toLocaleString() }})
+              </span>
+              <span class="rating-split" v-if="ratingBreakdown.length">
+                <template v-for="(part, index) in ratingBreakdown" :key="part.label">
+                  <span v-if="index > 0" class="rating-split-sep">&nbsp;&middot;&nbsp;</span>
+                  {{ part.label }} {{ part.value }}
+                </template>
+              </span>
+            </span>
           </div>
 
           <!-- One row of facts about this book, led by the control that changes one -->
@@ -853,6 +866,69 @@ const fileFormats = computed(() => {
   }
 
   return Array.from(found).sort()
+})
+
+/**
+ * Listener ratings, ready to render.
+ *
+ * Audible's averages arrive at full precision (4.8746...) because rounding is a display
+ * decision, so it is made here. `count` is star ratings; `reviews` counts written reviews
+ * and is a much smaller population, which is why the two are labelled rather than shown as
+ * one bare number.
+ *
+ * Falls back to the Audnexus value, which exists only when Audnexus answered instead of
+ * Audible. It carries no count and no split, so `source` says where the number came from
+ * instead of implying a precision it does not have.
+ */
+const listenerRating = computed(() => {
+  const book = audiobook.value
+  if (!book) return null
+
+  const overall = book.audibleRatingOverall ?? book.audnexusRating
+  if (typeof overall !== 'number' || !Number.isFinite(overall)) return null
+
+  const fromAudible = typeof book.audibleRatingOverall === 'number'
+
+  return {
+    overall: overall.toFixed(1),
+    count: fromAudible ? book.audibleRatingOverallCount : undefined,
+    reviews: fromAudible ? book.audibleReviewCount : undefined,
+    performance: fromAudible ? book.audibleRatingPerformance : undefined,
+    story: fromAudible ? book.audibleRatingStory : undefined,
+    source: fromAudible ? 'Audible' : 'Audnexus',
+  }
+})
+
+/** The narration/writing split, present only when Audible supplied it. */
+const ratingBreakdown = computed(() => {
+  const rating = listenerRating.value
+  if (!rating) return []
+
+  const parts: { label: string; value: string }[] = []
+  if (typeof rating.performance === 'number') {
+    parts.push({ label: 'Narration', value: rating.performance.toFixed(1) })
+  }
+  if (typeof rating.story === 'number') {
+    parts.push({ label: 'Story', value: rating.story.toFixed(1) })
+  }
+  return parts
+})
+
+const ratingTooltip = computed(() => {
+  const rating = listenerRating.value
+  if (!rating) return ''
+
+  const lines = [`${rating.overall} out of 5 (${rating.source})`]
+  if (typeof rating.count === 'number') {
+    lines.push(`${rating.count.toLocaleString()} ratings`)
+  }
+  if (typeof rating.reviews === 'number') {
+    lines.push(`${rating.reviews.toLocaleString()} written reviews`)
+  }
+  for (const part of ratingBreakdown.value) {
+    lines.push(`${part.label}: ${part.value}`)
+  }
+  return lines.join(' \u00b7 ')
 })
 
 const descriptionText = computed(() => stripHtmlAndNormalize(audiobook.value?.description) || '')
@@ -2599,6 +2675,16 @@ function formatDate(dateString?: string): string {
 .runtime i,
 .rating i {
   color: var(--brand-500);
+}
+
+.rating-count,
+.rating-split {
+  color: #aaa;
+  font-size: 13px;
+}
+
+.rating-split {
+  margin-left: 6px;
 }
 
 @media (max-width: 768px) {

@@ -67,6 +67,51 @@ namespace Listenarr.Domain.Audiobooks
         public bool Explicit { get; set; }
         public bool Abridged { get; set; }
 
+        /// <summary>
+        /// Listener ratings from Audible, scored across its three independent
+        /// distributions, plus its written-review count.
+        ///
+        /// <para>
+        /// Stored per distribution rather than as one number because the split is the part
+        /// that is specific to audiobooks: <see cref="AudibleRatingPerformance"/> scores the
+        /// narrator and <see cref="AudibleRatingStory"/> the writing, and a book that is
+        /// well written and badly read averages to an unremarkable overall score that hides
+        /// exactly the thing worth knowing before committing to twenty hours of it.
+        /// </para>
+        /// <para>
+        /// Each average is null rather than 0 when nothing has been rated — the upstream
+        /// zero-fill is not a score — and is kept at the precision Audible reports rather
+        /// than rounded on the way in, so the rounding stays a display decision.
+        /// </para>
+        /// </summary>
+        public double? AudibleRatingOverall { get; set; }
+        public int? AudibleRatingOverallCount { get; set; }
+        public double? AudibleRatingPerformance { get; set; }
+        public int? AudibleRatingPerformanceCount { get; set; }
+        public double? AudibleRatingStory { get; set; }
+        public int? AudibleRatingStoryCount { get; set; }
+
+        /// <summary>
+        /// Written reviews, a much smaller population than the star ratings counted in
+        /// <see cref="AudibleRatingOverallCount"/>. Kept apart from it precisely because
+        /// the two are easy to confuse and differ by an order of magnitude.
+        /// </summary>
+        public int? AudibleReviewCount { get; set; }
+
+        /// <summary>
+        /// Audnexus' rating, populated only when Audnexus is the source that answered.
+        ///
+        /// <para>
+        /// A separate column rather than a fallback written into
+        /// <see cref="AudibleRatingOverall"/>: Audnexus republishes Audible's overall
+        /// average rounded to one decimal and drops the count, so merging the two would
+        /// leave a column whose precision and whose meaning depend on which provider
+        /// happened to answer that day. Null here and null there means nobody answered;
+        /// a value here means Audible did not.
+        /// </para>
+        /// </summary>
+        public double? AudnexusRating { get; set; }
+
         // Monitoring and file management
         public bool Monitored { get; set; } = true;
         // NOTE: single-file properties are deprecated in favor of Files collection
