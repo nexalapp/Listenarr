@@ -126,6 +126,31 @@ namespace Listenarr.Application.Metadata.Core
                 changed = true;
             }
 
+            // Ratings fill only when the book has none, in keeping with this method's
+            // contract. Refreshing a rating that has since moved is a rescan's job, not
+            // this one's -- this path exists to populate a book that arrived empty.
+            if (audiobook.AudibleRatingOverall == null
+                && audiobook.AudibleRatingPerformance == null
+                && audiobook.AudibleRatingStory == null
+                && audiobook.AudibleReviewCount == null
+                && metadata.HasAudibleRating)
+            {
+                audiobook.AudibleRatingOverall = metadata.AudibleRatingOverall;
+                audiobook.AudibleRatingOverallCount = metadata.AudibleRatingOverallCount;
+                audiobook.AudibleRatingPerformance = metadata.AudibleRatingPerformance;
+                audiobook.AudibleRatingPerformanceCount = metadata.AudibleRatingPerformanceCount;
+                audiobook.AudibleRatingStory = metadata.AudibleRatingStory;
+                audiobook.AudibleRatingStoryCount = metadata.AudibleRatingStoryCount;
+                audiobook.AudibleReviewCount = metadata.AudibleReviewCount;
+                changed = true;
+            }
+
+            if (audiobook.AudnexusRating == null && metadata.AudnexusRating.HasValue)
+            {
+                audiobook.AudnexusRating = metadata.AudnexusRating;
+                changed = true;
+            }
+
             return changed;
         }
 

@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Listenarr.Application.Metadata.Audible
@@ -95,7 +96,8 @@ namespace Listenarr.Application.Metadata.Audible
                 ContentType = GetString(product, "content_type"),
                 ContentDeliveryType = GetString(product, "content_delivery_type"),
                 EpisodeType = GetString(product, "episode_type"),
-                Sku = GetString(product, "sku")
+                Sku = GetString(product, "sku"),
+                Rating = MapRating(product)
             };
         }
 
@@ -221,6 +223,79 @@ namespace Listenarr.Application.Metadata.Audible
             }
 
             return GetString(product, "cover_art_url");
+        }
+
+        private static AudibleRating? MapRating(JsonElement product)
+        {
+            if (!product.TryGetProperty("rating", out var rating) || rating.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var mapped = new AudibleRating
+            {
+                Overall = MapRatingDistribution(rating, "overall_distribution"),
+                Performance = MapRatingDistribution(rating, "performance_distribution"),
+                Story = MapRatingDistribution(rating, "story_distribution"),
+                NumReviews = GetInt32(rating, "num_reviews")
+            };
+
+            // An unrated book still gets the whole structure back, zero-filled. Keeping it
+            // would publish a genuine 0.0 average, and a book nobody has rated would then
+            // sort and display below the worst-reviewed one in the library.
+            return mapped.Overall == null && mapped.Performance == null && mapped.Story == null
+                ? null
+                : mapped;
+        }
+
+        private static AudibleRatingDistribution? MapRatingDistribution(JsonElement rating, string propertyName)
+        {
+            if (!rating.TryGetProperty(propertyName, out var distribution) ||
+                distribution.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            // num_ratings is the authority on whether this distribution means anything.
+            // average_rating is 0.0 for an unrated book, which is indistinguishable from a
+            // real score without the count beside it.
+            var count = GetInt32(distribution, "num_ratings");
+            if (count is null or <= 0)
+            {
+                return null;
+            }
+
+            var average = GetDouble(distribution, "average_rating");
+            if (average is null)
+            {
+                return null;
+            }
+
+            return new AudibleRatingDistribution
+            {
+                AverageRating = average,
+                NumRatings = count
+            };
+        }
+
+        private static double? GetDouble(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var value))
+            {
+                return null;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
+            {
+                return number;
+            }
+
+            // Parsed invariantly: Audible always writes '.' as the decimal separator, and a
+            // server running under a comma-decimal culture would otherwise read "4.9" as 49.
+            return value.ValueKind == JsonValueKind.String &&
+                double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                    ? parsed
+                    : null;
         }
 
         private static List<AudibleGenre> MapGenres(JsonElement product)
