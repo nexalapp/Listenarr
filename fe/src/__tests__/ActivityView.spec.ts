@@ -251,6 +251,52 @@ describe('ActivityView', () => {
     expect(conversion?.downloadClient).toContain('12 files')
   })
 
+  it('offers cancel on a running job and dismiss on a finished one', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 42, title: 'Book' }])
+    mockDownloadsStore()
+    mockConversionJobsStore({
+      jobs: [
+        {
+          jobId: 'conv-running',
+          audiobookId: 42,
+          status: 'Running',
+          phase: 'Encoding',
+          progress: 42,
+          sourceFileCount: 12,
+          chapterCount: 0,
+          error: null,
+          canRetry: false,
+          trigger: 'Automatic',
+        },
+        {
+          jobId: 'conv-failed',
+          audiobookId: 42,
+          status: 'Failed',
+          phase: 'None',
+          progress: 0,
+          sourceFileCount: 1,
+          chapterCount: 0,
+          error: 'The converted file could not be published into the library.',
+          canRetry: true,
+          trigger: 'Manual',
+        },
+      ],
+    })
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const running = vm.allActivityItems.find((item) => item.id === 'conversion:conv-running')
+    const failed = vm.allActivityItems.find((item) => item.id === 'conversion:conv-failed')
+
+    // A job that is still working can be stopped but not cleared away; a finished one
+    // is the other way round.
+    expect(running).toMatchObject({ canCancel: true, canDismiss: false })
+    expect(failed).toMatchObject({ canCancel: false, canDismiss: true })
+  })
+
   it('explains a failed conversion on the row and offers a retry', async () => {
     mockSignalR()
     mockApi()

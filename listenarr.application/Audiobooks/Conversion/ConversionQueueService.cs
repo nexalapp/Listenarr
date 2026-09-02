@@ -27,7 +27,7 @@ namespace Listenarr.Application.Audiobooks.Conversion
     /// Enqueueing is cheap and always returns: the decision about whether a book is
     /// worth converting is made here, but the conversion itself belongs to a worker.
     /// </summary>
-    public sealed class ConversionQueueService(
+    public sealed partial class ConversionQueueService(
         IConversionJobRepository repository,
         IAudiobookRepository audiobookRepository,
         IConfigurationService configurationService,

@@ -127,6 +127,20 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     }
   }
 
+  /**
+   * Drop a job the server has removed. The row is gone for good, so waiting for the
+   * next refresh would leave the operator looking at something they just dismissed.
+   */
+  function forget(jobId: string) {
+    if (!jobId?.trim()) return
+    const key = normalizeJobId(jobId)
+    if (key in trackedById.value) {
+      const next = { ...trackedById.value }
+      delete next[key]
+      trackedById.value = next
+    }
+  }
+
   async function refresh() {
     try {
       const fetched = await apiService.getConversionJobs()
@@ -183,6 +197,7 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     activeJobs,
     getJobForAudiobook,
     apply,
+    forget,
     refresh,
     convert,
     retry,

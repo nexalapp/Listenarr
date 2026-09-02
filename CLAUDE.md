@@ -66,9 +66,13 @@ server itself against local disk. See `deploy/unraid/README.md`.
 `:beta-<version>-<sha>` and `:<version>` do not. The deployed tag lives in
 `deploy/unraid/docker-compose.yml`; rolling back is a one-line edit.
 
-**The library mount starts read-only.** Listenarr renames and moves files once a
-root folder is configured, and the existing library has not been validated
-against the scanner. Drop `:ro` only after a scan looks correct.
+**The library mount is read-write, as of 2026-09-01.** It started `:ro` while the
+existing library had not been validated against the scanner. Conversion is what
+required the change: it encodes to scratch outside the library and then publishes
+the m4b back in through `FileMover`, so a read-only mount fails at the last step,
+after the whole encode has been spent. Imports need it for the same reason.
+Renaming can now move any of the 439G, so a naming-pattern change is no longer a
+cheap experiment.
 
 **ffmpeg is enough for M4B; m4b-tool is not needed.** Verified by inspecting the
 bytes ffmpeg produces: it writes the `desc` atom (the whole reason for this fork),

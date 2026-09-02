@@ -152,6 +152,17 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return rows > 0;
         }
 
+        public async Task<bool> DeleteAsync(
+            Guid id,
+            CancellationToken cancellationToken = default)
+        {
+            var rows = await db.ConversionJobs
+                .Where(job => job.Id == id)
+                .ExecuteDeleteAsync(cancellationToken);
+
+            return rows > 0;
+        }
+
         public async Task<bool> UpdateAsync(
             Guid id,
             Action<ConversionJob> mutate,

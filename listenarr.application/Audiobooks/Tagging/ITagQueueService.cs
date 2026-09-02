@@ -76,6 +76,23 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// <summary>Re-queue a terminal job that is allowed to retry.</summary>
         Task<TagEnqueueResult> RetryAsync(Guid jobId, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Stop a tag write the operator no longer wants. Refused once the job is holding
+        /// the book's only copy: at that point the original has already been removed to
+        /// make room, and abandoning the job would strand the replacement.
+        /// </summary>
+        Task<JobControlResult> CancelAsync(
+            Guid jobId,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Clear a finished tag write out of Activity, refusing for the same reason
+        /// <see cref="CancelAsync"/> does.
+        /// </summary>
+        Task<JobControlResult> DismissAsync(
+            Guid jobId,
+            CancellationToken cancellationToken = default);
+
         Task<TagJob?> GetJobAsync(Guid jobId, CancellationToken cancellationToken = default);
 
         /// <summary>The active job for one book, if any. Drives the book page's button state.</summary>

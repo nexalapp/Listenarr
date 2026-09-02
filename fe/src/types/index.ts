@@ -207,6 +207,10 @@ export interface QueueItem {
   snapshotRefreshedAt?: string
   canPause: boolean
   canRemove: boolean
+  /** A job the operator may stop before it finishes. */
+  canCancel?: boolean
+  /** A finished job the operator may clear out of Activity. */
+  canDismiss?: boolean
   seeders?: number
   leechers?: number
   ratio?: number

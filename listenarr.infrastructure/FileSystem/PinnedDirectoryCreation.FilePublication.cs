@@ -75,11 +75,81 @@ internal sealed partial class PinnedDirectoryCreation
                 destinationDirectoryFileDescriptor,
                 finalName,
                 RenameNoReplace);
-        if (result != 0)
+        if (result == 0)
+        {
+            return;
+        }
+
+        var error = Marshal.GetLastWin32Error();
+
+        // renameat2's RENAME_NOREPLACE is a kernel flag the filesystem driver has to
+        // implement, and FUSE filesystems generally do not: shfs, which is what an
+        // unraid user share is, rejects it with EINVAL. Without a fallback every rename
+        // into such a library fails, which is every organise and every import on the
+        // most common deployment there is.
+        if (!replaceExisting
+            && !OperatingSystem.IsMacOS()
+            && IsUnsupportedRenameFlagError(error))
+        {
+            LinkThenUnlinkNoReplace(
+                sourceDirectoryFileDescriptor,
+                sourceName,
+                destinationDirectoryFileDescriptor,
+                finalName);
+            return;
+        }
+
+        throw new Win32Exception(
+            error,
+            "Could not publish a pinned filesystem entry relative to its owned directory.");
+    }
+
+    /// <summary>
+    /// The errnos a kernel returns for a rename flag the filesystem cannot honour, as
+    /// opposed to one the caller got wrong. EINVAL is what FUSE reports.
+    ///
+    /// EXDEV is deliberately absent, though the move service treats it alongside these:
+    /// a hard link cannot cross a device either, so routing it here would only trade one
+    /// failure for a second. It stays an error, as it was.
+    /// </summary>
+    internal static bool IsUnsupportedRenameFlagError(int error) =>
+        error == Einval || error == Enosys || error == Eopnotsupp;
+
+    /// <summary>
+    /// Publish without RENAME_NOREPLACE, keeping the guarantee it was there for.
+    ///
+    /// linkat refuses an existing destination with EEXIST, so the no-clobber promise is
+    /// the filesystem's rather than a check this code races. It is two steps instead of
+    /// one, but the window between them is a file reachable under both names - the same
+    /// bytes, the same inode - rather than a file that is missing or truncated.
+    /// </summary>
+    private static void LinkThenUnlinkNoReplace(
+        int sourceDirectoryFileDescriptor,
+        string sourceName,
+        int destinationDirectoryFileDescriptor,
+        string finalName)
+    {
+        if (LinkAt(
+                sourceDirectoryFileDescriptor,
+                sourceName,
+                destinationDirectoryFileDescriptor,
+                finalName,
+                0) != 0)
         {
             throw new Win32Exception(
                 Marshal.GetLastWin32Error(),
                 "Could not publish a pinned filesystem entry relative to its owned directory.");
+        }
+
+        if (UnlinkAt(sourceDirectoryFileDescriptor, sourceName, 0) != 0)
+        {
+            // The destination is published and correct; only the source name is left
+            // over. Say which of the two happened, because the recovery differs: nothing
+            // needs re-copying, one name needs removing.
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "Published the pinned filesystem entry, but could not remove the name it "
+                + "was published from. Both names now refer to the same file.");
         }
     }
 
