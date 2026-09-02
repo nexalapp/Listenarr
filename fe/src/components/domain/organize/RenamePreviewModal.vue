@@ -31,6 +31,30 @@
         <div v-else-if="error" class="organize-state organize-error">
           <PhWarningCircle class="organize-icon" />
           <p>{{ error }}</p>
+
+          <!--
+            An interrupted organize leaves the audiobook's files owned by a recovery
+            that could not settle itself, and every later attempt is refused until
+            someone says what should happen. That decision belongs here, next to the
+            refusal, rather than in a support thread.
+          -->
+          <div v-if="recoveryBlocked" class="organize-repair">
+            <p class="organize-repair-explain">
+              A previous organize was interrupted partway. Repairing it confirms the file already
+              reached its destination and hands ownership back; it refuses if what is there is not
+              the file that moved.
+            </p>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="repairing"
+              @click="repairRecovery"
+            >
+              <PhSpinner v-if="repairing" class="ph-spin" />
+              {{ repairing ? 'Repairing…' : 'Repair and retry' }}
+            </button>
+            <p v-if="repairMessage" class="organize-repair-result">{{ repairMessage }}</p>
+          </div>
         </div>
 
         <div v-else-if="executing" class="organize-state">
@@ -238,6 +262,9 @@ const loaded = ref(false)
 const executing = ref(false)
 const finished = ref(false)
 const error = ref<string | null>(null)
+const recoveryBlocked = ref(false)
+const repairing = ref(false)
+const repairMessage = ref<string | null>(null)
 const previews = ref<RenamePreview[]>([])
 const results = ref<RenameResult[]>([])
 const selected = ref<Set<number>>(new Set())
@@ -265,6 +292,8 @@ async function load() {
   executing.value = false
   finished.value = false
   error.value = null
+  recoveryBlocked.value = false
+  repairMessage.value = null
   results.value = []
 
   try {
@@ -306,8 +335,46 @@ async function confirm() {
     finished.value = true
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to organize files.'
+    recoveryBlocked.value = isRecoveryBlocked(err)
   } finally {
     executing.value = false
+  }
+}
+
+/**
+ * The server refuses a file mutation while an interrupted organize still owns the
+ * audiobook's filesystem state, and says so with this code rather than only in prose.
+ */
+function isRecoveryBlocked(err: unknown): boolean {
+  const body = (err as { body?: string } | null)?.body
+  return typeof body === 'string' && body.includes('rename_recovery_pending')
+}
+
+async function repairRecovery() {
+  repairing.value = true
+  repairMessage.value = null
+  try {
+    const targets = props.audiobookIds
+    const outcomes = await Promise.all(
+      targets.map((audiobookId) => apiService.repairOrganizeRecovery(audiobookId)),
+    )
+
+    if (outcomes.some((outcome) => outcome?.repaired)) {
+      // Repaired, so the refusal that brought us here no longer applies: go straight
+      // back to the thing the operator asked for.
+      recoveryBlocked.value = false
+      error.value = null
+      await confirm()
+      return
+    }
+
+    repairMessage.value =
+      outcomes.find((outcome) => outcome?.reason)?.reason ??
+      'Nothing could be repaired for this audiobook.'
+  } catch (err) {
+    repairMessage.value = err instanceof Error ? err.message : 'The repair failed.'
+  } finally {
+    repairing.value = false
   }
 }
 
@@ -426,6 +493,30 @@ function reset() {
 .organize-icon {
   width: 28px;
   height: 28px;
+}
+
+.organize-repair {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 460px;
+}
+
+.organize-repair-explain {
+  margin: 0;
+  color: #9aa3ad;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.organize-repair-result {
+  margin: 0;
+  color: #adb5bd;
+  font-size: 0.88rem;
 }
 
 .organize-error {
