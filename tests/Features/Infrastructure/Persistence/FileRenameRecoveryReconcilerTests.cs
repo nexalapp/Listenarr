@@ -669,7 +669,7 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
     }
 
     [Fact]
-    public async Task ReconcileAsync_OwnerBoundNeedsAttentionJournal_FailsStartupRecovery()
+    public async Task ReconcileAsync_OwnerBoundNeedsAttentionJournal_LeavesTheRestOfTheLibraryWorking()
     {
         var scenario = await CreateScenarioAsync("needs-attention");
         var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
@@ -691,11 +691,17 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
             await db.SaveChangesAsync();
         }
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _provider.GetRequiredService<IFileRenameRecoveryReconciler>()
-                .ReconcileAsync());
+        // Startup reconciliation used to throw here, which meant it never reached
+        // MarkReady and library filesystem initialization never completed - so every
+        // worker waiting on it stopped, for the whole library, because of one book.
+        await _provider.GetRequiredService<IFileRenameRecoveryReconciler>().ReconcileAsync();
 
-        Assert.Contains("requires operator repair", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // The audiobook it belongs to is still protected, which is the guard that matters.
+        Assert.True(await _provider.GetRequiredService<IFileRenameRecoveryProbe>()
+            .HasBlockingAsync(scenario.AudiobookId));
+        await AssertJournalStateAsync(
+            scenario.OperationId,
+            FileMutationJournalState.NeedsAttention);
         await AssertStoredPathAsync(scenario.FileId, scenario.Source);
         Assert.True(File.Exists(scenario.Source));
         Assert.False(File.Exists(scenario.Destination));

@@ -25,7 +25,14 @@ public sealed partial class FileRenameRecoveryReconciler(
     {
         await EnsureCurrentOwnerRecoveryProtocolAsync(cancellationToken);
         await using var readContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var attentionOperationId = await readContext.FileMutationJournals
+        // A parked journal is one audiobook's problem, and the guard that matters is
+        // per-audiobook: EnsureFilesystemMutationAllowedAsync refuses that book's file
+        // mutations for as long as it stays parked. Throwing here refused far more than
+        // that - startup reconciliation never reached MarkReady, so library filesystem
+        // initialization never completed, and every worker waiting on it stopped: not
+        // only organize, but conversion, tagging, scanning and importing, for the whole
+        // library, because of one book. The books that are fine are left working.
+        var parked = await readContext.FileMutationJournals
             .AsNoTracking()
             .Where(journal =>
                 journal.Action == FileAction.Move
@@ -34,12 +41,15 @@ public sealed partial class FileRenameRecoveryReconciler(
                 && journal.State == FileMutationJournalState.NeedsAttention)
             .OrderBy(journal => journal.CreatedAt)
             .ThenBy(journal => journal.OperationId)
-            .Select(journal => (Guid?)journal.OperationId)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (attentionOperationId.HasValue)
+            .Select(journal => new { journal.OperationId, journal.AudiobookId })
+            .ToListAsync(cancellationToken);
+        foreach (var entry in parked)
         {
-            throw new InvalidOperationException(
-                $"Owner-bound file organize journal {attentionOperationId.Value} requires operator repair before filesystem mutations can resume.");
+            logger.LogWarning(
+                "Organize journal {OperationId} for audiobook {AudiobookId} is parked and needs an operator repair. "
+                    + "That audiobook's files cannot be changed until it is resolved; the rest of the library is unaffected",
+                entry.OperationId,
+                entry.AudiobookId);
         }
 
         var operationIds = await readContext.FileMutationJournals
