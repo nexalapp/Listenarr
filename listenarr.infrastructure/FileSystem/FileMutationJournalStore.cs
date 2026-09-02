@@ -44,6 +44,17 @@ internal interface IFileMutationJournalStore
         string? error,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Complete a parked mutation because an operator asked for it by name, having been
+    /// shown what the evidence is. The background passes still cannot do this; that
+    /// refusal is the point of the parked state, and this is the door out of it.
+    /// </summary>
+    Task<FileMutationJournal> RepairParkedAsync(
+        Guid operationId,
+        string targetPhysicalObjectIdentity,
+        int? audiobookId,
+        CancellationToken cancellationToken);
+
     Task<RegistrationPublicationMatchOutcome> AdvanceWithCommitValidationAsync(
         Guid operationId,
         FileMutationJournalState state,
@@ -182,12 +193,43 @@ internal sealed partial class EfFileMutationJournalStore(
             .SingleOrDefault(journal => journal.OperationId == operationId);
     }
 
-    public async Task<FileMutationJournal> AdvanceAsync(
+    public Task<FileMutationJournal> RepairParkedAsync(
+        Guid operationId,
+        string targetPhysicalObjectIdentity,
+        int? audiobookId,
+        CancellationToken cancellationToken) =>
+        AdvanceCoreAsync(
+            operationId,
+            FileMutationJournalState.Completed,
+            targetPhysicalObjectIdentity,
+            audiobookId,
+            error: null,
+            operatorRepair: true,
+            cancellationToken);
+
+    public Task<FileMutationJournal> AdvanceAsync(
         Guid operationId,
         FileMutationJournalState state,
         string? targetPhysicalObjectIdentity,
         int? audiobookId,
         string? error,
+        CancellationToken cancellationToken) =>
+        AdvanceCoreAsync(
+            operationId,
+            state,
+            targetPhysicalObjectIdentity,
+            audiobookId,
+            error,
+            operatorRepair: false,
+            cancellationToken);
+
+    private async Task<FileMutationJournal> AdvanceCoreAsync(
+        Guid operationId,
+        FileMutationJournalState state,
+        string? targetPhysicalObjectIdentity,
+        int? audiobookId,
+        string? error,
+        bool operatorRepair,
         CancellationToken cancellationToken)
     {
         ValidateAdvanceRequest(
@@ -212,7 +254,8 @@ internal sealed partial class EfFileMutationJournalStore(
                 state,
                 targetPhysicalObjectIdentity,
                 audiobookId,
-                error);
+                error,
+                operatorRepair);
             if (AfterAdvanceLoadedForTestAsync != null)
             {
                 await AfterAdvanceLoadedForTestAsync();
