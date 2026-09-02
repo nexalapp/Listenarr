@@ -162,6 +162,7 @@ vi.mock('@/services/api', () => {
     previewLibraryPath: vi.fn(async () => ({ path: '' })),
     previewRename: vi.fn(async () => []),
     executeRename: vi.fn(async () => []),
+    repairOrganizeRecovery: vi.fn(async () => ({ repaired: false })),
     getQualityProfiles: vi.fn(async () => []),
     getApiConfigurations: vi.fn(async () => []),
     // Root-folder mutation methods used by store/component integration tests.
