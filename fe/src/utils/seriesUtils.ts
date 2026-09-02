@@ -20,6 +20,59 @@ import type { Audiobook, AudiobookSeriesMembership } from '@/types'
 type SeriesBearer = Pick<Audiobook, 'series' | 'seriesNumber' | 'seriesMemberships'>
 
 /**
+ * Every series a book belongs to, deduped by name and in membership order, so a
+ * cross-series book answers to each of its series rather than only its primary.
+ * Falls back to the legacy single series when no memberships are present.
+ */
+export function getSeriesNames(book: SeriesBearer): string[] {
+  const memberships = book.seriesMemberships
+  if (memberships && memberships.length > 0) {
+    const names: string[] = []
+    const seen = new Set<string>()
+    for (const membership of memberships) {
+      const name = (membership.seriesName || '').trim()
+      if (!name) continue
+      const dedupeKey = name.toLowerCase()
+      if (seen.has(dedupeKey)) continue
+      seen.add(dedupeKey)
+      names.push(name)
+    }
+    if (names.length > 0) return names
+  }
+  const legacy = (book.series || '').trim()
+  return legacy ? [legacy] : []
+}
+
+/**
+ * Whether a free-text query names one of a book's series. Both the name and the position
+ * match, so "expanse 7" and "expanse #7" each find the book whose badge reads
+ * "The Expanse #7" - a series plus a number is how a reader names one book of many. Each
+ * membership is matched on its own, so a query cannot straddle two of a cross-series
+ * book's series and find something neither one says.
+ */
+export function matchesSeries(book: SeriesBearer, query: string): boolean {
+  const subject = normalizeForSearch(query)
+  if (!subject) return false
+  return seriesLabels(book).some((label) => normalizeForSearch(label).includes(subject))
+}
+
+/** Each series a book belongs to, written as it is displayed: "The Expanse #7". */
+function seriesLabels(book: SeriesBearer): string[] {
+  const memberships = book.seriesMemberships
+  if (memberships && memberships.length > 0) {
+    const parts = memberships.map(formatMembership).filter(Boolean)
+    if (parts.length > 0) return parts
+  }
+  const legacy = formatSeriesMemberships(book)
+  return legacy ? [legacy] : []
+}
+
+/** Case and the "#" before a position are noise to a search; spacing is not. */
+function normalizeForSearch(value: string): string {
+  return (value || '').toLowerCase().replace(/#/g, '').replace(/\s+/g, ' ').trim()
+}
+
+/**
  * All series a book belongs to, formatted for display (e.g. "Publication Order #1,
  * Chronological Order #3"). Uses every series membership so a multi-series book shows all of
  * them; falls back to the legacy single series/number when no memberships are present.
