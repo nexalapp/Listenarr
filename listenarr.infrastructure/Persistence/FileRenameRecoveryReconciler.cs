@@ -25,6 +25,20 @@ public sealed partial class FileRenameRecoveryReconciler(
     {
         await EnsureCurrentOwnerRecoveryProtocolAsync(cancellationToken);
         await using var readContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        // Journals already parked when this pass began. They get a fresh attempt like
+        // everything else, and only the ones still parked afterwards are genuinely
+        // unresolved. A journal that parks during the pass is this pass's own news and
+        // is left for the next start, as it always was.
+        var previouslyParked = await readContext.FileMutationJournals
+            .AsNoTracking()
+            .Where(journal =>
+                journal.Action == FileAction.Move
+                && journal.AudiobookId != null
+                && journal.AudiobookFileId != null
+                && journal.State == FileMutationJournalState.NeedsAttention)
+            .Select(journal => journal.OperationId)
+            .ToListAsync(cancellationToken);
+
         var operationIds = await readContext.FileMutationJournals
             .AsNoTracking()
             .Where(journal =>
@@ -50,13 +64,16 @@ public sealed partial class FileRenameRecoveryReconciler(
         // Only now, having given every journal a fresh attempt, is anything still parked
         // genuinely unresolved. Refusing before the pass meant one stranded book blocked
         // recovery for the whole library, including the books that would have resolved.
+        if (previouslyParked.Count == 0)
+        {
+            return;
+        }
+
         await using var attentionContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var unresolved = await attentionContext.FileMutationJournals
             .AsNoTracking()
             .Where(journal =>
-                journal.Action == FileAction.Move
-                && journal.AudiobookId != null
-                && journal.AudiobookFileId != null
+                previouslyParked.Contains(journal.OperationId)
                 && journal.State == FileMutationJournalState.NeedsAttention)
             .OrderBy(journal => journal.CreatedAt)
             .ThenBy(journal => journal.OperationId)
