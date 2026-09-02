@@ -38,6 +38,7 @@ internal sealed partial class PinnedDirectoryCreation
         string sourceName,
         SafeFileHandle destinationDirectoryHandle,
         string finalName,
+        bool entryIsDirectory,
         bool replaceExisting = false)
     {
         if (OperatingSystem.IsWindows())
@@ -91,17 +92,109 @@ internal sealed partial class PinnedDirectoryCreation
             && !OperatingSystem.IsMacOS()
             && IsUnsupportedRenameFlagError(error))
         {
-            LinkThenUnlinkNoReplace(
-                sourceDirectoryFileDescriptor,
-                sourceName,
-                destinationDirectoryFileDescriptor,
-                finalName);
-            return;
+            var fallbackError = entryIsDirectory
+                ? TryPublishDirectoryByReservingLinux(
+                    sourceDirectoryFileDescriptor,
+                    sourceName,
+                    destinationDirectoryFileDescriptor,
+                    finalName)
+                : TryPublishByLinkingLinux(
+                    sourceDirectoryHandle,
+                    sourceName,
+                    destinationDirectoryHandle,
+                    finalName);
+            if (fallbackError == 0)
+            {
+                return;
+            }
+
+            throw new Win32Exception(
+                fallbackError,
+                "Could not publish a pinned filesystem entry relative to its owned directory.");
         }
 
         throw new Win32Exception(
             error,
             "Could not publish a pinned filesystem entry relative to its owned directory.");
+    }
+
+    /// <summary>
+    /// Publish without RENAME_NOREPLACE, keeping the guarantee it was there for, and
+    /// reporting errno rather than throwing so it fits the probe-style Linux path.
+    ///
+    /// linkat refuses an existing destination with EEXIST, so the no-clobber promise is
+    /// the filesystem's rather than a check this code races. Two steps instead of one,
+    /// but the window between them holds a file reachable under both names - the same
+    /// inode, the same bytes - rather than one that is missing or half written.
+    /// </summary>
+    internal static int TryPublishByLinkingLinux(
+        SafeFileHandle sourceDirectoryHandle,
+        string sourceName,
+        SafeFileHandle destinationDirectoryHandle,
+        string finalName)
+    {
+        var sourceDirectoryFileDescriptor = sourceDirectoryHandle.DangerousGetHandle().ToInt32();
+        var destinationDirectoryFileDescriptor = destinationDirectoryHandle
+            .DangerousGetHandle()
+            .ToInt32();
+
+        if (LinkAt(
+                sourceDirectoryFileDescriptor,
+                sourceName,
+                destinationDirectoryFileDescriptor,
+                finalName,
+                0) != 0)
+        {
+            return Marshal.GetLastWin32Error();
+        }
+
+        if (UnlinkAt(sourceDirectoryFileDescriptor, sourceName, 0) != 0)
+        {
+            // The destination is published and correct; only the name it came from is
+            // left over. Both names refer to the same file, so nothing needs re-copying.
+            return Marshal.GetLastWin32Error();
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// The directory equivalent, which cannot be a link: hard links to directories are
+    /// refused on Linux, so the file fallback fails with EPERM here.
+    ///
+    /// Reserving the name with mkdirat carries the refusal instead - it fails with
+    /// EEXIST when the name is taken - and renaming onto a directory this call just
+    /// created is allowed because it is empty. What the flag guaranteed atomically is
+    /// therefore split in two, and the only thing that fits in the gap is the empty
+    /// directory this code owns.
+    /// </summary>
+    private static int TryPublishDirectoryByReservingLinux(
+        int sourceDirectoryFileDescriptor,
+        string sourceName,
+        int destinationDirectoryFileDescriptor,
+        string finalName)
+    {
+        if (MkdirAt(destinationDirectoryFileDescriptor, finalName, UnixDirectoryMode) != 0)
+        {
+            return Marshal.GetLastWin32Error();
+        }
+
+        if (RenameAtUnix(
+                sourceDirectoryFileDescriptor,
+                sourceName,
+                destinationDirectoryFileDescriptor,
+                finalName) != 0)
+        {
+            var error = Marshal.GetLastWin32Error();
+
+            // Leave nothing behind: the reservation was this call's doing, and a stray
+            // empty directory in the library is exactly the kind of debris a later scan
+            // would have to reason about.
+            UnlinkAt(destinationDirectoryFileDescriptor, finalName, AtRemovedirLinux);
+            return error;
+        }
+
+        return 0;
     }
 
     /// <summary>
@@ -114,45 +207,6 @@ internal sealed partial class PinnedDirectoryCreation
     /// </summary>
     internal static bool IsUnsupportedRenameFlagError(int error) =>
         error == Einval || error == Enosys || error == Eopnotsupp;
-
-    /// <summary>
-    /// Publish without RENAME_NOREPLACE, keeping the guarantee it was there for.
-    ///
-    /// linkat refuses an existing destination with EEXIST, so the no-clobber promise is
-    /// the filesystem's rather than a check this code races. It is two steps instead of
-    /// one, but the window between them is a file reachable under both names - the same
-    /// bytes, the same inode - rather than a file that is missing or truncated.
-    /// </summary>
-    private static void LinkThenUnlinkNoReplace(
-        int sourceDirectoryFileDescriptor,
-        string sourceName,
-        int destinationDirectoryFileDescriptor,
-        string finalName)
-    {
-        if (LinkAt(
-                sourceDirectoryFileDescriptor,
-                sourceName,
-                destinationDirectoryFileDescriptor,
-                finalName,
-                0) != 0)
-        {
-            throw new Win32Exception(
-                Marshal.GetLastWin32Error(),
-                "Could not publish a pinned filesystem entry relative to its owned directory.");
-        }
-
-        if (UnlinkAt(sourceDirectoryFileDescriptor, sourceName, 0) != 0)
-        {
-            // The destination is published and correct; only the source name is left
-            // over. Say which of the two happened, because the recovery differs: nothing
-            // needs re-copying, one name needs removing.
-            throw new Win32Exception(
-                Marshal.GetLastWin32Error(),
-                "Published the pinned filesystem entry, but could not remove the name it "
-                + "was published from. Both names now refer to the same file.");
-        }
-    }
-
     private static void RenameRelativeEntryWindows(
         SafeFileHandle directoryHandle,
         SafeFileHandle entryHandle,
