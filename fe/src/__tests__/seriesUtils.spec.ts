@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { formatSeriesMemberships, isSeriesRestatement } from '@/utils/seriesUtils'
+import {
+  formatSeriesMemberships,
+  getSeriesNames,
+  isSeriesRestatement,
+  matchesSeries,
+} from '@/utils/seriesUtils'
 
 describe('formatSeriesMemberships', () => {
   it('lists every series a book belongs to with its number', () => {
@@ -75,5 +80,71 @@ describe('isSeriesRestatement', () => {
     expect(isSeriesRestatement('Paragon Space, Book 1', [])).toBe(false)
     expect(isSeriesRestatement('Paragon Space, Book 1', ['', '   '])).toBe(false)
     expect(isSeriesRestatement('', ['Paragon Space'])).toBe(false)
+  })
+})
+
+describe('getSeriesNames', () => {
+  it('names every series a cross-series book belongs to', () => {
+    expect(
+      getSeriesNames({
+        seriesMemberships: [
+          { seriesName: "Ender's Saga", seriesNumber: '1.1', isPrimary: true, sortOrder: 0 },
+          { seriesName: 'Enderverse', seriesNumber: '07.5', isPrimary: false, sortOrder: 1 },
+        ],
+      }),
+    ).toEqual(["Ender's Saga", 'Enderverse'])
+  })
+
+  it('dedupes names differing only in case and skips blank ones', () => {
+    expect(
+      getSeriesNames({
+        seriesMemberships: [
+          { seriesName: 'The Expanse', isPrimary: true, sortOrder: 0 },
+          { seriesName: '  ', isPrimary: false, sortOrder: 1 },
+          { seriesName: 'THE EXPANSE', isPrimary: false, sortOrder: 2 },
+        ],
+      }),
+    ).toEqual(['The Expanse'])
+  })
+
+  it('falls back to the legacy single series, and is empty without one', () => {
+    expect(getSeriesNames({ series: 'Solo Series', seriesNumber: '2' })).toEqual(['Solo Series'])
+    expect(getSeriesNames({})).toEqual([])
+  })
+})
+
+describe('matchesSeries', () => {
+  const drive = {
+    seriesMemberships: [
+      { seriesName: 'The Expanse', seriesNumber: '2.7', isPrimary: true, sortOrder: 0 },
+      { seriesName: 'Short Fiction', seriesNumber: '3', isPrimary: false, sortOrder: 1 },
+    ],
+  }
+
+  it('matches a series name, whatever the case', () => {
+    expect(matchesSeries(drive, 'expanse')).toBe(true)
+    expect(matchesSeries(drive, 'The EXPANSE')).toBe(true)
+  })
+
+  it('matches a secondary series, not only the primary', () => {
+    expect(matchesSeries(drive, 'short fiction')).toBe(true)
+  })
+
+  it('matches a name and position together, with or without the #', () => {
+    expect(matchesSeries(drive, 'expanse 2.7')).toBe(true)
+    expect(matchesSeries(drive, 'expanse #2.7')).toBe(true)
+  })
+
+  it("does not let a query straddle two of a book's series", () => {
+    expect(matchesSeries(drive, '2.7 short')).toBe(false)
+  })
+
+  it('matches the legacy single series when there are no memberships', () => {
+    expect(matchesSeries({ series: 'Solo Series', seriesNumber: '2' }, 'solo series #2')).toBe(true)
+  })
+
+  it('matches nothing on a blank query or a book with no series', () => {
+    expect(matchesSeries(drive, '   ')).toBe(false)
+    expect(matchesSeries({}, 'expanse')).toBe(false)
   })
 })
