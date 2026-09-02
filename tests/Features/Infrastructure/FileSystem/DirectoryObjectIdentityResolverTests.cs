@@ -337,6 +337,29 @@ public sealed class DirectoryObjectIdentityResolverTests : BaseTests
         Assert.True(PinnedDirectoryCreation.IsUnavailableLinuxGenerationProbeError(error));
     }
 
+    [Theory]
+    [InlineData(22)] // EINVAL - what a FUSE mount answers, shfs on unraid included
+    [InlineData(38)] // ENOSYS
+    [InlineData(95)] // EOPNOTSUPP
+    public void RenameFlagError_FilesystemCannotHonourTheFlag_FallsBackToLinking(int error)
+    {
+        Assert.True(PinnedDirectoryCreation.IsUnsupportedRenameFlagError(error));
+    }
+
+    [Theory]
+    // EXDEV is not here on purpose. The move service groups it with the errnos above,
+    // but a hard link cannot cross a device any more than a rename can, so sending it
+    // down the linking fallback would only trade one failure for a second.
+    [InlineData(18)] // EXDEV
+    [InlineData(2)]  // ENOENT
+    [InlineData(13)] // EACCES
+    [InlineData(17)] // EEXIST - the destination is taken, which is the refusal working
+    [InlineData(5)]  // EIO
+    public void RenameFlagError_RealFailures_StayFailures(int error)
+    {
+        Assert.False(PinnedDirectoryCreation.IsUnsupportedRenameFlagError(error));
+    }
+
     [Fact]
     public void LinuxOptionalGenerationProbe_UnexpectedIoError_RemainsFatal()
     {
