@@ -2,7 +2,7 @@ services:
   listenarr:
     # Pinned to an immutable SHA-suffixed tag, not the rolling :beta tag, so the
     # server only moves when this file changes. Roll back by editing this line.
-    image: ghcr.io/nexalapp/listenarr:beta-1.18.0-66df60d
+    image: ghcr.io/nexalapp/listenarr:beta-1.21.0-1d7748f
     container_name: listenarr
     ports:
       - "4545:4545"
