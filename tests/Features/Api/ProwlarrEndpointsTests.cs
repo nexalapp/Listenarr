@@ -47,6 +47,49 @@ namespace Listenarr.Tests.Features.Api
         }
 
         [Fact]
+        public async Task SystemStatus_AtTheTopLevelPath_IsJsonRatherThanTheSpa()
+        {
+            // Prowlarr builds its calls as {baseUrl}/api/v1/..., with no room for a
+            // prefix. Served only under /api/v1/prowlarr, these paths fell through to the
+            // SPA fallback and answered Prowlarr's connection test with an HTML page, so
+            // Listenarr could not be added to it as an application at all.
+            using var client = _factory.CreateClient();
+            var resp = await client.GetAsync("/api/v1/system/status");
+
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            Assert.Equal("application/json", resp.Content.Headers.ContentType?.MediaType);
+
+            using var stream = await resp.Content.ReadAsStreamAsync();
+            var doc = await JsonDocument.ParseAsync(stream);
+            Assert.True(doc.RootElement.TryGetProperty("version", out var versionProp));
+            Assert.False(string.IsNullOrEmpty(versionProp.GetString()));
+        }
+
+        [Theory]
+        [InlineData("/api/v1/indexer")]
+        [InlineData("/api/v1/indexer/schema")]
+        [InlineData("/api/v1/indexer/info")]
+        public async Task IndexerEndpoints_AtTheTopLevelPath_AreJsonRatherThanTheSpa(string path)
+        {
+            using var client = _factory.CreateClient();
+            var resp = await client.GetAsync(path);
+
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            Assert.Equal("application/json", resp.Content.Headers.ContentType?.MediaType);
+        }
+
+        [Fact]
+        public async Task IndexersPlural_StaysWithListenarrsOwnController()
+        {
+            // The compat surface deliberately does not claim /api/v1/indexers: that is
+            // Listenarr's own indexer API, and taking it would be an ambiguous route.
+            using var client = _factory.CreateClient();
+            var resp = await client.GetAsync("/api/v1/indexers");
+
+            Assert.NotEqual(HttpStatusCode.InternalServerError, resp.StatusCode);
+        }
+
+        [Fact]
         public async Task IndexerTest_ReturnsHeaderAndJson()
         {
             using var client = _factory.CreateClient();

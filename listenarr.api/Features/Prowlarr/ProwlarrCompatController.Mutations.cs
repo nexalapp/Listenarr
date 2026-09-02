@@ -14,6 +14,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Update an existing indexer by id.
         /// </summary>
         [HttpPut("indexer/{id:int}")]
+        [HttpPut("/api/v1/indexer/{id:int}")]
         [AllowAnonymous]
         [IgnoreAntiforgeryToken]
         [Produces("application/json")]
@@ -205,6 +206,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Delegates to PostIndexers for the actual processing so persistence and realtime broadcasts happen in one place.
         /// </summary>
         [HttpPost("indexer")]
+        [HttpPost("/api/v1/indexer")]
         [AllowAnonymous]
         [IgnoreAntiforgeryToken]
         [Produces("application/json")]
@@ -246,6 +248,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Returns a minimal list of indexer fields / schema entries.
         /// </summary>
         [HttpGet("indexer/schema")]
+        [HttpGet("/api/v1/indexer/schema")]
         [AllowAnonymous]
         [Produces("application/json")]
         public IActionResult GetIndexerSchema()

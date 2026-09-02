@@ -126,6 +126,27 @@ namespace Listenarr.Api.Features.Library
             // hand-entered value here for a rescan to destroy.
             if (!string.IsNullOrWhiteSpace(metadata.Version)) audiobook.Version = metadata.Version;
 
+            // Ratings have no lock, for the same reason and one more: they are the only
+            // fields here that legitimately change without anyone editing the book, so a
+            // rescan refreshing them is the entire point rather than a risk. Nothing in the
+            // edit form sets them, so there is no hand-entered value to destroy.
+            //
+            // Written as a block and only when this provider actually carried ratings, so a
+            // rescan answered by a source that has none leaves the stored set intact instead
+            // of half-nulling it.
+            if (metadata.HasAudibleRating)
+            {
+                audiobook.AudibleRatingOverall = metadata.AudibleRatingOverall;
+                audiobook.AudibleRatingOverallCount = metadata.AudibleRatingOverallCount;
+                audiobook.AudibleRatingPerformance = metadata.AudibleRatingPerformance;
+                audiobook.AudibleRatingPerformanceCount = metadata.AudibleRatingPerformanceCount;
+                audiobook.AudibleRatingStory = metadata.AudibleRatingStory;
+                audiobook.AudibleRatingStoryCount = metadata.AudibleRatingStoryCount;
+                audiobook.AudibleReviewCount = metadata.AudibleReviewCount;
+            }
+
+            if (metadata.AudnexusRating.HasValue) audiobook.AudnexusRating = metadata.AudnexusRating;
+
             if (Unlocked(LockableFields.Series) &&
                 ((metadata.SeriesMemberships != null && metadata.SeriesMemberships.Any()) ||
                 !string.IsNullOrWhiteSpace(metadata.Series) ||

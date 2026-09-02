@@ -612,6 +612,72 @@ describe('AudiobooksView Grouping', () => {
     expect(router.currentRoute.value.fullPath).toBe('/collection/author/Ada%20Lovelace')
   })
 
+  it('searches by series, including a secondary series of a cross-series book', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+      ],
+    })
+    await router.push('/books')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 1,
+        title: 'Drive',
+        authors: ['James Corey'],
+        imageUrl: 'c1',
+        files: [],
+        seriesMemberships: [
+          { seriesName: 'The Expanse', seriesNumber: '2.7', isPrimary: true, sortOrder: 0 },
+          { seriesName: 'Short Fiction', seriesNumber: '3', isPrimary: false, sortOrder: 1 },
+        ],
+      },
+      { id: 2, title: 'Unrelated Book', authors: ['Author B'], imageUrl: 'c2', files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'ViewOptionsDropdown',
+        ],
+      },
+    })
+
+    const vm = wrapper.vm as unknown as unknown
+
+    // The primary series finds the book, and nothing else
+    vm.searchQuery = 'expanse'
+    await wrapper.vm.$nextTick()
+    expect(vm.filteredAndSortedAudiobooks.map((b: { id: number }) => b.id)).toEqual([1])
+
+    // So does its position, with or without the '#'
+    vm.searchQuery = 'expanse #2.7'
+    await wrapper.vm.$nextTick()
+    expect(vm.filteredAndSortedAudiobooks.map((b: { id: number }) => b.id)).toEqual([1])
+
+    // And so does the secondary series, not only the primary
+    vm.searchQuery = 'short fiction'
+    await wrapper.vm.$nextTick()
+    expect(vm.filteredAndSortedAudiobooks.map((b: { id: number }) => b.id)).toEqual([1])
+  })
+
   it("'Clear Filters' button resets search, custom filter and builtin filters", async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

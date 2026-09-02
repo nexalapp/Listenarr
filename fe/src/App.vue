@@ -595,6 +595,7 @@ import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
+import { matchesSeries } from '@/utils/seriesUtils'
 import type { QueueItem } from '@/types'
 import { ref as vueRef, ref as vueRef2, reactive } from 'vue'
 import GlobalToast from '@/components/ui/GlobalToast.vue'
@@ -1248,7 +1249,8 @@ const onSearchInput = async () => {
       const localMatches = lib.filter(
         (b) =>
           (b.title || '').toLowerCase().includes(lower) ||
-          (Array.isArray(b.authors) ? b.authors.join(' ').toLowerCase() : '').includes(lower),
+          (Array.isArray(b.authors) ? b.authors.join(' ').toLowerCase() : '').includes(lower) ||
+          matchesSeries(b, q),
       )
       if (localMatches.length > 0) {
         // Only show local library matches in the header search

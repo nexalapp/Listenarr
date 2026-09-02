@@ -971,7 +971,7 @@ import { evaluateRules } from '@/utils/customFilterEvaluator'
 import type { RuleLike } from '@/utils/customFilterEvaluator'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText } from '@/utils/textUtils'
-import { formatSeriesMemberships } from '@/utils/seriesUtils'
+import { formatSeriesMemberships, getSeriesNames, matchesSeries } from '@/utils/seriesUtils'
 import { buildCollectionSections, buildLibrarySections } from '@/utils/libraryGrouping'
 import { buildVirtualRows, findVisibleRowRange } from '@/utils/libraryVirtualRows'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -1193,7 +1193,8 @@ const filteredAndSortedAudiobooks = computed(() => {
       authors.includes(q) ||
       narrators.includes(q) ||
       publisher.includes(q) ||
-      year.includes(q)
+      year.includes(q) ||
+      matchesSeries(b, q)
     )
   })
 
@@ -1542,27 +1543,6 @@ watch(groupBy, (v) => {
 
 // (grouping sync handled earlier in file)
 
-// All series a book belongs to (deduped), so a multi-series book is grouped under each
-// of its series rather than only its primary. Falls back to the legacy single series.
-function getBookSeriesNames(book: Audiobook): string[] {
-  const memberships = book.seriesMemberships
-  if (memberships && memberships.length > 0) {
-    const names: string[] = []
-    const seen = new Set<string>()
-    for (const membership of memberships) {
-      const name = (membership.seriesName || '').trim()
-      if (!name) continue
-      const dedupeKey = name.toLowerCase()
-      if (seen.has(dedupeKey)) continue
-      seen.add(dedupeKey)
-      names.push(name)
-    }
-    if (names.length > 0) return names
-  }
-  const legacy = (book.series || '').trim()
-  return legacy ? [legacy] : []
-}
-
 const groupedCollections = computed(() => {
   if (groupBy.value === 'books') return []
 
@@ -1582,7 +1562,7 @@ const groupedCollections = computed(() => {
         ? book.authors?.[0]
           ? [book.authors[0]]
           : []
-        : getBookSeriesNames(book)
+        : getSeriesNames(book)
     for (const key of keys) {
       if (!key) continue
       if (!groups.has(key)) {

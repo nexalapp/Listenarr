@@ -94,6 +94,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Minimal Prowlarr-compatible system status endpoint.
         /// </summary>
         [HttpGet("system/status")]
+        [HttpGet("/api/v1/system/status")]
         [AllowAnonymous]
         [Produces("application/json")]
         public IActionResult GetSystemStatus()
@@ -113,6 +114,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Responds with JSON and includes X-Application-Version header (useful for Prowlarr client checks)
         /// </summary>
         [HttpPost("indexer/test")]
+        [HttpPost("/api/v1/indexer/test")]
         [IgnoreAntiforgeryToken]
         [AllowAnonymous]
         [Produces("application/json")]
@@ -132,6 +134,7 @@ namespace Listenarr.Api.Features.Prowlarr
         }
 
         [HttpGet("indexer/test")]
+        [HttpGet("/api/v1/indexer/test")]
         [AllowAnonymous]
         [Produces("application/json")]
         public IActionResult GetIndexerTest()
@@ -167,6 +170,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Maintained for Prowlarr compatibility: returns persisted indexers from the DB.
         /// </summary>
         [HttpGet("indexer")]
+        [HttpGet("/api/v1/indexer")]
         [AllowAnonymous]
         [Produces("application/json")]
         public async Task<IActionResult> GetIndexers()
@@ -187,6 +191,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Returns a detailed indexer object for a specific indexer id. Includes a `settings` object for compatibility with consumers expecting nested settings.
         /// </summary>
         [HttpGet("indexer/{id:int}")]
+        [HttpGet("/api/v1/indexer/{id:int}")]
         [AllowAnonymous]
         [Produces("application/json")]
         public async Task<IActionResult> GetIndexerById(int id)
@@ -208,6 +213,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Compatibility endpoint that returns metadata about supported implementations and schema endpoint.
         /// </summary>
         [HttpGet("indexer/info")]
+        [HttpGet("/api/v1/indexer/info")]
         [AllowAnonymous]
         [Produces("application/json")]
         public IActionResult GetIndexersInfo()
@@ -248,6 +254,7 @@ namespace Listenarr.Api.Features.Prowlarr
         /// Maintained for Prowlarr compatibility so remote apps can delete indexers.
         /// </summary>
         [HttpDelete("indexer/{id:int}")]
+        [HttpDelete("/api/v1/indexer/{id:int}")]
         [AllowAnonymous]
         [IgnoreAntiforgeryToken]
         [Produces("application/json")]

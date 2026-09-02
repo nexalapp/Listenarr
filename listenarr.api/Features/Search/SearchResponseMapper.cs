@@ -272,6 +272,9 @@ public sealed class SearchResponseMapper
             publisher = md?.Publisher,
             isbn = md?.Isbn,
             language = md?.Language,
+
+            // No rating here by construction: this is the branch where the Audible lookup
+            // failed, and MetadataSearchResult carries no rating of its own.
             rating = (double?)null,
             releaseDate = md?.PublishedDate,
             @explicit = false,
@@ -406,7 +409,10 @@ public sealed class SearchResponseMapper
             publisher = aud.Publisher ?? md?.Publisher,
             isbn = aud.Isbn,
             language = aud.Language ?? md?.Language,
-            rating = (double?)null,
+
+            // Audible's overall listener average, falling back to Audnexus' rounded
+            // republication of it when this response came from there. Was hardcoded null.
+            rating = aud.Rating?.Overall?.AverageRating ?? aud.AudnexusRating,
             releaseDate = aud.ReleaseDate ?? aud.PublishDate ?? md?.PublishedDate,
             @explicit = aud.Explicit ?? false,
             hasPdf = false,
