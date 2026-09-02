@@ -40,6 +40,7 @@ namespace Listenarr.Api.Features.Library
         private readonly LibraryPreviewPathWorkflow _previewPathWorkflow;
         private readonly LibraryQueryWorkflow _queryWorkflow;
         private readonly LibraryRenameWorkflow _renameWorkflow;
+        private readonly IFileRenameRecoveryProbe _renameRecoveryProbe;
         /// <summary>Initializes the library transport façade.</summary>
         public LibraryController(
             ILibraryListService libraryListService,
@@ -55,8 +56,10 @@ namespace Listenarr.Api.Features.Library
             LibraryIdentifierWorkflow identifierWorkflow,
             LibraryPreviewPathWorkflow previewPathWorkflow,
             LibraryQueryWorkflow queryWorkflow,
-            LibraryRenameWorkflow renameWorkflow)
+            LibraryRenameWorkflow renameWorkflow,
+            IFileRenameRecoveryProbe renameRecoveryProbe)
         {
+            _renameRecoveryProbe = renameRecoveryProbe;
             _libraryListService = libraryListService;
             _addWorkflow = addWorkflow;
             _metadataRescanWorkflow = metadataRescanWorkflow;
@@ -265,6 +268,35 @@ namespace Listenarr.Api.Features.Library
                 id,
                 request,
                 cancellationToken);
+        }
+
+        /// <summary>
+        /// Complete an interrupted organize that recovery could not settle on its own.
+        /// </summary>
+        /// <remarks>
+        /// The background passes deliberately refuse to resume a parked mutation, because
+        /// the reason it parked is that nothing could establish what had happened. This is
+        /// the operator saying so explicitly - and it still refuses unless the file at the
+        /// destination is the one the organize moved, judged on object identity.
+        /// </remarks>
+        /// <response code="200">The audiobook is no longer blocked.</response>
+        /// <response code="409">Nothing was blocking it, or the evidence does not support completing it.</response>
+        [HttpPost("{id:int}/organize-recovery/repair")]
+        public async Task<IActionResult> RepairOrganizeRecovery(
+            int id,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await _renameRecoveryProbe.RepairAsync(id, cancellationToken);
+            return result.Outcome switch
+            {
+                RenameRecoveryRepairOutcome.Repaired => Ok(new { repaired = true }),
+                RenameRecoveryRepairOutcome.NothingToRepair => Conflict(new
+                {
+                    repaired = false,
+                    reason = "No interrupted organize is holding this audiobook."
+                }),
+                _ => Conflict(new { repaired = false, reason = result.Detail })
+            };
         }
 
         /// <summary>

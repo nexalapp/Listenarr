@@ -126,6 +126,74 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
     }
 
     [LinuxFact]
+    public async Task RepairAsync_ParkedJournalWhoseMoveLanded_UnblocksTheAudiobook()
+    {
+        // The state a stranded organize leaves: the file at the destination, the journal
+        // parked, and every file mutation on the book refused. Recovery may not resume it
+        // on its own; an operator asking for it by name may.
+        var scenario = await CreateScenarioAsync("repair-parked-landed");
+        File.Move(scenario.Source, scenario.Destination);
+        await SeedParkedJournalAsync(scenario);
+        var probe = _provider.GetRequiredService<IFileRenameRecoveryProbe>();
+        Assert.True(await probe.HasBlockingAsync(scenario.AudiobookId));
+
+        var result = await probe.RepairAsync(scenario.AudiobookId);
+
+        Assert.Equal(RenameRecoveryRepairOutcome.Repaired, result.Outcome);
+        await AssertJournalStateAsync(
+            scenario.OperationId,
+            FileMutationJournalState.Completed);
+    }
+
+    [LinuxFact]
+    public async Task RepairAsync_DestinationIsSomeOtherFile_RefusesAndLeavesItParked()
+    {
+        // Asking for a repair does not make a destination into the file that moved.
+        var scenario = await CreateScenarioAsync("repair-foreign-destination");
+        File.Delete(scenario.Source);
+        await File.WriteAllTextAsync(scenario.Destination, "some other file");
+        await SeedParkedJournalAsync(scenario);
+
+        var result = await _provider.GetRequiredService<IFileRenameRecoveryProbe>()
+            .RepairAsync(scenario.AudiobookId);
+
+        Assert.Equal(RenameRecoveryRepairOutcome.EvidenceMissing, result.Outcome);
+        await AssertJournalStateAsync(
+            scenario.OperationId,
+            FileMutationJournalState.NeedsAttention);
+    }
+
+    [LinuxFact]
+    public async Task RepairAsync_NothingBlocking_SaysSo()
+    {
+        var scenario = await CreateScenarioAsync("repair-nothing-parked");
+
+        var result = await _provider.GetRequiredService<IFileRenameRecoveryProbe>()
+            .RepairAsync(scenario.AudiobookId);
+
+        Assert.Equal(RenameRecoveryRepairOutcome.NothingToRepair, result.Outcome);
+    }
+
+    private async Task SeedParkedJournalAsync(Scenario scenario)
+    {
+        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        db.FileMutationJournals.Add(new FileMutationJournal
+        {
+            OperationId = scenario.OperationId,
+            Action = FileAction.Move,
+            SourcePath = scenario.Source,
+            DestinationPath = scenario.Destination,
+            SourcePhysicalObjectIdentity = scenario.SourceIdentity,
+            AudiobookId = scenario.AudiobookId,
+            AudiobookFileId = scenario.FileId,
+            State = FileMutationJournalState.NeedsAttention,
+            Error = "Injected unresolved organize state."
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [LinuxFact]
     public async Task ReconcileAsync_TargetReplacedAfterRecoveryProbe_DoesNotCommitOwnerMetadata()
     {
         var scenario = await CreateScenarioAsync("recovery-target-replaced-before-metadata");
