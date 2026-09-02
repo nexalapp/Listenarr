@@ -171,7 +171,8 @@ internal sealed partial class EfFileMutationJournalStore
         FileMutationJournalState state,
         string? targetPhysicalObjectIdentity,
         int? audiobookId,
-        string? error)
+        string? error,
+        bool operatorRepair = false)
     {
         if (journal.ProtocolVersion != FileMutationProtocol.Current)
         {
@@ -183,14 +184,24 @@ internal sealed partial class EfFileMutationJournalStore
             throw new InvalidOperationException(
                 "A file mutation whose owner metadata is reconciled is terminal and cannot be advanced.");
         }
-        if (journal.State == FileMutationJournalState.NeedsAttention
+        // "Automatically" is the operative word. A parked mutation stays parked against
+        // every background pass, because the reason it parked is precisely that nothing
+        // could establish what had happened. An operator asking for it by name is a
+        // different act, and the evidence for it is checked before this is reached.
+        if (!operatorRepair
+            && journal.State == FileMutationJournalState.NeedsAttention
             && state != FileMutationJournalState.NeedsAttention)
         {
             throw new InvalidOperationException(
                 "A file mutation requiring attention cannot resume automatically.");
         }
+        // NeedsAttention sorts last but is not progress, so leaving it for Completed
+        // only looks like a regression to the ordering. An operator repair is the one
+        // caller allowed to make that move, and it is the whole point of this path.
         if (state != FileMutationJournalState.NeedsAttention
-            && state < journal.State)
+            && state < journal.State
+            && !(operatorRepair
+                && journal.State == FileMutationJournalState.NeedsAttention))
         {
             throw new InvalidOperationException(
                 "A file-mutation state transition would regress durable state.");
@@ -216,8 +227,13 @@ internal sealed partial class EfFileMutationJournalStore
         journal.TargetPhysicalObjectIdentity ??=
             targetPhysicalObjectIdentity;
         journal.AudiobookId ??= audiobookId;
+        // The ordering says Completed is behind NeedsAttention, so an operator repair
+        // has to name itself here too, or it would silently leave the row parked while
+        // reporting that it had been mended.
         if (state > journal.State
-            || state == FileMutationJournalState.NeedsAttention)
+            || state == FileMutationJournalState.NeedsAttention
+            || (operatorRepair
+                && journal.State == FileMutationJournalState.NeedsAttention))
         {
             journal.State = state;
         }

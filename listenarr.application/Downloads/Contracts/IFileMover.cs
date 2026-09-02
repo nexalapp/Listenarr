@@ -63,6 +63,40 @@ namespace Listenarr.Application.Downloads.Contracts
             int audiobookFileId);
 
         /// <summary>
+        /// Decide whether an interrupted move has in fact already happened, and adopt it
+        /// when it has.
+        ///
+        /// <para>
+        /// A resume that cannot find its source is ambiguous on its face: the file may
+        /// have been lost, or the rename may have landed just before the interruption. A
+        /// move preserves the object identity, so a destination carrying the identity the
+        /// journal recorded for the source is the same file, arrived. That is evidence
+        /// rather than inference, and anything else - a destination that is absent, or is
+        /// some other file - is left alone for a human to look at.
+        /// </para>
+        /// </summary>
+        /// <returns>True when the journal now records a verified completed target.</returns>
+        /// <summary>
+        /// Repair a parked move at an operator's request, on the same evidence the
+        /// automatic adoption requires. Their involvement permits completing a parked
+        /// journal at all; it does not lower the bar for what counts as proof.
+        /// </summary>
+        Task<bool> TryRepairParkedMoveAsync(
+            string destination,
+            string expectedSourcePhysicalObjectIdentity,
+            Guid operationId,
+            int audiobookId,
+            CancellationToken cancellationToken = default);
+
+        Task<bool> TryAdoptCompletedMoveAsync(
+            string destination,
+            string expectedSourcePhysicalObjectIdentity,
+            Guid operationId,
+            int audiobookId,
+            int audiobookFileId,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Perform the given action on the given file
         /// </summary>
         /// <param name="action">What we want to do with the file</param>
