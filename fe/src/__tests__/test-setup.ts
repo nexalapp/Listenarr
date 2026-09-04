@@ -174,6 +174,12 @@ vi.mock('@/services/api', () => {
     removeRootFolderMetadataRepairFile: vi.fn(async () => ({})),
     abandonUnpublishedRootFolderRelocation: vi.fn(async () => ({})),
     retryRootFolderRelocation: vi.fn(async () => ({})),
+    // Mirrors the real builder's shape so components that feed it to an <audio> src
+    // can be asserted on without reaching the network.
+    buildAudioPreviewUrl: vi.fn(
+      (rootFolderId: number, path: string) =>
+        `/api/v1/rootfolders/${rootFolderId}/audio-preview?path=${encodeURIComponent(path)}`,
+    ),
 
     // add checkVolume to apiService so components that call `apiService.checkVolume` in
     // unit tests have a sensible default value that matches the real API signature.
