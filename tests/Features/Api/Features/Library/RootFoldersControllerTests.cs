@@ -2147,6 +2147,120 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var conflict = Assert.IsType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>(result);
             Assert.Contains("persisted references", conflict.Value?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         }
+
+        private RootFoldersController BuildAudioPreviewController(string rootPath)
+        {
+            var svc = new FakeService();
+            svc.Store.Add(new RootFolder { Id = 1, Name = "Root", Path = rootPath });
+            var db = CreateDb();
+            return new RootFoldersController(
+                svc,
+                _fakeQueue,
+                new EfAudiobookFileRepository(db),
+                new AudiobookRepository(db),
+                new LocalFileSystem());
+        }
+
+        [Fact]
+        public async Task GetAudioPreview_FileInsideRoot_ServesItWithRangeProcessing()
+        {
+            var root = FileService.GetTempDirectory("preview-root");
+            var book = await FileService.GetFileAsync(root, "book.m4b", "audio-bytes");
+            var controller = BuildAudioPreviewController(root);
+
+            var result = await controller.GetAudioPreview(1, book);
+
+            var file = Assert.IsType<Microsoft.AspNetCore.Mvc.PhysicalFileResult>(result);
+            Assert.Equal(book, file.FileName);
+            // An M4B is AAC in an MP4 container; a browser decides how to decode from this
+            // header alone, so announcing it as anything else leaves it unplayable.
+            Assert.Equal("audio/mp4", file.ContentType.ToString());
+            // Without ranges the player could not read an M4B's trailing moov atom without
+            // first pulling the entire book.
+            Assert.True(file.EnableRangeProcessing);
+        }
+
+        [Fact]
+        public async Task GetAudioPreview_Mp3_IsAnnouncedAsMpegAudio()
+        {
+            var root = FileService.GetTempDirectory("preview-root-mp3");
+            var book = await FileService.GetFileAsync(root, "book.mp3", "audio-bytes");
+            var controller = BuildAudioPreviewController(root);
+
+            var result = await controller.GetAudioPreview(1, book);
+
+            var file = Assert.IsType<Microsoft.AspNetCore.Mvc.PhysicalFileResult>(result);
+            Assert.Equal("audio/mpeg", file.ContentType.ToString());
+        }
+
+        [Fact]
+        public async Task GetAudioPreview_PathOutsideRoot_IsRefused()
+        {
+            var root = FileService.GetTempDirectory("preview-root-contained");
+            var outside = await FileService.GetFileAsync(
+                FileService.GetTempDirectory("preview-elsewhere"),
+                "secret.m4b",
+                "audio-bytes");
+            var controller = BuildAudioPreviewController(root);
+
+            // Both the plain path and a traversal that resolves to it are the same attempt to
+            // read a file this root does not own, and neither may hand back bytes.
+            var direct = await controller.GetAudioPreview(1, outside);
+            var traversal = await controller.GetAudioPreview(
+                1,
+                Path.Combine(root, "..", "preview-elsewhere", "secret.m4b"));
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(direct);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(traversal);
+        }
+
+        [Fact]
+        public async Task GetAudioPreview_NonAudioFileInsideRoot_IsRefused()
+        {
+            var root = FileService.GetTempDirectory("preview-root-nonaudio");
+            // Containment alone would still hand out the cover art, logs and NFOs sitting
+            // beside a book.
+            var cover = await FileService.GetFileAsync(root, "cover.jpg", "not-audio");
+            var controller = BuildAudioPreviewController(root);
+
+            var result = await controller.GetAudioPreview(1, cover);
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task GetAudioPreview_MissingFile_IsNotFound()
+        {
+            var root = FileService.GetTempDirectory("preview-root-missing");
+            var controller = BuildAudioPreviewController(root);
+
+            var result = await controller.GetAudioPreview(1, Path.Combine(root, "gone.m4b"));
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task GetAudioPreview_MissingPath_IsRefused()
+        {
+            var root = FileService.GetTempDirectory("preview-root-nopath");
+            var controller = BuildAudioPreviewController(root);
+
+            var result = await controller.GetAudioPreview(1, "  ");
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task GetAudioPreview_UnknownRootFolder_IsNotFound()
+        {
+            var root = FileService.GetTempDirectory("preview-root-unknown");
+            var book = await FileService.GetFileAsync(root, "book.m4b", "audio-bytes");
+            var controller = BuildAudioPreviewController(root);
+
+            var result = await controller.GetAudioPreview(99, book);
+
+            Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(result);
+        }
     }
 
     internal sealed class RootFoldersControllerTestAdapter : AppRootFoldersController
