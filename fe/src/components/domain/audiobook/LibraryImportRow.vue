@@ -49,7 +49,14 @@
     </td>
 
     <td class="cell-file-path" data-label="Path">
-      <span class="file-path" :title="item.fullPath">{{ item.fullPath }}</span>
+      <div class="file-path-line">
+        <LibraryImportPreview
+          :item-id="item.id"
+          :path="item.fullPath"
+          :root-folder-id="store.rootFolderId"
+        />
+        <span class="file-path" :title="item.fullPath">{{ item.fullPath }}</span>
+      </div>
       <details v-if="item.sourceFiles.length > 1" class="grouped-files">
         <summary class="grouped-files-summary">
           View grouped files ({{ item.sourceFiles.length }})
@@ -119,27 +126,32 @@
         <div v-else-if="item.hasSearched" class="match-status no-match">
           <PhWarningCircle :size="14" class="match-icon-warn" />
           <span>No match found</span>
-          <button
-            class="btn-use-file"
-            title="Use the title, author, narrator and cover stored in the file"
-            :disabled="item.isSearching"
-            @click="applyFileMetadata"
-          >
-            Use file metadata
-          </button>
         </div>
 
         <div v-else class="match-status unsearched">
           <span>-</span>
         </div>
 
-        <button
-          class="btn-search-toggle"
-          title="Search for a match"
-          @click="showSearchModal = true"
-        >
-          <PhMagnifyingGlass :size="14" />
-        </button>
+        <div class="match-actions">
+          <button
+            class="btn-use-file-toggle"
+            :class="{ active: !!item.fileMetadata }"
+            :title="useFileTitle"
+            :aria-label="useFileTitle"
+            :disabled="item.isSearching || !store.rootFolderId"
+            @click="applyFileMetadata"
+          >
+            <PhFileAudio :size="14" />
+          </button>
+
+          <button
+            class="btn-search-toggle"
+            title="Search for a match"
+            @click="showSearchModal = true"
+          >
+            <PhMagnifyingGlass :size="14" />
+          </button>
+        </div>
       </div>
     </td>
   </tr>
@@ -166,6 +178,7 @@ import { useToast } from '@/services/toastService'
 import type { LibraryImportItem } from '@/stores/libraryImport'
 import type { SearchResult } from '@/types'
 import LibraryImportSearchModal from './LibraryImportSearchModal.vue'
+import LibraryImportPreview from './LibraryImportPreview.vue'
 
 const props = defineProps<{ item: LibraryImportItem }>()
 
@@ -190,6 +203,12 @@ function applyMatch(result: SearchResult) {
 }
 
 const fileMetadataAuthor = computed(() => props.item.fileMetadata?.authors?.[0] ?? '')
+
+const useFileTitle = computed(() =>
+  props.item.fileMetadata
+    ? "Using the file's own title, author, narrator and cover"
+    : 'Use the title, author, narrator and cover stored in the file',
+)
 
 async function applyFileMetadata() {
   const metadata = await store.useFileMetadata(props.item.id)
@@ -275,9 +294,17 @@ function formatGroupedFileLabel(sourceFile: string): string {
   min-width: 320px;
 }
 
+.file-path-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+}
+
 .file-path {
   display: block;
-  margin-top: 0.2rem;
+  flex: 1 1 12rem;
   font-family: monospace;
   font-size: 0.72rem;
   color: #7f8a9a;
@@ -457,25 +484,41 @@ function formatGroupedFileLabel(sourceFile: string): string {
   color: #555;
 }
 
-.btn-use-file {
-  margin-left: 0.5rem;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  border-radius: 4px;
-  background-color: rgba(148, 163, 184, 0.12);
-  color: var(--text-muted, #cfcfcf);
-  font-size: 0.7rem;
+.match-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+/* Deliberately shaped like .btn-search-toggle: the two sit together and are the row's
+   two ways of answering the same question, so neither should read as the louder one. */
+.btn-use-file-toggle {
+  background: none;
+  border: 1px solid #444;
+  border-radius: 8px;
+  color: #888;
   cursor: pointer;
-  white-space: nowrap;
+  padding: 0.28rem 0.45rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
-.btn-use-file:hover:not(:disabled) {
-  background-color: rgba(148, 163, 184, 0.25);
+.btn-use-file-toggle:hover:not(:disabled) {
+  border-color: var(--brand-500, #6366f1);
+  color: var(--brand-500, #6366f1);
 }
 
-.btn-use-file:disabled {
-  cursor: default;
-  opacity: 0.6;
+/* Already showing the file's own tags — the button is the state, not just the action. */
+.btn-use-file-toggle.active {
+  border-color: #94a3b8;
+  color: #cbd5e1;
+}
+
+.btn-use-file-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .from-file-badge {
@@ -702,8 +745,13 @@ function formatGroupedFileLabel(sourceFile: string): string {
     align-self: center;
   }
 
-  .btn-search-toggle {
+  .match-actions {
     margin-left: auto;
+    align-self: center;
+  }
+
+  .btn-search-toggle,
+  .btn-use-file-toggle {
     align-self: center;
     padding: 0.35rem 0.5rem;
     border-color: rgba(255, 255, 255, 0.14);

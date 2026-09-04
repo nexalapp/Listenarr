@@ -1055,6 +1055,17 @@ class ApiService {
     return response.metadata
   }
 
+  /**
+   * URL an <audio> element can load to play a file from inside a root folder.
+   *
+   * This is a URL rather than a fetch because the player needs the browser to issue
+   * its own range requests as it decodes and seeks. It stays same-origin so the
+   * session cookie rides along; an <audio> tag cannot send the X-Api-Key header.
+   */
+  buildAudioPreviewUrl(rootFolderId: number, path: string): string {
+    return `${API_BASE_URL}/rootfolders/${rootFolderId}/audio-preview?path=${encodeURIComponent(path)}`
+  }
+
   async scanUnmatchedFiles(rootFolderId: number): Promise<{ jobId: string }> {
     return this.request<{ jobId: string }>(`/rootfolders/${rootFolderId}/scan-unmatched`, {
       method: 'POST',
