@@ -2,10 +2,22 @@ services:
   listenarr:
     # Pinned to an immutable SHA-suffixed tag, not the rolling :beta tag, so the
     # server only moves when this file changes. Roll back by editing this line.
-    image: ghcr.io/nexalapp/listenarr:beta-1.21.0-1d7748f
+    image: ghcr.io/nexalapp/listenarr:beta-1.22.0-3dbadf3
     container_name: listenarr
-    ports:
-      - "4545:4545"
+
+    # Listenarr shares gluetun's network namespace, as every other *arr here does.
+    # A container in that namespace cannot publish its own port, so gluetun publishes
+    # 4545 on Listenarr's behalf - which is why there is no ports: block below and why
+    # the UI is still reachable on the LAN. Prowlarr, in the same namespace, reaches
+    # Listenarr at http://localhost:4545 rather than across the network, which is what
+    # its firewall was refusing.
+    #
+    # The cost: Listenarr's outbound traffic now leaves through the VPN and stops when
+    # the tunnel does. That is the killswitch working, not a fault.
+    #
+    # Recreating gluetun destroys this namespace, so Listenarr has to be restarted
+    # after gluetun is, along with everything else riding on it.
+    network_mode: "container:gluetunvpn"
     environment:
       - PUID=99
       - PGID=100

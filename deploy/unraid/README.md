@@ -35,10 +35,19 @@ disks.
 
 ### Deliberate deviation from the rest of the stack
 
-The other *arr containers run `network_mode: container:gluetunvpn`. Listenarr
-does not. A container on gluetun's network cannot publish its own port, so
-exposing 4545 would mean editing gluetun's mappings and restarting it, which
-drops every container riding on it. Revisit only when wiring up indexers.
+Listenarr runs in gluetun's network namespace, as the other *arr containers do.
+It did not until 2026-09-02: a container in that namespace cannot publish its own
+port, so staying out of it kept 4545 reachable without touching gluetun.
+
+Wiring up Prowlarr is what settled it. Prowlarr lives in that namespace and
+gluetun's firewall is `-P OUTPUT DROP` with no LAN allowance, so it could not
+reach Listenarr across the network at all - the application test timed out.
+Joining the namespace is how every other app there is reached: Prowlarr uses
+`http://localhost:4545`, exactly as it uses `localhost:7878` for Radarr.
+
+gluetun publishes 4545 on Listenarr's behalf, so the UI stays reachable at
+http://10.10.10.10:4545. Listenarr's own traffic now leaves through the VPN and
+stops when the tunnel does.
 
 ## Deploying
 
