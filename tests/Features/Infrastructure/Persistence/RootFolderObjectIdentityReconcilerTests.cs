@@ -37,6 +37,7 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
             new TestDbContextFactory(options),
             identityResolver.Object,
             new FilesystemMutationCoordinator(),
+            new LibraryRootMarkerStore(),
             NullLogger<RootFolderObjectIdentityReconciler>.Instance);
 
         await reconciler.ReconcileAsync();
@@ -50,6 +51,95 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
             "unambiguous",
             root.DirectoryObjectIdentityUnavailableReason ?? string.Empty,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_MarkerSurvivesRemount_AdoptsTheNewGenerationSilently()
+    {
+        // The reported failure: the array restarts, every byte is still there, but the
+        // kernel hands the directory a new device number and inode. Startup is where
+        // that lands, and it must heal itself rather than block the library.
+        var rootPath = FileService.GetTempDirectory("startup-remounted-root");
+        var markerStore = new LibraryRootMarkerStore();
+        var markerId = markerStore.Enroll(rootPath);
+
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using (var setup = new ListenArrDbContext(options))
+        {
+            setup.RootFolders.Add(new RootFolder
+            {
+                Id = 1,
+                Name = "Default",
+                Path = rootPath,
+                LibraryMarkerId = markerId,
+                DirectoryObjectIdentityVersion = ManagedDirectoryIdentity.CurrentVersion,
+                DirectoryObjectIdentity = ManagedDirectoryIdentity.CreateMarkerless(
+                    "linux-generation:00000000:0000002a:000000000000002a:gen:0000002a"),
+                DirectoryObjectIdentityUnavailableReason =
+                    "The live directory no longer matches its persisted physical identity."
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        var reconciler = new RootFolderObjectIdentityReconciler(
+            new TestDbContextFactory(options),
+            new DirectoryObjectIdentityResolver(),
+            new FilesystemMutationCoordinator(),
+            markerStore,
+            NullLogger<RootFolderObjectIdentityReconciler>.Instance);
+
+        await reconciler.ReconcileAsync();
+
+        await using var verification = new ListenArrDbContext(options);
+        var root = await verification.RootFolders.SingleAsync();
+        Assert.Equal(markerId, root.LibraryMarkerId);
+        Assert.NotEqual(
+            ManagedDirectoryIdentity.CreateMarkerless(
+                "linux-generation:00000000:0000002a:000000000000002a:gen:0000002a"),
+            root.DirectoryObjectIdentity);
+        Assert.Null(root.DirectoryObjectIdentityUnavailableReason);
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_MarkerAbsent_LeavesTheStaleIdentityAlone()
+    {
+        // Without a marker there is nothing proving the storage is the right one, so
+        // the pre-existing fail-closed behaviour has to survive untouched.
+        var rootPath = FileService.GetTempDirectory("startup-unmarked-root");
+        var staleIdentity = ManagedDirectoryIdentity.CreateMarkerless(
+            "linux-generation:00000000:0000002a:000000000000002a:gen:0000002a");
+
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using (var setup = new ListenArrDbContext(options))
+        {
+            setup.RootFolders.Add(new RootFolder
+            {
+                Id = 1,
+                Name = "Default",
+                Path = rootPath,
+                DirectoryObjectIdentityVersion = ManagedDirectoryIdentity.CurrentVersion,
+                DirectoryObjectIdentity = staleIdentity
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        var reconciler = new RootFolderObjectIdentityReconciler(
+            new TestDbContextFactory(options),
+            new DirectoryObjectIdentityResolver(),
+            new FilesystemMutationCoordinator(),
+            new LibraryRootMarkerStore(),
+            NullLogger<RootFolderObjectIdentityReconciler>.Instance);
+
+        await reconciler.ReconcileAsync();
+
+        await using var verification = new ListenArrDbContext(options);
+        var root = await verification.RootFolders.SingleAsync();
+        Assert.Equal(staleIdentity, root.DirectoryObjectIdentity);
+        Assert.NotNull(root.DirectoryObjectIdentityUnavailableReason);
     }
 
     [Fact]
@@ -75,6 +165,7 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
             new TestDbContextFactory(options),
             identityResolver.Object,
             new FilesystemMutationCoordinator(),
+            new LibraryRootMarkerStore(),
             NullLogger<RootFolderObjectIdentityReconciler>.Instance);
 
         await reconciler.ReconcileAsync();
@@ -124,6 +215,7 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
             new TestDbContextFactory(options),
             identityResolver.Object,
             new FilesystemMutationCoordinator(),
+            new LibraryRootMarkerStore(),
             NullLogger<RootFolderObjectIdentityReconciler>.Instance);
 
         await reconciler.ReconcileAsync();
@@ -175,6 +267,7 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
             new TestDbContextFactory(options),
             identityResolver.Object,
             new FilesystemMutationCoordinator(),
+            new LibraryRootMarkerStore(),
             NullLogger<RootFolderObjectIdentityReconciler>.Instance);
 
         await reconciler.ReconcileAsync();
@@ -222,6 +315,7 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
             factory,
             identityResolver,
             new FilesystemMutationCoordinator(),
+            new LibraryRootMarkerStore(),
             NullLogger<RootFolderObjectIdentityReconciler>.Instance)
         {
             AfterRootAuthoritySavedForTest = _ =>

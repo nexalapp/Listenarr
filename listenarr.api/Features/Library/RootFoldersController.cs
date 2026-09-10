@@ -40,6 +40,7 @@ namespace Listenarr.Api.Features.Library
         bool CanScanFilesystem,
         bool CanPublishNewFiles,
         bool CanMutateFilesystem,
+        bool HasLibraryMarker,
         string? ConfirmationToken,
         DateTime CreatedAt,
         DateTime? UpdatedAt,

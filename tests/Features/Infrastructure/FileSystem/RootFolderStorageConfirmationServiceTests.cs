@@ -31,6 +31,35 @@ public sealed class RootFolderStorageConfirmationServiceTests : BaseTests
     }
 
     [Fact]
+    public async Task ConfirmCurrentFolderAsync_EnrollsALibraryMarkerThatSurvivesARemount()
+    {
+        var fixture = await CreateFixtureAsync("confirm-enrolls-marker");
+        await using var cleanup = fixture;
+        var root = await fixture.LoadRootAsync();
+        var observation = await fixture.HealthResolver.ResolveAsync(root);
+
+        var confirmed = await fixture.Service.ConfirmCurrentFolderAsync(
+            root.Id,
+            root.Path,
+            observation.ConfirmationToken!);
+
+        Assert.NotNull(confirmed.LibraryMarkerId);
+        Assert.True(File.Exists(Path.Combine(root.Path, "listenarr-library.id")));
+
+        // Simulate the remount that motivated the marker: the enrolled native identity
+        // no longer describes anything, exactly as after a reboot or array restart.
+        var persisted = await fixture.LoadRootAsync();
+        persisted.DirectoryObjectIdentity = ManagedDirectoryIdentity.CreateMarkerless(
+            "linux-generation:00000000:0000002a:000000000000002a:gen:0000002a");
+
+        var afterRemount = await fixture.HealthResolver.ResolveAsync(persisted);
+
+        Assert.Equal(RootFolderStorageState.Healthy, afterRemount.State);
+        Assert.True(afterRemount.CanScanFilesystem);
+        Assert.False(afterRemount.CanConfirmCurrentFolder);
+    }
+
+    [Fact]
     public async Task ConfirmCurrentFolderAsync_LegacyRootBootstrapsFilesystemSemanticsAndPhysicalAuthorization()
     {
         var fixture = await CreateFixtureAsync("confirm-legacy-root");
@@ -694,7 +723,8 @@ public sealed class RootFolderStorageConfirmationServiceTests : BaseTests
             new FileSystemSemanticsResolver(),
             moveQueue.Object,
             mutationCoordinator,
-            audiobookCoordinator);
+            audiobookCoordinator,
+            new LibraryRootMarkerStore());
         var healthResolver = new RootFolderStorageHealthResolver(identityResolver);
         var ownershipStore = new EfLibraryDirectoryOwnershipStore(
             dbFactory,

@@ -23,6 +23,7 @@ internal static class LibraryRegistrationExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IFilesystemMutationCoordinator, FilesystemMutationCoordinator>();
+        services.AddSingleton<ILibraryRootMarkerStore, LibraryRootMarkerStore>();
         services.AddSingleton<IDirectoryObjectIdentityResolver, DirectoryObjectIdentityResolver>();
         services.AddSingleton<IRootFolderStorageHealthResolver, RootFolderStorageHealthResolver>();
         services.AddSingleton<LibraryDirectoryOwnershipBoundaryAuthorizer>();

@@ -348,6 +348,7 @@ export interface RootFolder {
   canScanFilesystem?: boolean
   canPublishNewFiles?: boolean
   canMutateFilesystem?: boolean
+  hasLibraryMarker?: boolean
   confirmationToken?: string | null
   activeRelocation?: RootFolderPathChangeResult | null
 }
