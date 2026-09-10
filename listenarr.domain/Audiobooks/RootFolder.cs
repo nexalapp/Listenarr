@@ -52,6 +52,15 @@ namespace Listenarr.Domain.Audiobooks
         [MaxLength(1024)]
         public string? DirectoryObjectIdentityUnavailableReason { get; set; }
 
+        /// <summary>
+        /// Identifier of the marker file written into the root folder itself. Unlike the
+        /// native directory identity above, which is kernel state re-issued on every
+        /// remount, this survives reboots and array restarts while still distinguishing
+        /// the real library from an empty mount point standing in for absent storage.
+        /// Null for a root that has never been confirmed against writable storage.
+        /// </summary>
+        public Guid? LibraryMarkerId { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime? UpdatedAt { get; set; }

@@ -52,6 +52,14 @@
                   <h4>{{ folder.name }}</h4>
                   <div class="folder-badges">
                     <Pill variant="success" v-if="folder.isDefault">Default</Pill>
+                    <Pill
+                      v-if="folder.hasLibraryMarker"
+                      variant="subtle"
+                      title="This folder carries a Listenarr library marker, so it stays recognised across reboots and remounts."
+                      data-cy="library-marker-pill"
+                    >
+                      Marked
+                    </Pill>
                     <Pill v-if="folder.storageState === 'Healthy'" variant="success">Healthy</Pill>
                     <Pill
                       v-else-if="folder.storageReason === 'MutationSemanticsUnproven'"

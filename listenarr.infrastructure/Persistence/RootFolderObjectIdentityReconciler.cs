@@ -8,6 +8,7 @@ public sealed class RootFolderObjectIdentityReconciler(
     IDbContextFactory<ListenArrDbContext> dbContextFactory,
     IDirectoryObjectIdentityResolver identityResolver,
     IFilesystemMutationCoordinator mutationCoordinator,
+    ILibraryRootMarkerStore markerStore,
     ILogger<RootFolderObjectIdentityReconciler> logger)
     : IRootFolderObjectIdentityReconciler
 {
@@ -56,6 +57,12 @@ public sealed class RootFolderObjectIdentityReconciler(
                 await db.SaveChangesAsync(cancellationToken);
                 continue;
             }
+
+            // Startup is where a remount lands: the storage came back with the same
+            // bytes and a fresh set of kernel identifiers. When the marker on the media
+            // still names this library, adopt the new generation rather than making the
+            // operator re-confirm a folder that never actually changed.
+            await AdoptRemountedGenerationAsync(db, root, canonicalRootPath, cancellationToken);
 
             var current = await identityResolver.ResolveExistingAsync(
                 canonicalRootPath,
@@ -133,4 +140,35 @@ public sealed class RootFolderObjectIdentityReconciler(
         }
     }
 
+    private async Task AdoptRemountedGenerationAsync(
+        ListenArrDbContext db,
+        RootFolder root,
+        string canonicalRootPath,
+        CancellationToken cancellationToken)
+    {
+        if (!root.LibraryMarkerId.HasValue
+            || markerStore.Read(canonicalRootPath, root.LibraryMarkerId.Value).State
+                != LibraryRootMarkerState.Matched)
+        {
+            return;
+        }
+
+        var live = await identityResolver.ResolveAsync(canonicalRootPath, cancellationToken);
+        if (!live.IsAvailable
+            || string.Equals(
+                root.DirectoryObjectIdentity,
+                live.Value,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "Root folder {RootFolderId} kept its library marker across a change of physical directory identity; adopting the current generation without operator confirmation.",
+            root.Id);
+        root.DirectoryObjectIdentityVersion = live.Version;
+        root.DirectoryObjectIdentity = live.Value;
+        root.DirectoryObjectIdentityUnavailableReason = null;
+        await db.SaveChangesAsync(cancellationToken);
+    }
 }

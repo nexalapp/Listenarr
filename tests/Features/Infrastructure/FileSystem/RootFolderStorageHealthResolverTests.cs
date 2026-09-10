@@ -567,6 +567,118 @@ public sealed class RootFolderStorageHealthResolverTests : BaseTests
         identityResolver.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task ResolveAsync_LibraryMarkerMatchesAfterRemount_StaysHealthyWithoutConfirmation()
+    {
+        // A remount re-issues the device number, inode and file handle while leaving
+        // every byte of the library in place. The marker on the media still names this
+        // library, so the operator must not be asked to confirm anything.
+        var path = Path.GetFullPath("root-storage-marker-remounted");
+        var root = BuildRoot(path, identity: "generation-from-before-the-remount");
+        root.LibraryMarkerId = Guid.NewGuid();
+        var markerStore = new Mock<ILibraryRootMarkerStore>(MockBehavior.Strict);
+        markerStore
+            .Setup(store => store.Read(path, root.LibraryMarkerId.Value))
+            .Returns(new LibraryRootMarkerReading(LibraryRootMarkerState.Matched));
+        // Strict with no setup: the native identity must not even be consulted.
+        var identityResolver = new Mock<IDirectoryObjectIdentityResolver>(MockBehavior.Strict);
+        var resolver = new RootFolderStorageHealthResolver(
+            identityResolver.Object,
+            readOnlyFileSystemProbe: _ => false,
+            markerStore: markerStore.Object);
+
+        var result = await resolver.ResolveAsync(root);
+
+        Assert.Equal(RootFolderStorageState.Healthy, result.State);
+        Assert.Equal(RootFolderStorageReason.None, result.Reason);
+        Assert.True(result.CanScanFilesystem);
+        Assert.True(result.CanMutateFilesystem);
+        Assert.False(result.CanConfirmCurrentFolder);
+        markerStore.VerifyAll();
+        identityResolver.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LibraryMarkerMissing_KeepsTheNativeOutcomeAndExplainsWhy()
+    {
+        // The marker must never take away a recovery path: a root whose marker is gone
+        // still resolves exactly as it did before markers existed, and stays
+        // confirmable. The only addition is a detail line naming the likely cause.
+        var path = Path.GetFullPath("root-storage-marker-unmounted");
+        var root = BuildRoot(path, identity: "authorized");
+        root.LibraryMarkerId = Guid.NewGuid();
+        var markerStore = new Mock<ILibraryRootMarkerStore>(MockBehavior.Strict);
+        markerStore
+            .Setup(store => store.Read(path, root.LibraryMarkerId.Value))
+            .Returns(new LibraryRootMarkerReading(LibraryRootMarkerState.Missing));
+        var identityResolver = new Mock<IDirectoryObjectIdentityResolver>(MockBehavior.Strict);
+        identityResolver
+            .Setup(resolver => resolver.ResolveExistingAsync(
+                path,
+                ManagedDirectoryIdentity.CurrentVersion,
+                "authorized",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DirectoryObjectIdentityResolution.Unavailable(
+                "mismatch",
+                DirectoryObjectIdentityFailureKind.IdentityMismatch));
+        identityResolver
+            .Setup(resolver => resolver.ResolveAsync(path, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DirectoryObjectIdentityResolution(
+                ManagedDirectoryIdentity.CurrentVersion,
+                "live",
+                null));
+        var resolver = new RootFolderStorageHealthResolver(
+            identityResolver.Object,
+            readOnlyFileSystemProbe: _ => false,
+            markerStore: markerStore.Object);
+
+        var result = await resolver.ResolveAsync(root);
+
+        Assert.Equal(RootFolderStorageState.Changed, result.State);
+        Assert.Equal(RootFolderStorageReason.IdentityMismatch, result.Reason);
+        Assert.False(result.CanMutateFilesystem);
+        Assert.True(result.CanConfirmCurrentFolder);
+        Assert.NotNull(result.ConfirmationToken);
+        Assert.Contains(
+            "not mounted",
+            result.Detail ?? string.Empty,
+            StringComparison.Ordinal);
+        markerStore.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_UnreadableLibraryMarker_FallsBackToNativeIdentity()
+    {
+        var path = Path.GetFullPath("root-storage-marker-unreadable");
+        var root = BuildRoot(path, identity: "authorized");
+        root.LibraryMarkerId = Guid.NewGuid();
+        var markerStore = new Mock<ILibraryRootMarkerStore>(MockBehavior.Strict);
+        markerStore
+            .Setup(store => store.Read(path, root.LibraryMarkerId.Value))
+            .Returns(new LibraryRootMarkerReading(LibraryRootMarkerState.Unreadable, "eio"));
+        var identityResolver = new Mock<IDirectoryObjectIdentityResolver>(MockBehavior.Strict);
+        identityResolver
+            .Setup(resolver => resolver.ResolveExistingAsync(
+                path,
+                ManagedDirectoryIdentity.CurrentVersion,
+                "authorized",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DirectoryObjectIdentityResolution(
+                ManagedDirectoryIdentity.CurrentVersion,
+                "authorized",
+                null));
+        var resolver = new RootFolderStorageHealthResolver(
+            identityResolver.Object,
+            readOnlyFileSystemProbe: _ => false,
+            markerStore: markerStore.Object);
+
+        var result = await resolver.ResolveAsync(root);
+
+        Assert.Equal(RootFolderStorageState.Healthy, result.State);
+        markerStore.VerifyAll();
+        identityResolver.VerifyAll();
+    }
+
     private static RootFolder BuildRoot(string path, string? identity)
     {
         var hostSemantics = FileSystemPathSemantics.CurrentHostDefault;

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,8 @@ internal sealed class RootFolderStorageConfirmationService(
     IFileSystemSemanticsResolver semanticsResolver,
     IMoveQueueService moveQueueService,
     IFilesystemMutationCoordinator mutationCoordinator,
-    IAudiobookOperationCoordinator audiobookOperationCoordinator)
+    IAudiobookOperationCoordinator audiobookOperationCoordinator,
+    ILibraryRootMarkerStore markerStore)
     : IRootFolderStorageConfirmationService
 {
     internal Action? BeforeCommitForTest { get; set; }
@@ -162,6 +164,16 @@ internal sealed class RootFolderStorageConfirmationService(
                 "The root folder changed after it was displayed for confirmation. Refresh and review the current folder before confirming it.");
         }
 
+        // Enrolling a marker is what makes this confirmation the last one the operator
+        // has to perform: the native generation below is re-issued by every remount,
+        // while the marker stays on the media. A root whose storage refuses the write
+        // keeps the generation-only behaviour rather than failing the confirmation.
+        var markerId = await EnrollLibraryMarkerAsync(
+            db,
+            rootFolderId,
+            canonicalRootPath,
+            cancellationToken);
+
         var preservesAuthorizedGeneration = hasAuthorizedIdentity
             && root.DirectoryObjectIdentityVersion
                 == ManagedDirectoryIdentity.CurrentVersion
@@ -194,6 +206,7 @@ internal sealed class RootFolderStorageConfirmationService(
             root.DirectoryObjectIdentityVersion = committedIdentity.Version;
             root.DirectoryObjectIdentity = committedIdentity.Value;
             root.DirectoryObjectIdentityUnavailableReason = null;
+            root.LibraryMarkerId = markerId;
             root.ResolvedCaseSensitivity = semantics.Semantics.CaseSensitivity;
             root.PathIdentityState = PathIdentityState.Valid;
             root.PathIdentityKey = FileSystemPathIdentity.CreateKey(
@@ -244,6 +257,38 @@ internal sealed class RootFolderStorageConfirmationService(
 
             throw;
         }
+    }
+
+    private async Task<Guid?> EnrollLibraryMarkerAsync(
+        ListenArrDbContext db,
+        int rootFolderId,
+        string canonicalRootPath,
+        CancellationToken cancellationToken)
+    {
+        Guid markerId;
+        try
+        {
+            markerId = markerStore.Enroll(canonicalRootPath);
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or Win32Exception
+                or PlatformNotSupportedException)
+        {
+            // Read-only library media cannot carry a marker. That root keeps the
+            // pre-existing behaviour instead of losing the ability to be confirmed.
+            return null;
+        }
+
+        if (await db.RootFolders.AnyAsync(
+                candidate => candidate.Id != rootFolderId
+                    && candidate.LibraryMarkerId == markerId,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"This folder already carries the library marker of another configured root folder. Remove the stray {LibraryRootMarkerStore.MarkerFileName} before confirming it.");
+        }
+
+        return markerId;
     }
 
     private static async Task EnsureNoExternalRecoveryOwnerTouchesRootAsync(
