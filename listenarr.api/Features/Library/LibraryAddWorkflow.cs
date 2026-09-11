@@ -79,6 +79,7 @@ namespace Listenarr.Api.Features.Library
                 AutoSearch = request.AutoSearch,
                 DestinationPath = request.DestinationPath,
                 SearchResult = request.SearchResult,
+                AllowDuplicateEdition = request.AllowDuplicateEdition,
                 HistorySource = "AddNew",
                 HistoryMessage = $"Audiobook '{request.Metadata.Title}' added to library from Add New page"
             }, cancellationToken);
@@ -112,8 +113,12 @@ namespace Listenarr.Api.Features.Library
             TryExtractPublishYear(request);
 
             // One rule with the application add path: a shared identifier is not by
-            // itself evidence of the same book. See AudiobookEditionIdentity.
-            var existingEdition = await AudiobookEditionIdentity.FindExistingEditionAsync(_repo, metadata);
+            // itself evidence of the same book. See AudiobookEditionIdentity. The
+            // caller may also state outright that this is a distinct book, which is
+            // the only way past a held record that is wrong about what it contains.
+            var existingEdition = request.AllowDuplicateEdition
+                ? null
+                : await AudiobookEditionIdentity.FindExistingEditionAsync(_repo, metadata);
             if (existingEdition != null)
             {
                 return new ConflictObjectResult(new { message = "Audiobook already exists in library", audiobook = existingEdition });
@@ -282,7 +287,9 @@ namespace Listenarr.Api.Features.Library
                 firstIsbn = metadata.Isbn.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i));
                 if (!string.IsNullOrWhiteSpace(firstIsbn))
                 {
-                    var conflicting = await AudiobookEditionIdentity.FindExistingEditionAsync(_repo, metadata);
+                    var conflicting = request.AllowDuplicateEdition
+                        ? null
+                        : await AudiobookEditionIdentity.FindExistingEditionAsync(_repo, metadata);
                     if (conflicting != null)
                     {
                         throw new LibraryAddConflictException(conflicting);

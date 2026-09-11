@@ -51,6 +51,13 @@ public partial class LibraryController
         public bool AutoSearch { get; set; }
         public string? DestinationPath { get; set; }
         public SearchResult? SearchResult { get; set; }
+
+        /// <summary>
+        /// Add the book even when an apparently identical edition is already held. See
+        /// <see cref="AudiobookEditionIdentity"/> for why a shared identifier is not
+        /// proof of the same book.
+        /// </summary>
+        public bool AllowDuplicateEdition { get; set; }
     }
 
     public class PreviewPathRequest

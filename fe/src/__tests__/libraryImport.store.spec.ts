@@ -339,6 +339,93 @@ describe('library import store', () => {
     expect(result.imported).toBe(1)
   })
 
+  it('asks the backend for a separate record when the row is marked as a separate book', async () => {
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    store.items = {
+      '/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3': {
+        id: '/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3',
+        fullPath: '/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3',
+        sourceFiles: ['/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3'],
+        folderPath: '/audiobooks/Stephen King/Pet Sematary (2018)',
+        relativePath: 'Stephen King/Pet Sematary (2018)',
+        folderName: 'Pet Sematary (2018)',
+        format: 'MP3',
+        fileCount: 1,
+        selectedMatch: {
+          title: 'Pet Sematary',
+          authors: [{ name: 'Stephen King' }],
+        } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+        importAsSeparateBook: true,
+      },
+    }
+    store.action = 'none'
+    addToLibrary.mockResolvedValueOnce({ audiobook: { id: 900 } })
+    startManualImport.mockResolvedValueOnce({
+      importedCount: 1,
+      totalCount: 1,
+      results: [{ success: true }],
+    })
+
+    const result = await store.importSelected('')
+
+    expect(addToLibrary).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ allowDuplicateEdition: true }),
+    )
+    expect(result.imported).toBe(1)
+  })
+
+  it('explains a held record in another folder instead of failing the import silently', async () => {
+    // Attaching to the held record registers the file into that record's folder.
+    // When the file lives somewhere else, in-place registration refuses it and the
+    // backend's reason never reaches the UI - the user saw only "1 item failed".
+    const { useLibraryImportStore } = await import('@/stores/libraryImport')
+    const store = useLibraryImportStore()
+
+    store.items = {
+      '/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3': {
+        id: '/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3',
+        fullPath: '/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3',
+        sourceFiles: ['/audiobooks/Stephen King/Pet Sematary (2018)/Pet Sematary.mp3'],
+        folderPath: '/audiobooks/Stephen King/Pet Sematary (2018)',
+        relativePath: 'Stephen King/Pet Sematary (2018)',
+        folderName: 'Pet Sematary (2018)',
+        format: 'MP3',
+        fileCount: 1,
+        selectedMatch: {
+          title: 'Pet Sematary',
+          authors: [{ name: 'Stephen King' }],
+        } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+    store.action = 'none'
+    addToLibrary.mockRejectedValueOnce({
+      status: 409,
+      body: {
+        audiobook: {
+          id: 337,
+          title: 'Pet Sematary',
+          basePath: '/audiobooks/Stephen King/Bag Of Bones {Michael C. Hall} (1998)',
+        },
+      },
+    })
+
+    const result = await store.importSelected('')
+
+    expect(startManualImport).not.toHaveBeenCalled()
+    expect(result.imported).toBe(0)
+    expect(result.errors.join(' ')).toContain('Bag Of Bones')
+    expect(result.errors.join(' ')).toContain('Separate book')
+  })
+
   it('ignores foreign scan completions until its own job id is assigned', async () => {
     const { useLibraryImportStore } = await import('@/stores/libraryImport')
     const store = useLibraryImportStore()

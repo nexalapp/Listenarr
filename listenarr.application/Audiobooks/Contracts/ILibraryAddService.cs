@@ -37,6 +37,16 @@ namespace Listenarr.Application.Audiobooks.Contracts
 
         public string? DestinationPath { get; set; }
 
+        /// <summary>
+        /// Adds the book even when the library already holds an edition that looks
+        /// identical. One product identifier can legitimately describe more than one
+        /// book - a collection ASIN covers every novella in it - and a record can be
+        /// wrong about which book it holds. Neither case should be able to lock a real
+        /// file out of the library permanently, so the caller may state that this is a
+        /// distinct book and be believed.
+        /// </summary>
+        public bool AllowDuplicateEdition { get; set; }
+
         public SearchResult? SearchResult { get; set; }
 
         public string HistorySource { get; set; } = "AddNew";
