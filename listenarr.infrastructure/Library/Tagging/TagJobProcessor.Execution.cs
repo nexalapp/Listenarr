@@ -138,7 +138,13 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 }
 
                 var metadata = AudiobookTagMetadata.Create(audiobook, existing.Tags);
-                var plan = planner.Plan(metadata, mappings, existing.Tags, selection, overrides);
+                var plan = planner.Plan(
+                    metadata,
+                    mappings,
+                    existing.Tags,
+                    selection,
+                    overrides,
+                    TagLocks.Of(file));
 
                 if (!plan.HasChanges)
                 {

@@ -186,5 +186,43 @@ namespace Listenarr.Domain.Audiobooks
 
         // Optional source or notes (e.g., DDL, qBittorrent, NZB)
         public string? Source { get; set; }
+
+        /// <summary>
+        /// Tags no write may touch on this file, named as in
+        /// <see cref="Tagging.TagCatalog"/>.
+        ///
+        /// <para>
+        /// Held on the file rather than on the book because that is the granularity the
+        /// fault has: a book split into parts can have one part whose description was
+        /// corrected by hand and five whose descriptions Listenarr should keep writing.
+        /// A lock on the book would be unable to say that.
+        /// </para>
+        /// <para>
+        /// Honoured by the planner, so it holds for automatic tagging on scan completion
+        /// as much as for a write somebody asked for. A lock that only held for the
+        /// button next to it would be undone by the next scan.
+        /// </para>
+        /// </summary>
+        public List<string>? LockedTags { get; set; }
+
+        /// <summary>
+        /// Whether this file's path is frozen: neither its name nor the folder holding it
+        /// may be changed by organizing.
+        ///
+        /// <para>
+        /// The case it exists for is a book whose filenames carry something no metadata
+        /// has. A collection of short stories arrives as one Audible title, so the record
+        /// has one title and one series for the lot, and the only place the individual
+        /// story names survive is the filenames somebody typed. Rendering the naming
+        /// pattern over those files replaces four story names with four numbers, and
+        /// nothing can put them back.
+        /// </para>
+        /// <para>
+        /// Freezing the folder as well as the name follows from what a path is: moving the
+        /// folder moves the file. So a book with any locked file keeps the folder it is
+        /// in, and its unlocked files are still named by the pattern inside it.
+        /// </para>
+        /// </summary>
+        public bool PathLocked { get; set; }
     }
 }

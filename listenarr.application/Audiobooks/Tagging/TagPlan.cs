@@ -36,6 +36,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// <summary>The operator excluded this tag from this run.</summary>
         Deselected,
 
+        /// <summary>This tag is locked on this file and no write may touch it.</summary>
+        Locked,
+
         /// <summary>The tag is written only when empty, and the file already has a value.</summary>
         Preserved,
 

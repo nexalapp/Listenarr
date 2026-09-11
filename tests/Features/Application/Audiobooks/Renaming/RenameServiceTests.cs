@@ -1898,6 +1898,184 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
             }
         }
 
+        /// <summary>
+        /// The case the path lock exists for: a collection of short stories arriving as
+        /// one Audible title, where the record has one title for the lot and the only
+        /// place the story names survive is the filenames somebody typed.
+        /// </summary>
+        [Fact]
+        public async Task PreviewRename_LockedFiles_KeepTheirNamesAndTheirFolder()
+        {
+            var bookFolder = Path.Join(_tempRoot, "Cory Doctorow", "[Radicalized] Radicalized (2019)");
+            Directory.CreateDirectory(bookFolder);
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _tempRoot,
+                FolderNamingPattern = "{Author}/{Title} ({Year})",
+                MultiFileNamingPattern = "{Author} - {Title} ({Year}) - {ChapterNumber:000}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 40,
+                Title = "Radicalized",
+                Authors = ["Cory Doctorow"],
+                PublishYear = "2019",
+                BasePath = bookFolder,
+                Files =
+                [
+                    new()
+                    {
+                        Id = 401,
+                        AudiobookId = 40,
+                        Path = Path.Join(bookFolder, "[Radicalized 2] Model Minority.m4b"),
+                        Format = "m4b",
+                        PathLocked = true
+                    },
+                    new()
+                    {
+                        Id = 402,
+                        AudiobookId = 40,
+                        Path = Path.Join(bookFolder, "[Radicalized 3] Masque of the Red Death.m4b"),
+                        Format = "m4b",
+                        PathLocked = true
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync([40]));
+
+            Assert.False(preview.HasChanges);
+            Assert.False(preview.FolderChanged);
+            Assert.All(preview.FileRenames, file =>
+            {
+                Assert.False(file.Changed);
+                Assert.True(file.PathLocked);
+                Assert.Equal(file.CurrentPath, file.NewPath);
+            });
+
+            // The numbered names the pattern wanted are exactly what must not happen.
+            Assert.DoesNotContain(preview.FileRenames, file => file.NewFilename!.Contains("001"));
+        }
+
+        /// <summary>
+        /// Moving a folder moves everything in it, so one locked file pins the folder for
+        /// the whole book — while its unlocked siblings are still named by the pattern
+        /// inside the folder they are already in.
+        /// </summary>
+        [Fact]
+        public async Task PreviewRename_OneLockedFile_PinsTheFolderButStillNamesItsSiblings()
+        {
+            var bookFolder = Path.Join(_tempRoot, "Wrong Folder Name");
+            Directory.CreateDirectory(bookFolder);
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _tempRoot,
+                FolderNamingPattern = "{Author}/{Title}",
+                MultiFileNamingPattern = "{Title} - {ChapterNumber:000}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 41,
+                Title = "Radicalized",
+                Authors = ["Cory Doctorow"],
+                BasePath = bookFolder,
+                Files =
+                [
+                    new()
+                    {
+                        Id = 411,
+                        AudiobookId = 41,
+                        Path = Path.Join(bookFolder, "a-locked.m4b"),
+                        Format = "m4b",
+                        PathLocked = true
+                    },
+                    new()
+                    {
+                        Id = 412,
+                        AudiobookId = 41,
+                        Path = Path.Join(bookFolder, "b-free.m4b"),
+                        Format = "m4b"
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync([41]));
+
+            Assert.False(preview.FolderChanged);
+            Assert.Equal(preview.CurrentFolderPath, preview.NewFolderPath);
+
+            var locked = preview.FileRenames.Single(file => file.FileId == 411);
+            Assert.False(locked.Changed);
+            Assert.Equal(locked.CurrentPath, locked.NewPath);
+
+            var free = preview.FileRenames.Single(file => file.FileId == 412);
+            Assert.True(free.Changed);
+            Assert.Equal("Radicalized - 002.m4b", free.NewFilename);
+            // Renamed where it stands, not moved into the folder the pattern wanted.
+            Assert.Equal(bookFolder, Path.GetDirectoryName(free.NewPath));
+        }
+
+        /// <summary>
+        /// The operations come from a client, so a page held open since before the lock
+        /// was set would otherwise carry out the very rename the lock exists to prevent.
+        /// </summary>
+        [Fact]
+        public async Task ExecuteRename_RefusesAStalePlanThatWouldRenameALockedFile()
+        {
+            var bookFolder = Path.Join(_tempRoot, "locked-execute");
+            Directory.CreateDirectory(bookFolder);
+            var currentPath = Path.Join(bookFolder, "Model Minority.m4b");
+            await File.WriteAllTextAsync(currentPath, "audio");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = bookFolder,
+                FolderNamingPattern = string.Empty,
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 42,
+                Title = "Radicalized",
+                BasePath = bookFolder,
+                Files =
+                [
+                    LockedTrackedFile(421, 42, currentPath)
+                ]
+            });
+            await db.SaveChangesAsync();
+
+            var result = Assert.Single(await service.ExecuteRenameAsync(
+            [
+                new RenameOperation
+                {
+                    AudiobookId = 42,
+                    CurrentFolderSemantics = ExpectedSemantics(bookFolder),
+                    FileRenames =
+                    [
+                        new FileRenameOperation
+                        {
+                            FileId = 421,
+                            CurrentPath = currentPath,
+                            NewPath = Path.Join(bookFolder, "Radicalized.m4b")
+                        }
+                    ]
+                }
+            ]));
+
+            Assert.False(result.Success);
+            Assert.Contains("locked", result.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(currentPath), "the locked file was renamed anyway");
+        }
+
         private (RenameService Service, ListenArrDbContext Db, string DbName) BuildService(
             ApplicationSettings settings,
             Action<Mock<IFileMover>>? configureFileMover = null,
@@ -2069,6 +2247,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
                 rootFolderServiceOverride);
 
             return (service, db, dbName);
+        }
+
+        /// <summary>A tracked file whose path is frozen.</summary>
+        private static AudiobookFile LockedTrackedFile(int id, int audiobookId, string storedPath)
+        {
+            var file = CreateTrackedFile(id, audiobookId, storedPath);
+            file.PathLocked = true;
+            return file;
         }
 
         private static AudiobookFile CreateTrackedFile(

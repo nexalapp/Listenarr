@@ -230,6 +230,33 @@ namespace Listenarr.Domain.Audiobooks.Tagging
                 ? definition
                 : null;
 
+        /// <summary>
+        /// A lock set as it should be stored: catalog casing, no duplicates, no tag the
+        /// catalog does not know, in the catalog's order.
+        /// </summary>
+        /// <remarks>
+        /// Locks arrive from a table where the column heading is the tag, so the casing
+        /// is whatever the client sent. Storing it verbatim would let one file hold
+        /// <c>SERIES</c> and <c>series</c> as two locks and leave the planner — which
+        /// compares case-insensitively — unable to say which one the operator clicked.
+        /// </remarks>
+        public static List<string> NormalizeLocks(IEnumerable<string>? tags)
+        {
+            var locked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var tag in tags ?? [])
+            {
+                var definition = Find(tag);
+                if (definition != null)
+                {
+                    locked.Add(definition.Tag);
+                }
+            }
+
+            return [.. Definitions
+                .Select(definition => definition.Tag)
+                .Where(locked.Contains)];
+        }
+
         /// <summary>The shipped mapping: every tag at its documented default.</summary>
         public static List<TagMapping> CreateDefaultMappings() =>
             [.. Definitions.Select(definition =>

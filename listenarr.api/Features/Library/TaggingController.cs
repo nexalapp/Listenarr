@@ -15,27 +15,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Globalization;
 using Listenarr.Application.Audiobooks;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
 {
-    /// <summary>
-    /// What one tagging run should write.
-    /// </summary>
-    /// <remarks>
-    /// <c>Tags</c> names the tags to write, or is null for every tag the mapping allows.
-    /// <c>Values</c> carries what the operator typed in the preview, replacing what
-    /// those tags' patterns would produce — a provider's wrong series position is
-    /// correctable for one book without editing the mapping every book shares.
-    /// </remarks>
-    public sealed class WriteTagsRequest
-    {
-        public List<string>? Tags { get; set; }
-
-        public Dictionary<string, string>? Values { get; set; }
-    }
-
     /// <summary>
     /// Writing Audible metadata into a book's M4B files.
     /// </summary>
@@ -46,9 +31,20 @@ namespace Listenarr.Api.Features.Library
         ITagQueueService tagQueue,
         ITagPreviewService previewService,
         ILibraryTagIndexService tagIndex,
+        IAudiobookFileRepository audiobookFileRepository,
         IConfigurationService configurationService,
         ILogger<TaggingController> logger) : ControllerBase
     {
+        /// <summary>
+        /// How many files one lock request may touch.
+        /// </summary>
+        /// <remarks>
+        /// Generous, because locking a column across a whole library is a thing somebody
+        /// will reasonably want to do in one click, and the write is one column on rows
+        /// already being loaded.
+        /// </remarks>
+        private const int MaxLockFiles = 5000;
+
         /// <summary>
         /// Every audio file in the library with the tags it actually carries.
         /// </summary>
@@ -98,7 +94,20 @@ namespace Listenarr.Api.Features.Library
                     tags = row.Tags,
                     expected = row.Expected,
                     mismatched = row.Mismatched,
-                    error = row.Error
+                    error = row.Error,
+                    lockedTags = row.LockedTags,
+                    // The path as the library reads it, what organizing would make of it,
+                    // and whether those differ. A null expectation means organizing could
+                    // not answer for this book, which the table shows as unknown rather
+                    // than as agreement.
+                    displayPath = row.DisplayPath,
+                    expectedPath = row.ExpectedPath,
+                    pathMismatched = row.PathMismatched,
+                    pathLocked = row.PathLocked,
+                    // The filename is its own column, so its disagreement is its own
+                    // fact: organizing can rename a file without moving it.
+                    expectedFileName = row.ExpectedFileName,
+                    fileNameMismatched = row.FileNameMismatched
                 })
             });
         }
@@ -133,6 +142,117 @@ namespace Listenarr.Api.Features.Library
                     ? current.Mode
                     : definition.DefaultMode).ToString()
             }));
+        }
+
+        /// <summary>
+        /// Lock or unlock tags on files, so no write may touch them.
+        /// </summary>
+        /// <remarks>
+        /// A lock is recorded against the file rather than remembered by the browser that
+        /// set it, because the write it has to stop is mostly not the one the operator is
+        /// about to start: automatic tagging runs on every scan completion, and a lock
+        /// only the tag table knew about would be undone by the next import.
+        /// </remarks>
+        /// <response code="200">The locks were applied; the resulting sets are returned.</response>
+        /// <response code="400">No files, no known tags, or too many files at once.</response>
+        [HttpPost("locks")]
+        public async Task<IActionResult> SetLocks(
+            [FromBody] SetTagLocksRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request?.FileIds is not { Count: > 0 })
+            {
+                return BadRequest(new { ok = false, reason = "At least one file is required." });
+            }
+
+            if (request.FileIds.Count > MaxLockFiles)
+            {
+                return BadRequest(new
+                {
+                    ok = false,
+                    reason = $"Cannot change locks on more than {MaxLockFiles} files at once."
+                });
+            }
+
+            // Unknown tags are dropped rather than rejected, but a request naming nothing
+            // the catalog knows is a client bug worth reporting rather than a no-op to
+            // answer with "done".
+            var tags = TagCatalog.NormalizeLocks(request.Tags);
+            if (tags.Count == 0)
+            {
+                return BadRequest(new { ok = false, reason = "At least one known tag is required." });
+            }
+
+            var locks = await audiobookFileRepository.SetLockedTagsAsync(
+                request.FileIds,
+                tags,
+                request.Locked,
+                cancellationToken);
+
+            logger.LogInformation(
+                "{Action} {TagCount} tag(s) on {FileCount} file(s)",
+                request.Locked ? "Locked" : "Unlocked",
+                tags.Count,
+                locks.Count);
+
+            return Ok(new
+            {
+                ok = true,
+                // Keyed by file id as strings, because that is what a JSON object gives
+                // the client anyway, and the table looks each row's set up by id.
+                locks = locks.ToDictionary(
+                    pair => pair.Key.ToString(CultureInfo.InvariantCulture),
+                    pair => pair.Value)
+            });
+        }
+
+        /// <summary>
+        /// Freeze or release the paths of files, so organizing may not move or rename them.
+        /// </summary>
+        /// <remarks>
+        /// A separate endpoint from the tag locks rather than a reserved tag name: a path
+        /// is not a tag, it is not in the catalog, and the two are honoured by different
+        /// services. Freezing one file's path also pins its book's folder, because moving
+        /// a folder moves everything in it.
+        /// </remarks>
+        /// <response code="200">The locks were applied; the resulting states are returned.</response>
+        /// <response code="400">No files, or too many at once.</response>
+        [HttpPost("path-locks")]
+        public async Task<IActionResult> SetPathLocks(
+            [FromBody] SetPathLocksRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request?.FileIds is not { Count: > 0 })
+            {
+                return BadRequest(new { ok = false, reason = "At least one file is required." });
+            }
+
+            if (request.FileIds.Count > MaxLockFiles)
+            {
+                return BadRequest(new
+                {
+                    ok = false,
+                    reason = $"Cannot change locks on more than {MaxLockFiles} files at once."
+                });
+            }
+
+            var locks = await audiobookFileRepository.SetPathLockedAsync(
+                request.FileIds,
+                request.Locked,
+                cancellationToken);
+
+            logger.LogInformation(
+                "{Action} the path of {FileCount} file(s)",
+                request.Locked ? "Locked" : "Unlocked",
+                locks.Count);
+
+            return Ok(new
+            {
+                ok = true,
+                locks = locks.ToDictionary(
+                    pair => pair.Key.ToString(CultureInfo.InvariantCulture),
+                    pair => pair.Value)
+            });
         }
 
         /// <summary>

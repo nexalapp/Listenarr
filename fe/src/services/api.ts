@@ -1576,6 +1576,45 @@ class ApiService {
     return this.request<LibraryTagTable>(`/tagging/library${refresh ? '?refresh=true' : ''}`)
   }
 
+  /**
+   * Lock or unlock tags on files, so no write may touch them.
+   *
+   * Recorded against the file rather than remembered here, because the write a lock
+   * mostly has to stop is the automatic one that runs on the next scan completion.
+   * Returns every affected file's resulting lock set, keyed by file id.
+   */
+  async setTagLocks(
+    fileIds: number[],
+    tags: string[],
+    locked: boolean,
+  ): Promise<Record<string, string[]>> {
+    const response = await this.request<{ ok: boolean; locks: Record<string, string[]> }>(
+      '/tagging/locks',
+      {
+        method: 'POST',
+        body: JSON.stringify({ fileIds, tags, locked }),
+      },
+    )
+    return response.locks ?? {}
+  }
+
+  /**
+   * Freeze or release the paths of files, so organizing may not move or rename them.
+   *
+   * Freezing one file's path also pins its book's folder: moving a folder moves
+   * everything in it. Returns every affected file's resulting state, keyed by file id.
+   */
+  async setPathLocks(fileIds: number[], locked: boolean): Promise<Record<string, boolean>> {
+    const response = await this.request<{ ok: boolean; locks: Record<string, boolean> }>(
+      '/tagging/path-locks',
+      {
+        method: 'POST',
+        body: JSON.stringify({ fileIds, locked }),
+      },
+    )
+    return response.locks ?? {}
+  }
+
   /** The tags Listenarr can write, with their current mapping. */
   async getTagDefinitions(): Promise<TagDefinition[]> {
     return this.request<TagDefinition[]>('/tagging/tags')

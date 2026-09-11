@@ -192,6 +192,81 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             Assert.Equal("Old album", plan.FinalTags[TagCatalog.Album]);
         }
 
+        // ---- locks, which are about the file rather than the run ----------------------
+
+        [Fact]
+        public void ALockedTag_IsLeftAloneEvenWhenTheRunSelectedIt()
+        {
+            var locked = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                TagCatalog.Description
+            };
+
+            var plan = CreatePlanner().Plan(
+                Book(),
+                TagCatalog.CreateDefaultMappings(),
+                Tags((TagCatalog.Description, "A blurb somebody wrote by hand")),
+                selectedTags: null,
+                overrides: null,
+                lockedTags: locked);
+
+            var change = Change(plan, TagCatalog.Description);
+            Assert.Equal(TagChangeAction.Locked, change.Action);
+            Assert.Equal("A blurb somebody wrote by hand", plan.FinalTags[TagCatalog.Description]);
+
+            // And only that tag: a lock is not a pause on the whole book.
+            Assert.Equal(TagChangeAction.Write, Change(plan, TagCatalog.Album).Action);
+        }
+
+        [Fact]
+        public void ALockedTag_OutranksAValueTheOperatorTyped()
+        {
+            // The two say opposite things and the lock is the older, more deliberate of
+            // them: somebody recorded that this tag is not Listenarr's to touch, and a
+            // value typed into a preview is not a repeal of that.
+            var locked = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                TagCatalog.Album
+            };
+
+            var plan = CreatePlanner().Plan(
+                Book(),
+                TagCatalog.CreateDefaultMappings(),
+                Tags((TagCatalog.Album, "Whatever the release called it")),
+                selectedTags: null,
+                overrides: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [TagCatalog.Album] = "Something else entirely"
+                },
+                lockedTags: locked);
+
+            Assert.Equal(TagChangeAction.Locked, Change(plan, TagCatalog.Album).Action);
+            Assert.Equal("Whatever the release called it", plan.FinalTags[TagCatalog.Album]);
+        }
+
+        [Fact]
+        public void ALockedTagTheFileHasNothingFor_StaysEmpty()
+        {
+            // The case the lock exists for is not only "keep this value" but "this tag is
+            // deliberately blank on this file".
+            var locked = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                TagCatalog.Description
+            };
+
+            var plan = CreatePlanner().Plan(
+                Book(),
+                TagCatalog.CreateDefaultMappings(),
+                Tags(),
+                selectedTags: null,
+                overrides: null,
+                lockedTags: locked);
+
+            Assert.Equal(TagChangeAction.Locked, Change(plan, TagCatalog.Description).Action);
+            Assert.False(plan.FinalTags.ContainsKey(TagCatalog.Description));
+            Assert.DoesNotContain(TagCatalog.Description, plan.WrittenTags.Keys);
+        }
+
         // ---- values the operator typed over the proposal ------------------------------
 
         [Fact]
