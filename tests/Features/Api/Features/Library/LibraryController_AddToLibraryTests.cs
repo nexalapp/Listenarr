@@ -202,6 +202,61 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
+        public async Task AddToLibrary_AllowDuplicateEdition_AddsTheBookTheHeldRecordBlocks()
+        {
+            // A held record can be wrong about which book it contains, and one product
+            // identifier can cover several books. Neither may lock a real file out of
+            // the library for good, so an explicit override has to be believed - and it
+            // has to clear the commit-time re-check as well as the first one.
+            await ReinitializeAsync(builder => builder
+                .WithScoped<ILibraryDestinationMutationGuard>(provider =>
+                    new LibraryDestinationMutationGuard(
+                        provider.GetRequiredService<IRootFolderService>(),
+                        provider.GetRequiredService<IRootFolderRelocationService>(),
+                        provider.GetRequiredService<IFileSystemSemanticsResolver>(),
+                        provider.GetRequiredService<IAudiobookRepository>())));
+            var root = Assert.Single(await _rootFolderRepository.GetAllAsync());
+            var rootResolution = await _provider
+                .GetRequiredService<IFileSystemSemanticsResolver>()
+                .ResolveAsync(root.Path, FileSystemCaseSensitivityMode.Auto);
+            root.ResolvedCaseSensitivity = rootResolution.Semantics.CaseSensitivity;
+            root.PathIdentityState = PathIdentityState.Valid;
+            root.PathIdentityKey = FileSystemPathIdentity.CreateKey(
+                "root",
+                root.Path,
+                rootResolution.Semantics);
+            await _rootFolderRepository.UpdateAsync(root);
+
+            LibraryController.AddToLibraryRequest CreateRequest(
+                string destinationLeaf,
+                bool allowDuplicate) => new()
+                {
+                    Metadata = new AudibleBookMetadata
+                    {
+                        Title = "Pet Sematary",
+                        Asin = "B0797FYNDC",
+                        Narrators = ["Michael C. Hall"]
+                    },
+                    DestinationPath = Path.Join(root.Path, "Stephen King", destinationLeaf),
+                    Monitored = false,
+                    AllowDuplicateEdition = allowDuplicate
+                };
+            var controller = _provider.GetRequiredService<LibraryController>();
+
+            var first = await controller.AddToLibrary(
+                CreateRequest("Bag Of Bones", allowDuplicate: false));
+            var refused = await controller.AddToLibrary(
+                CreateRequest("Pet Sematary (2018)", allowDuplicate: false));
+            var overridden = await controller.AddToLibrary(
+                CreateRequest("Pet Sematary (2018)", allowDuplicate: true));
+
+            Assert.IsType<OkObjectResult>(first);
+            Assert.IsType<ConflictObjectResult>(refused);
+            Assert.IsType<OkObjectResult>(overridden);
+            Assert.Equal(2, (await _audiobookRepository.GetAllAsync()).Count);
+        }
+
+        [Fact]
         public async Task AddToLibrary_DifferentBookSameDestination_ReturnsDestinationConflict()
         {
             await ReinitializeAsync(builder => builder

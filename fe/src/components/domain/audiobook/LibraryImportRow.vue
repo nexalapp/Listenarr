@@ -132,6 +132,20 @@
           <span>-</span>
         </div>
 
+        <label
+          v-if="item.selectedMatch || item.fileMetadata"
+          class="separate-book-toggle"
+          title="Add this as its own record even when the library already holds what looks like the same edition. One identifier can cover several books, and a held record can be wrong about which book it contains."
+        >
+          <input
+            type="checkbox"
+            :checked="item.importAsSeparateBook === true"
+            data-cy="import-as-separate-book"
+            @change="store.setImportAsSeparateBook(item.id, ($event.target as HTMLInputElement).checked)"
+          />
+          <span>Separate book</span>
+        </label>
+
         <div class="match-actions">
           <button
             class="btn-use-file-toggle"
@@ -482,6 +496,22 @@ function formatGroupedFileLabel(sourceFile: string): string {
 
 .match-status.unsearched {
   color: #555;
+}
+
+.separate-book-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8b949e);
+  cursor: pointer;
+  user-select: none;
+}
+
+.separate-book-toggle input {
+  cursor: pointer;
+  margin: 0;
 }
 
 .match-actions {

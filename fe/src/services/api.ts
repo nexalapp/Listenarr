@@ -1263,6 +1263,7 @@ class ApiService {
       autoSearch?: boolean
       searchResult?: SearchResult
       destinationPath?: string
+      allowDuplicateEdition?: boolean
     },
   ): Promise<{ message: string; audiobook: Audiobook }> {
     const normalizedMetadata = this.normalizeMetadataForApi(metadata)
@@ -1280,6 +1281,7 @@ class ApiService {
       autoSearch: options?.autoSearch ?? false,
       searchResult: normalizedSearchResult,
       destinationPath: options?.destinationPath,
+      allowDuplicateEdition: options?.allowDuplicateEdition ?? false,
     }
     return this.request<{ message: string; audiobook: Audiobook }>('/library/add', {
       method: 'POST',

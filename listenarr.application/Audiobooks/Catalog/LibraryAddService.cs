@@ -102,8 +102,10 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 }
             }
 
-            var duplicate = await AudiobookEditionIdentity.FindExistingEditionAsync(
-                _repo, metadata, cancellationToken);
+            var duplicate = request.AllowDuplicateEdition
+                ? null
+                : await AudiobookEditionIdentity.FindExistingEditionAsync(
+                    _repo, metadata, cancellationToken);
             if (duplicate != null)
             {
                 return new LibraryAddOperationResult
@@ -206,8 +208,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var duplicate = await AudiobookEditionIdentity.FindExistingEditionAsync(
-                _repo, metadata, cancellationToken);
+            // The commit-time re-check exists because another add can land between the
+            // first check and this one. An explicit override has to clear both, or the
+            // caller is refused at the last moment by the rule it already answered.
+            var duplicate = request.AllowDuplicateEdition
+                ? null
+                : await AudiobookEditionIdentity.FindExistingEditionAsync(
+                    _repo, metadata, cancellationToken);
             if (duplicate != null)
             {
                 return AlreadyExists(duplicate);
