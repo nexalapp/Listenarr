@@ -454,6 +454,65 @@ describe('TagsView', () => {
     expect(setPathLocks).toHaveBeenCalledWith([1, 2], true)
   })
 
+  it('shows every proposal at once rather than one tooltip at a time', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          fileId: 1,
+          fileName: 'Model Minority.m4b',
+          expectedFileName: 'Radicalized (2019) - 001.m4b',
+          fileNameMismatched: true,
+          tags: { title: 'Radicalized', album: 'Radicalized' },
+          expected: { title: 'Radicalized', album: '[Radicalized 1] Model Minority' },
+          mismatched: ['album'],
+        }),
+      ]),
+    )
+
+    // Nothing extra until asked: the dense view is what the table is opened for.
+    expect(wrapper.find('.cell-proposal').exists()).toBe(false)
+
+    const proposals = wrapper
+      .findAll('.toolbar-toggle input')
+      .find((input) =>
+        (input.element as HTMLInputElement).parentElement!.textContent!.includes('Proposals'),
+      )!
+    await proposals.setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const shown = wrapper.findAll('.cell-proposal').map((line) => line.text())
+    expect(shown).toContain('[Radicalized 1] Model Minority')
+    expect(shown).toContain('Radicalized (2019) - 001.m4b')
+
+    // Only where something would change: a tag that is already right proposes nothing.
+    expect(shown).not.toContain('Radicalized')
+  })
+
+  it('proposes nothing for a cell whose lock means nothing will be written', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          lockedTags: ['album'],
+          mismatched: ['album'],
+          pathLocked: true,
+          fileNameMismatched: true,
+          expectedFileName: 'Renamed.m4b',
+        }),
+      ]),
+    )
+
+    const proposals = wrapper
+      .findAll('.toolbar-toggle input')
+      .find((input) =>
+        (input.element as HTMLInputElement).parentElement!.textContent!.includes('Proposals'),
+      )!
+    await proposals.setValue(true)
+    await wrapper.vm.$nextTick()
+
+    // Offering a value that will never be applied is the one thing this must not do.
+    expect(wrapper.findAll('.cell-proposal')).toHaveLength(0)
+  })
+
   it('narrows to files a write or an organize would change', async () => {
     const wrapper = await mountView(
       table([

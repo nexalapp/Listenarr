@@ -55,6 +55,19 @@
         </label>
 
         <!--
+          Second, so the first `.toolbar-toggle` stays the filter. Every row is a fixed
+          height, so a second line costs one constant rather than teaching the windowing
+          about rows that vary.
+        -->
+        <label
+          class="toolbar-toggle"
+          title="Show what a write or an organize would put in each cell"
+        >
+          <input type="checkbox" v-model="showProposals" />
+          <span>Proposals</span>
+        </label>
+
+        <!--
           Both act on the selection rather than on the row under the pointer: the column
           exists to say which books an action is for, and an action that quietly meant
           something else would make it pointless.
@@ -154,7 +167,11 @@
     </div>
 
     <div v-else class="tags-scroll" ref="scrollEl" @scroll.passive="onScroll">
-      <table class="tags-table" :style="tableStyle">
+      <table
+        class="tags-table"
+        :class="{ 'tags-table--proposals': showProposals }"
+        :style="tableStyle"
+      >
         <thead>
           <tr>
             <th
@@ -275,18 +292,16 @@
                 @change="toggleBook(row.audiobookId)"
               />
 
-              <template v-else-if="!isLockableColumn(column.key)">
-                {{ cellText(row, column.key) }}
-              </template>
-
               <!--
                 The padlock leads the value rather than trailing it: trailing, it lands
                 against the next column's text on a truncated cell and reads as belonging
                 to whichever value it happens to touch. Leading, each column gets one rail
-                of them.
+                of them — and it sits beside both lines rather than on the first, so a
+                proposal lines up under the value it would replace.
               -->
               <div v-else class="cell">
                 <button
+                  v-if="isLockableColumn(column.key)"
                   type="button"
                   class="cell-lock"
                   :class="{ 'cell-lock--on': isLocked(row, column.key) }"
@@ -301,7 +316,14 @@
                     />
                   </svg>
                 </button>
-                <span class="cell-text">{{ cellText(row, column.key) }}</span>
+                <div class="cell-lines">
+                  <span class="cell-text">{{ cellText(row, column.key) }}</span>
+                  <span
+                    v-if="showProposals && proposalFor(row, column.key)"
+                    class="cell-proposal"
+                    >{{ proposalFor(row, column.key) }}</span
+                  >
+                </div>
               </div>
             </td>
           </tr>
@@ -417,6 +439,15 @@ const FILENAME_KEY = 'fileName'
 const LEADING_TAGS = ['description']
 
 const ROW_HEIGHT = 30
+
+/**
+ * How tall a row is once it carries a proposal underneath.
+ *
+ * Uniform rather than per-row: a row that grew only where something changed would make
+ * the window's arithmetic a running total instead of a multiplication, and the whole
+ * reason this table scrolls is that the arithmetic is a multiplication.
+ */
+const PROPOSAL_ROW_HEIGHT = 48
 const OVERSCAN = 12
 const MIN_COLUMN_WIDTH = 80
 const DEFAULT_COLUMN_WIDTH = 200
@@ -432,6 +463,7 @@ const SELECT_COLUMN_WIDTH = 34
 const VISIBLE_TAGS_KEY = 'listenarr.tagsView.columns.v2'
 const WIDTHS_KEY = 'listenarr.tagsView.widths'
 const SHOW_PATH_KEY = 'listenarr.tagsView.showPath'
+const PROPOSALS_KEY = 'listenarr.tagsView.proposals'
 
 const router = useRouter()
 
@@ -445,6 +477,15 @@ const onlyMismatched = ref(false)
 const columnsOpen = ref(false)
 const columnsMenuEl = ref<HTMLElement | null>(null)
 const showPath = ref(true)
+
+/**
+ * Whether each cell also shows what Listenarr would put there.
+ *
+ * Off by default: the dense reading of what the library actually carries is the view
+ * this table is opened for most often, and halving how many files fit on a screen is not
+ * a cost to impose on it.
+ */
+const showProposals = ref(false)
 
 /**
  * Which books the toolbar's actions are for, by audiobook id.
@@ -545,9 +586,12 @@ const totalWidth = computed(() =>
  * left, so the offset is a fact about the table and belongs to it rather than being
  * repeated as a magic number in the stylesheet.
  */
+const rowHeight = computed(() => (showProposals.value ? PROPOSAL_ROW_HEIGHT : ROW_HEIGHT))
+
 const tableStyle = computed(() => ({
   width: `${totalWidth.value}px`,
   '--select-width': `${SELECT_COLUMN_WIDTH}px`,
+  '--row-height': `${rowHeight.value}px`,
 }))
 
 /** A row's value for one column: the file, where it sits, or what it carries for a tag. */
@@ -573,6 +617,20 @@ const isMismatched = (row: LibraryTagRow, key: string) => {
   if (key === PATH_KEY) return row.pathMismatched && !row.pathLocked
   if (key === FILENAME_KEY) return row.fileNameMismatched && !row.pathLocked
   return isTagColumn(key) && row.mismatched.includes(key) && !isLocked(row, key)
+}
+
+/**
+ * What Listenarr would put in this cell, or empty when it would leave it alone.
+ *
+ * Keyed off the same predicate that paints the cell yellow, so a locked cell shows no
+ * proposal — nothing would be written there, and offering a value that will never be
+ * applied is the one thing a proposal column must not do.
+ */
+function proposalFor(row: LibraryTagRow, key: string) {
+  if (!isMismatched(row, key)) return ''
+  if (key === FILENAME_KEY) return row.expectedFileName ?? ''
+  if (key === PATH_KEY) return row.expectedPath ?? ''
+  return row.expected[key] ?? ''
 }
 
 function cellClass(row: LibraryTagRow, key: string) {
@@ -716,13 +774,13 @@ const organizeCount = computed(
 )
 
 const firstVisibleIndex = computed(() =>
-  Math.max(0, Math.floor(scrollTop.value / ROW_HEIGHT) - OVERSCAN),
+  Math.max(0, Math.floor(scrollTop.value / rowHeight.value) - OVERSCAN),
 )
 
 const lastVisibleIndex = computed(() =>
   Math.min(
     visibleRows.value.length,
-    Math.ceil((scrollTop.value + viewportHeight.value) / ROW_HEIGHT) + OVERSCAN,
+    Math.ceil((scrollTop.value + viewportHeight.value) / rowHeight.value) + OVERSCAN,
   ),
 )
 
@@ -730,9 +788,9 @@ const windowedRows = computed(() =>
   visibleRows.value.slice(firstVisibleIndex.value, lastVisibleIndex.value),
 )
 
-const topPadding = computed(() => firstVisibleIndex.value * ROW_HEIGHT)
+const topPadding = computed(() => firstVisibleIndex.value * rowHeight.value)
 const bottomPadding = computed(
-  () => Math.max(0, visibleRows.value.length - lastVisibleIndex.value) * ROW_HEIGHT,
+  () => Math.max(0, visibleRows.value.length - lastVisibleIndex.value) * rowHeight.value,
 )
 
 /**
@@ -1035,6 +1093,8 @@ function restorePreferences() {
     if (storedShowPath !== null) {
       showPath.value = storedShowPath === 'true'
     }
+
+    showProposals.value = localStorage.getItem(PROPOSALS_KEY) === 'true'
   } catch {
     // A browser with storage blocked still gets a working table, just not a remembered one.
   }
@@ -1061,6 +1121,27 @@ watch(showPath, (value) => {
   try {
     localStorage.setItem(SHOW_PATH_KEY, String(value))
   } catch {}
+})
+
+/*
+ * Rows change height here, so a scroll position measured in pixels now means a different
+ * row. Rescaling it keeps whatever was at the top of the screen at the top of the screen,
+ * which is the difference between a toggle and losing your place in four hundred files.
+ */
+watch(showProposals, (next, previous) => {
+  try {
+    localStorage.setItem(PROPOSALS_KEY, String(next))
+  } catch {}
+
+  const previousHeight = previous ? PROPOSAL_ROW_HEIGHT : ROW_HEIGHT
+  const nextHeight = next ? PROPOSAL_ROW_HEIGHT : ROW_HEIGHT
+  const topRow = Math.round(scrollTop.value / previousHeight)
+
+  void nextTick(() => {
+    const target = topRow * nextHeight
+    scrollTop.value = target
+    if (scrollEl.value) scrollEl.value.scrollTop = target
+  })
 })
 
 // Scrolling back to the top on a re-filter: the window is an index range, and leaving it
@@ -1352,7 +1433,7 @@ onBeforeUnmount(() => {
 }
 
 .tags-td {
-  height: 30px;
+  height: var(--row-height, 30px);
   max-width: 0;
   padding: 0 8px;
   background: var(--bg-primary);
@@ -1400,15 +1481,55 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   min-width: 0;
-  height: 30px;
+  height: 100%;
 }
 
-.cell-text {
+/*
+ * The value and its proposal stack, while the padlock stays beside the pair: it applies
+ * to both lines, and a lock that sat on the first would read as belonging only to it.
+ */
+.cell-lines {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   flex: 1;
+  min-width: 0;
+}
+
+.cell-text,
+.cell-proposal {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cell-proposal {
+  color: var(--warning-500);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+/*
+ * Top-aligned once a second line exists, so the values a reader is scanning down stay on
+ * one baseline whether or not the cell beside them has a proposal under it.
+ */
+.tags-table--proposals .cell {
+  align-items: flex-start;
+  padding-top: 5px;
+}
+
+.tags-table--proposals .cell-lines {
+  justify-content: flex-start;
+}
+
+.tags-table--proposals .cell-lock {
+  margin-top: 1px;
+}
+
+/* A checkbox has nothing underneath it, so it keeps the whole cell to centre itself in. */
+.tags-table--proposals .row-select {
+  margin-top: 4px;
 }
 
 /*
