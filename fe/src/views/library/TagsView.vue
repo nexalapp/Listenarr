@@ -275,6 +275,7 @@
               :class="cellClass(row, column.key)"
               :style="{ width: `${widthFor(column.key)}px` }"
               :title="cellTitle(row, column.key)"
+              @click="column.key === SELECT_KEY ? selectFromCell($event, row) : undefined"
             >
               <!--
                 One tick per book, not per file: a tag write is queued for a book, so a
@@ -834,6 +835,23 @@ const allVisibleSelected = computed(
 const someVisibleSelected = computed(() =>
   [...visibleBookIds.value].some((id) => selectedBooks.value.has(id)),
 )
+
+/**
+ * Ticking from anywhere in the selection cell, not just the checkbox inside it.
+ *
+ * A checkbox is thirteen pixels in a thirty-pixel row, and every near miss used to fall
+ * through to the row and navigate away — losing the selection being built. The cell is
+ * the target; the checkbox is only what it looks like.
+ */
+function selectFromCell(event: MouseEvent, row: LibraryTagRow) {
+  event.stopPropagation()
+
+  // The checkbox raises its own change event, and handling the bubble as well would
+  // toggle the book twice and leave it exactly as it was.
+  if ((event.target as HTMLElement)?.tagName !== 'INPUT') {
+    toggleBook(row.audiobookId)
+  }
+}
 
 function toggleBook(audiobookId: number) {
   const next = new Set(selectedBooks.value)
@@ -1454,6 +1472,7 @@ onBeforeUnmount(() => {
   left: 0;
   padding: 0;
   text-align: center;
+  cursor: pointer;
 }
 
 .tags-td--sticky {

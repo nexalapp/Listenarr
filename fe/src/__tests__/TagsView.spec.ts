@@ -337,6 +337,44 @@ describe('TagsView', () => {
     expect(wrapper.find('.tags-td--locked').exists()).toBe(true)
   })
 
+  it('selects from anywhere in the tick cell rather than navigating on a near miss', async () => {
+    // A checkbox is thirteen pixels in a thirty-pixel row. Every miss used to fall
+    // through to the row and navigate away, losing the selection being built.
+    const wrapper = await mountView(table([row({ audiobookId: 42 })]))
+
+    await wrapper.find('.tags-row .tags-td--select').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(push).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('1 book selected')
+
+    // And the checkbox itself still toggles exactly once, not twice via the cell.
+    await wrapper.find('.tags-row .row-select').setValue(false)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).not.toContain('book selected')
+  })
+
+  it('does not change any lock when a book is ticked', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'A.m4b' }),
+        row({ audiobookId: 9, fileId: 2, fileName: 'B.m4b', pathLocked: true }),
+      ]),
+    )
+
+    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    // Selection is keyed on the book alone: a locked row of another book is untouched,
+    // and nothing is written.
+    expect(setPathLocks).not.toHaveBeenCalled()
+    expect(setTagLocks).not.toHaveBeenCalled()
+    const checked = wrapper
+      .findAll('.tags-row .row-select')
+      .map((box) => (box.element as HTMLInputElement).checked)
+    expect(checked).toEqual([true, false])
+  })
+
   it('does not open the book when the lock or the tick is clicked', async () => {
     setTagLocks.mockResolvedValue({ '1': ['album'] })
     const wrapper = await mountView()
