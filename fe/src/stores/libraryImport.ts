@@ -53,9 +53,26 @@ export interface LibraryImportItem {
   isSearching: boolean // currently in-flight
   // Selection
   selected: boolean
+  // When the library already holds what looks like this edition, add a separate
+  // record instead of attaching the file to the held one. One identifier can cover
+  // several books, and a held record can simply be wrong about what it contains -
+  // neither should be able to lock a real file out of the library for good.
+  importAsSeparateBook?: boolean
 }
 
 const ASIN_PATTERN = /^[A-Z0-9]{10}$/i
+
+/**
+ * Whether two folder paths name the same folder, for the purpose of deciding
+ * whether a file can be registered in place against a held record. Deliberately
+ * lenient about separators and a trailing slash; the backend applies the
+ * authoritative comparison with the root folder's real case-sensitivity rules.
+ */
+function _sameFolder(left: string, right: string): boolean {
+  const normalize = (value: string) =>
+    value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  return normalize(left) === normalize(right)
+}
 
 function extractFolderName(relativePath: string): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
@@ -526,6 +543,13 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     _persistMatches()
   }
 
+  function setImportAsSeparateBook(id: string, value: boolean) {
+    const item = items.value[id]
+    if (!item) return
+    items.value[id] = { ...item, importAsSeparateBook: value }
+    _persistMatches()
+  }
+
   function toggleSelectAll() {
     const importable = itemList.value.filter((i) => i.selectedMatch || i.fileMetadata)
     const allSelected = importable.every((i) => i.selected)
@@ -595,6 +619,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             monitored: match ? monitor.value != 'none' : false,
             destinationPath: action.value === 'none' ? item.folderPath : rootFolderPath,
             searchResult: sanitizedMatch,
+            allowDuplicateEdition: item.importAsSeparateBook === true,
           })
           audiobookId = audiobook.id
         } catch (e: unknown) {
@@ -604,6 +629,23 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body
             if (body?.audiobook?.id) {
               audiobookId = body.audiobook.id
+              // Attaching to the held record registers the file into that record's
+              // folder. When the file is somewhere else entirely, in-place
+              // registration refuses it, and the backend's reason never reaches the
+              // UI - so say plainly what happened and what the two ways out are.
+              const heldBasePath: string | undefined = body.audiobook.basePath
+              if (
+                action.value === 'none' &&
+                heldBasePath &&
+                !_sameFolder(heldBasePath, item.folderPath)
+              ) {
+                throw new Error(
+                  `"${body.audiobook.title ?? 'A book'}" is already in the library at ` +
+                    `${heldBasePath}, which is not the folder this file is in. ` +
+                    `Tick "Separate book" on this row to add it as its own record, ` +
+                    `or choose Move/Copy so the file is placed into that folder.`,
+                )
+              }
               // Mutation imports may compatibility-route an existing audiobook to the
               // selected destination. In-place registration must never rewrite BasePath:
               // the existing file has to belong to the audiobook's current managed folder.
@@ -696,6 +738,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     clearMatch,
     useFileMetadata,
     toggleSelect,
+    setImportAsSeparateBook,
     toggleSelectAll,
     importSelected,
   }
