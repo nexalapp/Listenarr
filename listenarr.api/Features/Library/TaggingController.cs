@@ -27,11 +27,13 @@ namespace Listenarr.Api.Features.Library
     [ApiController]
     [Route("api/v{version:apiVersion}/tagging")]
     [Tags("Library")]
-    public sealed class TaggingController(
+    public sealed partial class TaggingController(
         ITagQueueService tagQueue,
         ITagPreviewService previewService,
         ILibraryTagIndexService tagIndex,
         IAudiobookFileRepository audiobookFileRepository,
+        IAudiobookRepository audiobookRepository,
+        IFileSystem fileSystem,
         IConfigurationService configurationService,
         ILogger<TaggingController> logger) : ControllerBase
     {

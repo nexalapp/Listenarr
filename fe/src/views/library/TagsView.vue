@@ -183,11 +183,14 @@
               :aria-sort="ariaSortFor(column.key)"
             >
               <!--
-                The selection heading is a control, not a label: it has nothing to sort by
-                and nothing to resize, and a sort button over a checkbox would swallow the
-                click that was meant for it.
+                The control headings are controls, not labels: they have nothing to sort
+                by and nothing to resize, and a sort button over a checkbox would swallow
+                the click that was meant for it. The transport column has no heading at
+                all — there is nothing to say about a column of play buttons.
               -->
-              <template v-if="column.key === SELECT_KEY">
+              <template v-if="column.key === AUDIO_KEY"></template>
+
+              <template v-else-if="column.key === SELECT_KEY">
                 <input
                   type="checkbox"
                   class="row-select"
@@ -293,6 +296,23 @@
                 @change="toggleBook(row.audiobookId)"
               />
 
+              <button
+                v-else-if="column.key === AUDIO_KEY"
+                type="button"
+                class="row-play"
+                :class="{ 'row-play--on': playingFileId === row.fileId }"
+                :aria-label="
+                  playingFileId === row.fileId ? `Stop ${row.fileName}` : `Play ${row.fileName}`
+                "
+                :aria-pressed="playingFileId === row.fileId"
+                @click.stop="togglePlay(row)"
+                @keydown.stop
+              >
+                <svg class="play-icon" aria-hidden="true">
+                  <use :href="playingFileId === row.fileId ? '#tags-pause' : '#tags-play'" />
+                </svg>
+              </button>
+
               <!--
                 The padlock leads the value rather than trailing it: trailing, it lands
                 against the next column's text on a truncated cell and reads as belonging
@@ -356,6 +376,13 @@
       <span class="legend-item">Click a row to open its book's Tags tab.</span>
     </div>
 
+    <!--
+      One element for the whole table. It is never shown: the row buttons are the
+      transport, and a second set of controls that could disagree with them would be one
+      set too many.
+    -->
+    <audio ref="audioEl" preload="none" @ended="onPlaybackEnded" @error="onPlaybackError"></audio>
+
     <RenamePreviewModal
       v-if="organizeOpen"
       :visible="organizeOpen"
@@ -379,6 +406,13 @@
           stroke-width="1.4"
         />
         <rect x="3.4" y="7.4" width="9.2" height="6.2" rx="1.4" fill="currentColor" />
+      </symbol>
+      <symbol id="tags-play" viewBox="0 0 16 16">
+        <path d="M5 3.6v8.8l7-4.4z" fill="currentColor" />
+      </symbol>
+      <symbol id="tags-pause" viewBox="0 0 16 16">
+        <rect x="4.4" y="3.6" width="2.6" height="8.8" rx="0.6" fill="currentColor" />
+        <rect x="9" y="3.6" width="2.6" height="8.8" rx="0.6" fill="currentColor" />
       </symbol>
       <symbol id="tags-lock-open" viewBox="0 0 16 16">
         <path
@@ -426,6 +460,7 @@ import type { LibraryTagColumn, LibraryTagRow } from '@/types'
  * sits. Prefixed so nothing the catalog could ever add collides with them.
  */
 const SELECT_KEY = '__select'
+const AUDIO_KEY = '__audio'
 const PATH_KEY = '__path'
 const FILENAME_KEY = 'fileName'
 
@@ -458,6 +493,9 @@ const PATH_COLUMN_WIDTH = 320
 
 /** Wide enough for a checkbox and nothing else; not resizable, so it is not a preference. */
 const SELECT_COLUMN_WIDTH = 34
+
+/** Likewise: one button, no scrubber, no duration. */
+const AUDIO_COLUMN_WIDTH = 30
 
 // Versioned: an earlier build stored a six-column subset, and a browser that had already
 // opened the table would otherwise keep it forever and never see the full default.
@@ -498,6 +536,16 @@ const showProposals = ref(false)
  */
 const selectedBooks = ref<Set<number>>(new Set())
 const organizeOpen = ref(false)
+
+/**
+ * Which row is playing, if any.
+ *
+ * One shared <audio> rather than one per row: only one file can usefully play at a
+ * time, and a windowed table would otherwise build and tear down a media element every
+ * time a row scrolled past.
+ */
+const playingFileId = ref<number | null>(null)
+const audioEl = ref<HTMLAudioElement | null>(null)
 const working = ref(false)
 const actionMessage = ref<string | null>(null)
 
@@ -529,6 +577,7 @@ const columnByTag = computed(() => new Map(columns.value.map((column) => [column
  */
 const activeColumns = computed<ActiveColumn[]>(() => [
   { key: SELECT_KEY, label: '' },
+  { key: AUDIO_KEY, label: '' },
   { key: FILENAME_KEY, label: 'Filename' },
   ...(showPath.value ? [{ key: PATH_KEY, label: 'Path' }] : []),
   ...visibleTags.value
@@ -538,7 +587,8 @@ const activeColumns = computed<ActiveColumn[]>(() => [
 ])
 
 /** Whether a column holds a tag, as opposed to the selection, the file or its path. */
-const isTagColumn = (key: string) => key !== SELECT_KEY && key !== FILENAME_KEY && key !== PATH_KEY
+const isTagColumn = (key: string) =>
+  key !== SELECT_KEY && key !== AUDIO_KEY && key !== FILENAME_KEY && key !== PATH_KEY
 
 /**
  * Which columns carry a padlock. The path is lockable for the same reason a tag is —
@@ -571,6 +621,7 @@ function lockHint(row: LibraryTagRow, key: string) {
 /** A blurb needs more room than an album name, so a long-text column starts wider. */
 const widthFor = (key: string) => {
   if (key === SELECT_KEY) return SELECT_COLUMN_WIDTH
+  if (key === AUDIO_KEY) return AUDIO_COLUMN_WIDTH
   const stored = widths.value[key]
   if (stored) return stored
   if (key === FILENAME_KEY) return FILENAME_COLUMN_WIDTH
@@ -592,12 +643,13 @@ const rowHeight = computed(() => (showProposals.value ? PROPOSAL_ROW_HEIGHT : RO
 const tableStyle = computed(() => ({
   width: `${totalWidth.value}px`,
   '--select-width': `${SELECT_COLUMN_WIDTH}px`,
+  '--audio-width': `${AUDIO_COLUMN_WIDTH}px`,
   '--row-height': `${rowHeight.value}px`,
 }))
 
 /** A row's value for one column: the file, where it sits, or what it carries for a tag. */
 function cellText(row: LibraryTagRow, key: string) {
-  if (key === SELECT_KEY) return ''
+  if (key === SELECT_KEY || key === AUDIO_KEY) return ''
   if (key === FILENAME_KEY) return row.fileName
   if (key === PATH_KEY) return row.displayPath ?? row.path ?? ''
   return row.tags[key] ?? ''
@@ -636,8 +688,9 @@ function proposalFor(row: LibraryTagRow, key: string) {
 
 function cellClass(row: LibraryTagRow, key: string) {
   return {
-    'tags-td--frozen': key === SELECT_KEY || key === FILENAME_KEY,
+    'tags-td--frozen': key === SELECT_KEY || key === AUDIO_KEY || key === FILENAME_KEY,
     'tags-td--select': key === SELECT_KEY,
+    'tags-td--audio': key === AUDIO_KEY,
     'tags-td--sticky': key === FILENAME_KEY,
     'tags-td--mismatch': isMismatched(row, key),
     'tags-td--locked': isLocked(row, key),
@@ -647,8 +700,9 @@ function cellClass(row: LibraryTagRow, key: string) {
 
 function headerClass(key: string) {
   return {
-    'tags-th--frozen': key === SELECT_KEY || key === FILENAME_KEY,
+    'tags-th--frozen': key === SELECT_KEY || key === AUDIO_KEY || key === FILENAME_KEY,
     'tags-th--select': key === SELECT_KEY,
+    'tags-th--audio': key === AUDIO_KEY,
     'tags-th--sticky': key === FILENAME_KEY,
   }
 }
@@ -661,6 +715,10 @@ function headerClass(key: string) {
 function cellTitle(row: LibraryTagRow, key: string): string {
   if (key === SELECT_KEY) {
     return row.bookTitle
+  }
+
+  if (key === AUDIO_KEY) {
+    return playingFileId.value === row.fileId ? `Stop ${row.fileName}` : `Play ${row.fileName}`
   }
 
   if (key === FILENAME_KEY) {
@@ -820,6 +878,51 @@ function sortBy(key: string) {
     return
   }
   sort.value = { key, ascending: true }
+}
+
+/* -- Playing a file ---------------------------------------------------------- */
+
+/**
+ * Start this row, or stop it if it is the one already playing.
+ *
+ * Switching rows reuses the element rather than making another, so starting a second
+ * file is what stops the first — there is no state in which two are audible.
+ */
+async function togglePlay(row: LibraryTagRow) {
+  const element = audioEl.value
+  if (!element) return
+
+  if (playingFileId.value === row.fileId) {
+    element.pause()
+    playingFileId.value = null
+    return
+  }
+
+  actionMessage.value = null
+  element.src = apiService.buildLibraryFileAudioUrl(row.fileId)
+  playingFileId.value = row.fileId
+
+  try {
+    await element.play()
+  } catch (err) {
+    // A browser that cannot decode the container says so here rather than by staying
+    // silent, which is the difference between "this file is broken" and "nothing
+    // happened when I clicked".
+    logger.warn(`Could not play file ${row.fileId}`, err)
+    playingFileId.value = null
+    actionMessage.value = `That file could not be played: ${describe(err)}`
+  }
+}
+
+function onPlaybackEnded() {
+  playingFileId.value = null
+}
+
+function onPlaybackError() {
+  if (playingFileId.value != null) {
+    actionMessage.value = 'That file could not be played in this browser.'
+    playingFileId.value = null
+  }
 }
 
 /* -- Selection, which is by book -------------------------------------------- */
@@ -1177,6 +1280,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  audioEl.value?.pause()
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('resize', measureViewport)
   endResize()
@@ -1400,8 +1504,13 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-.tags-th--sticky {
+.tags-th--audio {
   left: var(--select-width, 34px);
+  padding: 0;
+}
+
+.tags-th--sticky {
+  left: calc(var(--select-width, 34px) + var(--audio-width, 30px));
 }
 
 .tags-th-label {
@@ -1475,9 +1584,52 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.tags-td--sticky {
+.tags-td--audio {
   left: var(--select-width, 34px);
+  padding: 0;
+  text-align: center;
+}
+
+.tags-td--sticky {
+  left: calc(var(--select-width, 34px) + var(--audio-width, 30px));
   color: var(--text-primary);
+}
+
+.row-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: var(--transition-fast);
+}
+
+.play-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.tags-row:hover .row-play,
+.row-play:focus-visible {
+  opacity: 1;
+}
+
+.row-play:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+/* The one playing stays lit while the pointer is anywhere else in the table. */
+.row-play--on {
+  opacity: 1;
+  color: var(--brand-400);
 }
 
 /* A frozen column has to repaint its own stripe: the row's background sits behind it. */
@@ -1551,8 +1703,10 @@ onBeforeUnmount(() => {
   margin-top: 2px;
 }
 
-/* A checkbox has nothing underneath it, so it keeps the whole cell to centre itself in. */
-.tags-table--proposals .row-select {
+/* Neither a checkbox nor a play button has anything underneath it, so both keep the
+   whole cell to centre themselves in. */
+.tags-table--proposals .row-select,
+.tags-table--proposals .row-play {
   margin-top: 4px;
 }
 

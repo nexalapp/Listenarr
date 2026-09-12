@@ -22,6 +22,7 @@ import type { LibraryTagRow, LibraryTagTable } from '@/types'
 const getLibraryTags = vi.fn()
 const setTagLocks = vi.fn()
 const setPathLocks = vi.fn()
+const buildLibraryFileAudioUrl = vi.fn((id: number) => `/api/v1/tagging/files/${id}/audio`)
 const writeTags = vi.fn()
 const push = vi.fn()
 
@@ -30,6 +31,8 @@ vi.mock('@/services/api', () => ({
     getLibraryTags: (...args: unknown[]) => getLibraryTags(...args),
     setTagLocks: (...args: unknown[]) => setTagLocks(...args),
     setPathLocks: (...args: unknown[]) => setPathLocks(...args),
+    buildLibraryFileAudioUrl: (...args: unknown[]) =>
+      buildLibraryFileAudioUrl(...(args as [number])),
     writeTags: (...args: unknown[]) => writeTags(...args),
   },
 }))
@@ -47,6 +50,12 @@ vi.mock('@/components/domain/organize/RenamePreviewModal.vue', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
 }))
+
+// jsdom has no media pipeline, so the element's transport is stubbed rather than driven.
+const play = vi.fn()
+const pause = vi.fn()
+Object.defineProperty(HTMLMediaElement.prototype, 'play', { writable: true, value: play })
+Object.defineProperty(HTMLMediaElement.prototype, 'pause', { writable: true, value: pause })
 
 const row = (overrides: Partial<LibraryTagRow> = {}): LibraryTagRow => ({
   audiobookId: 7,
@@ -97,6 +106,14 @@ describe('TagsView', () => {
     getLibraryTags.mockReset()
     setTagLocks.mockReset()
     setPathLocks.mockReset()
+    // Every lock call answers with an empty set unless a test says otherwise, so a click
+    // that is incidental to what a test is about does not fail inside the view.
+    setTagLocks.mockResolvedValue({})
+    setPathLocks.mockResolvedValue({})
+
+    play.mockReset()
+    play.mockResolvedValue(undefined)
+    pause.mockReset()
     writeTags.mockReset()
     push.mockReset()
     localStorage.clear()
@@ -373,6 +390,59 @@ describe('TagsView', () => {
       .findAll('.tags-row .row-select')
       .map((box) => (box.element as HTMLInputElement).checked)
     expect(checked).toEqual([true, false])
+  })
+
+  it('plays a file from its row, and stops it on a second click', async () => {
+    const wrapper = await mountView(table([row({ fileId: 12, audiobookId: 42 })]))
+
+    await wrapper.find('.row-play').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(buildLibraryFileAudioUrl).toHaveBeenCalledWith(12)
+    expect(play).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.row-play--on').exists()).toBe(true)
+    // A row click navigates; the transport must not.
+    expect(push).not.toHaveBeenCalled()
+
+    await wrapper.find('.row-play').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(pause).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.row-play--on').exists()).toBe(false)
+  })
+
+  it('moves one shared player between rows rather than stacking them', async () => {
+    // Only one file can usefully play at a time, so starting a second is what stops the
+    // first — there is no state in which two are audible.
+    const wrapper = await mountView(
+      table([row({ fileId: 1, fileName: 'A.m4b' }), row({ fileId: 2, fileName: 'B.m4b' })]),
+    )
+
+    expect(wrapper.findAll('audio')).toHaveLength(1)
+
+    await wrapper.findAll('.row-play')[0].trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.findAll('.row-play')[1].trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(buildLibraryFileAudioUrl).toHaveBeenLastCalledWith(2)
+    const lit = wrapper.findAll('.row-play--on')
+    expect(lit).toHaveLength(1)
+  })
+
+  it('says so when the browser cannot play the file', async () => {
+    play.mockRejectedValue(new Error('no decoder for this container'))
+    const wrapper = await mountView()
+
+    await wrapper.find('.row-play').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    // Silence would be indistinguishable from nothing having happened at all.
+    expect(wrapper.text()).toContain('could not be played')
+    expect(wrapper.find('.row-play--on').exists()).toBe(false)
   })
 
   it('does not open the book when the lock or the tick is clicked', async () => {
