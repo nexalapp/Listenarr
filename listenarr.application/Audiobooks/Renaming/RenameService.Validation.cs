@@ -41,6 +41,17 @@ public partial class RenameService
 
         if (!string.IsNullOrWhiteSpace(operation.NewFolderPath))
         {
+            // A folder move moves every file in it, including the locked one, so the lock
+            // has to refuse the move rather than exempt the file from it.
+            if ((audiobook.Files ?? []).Any(file => file.PathLocked)
+                && !PathsEqual(operation.CurrentFolderPath, operation.NewFolderPath, semantics))
+            {
+                result.Error =
+                    "This book has a file whose path is locked, so its folder cannot be moved.";
+                result.Conflict = true;
+                return result;
+            }
+
             var expectedFileIds = GetTrackedFileIdsForFolderChange(audiobook);
             var requestedFileIds = fileOperations
                 .Select(file => file.FileId)
@@ -89,6 +100,19 @@ public partial class RenameService
             if (!PathsEqual(item.PreviousPath, trackedSourcePath, semantics))
             {
                 item.Error = "Source path does not match the tracked audiobook file.";
+                result.RenamedFiles.Add(item);
+                result.Error = item.Error;
+                result.Conflict = true;
+                return result;
+            }
+
+            // Enforced here rather than trusted from the preview: the operations arrive
+            // from a client, and a page held open since before the lock was set would
+            // otherwise carry out exactly the rename the lock exists to prevent.
+            if (dbFile?.PathLocked == true
+                && !PathsEqual(item.PreviousPath, item.NewPath, semantics))
+            {
+                item.Error = "This file's path is locked, so it cannot be moved or renamed.";
                 result.RenamedFiles.Add(item);
                 result.Error = item.Error;
                 result.Conflict = true;

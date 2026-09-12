@@ -58,6 +58,104 @@ public sealed class EfAudiobookFileRepositoryTests : BaseTests
         }
     }
 
+    /// <summary>
+    /// A tag lock is a standing instruction about one file, so what comes back out has to
+    /// be exactly what was asked for — in the catalog's casing, without the tags another
+    /// request locked being disturbed, and without the file's path identity being
+    /// restated on the way through.
+    /// </summary>
+    [Fact]
+    public async Task SetLockedTagsAsync_LocksAndReleasesWithoutTouchingAnythingElse()
+    {
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        int fileId;
+        await using (var setup = new ListenArrDbContext(options))
+        {
+            var audiobook = new Audiobook { Title = "Drive", BasePath = "/library/Drive" };
+            var file = AudiobookFile.CreateUnresolved("/library/Drive/Drive.m4b");
+            file.Audiobook = audiobook;
+            setup.AudiobookFiles.Add(file);
+            await setup.SaveChangesAsync();
+            fileId = file.Id;
+        }
+
+        await using (var context = new ListenArrDbContext(options))
+        {
+            var repository = new EfAudiobookFileRepository(context);
+
+            // Lower case in, catalog casing out.
+            var locked = await repository.SetLockedTagsAsync([fileId], ["album", "description"], locked: true);
+            Assert.Equal([TagCatalog.Album, TagCatalog.Description], locked[fileId]);
+
+            var released = await repository.SetLockedTagsAsync([fileId], [TagCatalog.Album], locked: false);
+            Assert.Equal([TagCatalog.Description], released[fileId]);
+        }
+
+        await using (var verification = new ListenArrDbContext(options))
+        {
+            var stored = await verification.AudiobookFiles.SingleAsync(file => file.Id == fileId);
+            Assert.Equal([TagCatalog.Description], stored.LockedTags);
+
+            // Releasing the last lock stores nothing, so a file nobody has locked anything
+            // on is indistinguishable from one that predates the column.
+            var repository = new EfAudiobookFileRepository(verification);
+            await repository.SetLockedTagsAsync([fileId], [TagCatalog.Description], locked: false);
+            Assert.Null((await verification.AudiobookFiles.SingleAsync(file => file.Id == fileId)).LockedTags);
+        }
+    }
+
+    [Fact]
+    public async Task SetPathLockedAsync_FreezesAndReleasesAPath()
+    {
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        int fileId;
+        await using (var setup = new ListenArrDbContext(options))
+        {
+            var audiobook = new Audiobook { Title = "Radicalized", BasePath = "/library/Radicalized" };
+            var file = AudiobookFile.CreateUnresolved("/library/Radicalized/Model Minority.m4b");
+            file.Audiobook = audiobook;
+            setup.AudiobookFiles.Add(file);
+            await setup.SaveChangesAsync();
+            fileId = file.Id;
+
+            // The column's default, so a library that predates it organizes as before.
+            Assert.False(file.PathLocked);
+        }
+
+        await using (var context = new ListenArrDbContext(options))
+        {
+            var repository = new EfAudiobookFileRepository(context);
+            Assert.True((await repository.SetPathLockedAsync([fileId], locked: true))[fileId]);
+            Assert.False((await repository.SetPathLockedAsync([fileId], locked: false))[fileId]);
+        }
+
+        await using (var verification = new ListenArrDbContext(options))
+        {
+            Assert.False((await verification.AudiobookFiles.SingleAsync(f => f.Id == fileId)).PathLocked);
+        }
+    }
+
+    [Fact]
+    public async Task SetLockedTagsAsync_IgnoresAFileThatIsNotThere()
+    {
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new ListenArrDbContext(options);
+        var repository = new EfAudiobookFileRepository(context);
+
+        // A table left open while a book was deleted elsewhere is an ordinary way to get
+        // here, and it is not worth failing the other files in the same request over.
+        Assert.Empty(await repository.SetLockedTagsAsync([4242], [TagCatalog.Album], locked: true));
+    }
+
     [Fact]
     public async Task CheckOwnershipAsync_CaseSensitiveConflict_DoesNotBlockDistinctCaseVariant()
     {

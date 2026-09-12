@@ -47,6 +47,38 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             AudiobookFilePathIdentity identity,
             CancellationToken ct = default);
         Task UpdateAsync(AudiobookFile file, CancellationToken ct = default);
+
+        /// <summary>
+        /// Freeze or release the paths of files, and report which files were changed.
+        /// </summary>
+        /// <param name="fileIds">The files to change.</param>
+        /// <param name="locked">True to freeze the paths, false to release them.</param>
+        /// <param name="ct">Cancellation token.</param>
+        /// <returns>The resulting state of every file that exists, keyed by file id.</returns>
+        Task<Dictionary<int, bool>> SetPathLockedAsync(
+            IReadOnlyCollection<int> fileIds,
+            bool locked,
+            CancellationToken ct = default);
+
+        /// <summary>
+        /// Lock or unlock tags on files, and report every affected file's resulting set.
+        /// </summary>
+        /// <remarks>
+        /// A dedicated write rather than <see cref="UpdateAsync"/> with a mutated entity:
+        /// the lock set is the only field being changed, and round-tripping a whole file
+        /// through an update would put its path identity — which nothing here is
+        /// qualified to restate — back on the wire for the sake of one column.
+        /// </remarks>
+        /// <param name="fileIds">The files to change.</param>
+        /// <param name="tags">The tags to lock or unlock, in catalog casing.</param>
+        /// <param name="locked">True to lock the tags, false to release them.</param>
+        /// <param name="ct">Cancellation token.</param>
+        /// <returns>The resulting lock set of every file that exists, keyed by file id.</returns>
+        Task<Dictionary<int, List<string>>> SetLockedTagsAsync(
+            IReadOnlyCollection<int> fileIds,
+            IReadOnlyCollection<string> tags,
+            bool locked,
+            CancellationToken ct = default);
         Task<bool> ReplacePhysicalGenerationAsync(
             int fileId,
             int audiobookId,

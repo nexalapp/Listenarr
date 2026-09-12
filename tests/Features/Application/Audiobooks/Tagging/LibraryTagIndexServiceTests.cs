@@ -39,6 +39,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
         private readonly Mock<IConfigurationService> _configuration = new();
         private readonly Mock<IAudiobookTagWriter> _writer = new();
         private readonly Mock<IFileSystem> _fileSystem = new();
+        private readonly Mock<IRootFolderService> _rootFolders = new();
+        private readonly Mock<IRenameService> _rename = new();
         private readonly LibraryTagCache _cache = new();
 
         private readonly string _directory = Path.Combine(
@@ -54,7 +56,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                 NullLogger<FileNamingService>.Instance)),
             _fileSystem.Object,
             _cache,
-            NullLogger<LibraryTagIndexService>.Instance);
+            _rootFolders.Object,
+            NullLogger<LibraryTagIndexService>.Instance,
+            _rename.Object);
 
         private Audiobook GivenLibrary(params string[] fileNames)
         {
@@ -93,6 +97,18 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             _writer
                 .Setup(writer => writer.IsAvailableAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
+
+            _rootFolders
+                .Setup(service => service.GetAllAsync())
+                .ReturnsAsync([new RootFolder { Path = _directory }]);
+
+            // No expected paths unless a test asks for them: organizing is a separate
+            // concern, and the table has to build whether or not it can answer.
+            _rename
+                .Setup(service => service.PreviewRenameAsync(
+                    It.IsAny<int[]>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
 
             return audiobook;
         }
@@ -334,6 +350,109 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
 
             Assert.NotNull(row.Error);
             Assert.Empty(row.Tags);
+        }
+
+        /// <summary>
+        /// The lock the table draws, and the write it stops, have to be the same fact.
+        /// </summary>
+        [Fact]
+        public async Task BuildAsync_ReportsALockedTagAndStopsCountingItAsAMismatch()
+        {
+            var audiobook = GivenLibrary("Drive.m4b");
+            audiobook.Files![0].LockedTags = ["album"];
+            GivenCurrentTags(("album", "Whatever the release called it"));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            // Catalog casing, whatever casing was stored.
+            Assert.Equal([TagCatalog.Album], row.LockedTags);
+            Assert.DoesNotContain(TagCatalog.Album, row.Mismatched);
+
+            // The value is still reported: a locked cell shows what the file holds, it
+            // just stops claiming the file is wrong.
+            Assert.Equal("Whatever the release called it", row.Tags[TagCatalog.Album]);
+        }
+
+        [Fact]
+        public async Task BuildAsync_ShowsWhereOrganizingWouldPutTheFile()
+        {
+            var audiobook = GivenLibrary("Drive.m4b");
+            var file = audiobook.Files![0];
+            var expected = Path.Combine(_directory, "James S. A. Corey", "Drive.m4b");
+
+            _rename
+                .Setup(service => service.PreviewRenameAsync(
+                    It.IsAny<int[]>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new RenamePreview
+                {
+                    AudiobookId = audiobook.Id,
+                    FileRenames =
+                    [
+                        new FileRenamePreview
+                        {
+                            FileId = file.Id,
+                            CurrentPath = file.Path,
+                            NewPath = expected,
+                            Changed = true
+                        }
+                    ]
+                }]);
+
+            GivenCurrentTags(("album", "Drive"));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            // The folder alone, trimmed to the library root: the filename is the row's
+            // own column, and a path column repeating it would truncate away the half
+            // that tells one part of a book from another.
+            Assert.Equal(string.Empty, row.DisplayPath);
+            Assert.Equal("James S. A. Corey", row.ExpectedPath);
+            Assert.True(row.PathMismatched);
+
+            // The file would be renamed as well as moved, and the two are reported apart
+            // because the table shows them apart.
+            Assert.Equal("Drive.m4b", row.ExpectedFileName);
+            Assert.False(row.FileNameMismatched);
+        }
+
+        /// <summary>
+        /// Organizing has its own reasons to be unavailable — an unregistered service, a
+        /// root whose filesystem identity cannot be established — and none of them is a
+        /// reason to refuse to show the library's tags.
+        /// </summary>
+        [Fact]
+        public async Task BuildAsync_StillBuildsWhenOrganizingCannotAnswer()
+        {
+            GivenLibrary("Drive.m4b");
+            GivenCurrentTags(("album", "Drive"));
+
+            _rename
+                .Setup(service => service.PreviewRenameAsync(
+                    It.IsAny<int[]>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("That root has no usable identity."));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            // Unknown, which is not the same as "already in the right place" and must not
+            // be drawn as agreement.
+            Assert.Null(row.ExpectedPath);
+            Assert.Null(row.ExpectedFileName);
+            Assert.False(row.PathMismatched);
+            Assert.False(row.FileNameMismatched);
+        }
+
+        [Fact]
+        public async Task BuildAsync_ReportsAFileWhosePathIsLocked()
+        {
+            var audiobook = GivenLibrary("Drive.m4b");
+            audiobook.Files![0].PathLocked = true;
+            GivenCurrentTags(("album", "Drive"));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            Assert.True(row.PathLocked);
         }
 
         public void Dispose()

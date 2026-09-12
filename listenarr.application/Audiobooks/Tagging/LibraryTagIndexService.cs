@@ -36,14 +36,16 @@ namespace Listenarr.Application.Audiobooks.Tagging
     /// the question this table gets opened to answer.
     /// </para>
     /// </summary>
-    public sealed class LibraryTagIndexService(
+    public sealed partial class LibraryTagIndexService(
         IAudiobookRepository audiobookRepository,
         IConfigurationService configurationService,
         IAudiobookTagWriter tagWriter,
         AudiobookTagPlanner planner,
         IFileSystem fileSystem,
         LibraryTagCache cache,
-        ILogger<LibraryTagIndexService> logger) : ILibraryTagIndexService
+        IRootFolderService rootFolderService,
+        ILogger<LibraryTagIndexService> logger,
+        IRenameService? renameService = null) : ILibraryTagIndexService
     {
         /// <summary>
         /// How many files are probed at once on a cold load.
@@ -53,6 +55,16 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// flooding the array with seeks. It is not a throughput knob worth tuning.
         /// </summary>
         private const int ProbeConcurrency = 4;
+
+        /// <summary>
+        /// How many books are asked about their expected paths at once.
+        ///
+        /// Well under organizing's own cap of 500, because a batch is all-or-nothing:
+        /// one book whose root has unusable filesystem identity throws, and the smaller
+        /// the batch the fewer answers that costs before the per-book retry picks the
+        /// rest back up.
+        /// </summary>
+        private const int PathExpectationBatchSize = 50;
 
         public async Task<LibraryTagIndex> BuildAsync(
             bool refresh = false,
@@ -86,6 +98,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     memberships.TryGetValue(audiobook.Id, out var bookMemberships)
                         ? bookMemberships
                         : null));
+
+            // Both resolved before the probes start, so the parallel row-building below
+            // reads them without a lock.
+            var libraryRoots = await ResolveLibraryRootsAsync();
+            var pathExpectations = await BuildPathExpectationsAsync(
+                [.. audiobooks.Select(audiobook => audiobook.Id)],
+                cancellationToken);
 
             var work = new List<(Audiobook Book, AudiobookFile File, string? FullPath)>();
             foreach (var audiobook in audiobooks)
@@ -123,7 +142,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
                         item.FullPath,
                         mappings,
                         tags,
-                        error);
+                        error,
+                        libraryRoots,
+                        pathExpectations.GetValueOrDefault(item.File.Id));
                 }
                 finally
                 {
@@ -239,7 +260,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
             string? fullPath,
             IReadOnlyList<TagMapping> mappings,
             AudiobookFileTags? tags,
-            string? error)
+            string? error,
+            IReadOnlyList<string> libraryRoots,
+            PathExpectation? pathExpectation)
         {
             var storedPath = file.Path ?? string.Empty;
             var fileName = Path.GetFileName(fullPath ?? storedPath);
@@ -267,9 +290,17 @@ namespace Listenarr.Application.Audiobooks.Tagging
             var expected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var mismatched = new List<string>();
 
+            var locked = TagCatalog.NormalizeLocks(file.LockedTags);
+
             if (error == null)
             {
-                var plan = planner.Plan(metadata, mappings, tags?.Tags);
+                var plan = planner.Plan(
+                    metadata,
+                    mappings,
+                    tags?.Tags,
+                    selectedTags: null,
+                    overrides: null,
+                    lockedTags: TagLocks.Of(file));
 
                 foreach (var change in plan.Changes)
                 {
@@ -285,6 +316,10 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 }
             }
 
+            var currentPath = fullPath ?? storedPath;
+            var (expectedFolder, expectedFileName, folderChanged, fileNameChanged) =
+                SplitExpectation(currentPath, pathExpectation, libraryRoots);
+
             return new LibraryTagRow(
                 audiobook.Id,
                 file.Id,
@@ -292,11 +327,18 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 fileName,
                 storedPath,
                 extension,
-                TaggableFile.IsTaggable(fullPath ?? storedPath),
+                TaggableFile.IsTaggable(currentPath),
                 present,
                 expected,
                 mismatched,
-                error);
+                error,
+                locked,
+                ToLibraryRelativePath(Path.GetDirectoryName(currentPath), libraryRoots),
+                expectedFolder,
+                folderChanged,
+                file.PathLocked,
+                expectedFileName,
+                fileNameChanged);
         }
     }
 }

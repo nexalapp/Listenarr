@@ -54,12 +54,18 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// wrong, and a preview that could only be accepted or rejected would leave
         /// correcting it as a settings exercise for a fault in one book.
         /// </param>
+        /// <param name="lockedTags">
+        /// Tags this file's own lock set forbids writing. Unlike <paramref name="selectedTags"/>
+        /// this is not a choice about one run: it is a standing decision recorded against
+        /// the file, so it outranks both the selection and a typed value.
+        /// </param>
         public TagPlan Plan(
             AudioMetadata metadata,
             IReadOnlyList<TagMapping> mappings,
             IReadOnlyDictionary<string, string>? existingTags,
             IReadOnlySet<string>? selectedTags = null,
-            IReadOnlyDictionary<string, string>? overrides = null)
+            IReadOnlyDictionary<string, string>? overrides = null,
+            IReadOnlySet<string>? lockedTags = null)
         {
             ArgumentNullException.ThrowIfNull(metadata);
             ArgumentNullException.ThrowIfNull(mappings);
@@ -98,7 +104,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     definition,
                     existing,
                     selectedTags,
-                    TryGetOverride(overrides, definition.Tag));
+                    TryGetOverride(overrides, definition.Tag),
+                    lockedTags);
                 changes.Add(change);
 
                 if (!change.IsWrite)
@@ -138,7 +145,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
             TagDefinition definition,
             string? existing,
             IReadOnlySet<string>? selectedTags,
-            string? overridden)
+            string? overridden,
+            IReadOnlySet<string>? lockedTags)
         {
             TagChange Skip(TagChangeAction action, string reason, string? proposed = null) =>
                 new(
@@ -159,6 +167,17 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 return Skip(
                     TagChangeAction.NotConfigured,
                     "Left as it is: this tag is set never to be written.");
+            }
+
+            if (lockedTags != null && lockedTags.Contains(definition.Tag))
+            {
+                // Checked before the selection and before any typed value, because a lock
+                // is a decision about the file rather than about this run. Whoever locked
+                // it is not present to be asked again, and the tagging that most needs to
+                // respect it — the automatic run on scan completion — selects every tag.
+                return Skip(
+                    TagChangeAction.Locked,
+                    "Left as it is: this tag is locked on this file.");
             }
 
             if (selectedTags != null && !selectedTags.Contains(definition.Tag))

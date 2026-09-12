@@ -123,7 +123,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     continue;
                 }
 
-                var plan = planner.Plan(metadata, mappings, existing.Tags, selection);
+                var plan = planner.Plan(
+                    metadata,
+                    mappings,
+                    existing.Tags,
+                    selection,
+                    overrides: null,
+                    lockedTags: TagLocks.Of(file));
                 previews.Add(new TagPreviewFile(file.Id, name, plan.Changes));
             }
 

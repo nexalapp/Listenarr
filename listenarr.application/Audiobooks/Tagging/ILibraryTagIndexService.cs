@@ -33,6 +33,20 @@ namespace Listenarr.Application.Audiobooks.Tagging
     /// because "which books still carry ID3 and need converting" is exactly the question
     /// a tag table is opened to answer; the row simply cannot be edited in place.
     /// </para>
+    /// <para>
+    /// The path travels beside the tags because it is the same kind of fact: a value on
+    /// disk that either agrees with what Listenarr would produce or does not. A file
+    /// whose tags are perfect and whose folder predates the current naming pattern is
+    /// wrong in a way a tag table that only knew about tags could not show.
+    /// <c>ExpectedPath</c> is null when organizing could not answer for this book, which
+    /// is not the same as "already correct" and must not be shown as agreement.
+    /// </para>
+    /// <para>
+    /// The folder and the filename are reported apart, because they are shown apart and
+    /// organizing can change either without the other. <c>DisplayPath</c> is the folder
+    /// alone — the filename is already <c>FileName</c>, and repeating it would spend a
+    /// column on a value the row carries twice.
+    /// </para>
     /// </remarks>
     public sealed record LibraryTagRow(
         int AudiobookId,
@@ -45,7 +59,14 @@ namespace Listenarr.Application.Audiobooks.Tagging
         IReadOnlyDictionary<string, string> Tags,
         IReadOnlyDictionary<string, string> Expected,
         IReadOnlyList<string> Mismatched,
-        string? Error);
+        string? Error,
+        IReadOnlyList<string> LockedTags,
+        string? DisplayPath = null,
+        string? ExpectedPath = null,
+        bool PathMismatched = false,
+        bool PathLocked = false,
+        string? ExpectedFileName = null,
+        bool FileNameMismatched = false);
 
     /// <summary>
     /// The whole library's tag table, plus what it cost to build.
