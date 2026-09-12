@@ -448,7 +448,7 @@ const ROW_HEIGHT = 30
  * the window's arithmetic a running total instead of a multiplication, and the whole
  * reason this table scrolls is that the arithmetic is a multiplication.
  */
-const PROPOSAL_ROW_HEIGHT = 48
+const PROPOSAL_ROW_HEIGHT = 48 // 4px above, two 20px lines, 4px below
 const OVERSCAN = 12
 const MIN_COLUMN_WIDTH = 80
 const DEFAULT_COLUMN_WIDTH = 200
@@ -1515,18 +1515,23 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/*
+ * Both lines are the same font at the same size on the same line grid, which is what
+ * makes the pair readable as a diff: identical prefixes then occupy identical width, so
+ * the first character that differs is the first character out of column. A smaller
+ * proposal saved a few pixels and cost exactly the comparison the second line is for.
+ */
 .cell-text,
 .cell-proposal {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 20px;
 }
 
 .cell-proposal {
   color: var(--warning-500);
-  font-size: 0.74rem;
-  line-height: 1.5;
 }
 
 /*
@@ -1535,7 +1540,7 @@ onBeforeUnmount(() => {
  */
 .tags-table--proposals .cell {
   align-items: flex-start;
-  padding-top: 5px;
+  padding-top: 4px;
 }
 
 .tags-table--proposals .cell-lines {
@@ -1543,7 +1548,7 @@ onBeforeUnmount(() => {
 }
 
 .tags-table--proposals .cell-lock {
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 /* A checkbox has nothing underneath it, so it keeps the whole cell to centre itself in. */
