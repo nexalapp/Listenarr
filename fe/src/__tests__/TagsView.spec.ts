@@ -20,11 +20,27 @@ import { mount } from '@vue/test-utils'
 import type { LibraryTagRow, LibraryTagTable } from '@/types'
 
 const getLibraryTags = vi.fn()
+const setTagLocks = vi.fn()
+const setPathLocks = vi.fn()
+const writeTags = vi.fn()
 const push = vi.fn()
 
 vi.mock('@/services/api', () => ({
   apiService: {
     getLibraryTags: (...args: unknown[]) => getLibraryTags(...args),
+    setTagLocks: (...args: unknown[]) => setTagLocks(...args),
+    setPathLocks: (...args: unknown[]) => setPathLocks(...args),
+    writeTags: (...args: unknown[]) => writeTags(...args),
+  },
+}))
+
+// The organize modal reaches for pinia the moment it is mounted, and this view's job is
+// only to hand it the selection.
+vi.mock('@/components/domain/organize/RenamePreviewModal.vue', () => ({
+  default: {
+    name: 'RenamePreviewModal',
+    props: ['visible', 'audiobookIds'],
+    template: '<div class="organize-modal-stub" />',
   },
 }))
 
@@ -44,6 +60,13 @@ const row = (overrides: Partial<LibraryTagRow> = {}): LibraryTagRow => ({
   expected: { title: 'Drive', album: '[The Expanse 2.7] Drive' },
   mismatched: ['album'],
   error: null,
+  lockedTags: [],
+  displayPath: 'James S. A. Corey/Drive',
+  expectedPath: 'James S. A. Corey/Drive',
+  pathMismatched: false,
+  pathLocked: false,
+  expectedFileName: 'Corey - Drive.m4b',
+  fileNameMismatched: false,
   ...overrides,
 })
 
@@ -72,6 +95,9 @@ async function mountView(result: LibraryTagTable = table([row()])) {
 describe('TagsView', () => {
   beforeEach(() => {
     getLibraryTags.mockReset()
+    setTagLocks.mockReset()
+    setPathLocks.mockReset()
+    writeTags.mockReset()
     push.mockReset()
     localStorage.clear()
   })
@@ -101,7 +127,7 @@ describe('TagsView', () => {
     const wrapper = await mountView()
 
     const headers = wrapper.findAll('.tags-th-label').map((header) => header.text())
-    expect(headers).toEqual(['Filename', 'Description', 'Title', 'Album'])
+    expect(headers).toEqual(['Filename', 'Path', 'Description', 'Title', 'Album'])
   })
 
   it('remembers a narrowed set of columns instead of reopening on all of them', async () => {
@@ -111,6 +137,7 @@ describe('TagsView', () => {
 
     expect(wrapper.findAll('.tags-th-label').map((header) => header.text())).toEqual([
       'Filename',
+      'Path',
       'Title',
     ])
   })
@@ -231,7 +258,322 @@ describe('TagsView', () => {
     const wrapper = await mountView()
 
     const headers = wrapper.findAll('.tags-th-label').map((header) => header.text())
-    expect(headers).toEqual(['Filename', 'Album'])
+    expect(headers).toEqual(['Filename', 'Path', 'Album'])
+  })
+
+  it('ticks a book once, however many files it has', async () => {
+    // A tag write is queued for a book, so a column that let its parts be ticked
+    // separately would promise something the job cannot do.
+    // Named so the table's own filename sort leaves the two parts of one book first.
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'A - Part 1.m4b' }),
+        row({ audiobookId: 7, fileId: 2, fileName: 'B - Part 2.m4b' }),
+        row({ audiobookId: 9, fileId: 3, fileName: 'C - Other book.m4b' }),
+      ]),
+    )
+
+    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const checked = wrapper
+      .findAll('.tags-row .row-select')
+      .map((box) => (box.element as HTMLInputElement).checked)
+    expect(checked).toEqual([true, true, false])
+    expect(wrapper.text()).toContain('1 book selected')
+  })
+
+  it('queues a write for each selected book and nothing else', async () => {
+    writeTags.mockResolvedValue({ queued: true, jobId: 'job-1' })
+
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'Drive.m4b' }),
+        row({ audiobookId: 9, fileId: 2, fileName: 'Other.m4b' }),
+      ]),
+    )
+
+    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const write = wrapper.findAll('.toolbar-btn').find((btn) => btn.text().includes('Write tags'))!
+    await write.trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(writeTags).toHaveBeenCalledTimes(1)
+    expect(writeTags).toHaveBeenCalledWith(7)
+    expect(wrapper.text()).toContain('Queued 1 book')
+  })
+
+  it('hands the organize modal the selected books', async () => {
+    const wrapper = await mountView(table([row({ audiobookId: 42 })]))
+
+    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const organize = wrapper.findAll('.toolbar-btn').find((btn) => btn.text().includes('Organize'))!
+    await organize.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const modal = wrapper.findComponent({ name: 'RenamePreviewModal' })
+    expect(modal.props('audiobookIds')).toEqual([42])
+  })
+
+  it('stops a locked cell reading as wrong, without waiting for a re-read', async () => {
+    // The click is the whole feedback the operator gets, so the yellow has to go at once
+    // rather than on the next full load of the table.
+    setTagLocks.mockResolvedValue({ '1': ['album'] })
+
+    const wrapper = await mountView()
+    expect(wrapper.findAll('.tags-td--mismatch')).toHaveLength(1)
+
+    await wrapper.find('.tags-td--mismatch .cell-lock').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(setTagLocks).toHaveBeenCalledWith([1], ['album'], true)
+    expect(wrapper.findAll('.tags-td--mismatch')).toHaveLength(0)
+    expect(wrapper.find('.tags-td--locked').exists()).toBe(true)
+  })
+
+  it('selects from anywhere in the tick cell rather than navigating on a near miss', async () => {
+    // A checkbox is thirteen pixels in a thirty-pixel row. Every miss used to fall
+    // through to the row and navigate away, losing the selection being built.
+    const wrapper = await mountView(table([row({ audiobookId: 42 })]))
+
+    await wrapper.find('.tags-row .tags-td--select').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(push).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('1 book selected')
+
+    // And the checkbox itself still toggles exactly once, not twice via the cell.
+    await wrapper.find('.tags-row .row-select').setValue(false)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).not.toContain('book selected')
+  })
+
+  it('does not change any lock when a book is ticked', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'A.m4b' }),
+        row({ audiobookId: 9, fileId: 2, fileName: 'B.m4b', pathLocked: true }),
+      ]),
+    )
+
+    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    // Selection is keyed on the book alone: a locked row of another book is untouched,
+    // and nothing is written.
+    expect(setPathLocks).not.toHaveBeenCalled()
+    expect(setTagLocks).not.toHaveBeenCalled()
+    const checked = wrapper
+      .findAll('.tags-row .row-select')
+      .map((box) => (box.element as HTMLInputElement).checked)
+    expect(checked).toEqual([true, false])
+  })
+
+  it('does not open the book when the lock or the tick is clicked', async () => {
+    setTagLocks.mockResolvedValue({ '1': ['album'] })
+    const wrapper = await mountView()
+
+    await wrapper.find('.tags-row .row-select').trigger('click')
+    await wrapper.find('.cell-lock').trigger('click')
+
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('locks a tag across the selection in one click', async () => {
+    setTagLocks.mockResolvedValue({ '1': ['album'], '2': ['album'] })
+
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'Part 1.m4b' }),
+        row({ audiobookId: 7, fileId: 2, fileName: 'Part 2.m4b' }),
+      ]),
+    )
+
+    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const albumHeader = wrapper
+      .findAll('.tags-th')
+      .find((header) => header.text().includes('Album'))!
+    await albumHeader.find('.th-lock').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(setTagLocks).toHaveBeenCalledWith([1, 2], ['album'], true)
+  })
+
+  it('marks a path the naming pattern would move, and says where to', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          displayPath: 'Old Folder',
+          expectedPath: 'James S. A. Corey/[The Expanse 2.7] Drive',
+          pathMismatched: true,
+          mismatched: [],
+        }),
+      ]),
+    )
+
+    const changed = wrapper.findAll('.tags-td--mismatch')
+    expect(changed).toHaveLength(1)
+    expect(changed[0].text()).toBe('Old Folder')
+    expect(changed[0].attributes('title')).toContain('[The Expanse 2.7] Drive')
+    expect(wrapper.text()).toContain('1 misfiled')
+  })
+
+  it('leaves a path alone when organizing could not say where it belongs', async () => {
+    // Unknown is not agreement, and drawing it as agreement would be a claim nothing is
+    // in a position to make.
+    const wrapper = await mountView(
+      table([row({ expectedPath: null, pathMismatched: false, mismatched: [] })]),
+    )
+
+    expect(wrapper.findAll('.tags-td--mismatch')).toHaveLength(0)
+    expect(wrapper.find('.tags-td--mismatch').exists()).toBe(false)
+  })
+
+  it('locks a path from the Filename cell, clearing both halves of the yellow', async () => {
+    setPathLocks.mockResolvedValue({ '1': true })
+
+    const wrapper = await mountView(
+      table([
+        row({
+          fileId: 1,
+          fileName: 'Model Minority.m4b',
+          displayPath: 'Cory Doctorow/[Radicalized] Radicalized (2019)',
+          expectedPath: 'Cory Doctorow/Radicalized (2019)',
+          expectedFileName: 'Radicalized (2019) - 001.m4b',
+          pathMismatched: true,
+          fileNameMismatched: true,
+          mismatched: [],
+        }),
+      ]),
+    )
+
+    expect(wrapper.text()).toContain('1 misfiled')
+
+    // Both halves read as wrong: the folder would move and the file would be renumbered.
+    expect(wrapper.findAll('.tags-td--mismatch')).toHaveLength(2)
+
+    // One padlock, on the frozen filename cell, because the Path column can be hidden.
+    await wrapper.find('.tags-td--sticky .cell-lock').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(setPathLocks).toHaveBeenCalledWith([1], true)
+    expect(wrapper.findAll('.tags-td--mismatch')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('misfiled')
+  })
+
+  it('locks the paths of a whole selection from the Filename heading', async () => {
+    // The short-story case is four files at once, so doing it one cell at a time is the
+    // thing worth avoiding.
+    setPathLocks.mockResolvedValue({ '1': true, '2': true })
+
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'A.m4b', pathMismatched: true }),
+        row({ audiobookId: 7, fileId: 2, fileName: 'B.m4b', pathMismatched: true }),
+      ]),
+    )
+
+    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const filenameHeader = wrapper.find('.tags-th--sticky')
+    await filenameHeader.find('.th-lock').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(setPathLocks).toHaveBeenCalledWith([1, 2], true)
+  })
+
+  it('shows every proposal at once rather than one tooltip at a time', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          fileId: 1,
+          fileName: 'Model Minority.m4b',
+          expectedFileName: 'Radicalized (2019) - 001.m4b',
+          fileNameMismatched: true,
+          tags: { title: 'Radicalized', album: 'Radicalized' },
+          expected: { title: 'Radicalized', album: '[Radicalized 1] Model Minority' },
+          mismatched: ['album'],
+        }),
+      ]),
+    )
+
+    // Nothing extra until asked: the dense view is what the table is opened for.
+    expect(wrapper.find('.cell-proposal').exists()).toBe(false)
+
+    const proposals = wrapper
+      .findAll('.toolbar-toggle input')
+      .find((input) =>
+        (input.element as HTMLInputElement).parentElement!.textContent!.includes('Proposals'),
+      )!
+    await proposals.setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const shown = wrapper.findAll('.cell-proposal').map((line) => line.text())
+    expect(shown).toContain('[Radicalized 1] Model Minority')
+    expect(shown).toContain('Radicalized (2019) - 001.m4b')
+
+    // Only where something would change: a tag that is already right proposes nothing.
+    expect(shown).not.toContain('Radicalized')
+  })
+
+  it('proposes nothing for a cell whose lock means nothing will be written', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          lockedTags: ['album'],
+          mismatched: ['album'],
+          pathLocked: true,
+          fileNameMismatched: true,
+          expectedFileName: 'Renamed.m4b',
+        }),
+      ]),
+    )
+
+    const proposals = wrapper
+      .findAll('.toolbar-toggle input')
+      .find((input) =>
+        (input.element as HTMLInputElement).parentElement!.textContent!.includes('Proposals'),
+      )!
+    await proposals.setValue(true)
+    await wrapper.vm.$nextTick()
+
+    // Offering a value that will never be applied is the one thing this must not do.
+    expect(wrapper.findAll('.cell-proposal')).toHaveLength(0)
+  })
+
+  it('narrows to files a write or an organize would change', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'Misfiled.m4b', mismatched: [], pathMismatched: true }),
+        row({ fileId: 2, fileName: 'Right.m4b', mismatched: [], pathMismatched: false }),
+        row({ fileId: 3, fileName: 'Locked.m4b', mismatched: ['album'], lockedTags: ['album'] }),
+        row({
+          fileId: 4,
+          fileName: 'Pinned.m4b',
+          mismatched: [],
+          pathMismatched: true,
+          pathLocked: true,
+        }),
+      ]),
+    )
+
+    await wrapper.find('.toolbar-toggle input').setValue(true)
+    await wrapper.vm.$nextTick()
+
+    // The locked row is left out: a lock is a decision that the file is not wrong.
+    const listed = wrapper.findAll('.tags-row').map((r) => r.text())
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toContain('Misfiled.m4b')
   })
 
   it('reports the failure instead of an empty table', async () => {

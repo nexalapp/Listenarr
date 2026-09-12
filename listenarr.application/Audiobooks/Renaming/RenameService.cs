@@ -161,9 +161,26 @@ namespace Listenarr.Application.Audiobooks.Renaming
             var isMultiFile = files.Count > 1;
             var expectedPaths = new List<string>();
 
+            // Moving the folder moves every file in it, so one locked file pins the
+            // folder for the whole book. Its unlocked siblings are still named by the
+            // pattern — just inside the folder they are already in.
+            var folderPinned = files.Any(file => file.PathLocked);
+
             foreach (var file in files)
             {
-                var expectedPath = BuildExpectedPath(audiobook, file, settings, namingBase.BasePath, namingBase.IsCustomBasePath, isMultiFile);
+                var expectedPath = file.PathLocked
+                    ? file.CurrentPath
+                    : BuildExpectedPath(audiobook, file, settings, namingBase.BasePath, namingBase.IsCustomBasePath, isMultiFile);
+
+                if (folderPinned && !file.PathLocked)
+                {
+                    // Only the name the pattern produced survives; any folder structure it
+                    // asked for does not, because the folder is what is pinned.
+                    expectedPath = CombineWithOptionalBase(
+                        preview.CurrentFolderPath ?? string.Empty,
+                        Path.GetFileName(expectedPath));
+                }
+
                 expectedPaths.Add(expectedPath);
                 preview.FileRenames.Add(new FileRenamePreview
                 {
@@ -172,7 +189,8 @@ namespace Listenarr.Application.Audiobooks.Renaming
                     NewPath = expectedPath,
                     CurrentFilename = Path.GetFileName(file.CurrentPath),
                     NewFilename = Path.GetFileName(expectedPath),
-                    Changed = !PathsEqual(file.CurrentPath, expectedPath, semantics)
+                    Changed = !PathsEqual(file.CurrentPath, expectedPath, semantics),
+                    PathLocked = file.PathLocked
                 });
             }
 

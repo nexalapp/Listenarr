@@ -1,6 +1,8 @@
 using Listenarr.Domain.Common;
+using Listenarr.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Listenarr.Infrastructure.Persistence.Configurations;
 
@@ -30,6 +32,15 @@ public sealed class AudiobookFileConfiguration : IEntityTypeConfiguration<Audiob
         builder.Property(file => file.PathIdentityVersion).HasDefaultValue(1);
         builder.Property(file => file.PhysicalObjectIdentity).HasMaxLength(512);
         builder.Property(file => file.PhysicalIdentityVersion).HasDefaultValue(1);
+
+        var lockedTagsConverter =
+            (ValueConverter<List<string>?, string>)new JsonValueConverter<List<string>?>();
+        var lockedTagsProperty = builder.Property(file => file.LockedTags)
+            .HasConversion(lockedTagsConverter)
+            .HasColumnType("TEXT");
+        lockedTagsProperty.Metadata.SetValueComparer(JsonValueComparer.Create<List<string>?>());
+
+        builder.Property(file => file.PathLocked).HasDefaultValue(false);
 
         builder.HasIndex(file => file.PathIdentityLookupKey);
         builder.HasIndex(file => file.PathOwnershipKey)

@@ -73,6 +73,13 @@ namespace Listenarr.Application.Audiobooks.Renaming
         public string? CurrentFilename { get; set; }
         public string? NewFilename { get; set; }
         public bool Changed { get; set; }
+
+        /// <summary>
+        /// Whether this file's path is frozen. Reported so a preview can say why a file
+        /// it listed is not going to move, rather than leaving it looking like one that
+        /// happens to be correct already.
+        /// </summary>
+        public bool PathLocked { get; set; }
     }
 
     public class RenameResult

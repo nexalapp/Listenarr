@@ -535,6 +535,10 @@ export interface LibraryTagColumn {
  * `writable` is false for MP3 files. They are listed anyway: which books still carry
  * ID3, and so still have no description a player will read, is one of the things the
  * table is for.
+ *
+ * `lockedTags` names the tags no write may touch on this file. `expectedPath` is where
+ * organizing would put it — null when organizing could not answer, which the table has
+ * to show as unknown rather than as agreement.
  */
 export interface LibraryTagRow {
   audiobookId: number
@@ -548,6 +552,15 @@ export interface LibraryTagRow {
   expected: Record<string, string>
   mismatched: string[]
   error?: string | null
+  lockedTags: string[]
+  /** The folder holding the file, with its library root trimmed off. */
+  displayPath?: string | null
+  expectedPath?: string | null
+  pathMismatched: boolean
+  /** Whether organizing may move or rename this file. Pins its book's folder too. */
+  pathLocked: boolean
+  expectedFileName?: string | null
+  fileNameMismatched: boolean
 }
 
 /** The whole library's tags, with the columns to show them under. */
