@@ -13,6 +13,7 @@ public partial class ManualImportController
         ManualImportDestinationTracker destinationTracker,
         IDictionary<int, string> planningBasePaths,
         IDictionary<int, FileSystemSemanticsResolution> planningDestinationResolutions,
+        IReadOnlyDictionary<string, int> seriesPositionWidths,
         List<RootFolder> rootFolders,
         ApplicationSettings settings,
         bool hasMultipleFile,
@@ -155,9 +156,10 @@ public partial class ManualImportController
 
             // How wide each series writes its positions, so this import lands where
             // organizing would already have put it rather than somewhere it would be
-            // moved straight back out of.
-            metadata.SeriesPositionWidths =
-                await _audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
+            // moved straight back out of. Resolved once for the request, beside the other
+            // per-request planning state: it is one answer for the whole library and a
+            // query per file would be a query per file for nothing.
+            metadata.SeriesPositionWidths = seriesPositionWidths;
 
             if (!planningDestinationResolutions.TryGetValue(
                     audiobook.Id,
