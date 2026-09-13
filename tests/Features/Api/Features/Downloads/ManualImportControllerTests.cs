@@ -2122,6 +2122,11 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             };
             string? persistedBasePath = null;
             var repository = new Mock<IAudiobookRepository>(MockBehavior.Strict);
+            // The import resolves how wide each series writes its positions once per
+            // request, so that a file lands where organizing would already have put it.
+            repository.Setup(candidate => candidate.GetSeriesPositionWidthsAsync(
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
             repository.Setup(candidate => candidate.GetByIdAsync(book.Id))
                 .ReturnsAsync(() => new Audiobook
                 {
@@ -3098,6 +3103,11 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             await File.WriteAllTextAsync(source, "chapter1");
 
             var repository = new Mock<IAudiobookRepository>(MockBehavior.Strict);
+            // The import resolves how wide each series writes its positions once per
+            // request, so that a file lands where organizing would already have put it.
+            repository.Setup(candidate => candidate.GetSeriesPositionWidthsAsync(
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
             repository.Setup(candidate => candidate.GetByIdAsync(book.Id))
                 .ReturnsAsync(book);
             var scanQueue = new Mock<IScanQueueService>(MockBehavior.Strict);
