@@ -1899,6 +1899,86 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
         }
 
         /// <summary>
+        /// Audible files a series book's subtitle as the title restated, so folding it
+        /// into the name states the same fact twice beside a pattern that already renders
+        /// the series and the position.
+        /// </summary>
+        [Theory]
+        // "Dogs of War" / "Dogs of War, Book 1" — the subtitle contains the title.
+        [InlineData("Dogs of War", "Dogs of War, Book 1", "Dogs of War", "1", "[Dogs of War 1] Dogs of War")]
+        // "Dilation Sleep" / "Revelation Space, Book #10" — neither contains the other,
+        // but the subtitle is the series the pattern is already rendering.
+        [InlineData("Dilation Sleep", "Revelation Space, Book #10", "Revelation Space", "10", "[Revelation Space 10] Dilation Sleep")]
+        public async Task PreviewRename_ASubtitleThatRestatesTheSeries_IsNotFoldedIntoTheTitle(
+            string title,
+            string subtitle,
+            string series,
+            string seriesNumber,
+            string expectedFolderName)
+        {
+            var bookFolder = Path.Join(_tempRoot, "subtitle-restates");
+            Directory.CreateDirectory(bookFolder);
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _tempRoot,
+                FolderNamingPattern = "[{Series} {SeriesNumber}] {Title}",
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 50,
+                Title = title,
+                Subtitle = subtitle,
+                Series = series,
+                SeriesNumber = seriesNumber,
+                BasePath = bookFolder,
+                Files = [new() { Id = 501, AudiobookId = 50, Path = Path.Join(bookFolder, "book.m4b"), Format = "m4b" }]
+            });
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync([50]));
+
+            Assert.Equal(expectedFolderName, Path.GetFileName(preview.NewFolderPath));
+            Assert.DoesNotContain(subtitle, preview.NewFolderPath);
+            Assert.Equal($"{title}.m4b", Path.GetFileName(Assert.Single(preview.FileRenames).NewPath));
+        }
+
+        /// <summary>
+        /// The merge still has to happen where the subtitle is the thing that says what
+        /// the book is — dropping it wholesale would be the opposite mistake.
+        /// </summary>
+        [Fact]
+        public async Task PreviewRename_ASubtitleThatSaysSomethingNew_IsStillFoldedIn()
+        {
+            var bookFolder = Path.Join(_tempRoot, "subtitle-adds");
+            Directory.CreateDirectory(bookFolder);
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _tempRoot,
+                FolderNamingPattern = "{Title}",
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 51,
+                Title = "The Hobbit",
+                Subtitle = "There and Back Again",
+                BasePath = bookFolder,
+                Files = [new() { Id = 511, AudiobookId = 51, Path = Path.Join(bookFolder, "book.m4b"), Format = "m4b" }]
+            });
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync([51]));
+
+            // The colon is not a path character, so it reaches the name as " - ".
+            Assert.Equal("The Hobbit - There and Back Again", Path.GetFileName(preview.NewFolderPath));
+        }
+
+        /// <summary>
         /// The case the path lock exists for: a collection of short stories arriving as
         /// one Audible title, where the record has one title for the lot and the only
         /// place the story names survive is the filenames somebody typed.

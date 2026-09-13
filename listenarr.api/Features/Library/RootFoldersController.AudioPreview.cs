@@ -15,30 +15,6 @@ namespace Listenarr.Api.Features.Library;
 public partial class RootFoldersController
 {
     /// <summary>
-    /// Content types for the audio containers the scanner accepts. A browser decides how
-    /// to decode from this header alone, never from the extension, so an .m4b has to be
-    /// announced as the MP4 container it is rather than as a type of its own.
-    /// </summary>
-    private static readonly IReadOnlyDictionary<string, string> AudioPreviewContentTypes =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            [".m4b"] = "audio/mp4",
-            [".m4a"] = "audio/mp4",
-            [".alac"] = "audio/mp4",
-            [".aac"] = "audio/aac",
-            [".mp3"] = "audio/mpeg",
-            [".flac"] = "audio/flac",
-            [".ogg"] = "audio/ogg",
-            [".opus"] = "audio/ogg",
-            [".wav"] = "audio/wav",
-            [".aif"] = "audio/aiff",
-            [".aiff"] = "audio/aiff",
-            [".wma"] = "audio/x-ms-wma",
-            [".wv"] = "audio/x-wavpack",
-            [".ape"] = "audio/x-monkeys-audio",
-        };
-
-    /// <summary>
     /// Streams an audio file from inside a root folder so the import page can play a
     /// sample of a book before committing to a match.
     ///
@@ -111,12 +87,7 @@ public partial class RootFoldersController
             return NotFound(new { message = "File not found" });
         }
 
-        var extension = Path.GetExtension(canonicalFile);
-        var contentType = AudioPreviewContentTypes.TryGetValue(extension, out var mapped)
-            ? mapped
-            : "application/octet-stream";
-
-        return new PhysicalFileResult(canonicalFile, contentType)
+        return new PhysicalFileResult(canonicalFile, AudioContentTypes.ForFile(canonicalFile))
         {
             EnableRangeProcessing = true
         };

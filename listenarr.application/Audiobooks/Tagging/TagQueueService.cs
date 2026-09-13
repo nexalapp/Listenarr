@@ -63,6 +63,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
             TagTrigger trigger,
             IReadOnlyCollection<string>? selectedTags = null,
             IReadOnlyDictionary<string, string>? values = null,
+            IReadOnlyCollection<int>? fileIds = null,
             CancellationToken cancellationToken = default)
         {
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
@@ -86,12 +87,18 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 }
             }
 
-            var taggable = CountTaggableFiles(audiobook);
+            var scope = SerializeFileIds(fileIds);
+            var taggable = CountTaggableFiles(audiobook, DeserializeFileIds(scope));
             if (taggable == 0)
             {
                 return new TagEnqueueResult(
                     TagEnqueueOutcome.NothingToTag,
-                    Reason: "This book has no M4B files to write tags into.");
+                    // A scope that selects only files this book cannot be tagged through
+                    // is a different refusal from a book with no such files at all, and
+                    // the operator is looking at the rows they ticked.
+                    Reason: fileIds is { Count: > 0 }
+                        ? "None of the selected files is an M4B that tags can be written into."
+                        : "This book has no M4B files to write tags into.");
             }
 
             // Check for a writer before writing a row. Queueing without one only produces
@@ -118,6 +125,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 Trigger = trigger,
                 FileCount = taggable,
                 SelectedTagsJson = SerializeSelection(selectedTags),
+                SelectedFileIdsJson = scope,
                 OverriddenValuesJson = SerializeValues(values),
                 ActiveDeduplicationKey = TagJob.BuildDeduplicationKey(audiobookId),
                 EnqueuedAt = timeProvider.GetUtcNow().UtcDateTime
@@ -412,8 +420,10 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// How many of a book's files a tag write would touch. MP3s are excluded because
         /// ID3 cannot carry the atom this exists to write; those books are converted first.
         /// </summary>
-        private static int CountTaggableFiles(Audiobook audiobook) =>
-            audiobook.Files?.Count(file => TaggableFile.IsTaggable(file.Path)) ?? 0;
+        private static int CountTaggableFiles(Audiobook audiobook, IReadOnlySet<int>? fileIds = null) =>
+            audiobook.Files?.Count(file =>
+                TaggableFile.IsTaggable(file.Path)
+                && (fileIds == null || fileIds.Contains(file.Id))) ?? 0;
 
         private async Task BroadcastAsync(TagJob job, CancellationToken cancellationToken)
         {

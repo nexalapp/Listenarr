@@ -104,6 +104,46 @@ namespace Listenarr.Application.Audiobooks.Tagging
             }
         }
 
+        /// <summary>
+        /// Persist which of the book's files this run should write.
+        /// </summary>
+        /// <remarks>
+        /// An empty request is stored as null — "every file" — rather than as an empty
+        /// list, because a job that names no files at all would run and write nothing,
+        /// which is never what a caller meant by asking for a write.
+        /// </remarks>
+        internal static string? SerializeFileIds(IReadOnlyCollection<int>? fileIds)
+        {
+            if (fileIds == null || fileIds.Count == 0)
+            {
+                return null;
+            }
+
+            return JsonSerializer.Serialize(fileIds.Distinct().OrderBy(id => id).ToList());
+        }
+
+        /// <summary>Read back a stored file scope. Null means every file of the book.</summary>
+        public static IReadOnlySet<int>? DeserializeFileIds(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            try
+            {
+                var ids = JsonSerializer.Deserialize<List<int>>(json);
+                return ids is { Count: > 0 } ? new HashSet<int>(ids) : null;
+            }
+            catch (JsonException)
+            {
+                // A scope that cannot be read falls back to the whole book rather than to
+                // nothing: writing every file is what this job meant before scopes existed,
+                // and writing none would be a silent no-op dressed as success.
+                return null;
+            }
+        }
+
         /// <summary>Read back a stored selection. Null means every tag the mapping allows.</summary>
         public static IReadOnlySet<string>? DeserializeSelection(string? json)
         {

@@ -28,8 +28,8 @@
         <span v-if="organizeCount > 0" class="count-badge count-badge--warn">
           {{ organizeCount }} misfiled
         </span>
-        <span v-if="selectedBooks.size > 0" class="count-badge count-badge--selected">
-          {{ selectedBooks.size }} book{{ selectedBooks.size === 1 ? '' : 's' }} selected
+        <span v-if="selectedFiles.size > 0" class="count-badge count-badge--selected">
+          {{ selectedFiles.size }} file{{ selectedFiles.size === 1 ? '' : 's' }} selected
         </span>
         <span v-if="actionMessage" class="toolbar-message">{{ actionMessage }}</span>
       </div>
@@ -68,31 +68,46 @@
         </label>
 
         <!--
-          Both act on the selection rather than on the row under the pointer: the column
-          exists to say which books an action is for, and an action that quietly meant
-          something else would make it pointless.
+          One action, and its label says what it covers. Two buttons beside a tick column
+          that sits left of every other column read as two things the tick might mean;
+          the tick means "these books" and this says which of their parts it reaches.
         -->
-        <button
-          type="button"
-          class="toolbar-btn"
-          :disabled="selectedBooks.size === 0 || working"
-          title="Write every unlocked tag on the selected books"
-          @click="writeSelected"
-        >
-          <PhTag :size="16" />
-          Write tags{{ selectedBooks.size > 0 ? ` (${selectedBooks.size})` : '' }}
-        </button>
+        <div class="apply-menu" ref="applyMenuEl">
+          <button
+            type="button"
+            class="toolbar-btn apply-btn"
+            :disabled="!canApply"
+            :title="applyHint"
+            @click="applySelection"
+          >
+            <PhCheck :size="16" />
+            {{ applyLabel }}
+          </button>
+          <button
+            type="button"
+            class="toolbar-btn apply-caret"
+            :class="{ active: applyOpen }"
+            :aria-expanded="applyOpen"
+            aria-label="Choose what Apply covers"
+            title="Choose what Apply covers"
+            @click="applyOpen = !applyOpen"
+          >
+            <PhCaretDown :size="12" />
+          </button>
 
-        <button
-          type="button"
-          class="toolbar-btn"
-          :disabled="selectedBooks.size === 0 || working"
-          title="Move the selected books to where the naming pattern says they belong"
-          @click="organizeOpen = true"
-        >
-          <PhFolderOpen :size="16" />
-          Organize{{ selectedBooks.size > 0 ? ` (${selectedBooks.size})` : '' }}
-        </button>
+          <div v-if="applyOpen" class="columns-dropdown apply-dropdown">
+            <label class="columns-option">
+              <input type="checkbox" v-model="applyTags" />
+              <span>Tags</span>
+              <code>written into the files</code>
+            </label>
+            <label class="columns-option">
+              <input type="checkbox" v-model="applyPaths" />
+              <span>Paths</span>
+              <code>moved and renamed</code>
+            </label>
+          </div>
+        </div>
 
         <div class="columns-menu" ref="columnsMenuEl">
           <button
@@ -183,18 +198,21 @@
               :aria-sort="ariaSortFor(column.key)"
             >
               <!--
-                The selection heading is a control, not a label: it has nothing to sort by
-                and nothing to resize, and a sort button over a checkbox would swallow the
-                click that was meant for it.
+                The control headings are controls, not labels: they have nothing to sort
+                by and nothing to resize, and a sort button over a checkbox would swallow
+                the click that was meant for it. The transport column has no heading at
+                all — there is nothing to say about a column of play buttons.
               -->
-              <template v-if="column.key === SELECT_KEY">
+              <template v-if="column.key === AUDIO_KEY"></template>
+
+              <template v-else-if="column.key === SELECT_KEY">
                 <input
                   type="checkbox"
                   class="row-select"
                   :checked="allVisibleSelected"
                   :indeterminate.prop="someVisibleSelected && !allVisibleSelected"
-                  :title="allVisibleSelected ? 'Clear the selection' : 'Select every book listed'"
-                  aria-label="Select every book listed"
+                  :title="allVisibleSelected ? 'Clear the selection' : 'Select every file listed'"
+                  aria-label="Select every file listed"
                   @change="toggleAllVisible"
                 />
               </template>
@@ -215,9 +233,9 @@
                   type="button"
                   class="th-lock"
                   :class="{ 'th-lock--on': columnLocked(column.key) }"
-                  :disabled="selectedBooks.size === 0 || working"
+                  :disabled="selectedFiles.size === 0 || working"
                   :title="
-                    selectedBooks.size === 0
+                    selectedFiles.size === 0
                       ? `Select books first to lock ${columnLockNoun(column.key)} on them`
                       : columnLocked(column.key)
                         ? `Unlock ${columnLockNoun(column.key)} on the selected books`
@@ -278,20 +296,36 @@
               @click="column.key === SELECT_KEY ? selectFromCell($event, row) : undefined"
             >
               <!--
-                One tick per book, not per file: a tag write is queued for a book, so a
-                column that let its parts be ticked separately would be promising
-                something the job cannot do.
+                One tick per file. The job carries the file scope, so ticking one part
+                of a four-part collection writes that part and leaves the rest alone.
               -->
               <input
                 v-if="column.key === SELECT_KEY"
                 type="checkbox"
                 class="row-select"
-                :checked="selectedBooks.has(row.audiobookId)"
-                :aria-label="`Select ${row.bookTitle}`"
+                :checked="selectedFiles.has(row.fileId)"
+                :aria-label="`Select ${row.fileName}`"
                 @click.stop
                 @keydown.stop
-                @change="toggleBook(row.audiobookId)"
+                @change="toggleFile(row.fileId)"
               />
+
+              <button
+                v-else-if="column.key === AUDIO_KEY"
+                type="button"
+                class="row-play"
+                :class="{ 'row-play--on': playingFileId === row.fileId }"
+                :aria-label="
+                  playingFileId === row.fileId ? `Stop ${row.fileName}` : `Play ${row.fileName}`
+                "
+                :aria-pressed="playingFileId === row.fileId"
+                @click.stop="togglePlay(row)"
+                @keydown.stop
+              >
+                <svg class="play-icon" aria-hidden="true">
+                  <use :href="playingFileId === row.fileId ? '#tags-pause' : '#tags-play'" />
+                </svg>
+              </button>
 
               <!--
                 The padlock leads the value rather than trailing it: trailing, it lands
@@ -356,10 +390,17 @@
       <span class="legend-item">Click a row to open its book's Tags tab.</span>
     </div>
 
+    <!--
+      One element for the whole table. It is never shown: the row buttons are the
+      transport, and a second set of controls that could disagree with them would be one
+      set too many.
+    -->
+    <audio ref="audioEl" preload="none" @ended="onPlaybackEnded" @error="onPlaybackError"></audio>
+
     <RenamePreviewModal
       v-if="organizeOpen"
       :visible="organizeOpen"
-      :audiobookIds="[...selectedBooks]"
+      :audiobookIds="[...selectedBookIds]"
       @close="organizeOpen = false"
       @done="onOrganized"
     />
@@ -379,6 +420,13 @@
           stroke-width="1.4"
         />
         <rect x="3.4" y="7.4" width="9.2" height="6.2" rx="1.4" fill="currentColor" />
+      </symbol>
+      <symbol id="tags-play" viewBox="0 0 16 16">
+        <path d="M5 3.6v8.8l7-4.4z" fill="currentColor" />
+      </symbol>
+      <symbol id="tags-pause" viewBox="0 0 16 16">
+        <rect x="4.4" y="3.6" width="2.6" height="8.8" rx="0.6" fill="currentColor" />
+        <rect x="9" y="3.6" width="2.6" height="8.8" rx="0.6" fill="currentColor" />
       </symbol>
       <symbol id="tags-lock-open" viewBox="0 0 16 16">
         <path
@@ -409,8 +457,8 @@ import {
   PhArrowsClockwise,
   PhCaretDown,
   PhCaretUp,
+  PhCheck,
   PhColumns,
-  PhFolderOpen,
   PhMagnifyingGlass,
   PhSpinner,
   PhTag,
@@ -426,6 +474,7 @@ import type { LibraryTagColumn, LibraryTagRow } from '@/types'
  * sits. Prefixed so nothing the catalog could ever add collides with them.
  */
 const SELECT_KEY = '__select'
+const AUDIO_KEY = '__audio'
 const PATH_KEY = '__path'
 const FILENAME_KEY = 'fileName'
 
@@ -459,12 +508,16 @@ const PATH_COLUMN_WIDTH = 320
 /** Wide enough for a checkbox and nothing else; not resizable, so it is not a preference. */
 const SELECT_COLUMN_WIDTH = 34
 
+/** Likewise: one button, no scrubber, no duration. */
+const AUDIO_COLUMN_WIDTH = 30
+
 // Versioned: an earlier build stored a six-column subset, and a browser that had already
 // opened the table would otherwise keep it forever and never see the full default.
 const VISIBLE_TAGS_KEY = 'listenarr.tagsView.columns.v2'
 const WIDTHS_KEY = 'listenarr.tagsView.widths'
 const SHOW_PATH_KEY = 'listenarr.tagsView.showPath'
 const PROPOSALS_KEY = 'listenarr.tagsView.proposals'
+const APPLY_SCOPE_KEY = 'listenarr.tagsView.applyScope'
 
 const router = useRouter()
 
@@ -489,15 +542,40 @@ const showPath = ref(true)
 const showProposals = ref(false)
 
 /**
- * Which books the toolbar's actions are for, by audiobook id.
+ * Which files the toolbar's actions are for, by file id.
  *
- * Keyed by book rather than by file because that is what the actions take: a tag write is
- * queued for a book and an organize moves a book's folder, so ticking one part of a
- * five-part book and expecting the other four to be left alone would be a promise
- * neither could keep.
+ * By file, because a book's parts are not always the same work: a collection of short
+ * stories arrives as one title whose files carry different names, and writing tags into
+ * one of them should not touch the other three. The tag job carries the file scope, so
+ * a tick means exactly what it looks like it means.
+ *
+ * Organizing still resolves to whole books, because moving a folder moves everything in
+ * it — the modal shows which books a path change would reach before anything moves.
  */
-const selectedBooks = ref<Set<number>>(new Set())
+const selectedFiles = ref<Set<number>>(new Set())
 const organizeOpen = ref(false)
+const applyOpen = ref(false)
+const applyMenuEl = ref<HTMLElement | null>(null)
+
+/**
+ * Which parts of the selected books Apply reaches.
+ *
+ * Tags on, paths off: writing tags is the page's subject, and moving several hundred
+ * files is not something a default should arrange. The label restates whichever is on,
+ * so the scope is legible without opening the menu.
+ */
+const applyTags = ref(true)
+const applyPaths = ref(false)
+
+/**
+ * Which row is playing, if any.
+ *
+ * One shared <audio> rather than one per row: only one file can usefully play at a
+ * time, and a windowed table would otherwise build and tear down a media element every
+ * time a row scrolled past.
+ */
+const playingFileId = ref<number | null>(null)
+const audioEl = ref<HTMLAudioElement | null>(null)
 const working = ref(false)
 const actionMessage = ref<string | null>(null)
 
@@ -529,6 +607,7 @@ const columnByTag = computed(() => new Map(columns.value.map((column) => [column
  */
 const activeColumns = computed<ActiveColumn[]>(() => [
   { key: SELECT_KEY, label: '' },
+  { key: AUDIO_KEY, label: '' },
   { key: FILENAME_KEY, label: 'Filename' },
   ...(showPath.value ? [{ key: PATH_KEY, label: 'Path' }] : []),
   ...visibleTags.value
@@ -538,7 +617,8 @@ const activeColumns = computed<ActiveColumn[]>(() => [
 ])
 
 /** Whether a column holds a tag, as opposed to the selection, the file or its path. */
-const isTagColumn = (key: string) => key !== SELECT_KEY && key !== FILENAME_KEY && key !== PATH_KEY
+const isTagColumn = (key: string) =>
+  key !== SELECT_KEY && key !== AUDIO_KEY && key !== FILENAME_KEY && key !== PATH_KEY
 
 /**
  * Which columns carry a padlock. The path is lockable for the same reason a tag is —
@@ -571,6 +651,7 @@ function lockHint(row: LibraryTagRow, key: string) {
 /** A blurb needs more room than an album name, so a long-text column starts wider. */
 const widthFor = (key: string) => {
   if (key === SELECT_KEY) return SELECT_COLUMN_WIDTH
+  if (key === AUDIO_KEY) return AUDIO_COLUMN_WIDTH
   const stored = widths.value[key]
   if (stored) return stored
   if (key === FILENAME_KEY) return FILENAME_COLUMN_WIDTH
@@ -592,12 +673,13 @@ const rowHeight = computed(() => (showProposals.value ? PROPOSAL_ROW_HEIGHT : RO
 const tableStyle = computed(() => ({
   width: `${totalWidth.value}px`,
   '--select-width': `${SELECT_COLUMN_WIDTH}px`,
+  '--audio-width': `${AUDIO_COLUMN_WIDTH}px`,
   '--row-height': `${rowHeight.value}px`,
 }))
 
 /** A row's value for one column: the file, where it sits, or what it carries for a tag. */
 function cellText(row: LibraryTagRow, key: string) {
-  if (key === SELECT_KEY) return ''
+  if (key === SELECT_KEY || key === AUDIO_KEY) return ''
   if (key === FILENAME_KEY) return row.fileName
   if (key === PATH_KEY) return row.displayPath ?? row.path ?? ''
   return row.tags[key] ?? ''
@@ -636,8 +718,9 @@ function proposalFor(row: LibraryTagRow, key: string) {
 
 function cellClass(row: LibraryTagRow, key: string) {
   return {
-    'tags-td--frozen': key === SELECT_KEY || key === FILENAME_KEY,
+    'tags-td--frozen': key === SELECT_KEY || key === AUDIO_KEY || key === FILENAME_KEY,
     'tags-td--select': key === SELECT_KEY,
+    'tags-td--audio': key === AUDIO_KEY,
     'tags-td--sticky': key === FILENAME_KEY,
     'tags-td--mismatch': isMismatched(row, key),
     'tags-td--locked': isLocked(row, key),
@@ -647,8 +730,9 @@ function cellClass(row: LibraryTagRow, key: string) {
 
 function headerClass(key: string) {
   return {
-    'tags-th--frozen': key === SELECT_KEY || key === FILENAME_KEY,
+    'tags-th--frozen': key === SELECT_KEY || key === AUDIO_KEY || key === FILENAME_KEY,
     'tags-th--select': key === SELECT_KEY,
+    'tags-th--audio': key === AUDIO_KEY,
     'tags-th--sticky': key === FILENAME_KEY,
   }
 }
@@ -661,6 +745,10 @@ function headerClass(key: string) {
 function cellTitle(row: LibraryTagRow, key: string): string {
   if (key === SELECT_KEY) {
     return row.bookTitle
+  }
+
+  if (key === AUDIO_KEY) {
+    return playingFileId.value === row.fileId ? `Stop ${row.fileName}` : `Play ${row.fileName}`
   }
 
   if (key === FILENAME_KEY) {
@@ -822,18 +910,115 @@ function sortBy(key: string) {
   sort.value = { key, ascending: true }
 }
 
-/* -- Selection, which is by book -------------------------------------------- */
+/* -- Applying to the selection ------------------------------------------------ */
 
-const visibleBookIds = computed(() => new Set(visibleRows.value.map((row) => row.audiobookId)))
+const applyLabel = computed(() => {
+  const count = selectedFiles.value.size > 0 ? ` (${selectedFiles.value.size})` : ''
+  if (applyTags.value && applyPaths.value) return `Apply tags + paths${count}`
+  if (applyTags.value) return `Apply tags${count}`
+  if (applyPaths.value) return `Apply paths${count}`
+  return `Apply${count}`
+})
+
+const canApply = computed(
+  () => selectedFiles.value.size > 0 && (applyTags.value || applyPaths.value) && !working.value,
+)
+
+const applyHint = computed(() => {
+  if (selectedFiles.value.size === 0) return 'Tick some files first'
+  if (!applyTags.value && !applyPaths.value) return 'Choose what Apply covers'
+  const parts = [
+    applyTags.value ? 'write every unlocked tag into their files' : null,
+    applyPaths.value ? 'move and rename them to match the naming pattern' : null,
+  ].filter(Boolean)
+  return `For the selected books: ${parts.join(', and ')}.`
+})
+
+/**
+ * Run whichever parts are in scope.
+ *
+ * Paths go first when both are. A tag write records the path it is rewriting before it
+ * touches anything, so moving the file out from under a queued job is exactly how that
+ * job comes back as "file is missing" — and tags written after the move land in the file
+ * where it now lives.
+ */
+async function applySelection() {
+  if (!canApply.value) return
+  applyOpen.value = false
+
+  if (applyPaths.value) {
+    organizeOpen.value = true
+    return
+  }
+
+  await writeSelected()
+}
+
+/* -- Playing a file ---------------------------------------------------------- */
+
+/**
+ * Start this row, or stop it if it is the one already playing.
+ *
+ * Switching rows reuses the element rather than making another, so starting a second
+ * file is what stops the first — there is no state in which two are audible.
+ */
+async function togglePlay(row: LibraryTagRow) {
+  const element = audioEl.value
+  if (!element) return
+
+  if (playingFileId.value === row.fileId) {
+    element.pause()
+    playingFileId.value = null
+    return
+  }
+
+  actionMessage.value = null
+  element.src = apiService.buildLibraryFileAudioUrl(row.fileId)
+  playingFileId.value = row.fileId
+
+  try {
+    await element.play()
+  } catch (err) {
+    // A browser that cannot decode the container says so here rather than by staying
+    // silent, which is the difference between "this file is broken" and "nothing
+    // happened when I clicked".
+    logger.warn(`Could not play file ${row.fileId}`, err)
+    playingFileId.value = null
+    actionMessage.value = `That file could not be played: ${describe(err)}`
+  }
+}
+
+function onPlaybackEnded() {
+  playingFileId.value = null
+}
+
+function onPlaybackError() {
+  if (playingFileId.value != null) {
+    actionMessage.value = 'That file could not be played in this browser.'
+    playingFileId.value = null
+  }
+}
+
+/* -- Selection, which is by file --------------------------------------------- */
+
+const visibleFileIds = computed(() => new Set(visibleRows.value.map((row) => row.fileId)))
 
 const allVisibleSelected = computed(
   () =>
-    visibleBookIds.value.size > 0 &&
-    [...visibleBookIds.value].every((id) => selectedBooks.value.has(id)),
+    visibleFileIds.value.size > 0 &&
+    [...visibleFileIds.value].every((id) => selectedFiles.value.has(id)),
 )
 
 const someVisibleSelected = computed(() =>
-  [...visibleBookIds.value].some((id) => selectedBooks.value.has(id)),
+  [...visibleFileIds.value].some((id) => selectedFiles.value.has(id)),
+)
+
+/** The books the ticked files belong to, which is what organizing takes. */
+const selectedBookIds = computed(
+  () =>
+    new Set(
+      rows.value.filter((row) => selectedFiles.value.has(row.fileId)).map((row) => row.audiobookId),
+    ),
 )
 
 /**
@@ -847,47 +1032,45 @@ function selectFromCell(event: MouseEvent, row: LibraryTagRow) {
   event.stopPropagation()
 
   // The checkbox raises its own change event, and handling the bubble as well would
-  // toggle the book twice and leave it exactly as it was.
+  // toggle the file twice and leave it exactly as it was.
   if ((event.target as HTMLElement)?.tagName !== 'INPUT') {
-    toggleBook(row.audiobookId)
+    toggleFile(row.fileId)
   }
 }
 
-function toggleBook(audiobookId: number) {
-  const next = new Set(selectedBooks.value)
-  if (!next.delete(audiobookId)) {
-    next.add(audiobookId)
+function toggleFile(fileId: number) {
+  const next = new Set(selectedFiles.value)
+  if (!next.delete(fileId)) {
+    next.add(fileId)
   }
 
-  selectedBooks.value = next
+  selectedFiles.value = next
   actionMessage.value = null
 }
 
 /**
- * Select or clear every book the current filter shows.
+ * Select or clear every file the current filter shows.
  *
- * Books hidden by the filter are left exactly as they were rather than cleared: the
+ * Files hidden by the filter are left exactly as they were rather than cleared: the
  * ordinary way to build a selection is to filter, tick, filter again, and a clear that
  * reached past the filter would silently undo the first half of that.
  */
 function toggleAllVisible() {
-  const next = new Set(selectedBooks.value)
+  const next = new Set(selectedFiles.value)
   if (allVisibleSelected.value) {
-    visibleBookIds.value.forEach((id) => next.delete(id))
+    visibleFileIds.value.forEach((id) => next.delete(id))
   } else {
-    visibleBookIds.value.forEach((id) => next.add(id))
+    visibleFileIds.value.forEach((id) => next.add(id))
   }
 
-  selectedBooks.value = next
+  selectedFiles.value = next
   actionMessage.value = null
 }
 
 /* -- Locks ------------------------------------------------------------------- */
 
-/** The rows of every selected book, which is what a bulk lock applies to. */
-const selectedRows = computed(() =>
-  rows.value.filter((row) => selectedBooks.value.has(row.audiobookId)),
-)
+/** The ticked rows, which is what a bulk lock applies to. */
+const selectedRows = computed(() => rows.value.filter((row) => selectedFiles.value.has(row.fileId)))
 
 /** A column reads as locked only when every selected file has it locked. */
 function columnLocked(key: string) {
@@ -944,27 +1127,38 @@ async function applyLocks(fileIds: number[], key: string, locked: boolean) {
 /* -- Writing and organizing the selection ------------------------------------ */
 
 /**
- * Queue a tag write for every selected book.
+ * Queue a tag write for the ticked files, one job per book.
  *
- * No tag list is sent, so each book gets every tag its mapping allows minus whatever is
- * locked on its files — which is the planner's decision rather than this table's, and so
- * stays true of the write that runs a minute later.
+ * The ticks are per file but a job is per book, so the files are grouped and each book's
+ * job carries its own list — ticking one story of a four-story collection writes that
+ * story and leaves its siblings alone.
+ *
+ * No tag list is sent, so each file gets every tag its mapping allows minus whatever is
+ * locked on it, which is the planner's decision rather than this table's and so stays
+ * true of the write that runs a minute later.
  */
 async function writeSelected() {
-  const ids = [...selectedBooks.value]
-  if (ids.length === 0) return
+  const byBook = new Map<number, number[]>()
+  for (const row of rows.value) {
+    if (!selectedFiles.value.has(row.fileId)) continue
+    const forBook = byBook.get(row.audiobookId)
+    if (forBook) forBook.push(row.fileId)
+    else byBook.set(row.audiobookId, [row.fileId])
+  }
+
+  if (byBook.size === 0) return
 
   working.value = true
   actionMessage.value = null
 
-  let queued = 0
+  let queuedFiles = 0
   const refusals: string[] = []
 
-  for (const audiobookId of ids) {
+  for (const [audiobookId, fileIds] of byBook) {
     try {
-      const response = await apiService.writeTags(audiobookId)
+      const response = await apiService.writeTags(audiobookId, undefined, undefined, fileIds)
       if (response.queued) {
-        queued++
+        queuedFiles += fileIds.length
       } else if (response.reason) {
         refusals.push(response.reason)
       }
@@ -976,8 +1170,8 @@ async function writeSelected() {
 
   working.value = false
   actionMessage.value = refusals.length
-    ? `Queued ${queued} of ${ids.length}. ${refusals.length} refused: ${refusals[0]}`
-    : `Queued ${queued} book${queued === 1 ? '' : 's'} for tag writing.`
+    ? `Queued ${queuedFiles} of ${selectedFiles.value.size} file(s). ${refusals.length} refused: ${refusals[0]}`
+    : `Queued ${queuedFiles} file${queuedFiles === 1 ? '' : 's'} for tag writing.`
 }
 
 /**
@@ -988,6 +1182,12 @@ async function onOrganized() {
   organizeOpen.value = false
   actionMessage.value = 'Organized. Re-reading the library…'
   await load(false)
+
+  if (applyTags.value) {
+    await writeSelected()
+    return
+  }
+
   actionMessage.value = null
 }
 
@@ -1084,9 +1284,13 @@ function openBook(row: LibraryTagRow) {
 }
 
 function onDocumentClick(event: MouseEvent) {
-  if (!columnsOpen.value) return
-  if (columnsMenuEl.value && !columnsMenuEl.value.contains(event.target as Node)) {
+  const target = event.target as Node
+  if (columnsOpen.value && columnsMenuEl.value && !columnsMenuEl.value.contains(target)) {
     columnsOpen.value = false
+  }
+
+  if (applyOpen.value && applyMenuEl.value && !applyMenuEl.value.contains(target)) {
+    applyOpen.value = false
   }
 }
 
@@ -1113,6 +1317,15 @@ function restorePreferences() {
     }
 
     showProposals.value = localStorage.getItem(PROPOSALS_KEY) === 'true'
+
+    const storedScope = localStorage.getItem(APPLY_SCOPE_KEY)
+    if (storedScope) {
+      const parsed = JSON.parse(storedScope)
+      if (parsed && typeof parsed === 'object') {
+        applyTags.value = parsed.tags !== false
+        applyPaths.value = parsed.paths === true
+      }
+    }
   } catch {
     // A browser with storage blocked still gets a working table, just not a remembered one.
   }
@@ -1134,6 +1347,12 @@ watch(
   },
   { deep: true },
 )
+
+watch([applyTags, applyPaths], ([tags, paths]) => {
+  try {
+    localStorage.setItem(APPLY_SCOPE_KEY, JSON.stringify({ tags, paths }))
+  } catch {}
+})
 
 watch(showPath, (value) => {
   try {
@@ -1177,6 +1396,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  audioEl.value?.pause()
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('resize', measureViewport)
   endResize()
@@ -1280,8 +1500,46 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
-.columns-menu {
+.columns-menu,
+.apply-menu {
   position: relative;
+}
+
+/* The caret is joined to the button so the two read as one control with a choice. */
+.apply-menu {
+  display: inline-flex;
+}
+
+.apply-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.apply-caret {
+  margin-left: -1px;
+  padding: 0 6px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.apply-dropdown {
+  width: 230px;
+}
+
+/*
+ * The columns menu puts its code hint in a third column, which works there because a tag
+ * name is short. "moved and renamed" is not, so here the hint sits under its label
+ * instead of pushing the menu open past its own width.
+ */
+.apply-dropdown .columns-option {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  row-gap: 2px;
+}
+
+.apply-dropdown .columns-option code {
+  grid-column: 2;
+  font-size: 0.72rem;
 }
 
 .columns-dropdown {
@@ -1400,8 +1658,13 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-.tags-th--sticky {
+.tags-th--audio {
   left: var(--select-width, 34px);
+  padding: 0;
+}
+
+.tags-th--sticky {
+  left: calc(var(--select-width, 34px) + var(--audio-width, 30px));
 }
 
 .tags-th-label {
@@ -1475,9 +1738,52 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.tags-td--sticky {
+.tags-td--audio {
   left: var(--select-width, 34px);
+  padding: 0;
+  text-align: center;
+}
+
+.tags-td--sticky {
+  left: calc(var(--select-width, 34px) + var(--audio-width, 30px));
   color: var(--text-primary);
+}
+
+.row-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: var(--transition-fast);
+}
+
+.play-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.tags-row:hover .row-play,
+.row-play:focus-visible {
+  opacity: 1;
+}
+
+.row-play:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+/* The one playing stays lit while the pointer is anywhere else in the table. */
+.row-play--on {
+  opacity: 1;
+  color: var(--brand-400);
 }
 
 /* A frozen column has to repaint its own stripe: the row's background sits behind it. */
@@ -1551,8 +1857,10 @@ onBeforeUnmount(() => {
   margin-top: 2px;
 }
 
-/* A checkbox has nothing underneath it, so it keeps the whole cell to centre itself in. */
-.tags-table--proposals .row-select {
+/* Neither a checkbox nor a play button has anything underneath it, so both keep the
+   whole cell to centre themselves in. */
+.tags-table--proposals .row-select,
+.tags-table--proposals .row-play {
   margin-top: 4px;
 }
 

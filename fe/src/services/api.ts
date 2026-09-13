@@ -1615,6 +1615,17 @@ class ApiService {
     return response.locks ?? {}
   }
 
+  /**
+   * URL an <audio> element can load to play a registered library file.
+   *
+   * A URL rather than a fetch because the player needs the browser to issue its own
+   * range requests as it decodes and seeks. It stays same-origin so the session cookie
+   * rides along; an <audio> tag cannot send the X-Api-Key header.
+   */
+  buildLibraryFileAudioUrl(fileId: number): string {
+    return `${API_BASE_URL}/tagging/files/${fileId}/audio`
+  }
+
   /** The tags Listenarr can write, with their current mapping. */
   async getTagDefinitions(): Promise<TagDefinition[]> {
     return this.request<TagDefinition[]>('/tagging/tags')
@@ -1642,10 +1653,16 @@ class ApiService {
     audiobookId: number,
     tags?: string[],
     values?: Record<string, string>,
+    fileIds?: number[],
   ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
     return this.request(`/tagging/audiobooks/${audiobookId}`, {
       method: 'POST',
-      body: JSON.stringify({ tags: tags ?? null, values: values ?? null }),
+      body: JSON.stringify({
+        tags: tags ?? null,
+        values: values ?? null,
+        // Null means every file of the book, which is what a book page asks for.
+        fileIds: fileIds?.length ? fileIds : null,
+      }),
     })
   }
 
