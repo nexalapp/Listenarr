@@ -274,18 +274,25 @@ public sealed class ManualImportPathPlanner
         if (!string.IsNullOrWhiteSpace(audiobook.Subtitle)) variables["Subtitle"] = audiobook.Subtitle;
         if (!string.IsNullOrWhiteSpace(audiobook.Edition)) variables["Edition"] = audiobook.Edition;
 
-        var usesSubtitleToken = (!string.IsNullOrWhiteSpace(folderPattern) && folderPattern.IndexOf("Subtitle", StringComparison.OrdinalIgnoreCase) >= 0)
-            || (!string.IsNullOrWhiteSpace(filePattern) && filePattern.IndexOf("Subtitle", StringComparison.OrdinalIgnoreCase) >= 0);
-
-        var titleFull = !usesSubtitleToken
-            && !string.IsNullOrWhiteSpace(audiobook.Subtitle)
-            && !string.IsNullOrWhiteSpace(audiobook.Title)
-            && !audiobook.Title.Contains(audiobook.Subtitle, StringComparison.OrdinalIgnoreCase)
-            ? $"{audiobook.Title}: {audiobook.Subtitle}"
-            : audiobook.Title;
-        variables["Title"] = !string.IsNullOrWhiteSpace(titleFull) ? titleFull : "Unknown Title";
+        // {Title} is the title, as it is everywhere else. A subtitle reaches a name only
+        // where the pattern asks for {Subtitle}.
+        variables["Title"] = !string.IsNullOrWhiteSpace(audiobook.Title)
+            ? audiobook.Title
+            : "Unknown Title";
 
         if (!string.IsNullOrWhiteSpace(audiobook.Series)) variables["Series"] = audiobook.Series;
+
+        // Without this the token resolved to nothing and a manually imported book landed
+        // in a folder with no position in it at all, whatever the pattern asked for.
+        // Widened to its series like every other path that writes one.
+        var seriesPosition = SeriesNumberFormatting.Pad(
+            audiobook.SeriesNumber,
+            metadata.SeriesPositionWidthFor(audiobook.Series));
+        if (!string.IsNullOrWhiteSpace(seriesPosition))
+        {
+            variables["SeriesNumber"] = seriesPosition;
+        }
+
         if (!string.IsNullOrWhiteSpace(audiobook.PublishYear)) variables["Year"] = audiobook.PublishYear;
 
         var effectiveDiskNumber = item.DiskNumberHint

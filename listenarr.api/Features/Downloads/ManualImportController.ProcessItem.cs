@@ -161,6 +161,12 @@ public partial class ManualImportController
                     item.FullPath);
             }
 
+            // How wide each series writes its positions, so this import lands where
+            // organizing would already have put it rather than somewhere it would be
+            // moved straight back out of.
+            metadata.SeriesPositionWidths =
+                await _audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
+
             if (!planningDestinationResolutions.TryGetValue(
                     audiobook.Id,
                     out var destinationResolution))
