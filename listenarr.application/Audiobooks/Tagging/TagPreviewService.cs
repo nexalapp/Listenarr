@@ -77,7 +77,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
 
             var settings = await configurationService.GetApplicationSettingsAsync();
             var mappings = TagCatalog.Reconcile(settings.TagMappings);
-            var metadata = audiobook.CreateBasicAudioMetadata();
+            var seriesPositionWidths =
+                await audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
+            var metadata = audiobook.CreateBasicAudioMetadata(
+                seriesMemberships: null,
+                seriesPositionWidth: seriesPositionWidths.GetValueOrDefault(
+                    SeriesNumberFormatting.SeriesKey(audiobook.Series),
+                    1));
             var selection = selectedTags == null
                 ? null
                 : new HashSet<string>(selectedTags, StringComparer.OrdinalIgnoreCase);

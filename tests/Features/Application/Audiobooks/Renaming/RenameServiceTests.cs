@@ -1899,6 +1899,103 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
         }
 
         /// <summary>
+        /// A series that reaches ten writes every one of its positions two digits wide, so
+        /// a folder listing keeps it in reading order. This is what the library being
+        /// managed already does by hand.
+        /// </summary>
+        [Theory]
+        [InlineData("1", "[Shadows of the Apt 01] Empire in Black and Gold")]
+        [InlineData("10", "[Shadows of the Apt 10] Seal of the Worm")]
+        public async Task PreviewRename_ASeriesThatReachesTen_WidensItsPositions(
+            string position,
+            string expectedFolderName)
+        {
+            var bookFolder = Path.Join(_tempRoot, "apt");
+            Directory.CreateDirectory(bookFolder);
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _tempRoot,
+                FolderNamingPattern = "[{Series} {SeriesNumber}] {Title}",
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            var title = position == "1" ? "Empire in Black and Gold" : "Seal of the Worm";
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 60,
+                Title = title,
+                Series = "Shadows of the Apt",
+                SeriesNumber = position,
+                BasePath = bookFolder,
+                Files = [new() { Id = 601, AudiobookId = 60, Path = Path.Join(bookFolder, "b.m4b"), Format = "m4b" }]
+            });
+
+            // The width comes from the series, so its tenth book has to be in the library
+            // for the first book to be written 01.
+            db.AudiobookSeriesMemberships.AddRange(
+                new AudiobookSeriesMembership
+                {
+                    AudiobookId = 60,
+                    SeriesName = "Shadows of the Apt",
+                    SeriesNumber = position,
+                    IsPrimary = true
+                },
+                new AudiobookSeriesMembership
+                {
+                    AudiobookId = 61,
+                    SeriesName = "Shadows of the Apt",
+                    SeriesNumber = "10",
+                    IsPrimary = true
+                });
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync([60]));
+
+            Assert.Equal(expectedFolderName, Path.GetFileName(preview.NewFolderPath));
+        }
+
+        /// <summary>
+        /// A series that never reaches ten is left exactly as it reads, because widening
+        /// it would propose a rename across the library and buy nothing.
+        /// </summary>
+        [Fact]
+        public async Task PreviewRename_AShortSeries_IsNotWidened()
+        {
+            var bookFolder = Path.Join(_tempRoot, "trilogy");
+            Directory.CreateDirectory(bookFolder);
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _tempRoot,
+                FolderNamingPattern = "[{Series} {SeriesNumber}] {Title}",
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 62,
+                Title = "Children of Time",
+                Series = "Children of Time",
+                SeriesNumber = "1",
+                BasePath = bookFolder,
+                Files = [new() { Id = 621, AudiobookId = 62, Path = Path.Join(bookFolder, "b.m4b"), Format = "m4b" }]
+            });
+            db.AudiobookSeriesMemberships.Add(new AudiobookSeriesMembership
+            {
+                AudiobookId = 62,
+                SeriesName = "Children of Time",
+                SeriesNumber = "3",
+                IsPrimary = true
+            });
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync([62]));
+
+            Assert.Equal("[Children of Time 1] Children of Time", Path.GetFileName(preview.NewFolderPath));
+        }
+
+        /// <summary>
         /// Audible files a series book's subtitle as the title restated, so folding it
         /// into the name states the same fact twice beside a pattern that already renders
         /// the series and the position.

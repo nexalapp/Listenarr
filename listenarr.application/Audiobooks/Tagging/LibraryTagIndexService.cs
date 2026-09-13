@@ -92,12 +92,18 @@ namespace Listenarr.Application.Audiobooks.Tagging
             // reads as a mismatch. The metadata is built once per book rather than once per
             // file: it does not vary between a book's parts, and rendering it again for
             // each would re-run every pattern for nothing.
+            var seriesPositionWidths =
+                await audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
+
             var metadataByAudiobookId = audiobooks.ToDictionary(
                 audiobook => audiobook.Id,
                 audiobook => audiobook.CreateBasicAudioMetadata(
                     memberships.TryGetValue(audiobook.Id, out var bookMemberships)
                         ? bookMemberships
-                        : null));
+                        : null,
+                    seriesPositionWidths.GetValueOrDefault(
+                        SeriesNumberFormatting.SeriesKey(audiobook.Series),
+                        1)));
 
             // Both resolved before the probes start, so the parallel row-building below
             // reads them without a lock.
