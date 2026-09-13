@@ -168,6 +168,76 @@ internal sealed partial class PinnedDirectoryCreation
         return true;
     }
 
+    /// <summary>
+    /// Whether two persisted identities name the same object by the evidence that
+    /// outlives the filesystem's own bookkeeping: its device and its inode.
+    /// </summary>
+    /// <remarks>
+    /// The generation suffix — a <c>name_to_handle_at</c> handle or an inode generation —
+    /// is what defeats inode reuse, and on a local filesystem it is stable, so the exact
+    /// comparison succeeds and this is never reached.
+    /// <para>
+    /// On a FUSE union mount it is not stable. shfs embeds an ephemeral node id in the
+    /// handle it reports, so the handle for an untouched file rotates on its own: across
+    /// a rename, and eventually just across time. A token that always differs cannot
+    /// distinguish a swapped file from an untouched one, so requiring it to match does
+    /// not buy the protection it was added for — it only turns every comparison into a
+    /// refusal, and this application's whole purpose is managing libraries on exactly
+    /// those mounts.
+    /// </para>
+    /// <para>
+    /// So the strong evidence is preferred and this is the fallback. Nothing is weakened
+    /// where the filesystem can honour the strong check, because there the exact match
+    /// answers first.
+    /// </para>
+    /// </remarks>
+    internal static bool ArePersistedObjectIdentitiesSameObject(
+        string expectedIdentity,
+        string candidateIdentity)
+    {
+        if (string.IsNullOrWhiteSpace(expectedIdentity)
+            || string.IsNullOrWhiteSpace(candidateIdentity))
+        {
+            return false;
+        }
+
+        return TryGetLinuxDeviceAndInodeKey(expectedIdentity, out var expectedKey)
+            && TryGetLinuxDeviceAndInodeKey(candidateIdentity, out var candidateKey)
+            && string.Equals(expectedKey, candidateKey, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The device and inode out of either persisted spelling, and nothing else.
+    /// </summary>
+    private static bool TryGetLinuxDeviceAndInodeKey(string identity, out string key)
+    {
+        key = string.Empty;
+        var parts = identity.Split(':');
+
+        // Both spellings carry the device major, device minor and inode in the same three
+        // positions; only what follows them differs.
+        var recognised =
+            (parts.Length >= 6
+                && string.Equals(parts[0], "linux-generation", StringComparison.Ordinal)
+                && TryValidateLinuxGenerationSuffix(parts, 4))
+            || (parts.Length >= 8
+                && string.Equals(parts[0], "linux", StringComparison.Ordinal)
+                && IsFixedHex(parts[4], 16)
+                && IsFixedHex(parts[5], 8)
+                && TryValidateLinuxGenerationSuffix(parts, 6));
+
+        if (!recognised
+            || !IsFixedHex(parts[1], 8)
+            || !IsFixedHex(parts[2], 8)
+            || !IsFixedHex(parts[3], 16))
+        {
+            return false;
+        }
+
+        key = string.Join(':', parts[1], parts[2], parts[3]);
+        return true;
+    }
+
     private static bool TryGetLinuxStrongGenerationKey(
         string identity,
         out string key)
