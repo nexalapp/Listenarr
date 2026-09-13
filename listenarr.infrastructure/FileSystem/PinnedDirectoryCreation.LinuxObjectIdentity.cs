@@ -18,6 +18,63 @@ internal sealed partial class PinnedDirectoryCreation
     private const int LinuxFileHandleHeaderBytes = 8;
     private const int LinuxInitialFileHandleBytes = 128;
     private const int LinuxMaximumFileHandleBytes = 4096;
+    private const int LinuxStatFsBufferBytes = 256;
+
+    /// <summary>fs/fuse: <c>FUSE_SUPER_MAGIC</c>.</summary>
+    private const long LinuxFuseSuperMagic = 0x65735546L;
+
+    [System.Runtime.InteropServices.DllImport(
+        "libc",
+        EntryPoint = "fstatfs",
+        SetLastError = true)]
+    private static extern int FStatFsForIdentity(int descriptor, IntPtr buffer);
+
+    /// <summary>
+    /// Whether this object sits on a filesystem that re-issues the generation evidence
+    /// for an object it has not changed.
+    /// </summary>
+    /// <remarks>
+    /// FUSE handles are synthesised from a node id the kernel assigns per lookup and
+    /// recycles, so <c>name_to_handle_at</c> reports a different handle for an untouched
+    /// file across a rename and eventually across time alone. Everywhere else the handle
+    /// is durable and is the stronger evidence, so this stays false and the strict
+    /// comparison is the only one that runs.
+    /// <para>
+    /// Deliberately a positive test for the one family known to rotate, rather than an
+    /// exclusion list of the ones known to be stable: a filesystem nobody here has heard
+    /// of should get the strict check, not the lenient one.
+    /// </para>
+    /// </remarks>
+    private static bool FileSystemRotatesGenerationEvidence(SafeFileHandle handle)
+    {
+        if (!OperatingSystem.IsLinux() || handle.IsInvalid || handle.IsClosed)
+        {
+            return false;
+        }
+
+        var buffer = Marshal.AllocHGlobal(LinuxStatFsBufferBytes);
+        try
+        {
+            if (FStatFsForIdentity((int)handle.DangerousGetHandle(), buffer) != 0)
+            {
+                return false;
+            }
+
+            var fileSystemType = IntPtr.Size == sizeof(long)
+                ? Marshal.ReadInt64(buffer)
+                : Marshal.ReadInt32(buffer);
+            return fileSystemType == LinuxFuseSuperMagic;
+        }
+        catch (Exception exception) when (
+            exception is EntryPointNotFoundException or DllNotFoundException)
+        {
+            return false;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
     private const ulong LinuxFsIocGetVersion64 = 0x80087601;
     private const ulong LinuxFsIocGetVersion32 = 0x80047601;
 

@@ -75,20 +75,33 @@ public sealed class AudiobookFileIdentityReconciler(
                     }
                 }
 
-                // A physical-generation mismatch must not erase pathname ownership.
-                // The persisted physical token remains stale on purpose so destructive
-                // workflows continue to fail closed when they compare it with the live
-                // generation, while the path lookup/ownership keys still fence claims.
+                // A physical-generation mismatch does not erase pathname ownership, and
+                // it no longer freezes the file either: the token is refreshed to what is
+                // on disk now.
+                //
+                // Keeping it stale was meant to make destructive workflows fail closed,
+                // but on this application's own deployment target — a library on a FUSE
+                // union share — the token goes stale for reasons that have nothing to do
+                // with the file: a rotated handle, a remount, a restored database. It
+                // went stale for 1106 of 1107 files on one such library, and because
+                // nothing was allowed to heal it, every mutation on all of them was
+                // refused with no way back but an operator editing the database.
+                //
+                // A scan is the recovery path everything else in this ecosystem offers:
+                // the disk is what is true, and re-reading it is how you get back to a
+                // working state. Fencing still holds where it can act — the path identity
+                // and ownership keys below, and the in-flight comparison an operation
+                // makes against evidence it captured moments earlier.
                 plans.Add(new ReconciliationPlan(
                     file.Id,
                     file.Path,
                     file.PathOwnershipKey,
                     identity,
-                    physicalObjectIdentity: string.IsNullOrWhiteSpace(
-                            file.PhysicalObjectIdentity)
-                        && physicalDisposition == PhysicalGenerationDisposition.Verified
-                            ? livePhysicalObjectIdentity
-                            : null,
+                    physicalObjectIdentity: physicalDisposition
+                            is PhysicalGenerationDisposition.Verified
+                            or PhysicalGenerationDisposition.Mismatch
+                        ? livePhysicalObjectIdentity
+                        : null,
                     physicalDisposition: physicalDisposition));
             }
             catch (Exception exception) when (exception is
@@ -122,7 +135,7 @@ public sealed class AudiobookFileIdentityReconciler(
         var physicalMismatch = plans.Count(
             plan => plan.PhysicalDisposition == PhysicalGenerationDisposition.Mismatch);
         logger.LogInformation(
-            "Reconciled {Processed} audiobook file path identities: {Valid} valid, {Conflicted} conflicted, {Unavailable} unavailable; physical generations: {PhysicalVerified} verified, {PhysicalUnavailable} unavailable, {PhysicalMismatch} mismatched",
+            "Reconciled {Processed} audiobook file path identities: {Valid} valid, {Conflicted} conflicted, {Unavailable} unavailable; physical generations: {PhysicalVerified} verified, {PhysicalUnavailable} unavailable, {PhysicalMismatch} refreshed from disk",
             plans.Count,
             valid,
             conflicted,
@@ -211,8 +224,11 @@ public sealed class AudiobookFileIdentityReconciler(
                 else
                 {
                     file.ApplyPathIdentity(plan.StoredPath!, plan.Identity);
-                    if (string.IsNullOrWhiteSpace(file.PhysicalObjectIdentity)
-                        && !string.IsNullOrWhiteSpace(plan.PhysicalObjectIdentity))
+                    if (!string.IsNullOrWhiteSpace(plan.PhysicalObjectIdentity)
+                        && !string.Equals(
+                            file.PhysicalObjectIdentity,
+                            plan.PhysicalObjectIdentity,
+                            StringComparison.Ordinal))
                     {
                         file.ApplyPhysicalObjectIdentity(
                             plan.PhysicalObjectIdentity,

@@ -56,8 +56,25 @@ public sealed class AudiobookFileIdentityReconcilerTests : BaseTests
         Assert.Equal(PathIdentityState.Unavailable, Assert.Single(firstState, file => file.AudiobookId == 4).State);
     }
 
+    /// <summary>
+    /// A stored physical token that no longer matches the disk is refreshed, not kept.
+    /// </summary>
+    /// <remarks>
+    /// This asserted the opposite until the policy changed. Keeping the token stale was
+    /// meant to make destructive workflows fail closed, but on a library held on a FUSE
+    /// union share the token goes stale for reasons that say nothing about the file — a
+    /// rotated handle, a remount, a restored database — and nothing was permitted to heal
+    /// it. One such library reached 1106 of 1107 files stale, every mutation on all of
+    /// them refused, recoverable only by editing the database by hand.
+    /// <para>
+    /// A scan is the recovery path this ecosystem offers: the disk is what is true, and
+    /// re-reading it is how you get back to a working state. Pathname ownership below
+    /// still fences claims, and an in-flight operation still compares against evidence it
+    /// captured moments earlier.
+    /// </para>
+    /// </remarks>
     [Fact]
-    public async Task ReconcileAsync_LegacyBackfillAndChangedKnownGeneration_FailClosedWithoutAdoptingReplacement()
+    public async Task ReconcileAsync_LegacyBackfillAndChangedKnownGeneration_RefreshesTheStaleToken()
     {
         var root = FileService.GetTempDirectory("audiobook-file-identity-physical-backfill");
         var legacyPath = await FileService.GetFileAsync(root, "legacy.m4b", "legacy");
@@ -114,7 +131,11 @@ public sealed class AudiobookFileIdentityReconcilerTests : BaseTests
         Assert.False(string.IsNullOrWhiteSpace(files[0].PhysicalObjectIdentity));
         Assert.NotNull(files[0].PhysicalIdentityObservedAtUtc);
         Assert.Equal(PathIdentityState.Valid, files[0].PathIdentityState);
-        Assert.Equal(knownPhysicalIdentity, files[1].PhysicalObjectIdentity);
+        // Refreshed from what is on disk rather than left at the token that no longer
+        // describes anything.
+        Assert.NotEqual(knownPhysicalIdentity, files[1].PhysicalObjectIdentity);
+        Assert.False(string.IsNullOrWhiteSpace(files[1].PhysicalObjectIdentity));
+        Assert.NotNull(files[1].PhysicalIdentityObservedAtUtc);
         Assert.Equal(PathIdentityState.Valid, files[1].PathIdentityState);
         Assert.False(string.IsNullOrWhiteSpace(files[1].PathIdentityLookupKey));
         Assert.False(string.IsNullOrWhiteSpace(files[1].PathOwnershipKey));
