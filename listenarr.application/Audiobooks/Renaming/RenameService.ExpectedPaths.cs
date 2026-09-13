@@ -13,11 +13,11 @@ namespace Listenarr.Application.Audiobooks.Renaming
     /// </summary>
     public partial class RenameService
     {
-        private string BuildExpectedPath(Audiobook audiobook, PreviewFileEntry file, ApplicationSettings settings, string basePath, bool isCustomBasePath, bool isMultiFile)
+        private string BuildExpectedPath(Audiobook audiobook, PreviewFileEntry file, ApplicationSettings settings, string basePath, bool isCustomBasePath, bool isMultiFile, int seriesPositionWidth)
         {
             var folderPattern = settings.FolderNamingPattern;
             var filePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
-            var variables = BuildNamingVariables(audiobook, folderPattern, filePattern, file.SequenceNumber, isMultiFile);
+            var variables = BuildNamingVariables(audiobook, folderPattern, filePattern, file.SequenceNumber, isMultiFile, seriesPositionWidth);
             var patternHasNumberTokens = !string.IsNullOrWhiteSpace(filePattern)
                 && (filePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0 || filePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0);
 
@@ -113,7 +113,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
                     && filePattern.Contains(token, StringComparison.OrdinalIgnoreCase));
         }
 
-        private static Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile)
+        private static Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile, int seriesPositionWidth)
         {
             var combinedTitle = SubtitleAddsSomething(audiobook, folderPattern, filePattern)
                 ? $"{audiobook.Title}: {audiobook.Subtitle}"
@@ -131,7 +131,11 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 { "Publisher", audiobook.Publisher ?? string.Empty },
                 { "Language", audiobook.Language ?? string.Empty },
                 { "Asin", audiobook.Asin ?? string.Empty },
-                { "SeriesNumber", audiobook.SeriesNumber ?? string.Empty },
+                // Widened to the series' own longest position so a folder listing sorts
+                // book 2 before book 10. A series that never reaches ten is unchanged.
+                { "SeriesNumber", SeriesNumberFormatting.Pad(
+                    audiobook.SeriesNumber,
+                    seriesPositionWidth) ?? string.Empty },
                 { "Year", audiobook.PublishYear ?? string.Empty },
                 { "Quality", audiobook.Quality ?? string.Empty },
                 { "DiskNumber", isMultiFile ? sequenceNumber : string.Empty },

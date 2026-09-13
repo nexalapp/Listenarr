@@ -36,6 +36,19 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             CancellationToken ct = default);
         Task<List<Audiobook>> GetLibraryAsync();
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// How many digits each series needs to write its highest position, keyed by the
+        /// series name folded for comparison.
+        /// </summary>
+        /// <remarks>
+        /// The width has to come from the series rather than from the book being named,
+        /// because a position only needs widening in the company of its siblings: a
+        /// trilogy keeps 1, 2, 3 and only a series that actually reaches ten starts
+        /// writing 01. Read from the membership rows and the books' own primary series
+        /// together, since a book can carry one without the other.
+        /// </remarks>
+        Task<Dictionary<string, int>> GetSeriesPositionWidthsAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
         Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);
