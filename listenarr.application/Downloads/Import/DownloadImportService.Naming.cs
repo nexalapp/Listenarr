@@ -7,7 +7,8 @@ public partial class DownloadImportService
     private static AudioMetadata BuildNamingMetadata(
         Audiobook? audiobook,
         AudioMetadata? extractedMetadata,
-        string fallbackTitle)
+        string fallbackTitle,
+        IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
     {
         if (audiobook != null)
         {
@@ -19,6 +20,7 @@ public partial class DownloadImportService
 
             return new AudioMetadata
             {
+                SeriesPositionWidths = seriesPositionWidths,
                 Title = FirstNonEmpty(
                     audiobook.Title,
                     extractedMetadata?.Title,
@@ -97,6 +99,7 @@ public partial class DownloadImportService
 
         return new AudioMetadata
         {
+            SeriesPositionWidths = seriesPositionWidths,
             Title = fallbackTitle,
             Artist = "Unknown Author",
             AlbumArtist = "Unknown Author"
@@ -115,13 +118,47 @@ public partial class DownloadImportService
     /// ToString() under the server's culture would put a comma into the filename.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The naming variables for one imported file.
+    /// </summary>
+    /// <remarks>
+    /// Beside the rest of the naming code rather than inline in the import flow, because
+    /// what a token resolves to is a naming decision and the import is only its caller.
+    /// </remarks>
+    private static Dictionary<string, object> BuildFileNamingVariables(
+        AudioMetadata namingMetadata,
+        string file,
+        int? effectiveDiskNumber,
+        int? effectiveChapterNumber) =>
+        new Dictionary<string, object>
+        {
+            { "Author", namingMetadata.Artist ?? "Unknown Author" },
+            { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
+            { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
+            { "Subtitle", string.IsNullOrWhiteSpace(namingMetadata.Subtitle) ? string.Empty : namingMetadata.Subtitle },
+            { "Edition", string.IsNullOrWhiteSpace(namingMetadata.Edition) ? string.Empty : namingMetadata.Edition },
+            { "Narrator", string.IsNullOrWhiteSpace(namingMetadata.Narrator) ? string.Empty : namingMetadata.Narrator },
+            { "Publisher", string.IsNullOrWhiteSpace(namingMetadata.Publisher) ? string.Empty : namingMetadata.Publisher },
+            { "Language", string.IsNullOrWhiteSpace(namingMetadata.Language) ? string.Empty : namingMetadata.Language },
+            { "Asin", string.IsNullOrWhiteSpace(namingMetadata.Asin) ? string.Empty : namingMetadata.Asin },
+            { "SeriesNumber", SeriesNumberToken(namingMetadata, effectiveChapterNumber) },
+            { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
+            { "Quality", (namingMetadata.BitRate.HasValue ? $"{namingMetadata.BitRate}kbps" : null) ?? namingMetadata.Format ?? string.Empty },
+            { "DiskNumber", effectiveDiskNumber?.ToString() ?? string.Empty },
+            { "ChapterNumber", effectiveChapterNumber?.ToString() ?? string.Empty }
+        };
+
     private static string SeriesNumberToken(
         AudioMetadata metadata,
         int? fallbackChapterNumber) =>
-        FirstNonEmpty(
-            metadata.SeriesPositionRaw,
-            metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture),
-            fallbackChapterNumber?.ToString());
+        // Widened the same way naming widens it, or an imported book lands unpadded and
+        // reads as misorganized the moment it arrives.
+        SeriesNumberFormatting.Pad(
+            FirstNonEmpty(
+                metadata.SeriesPositionRaw,
+                metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture),
+                fallbackChapterNumber?.ToString()),
+            metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty;
 
     private static string ChooseAuthorFromMetadata(AudioMetadata? metadata)
     {

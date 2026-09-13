@@ -123,7 +123,11 @@ namespace Listenarr.Application.Common
                 // book 2. A series that never reaches ten is unchanged.
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
                     FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()),
-                    metadata.SeriesPositionWidth) ?? string.Empty },
+                    metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty },
+                // The position with no widening at all, for the places that want the
+                // value rather than something that sorts: a tag a player parses as a
+                // number should say what the source said, not "01".
+                { "SeriesNumberRaw", FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()) },
                 { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
                 { "Quality", FirstNonEmpty(metadata.BitRate.HasValue ? metadata.BitRate + "kbps" : null, metadata.Format) },
                 { "DiskNumber", metadata.DiscNumber?.ToString() ?? string.Empty },
@@ -168,12 +172,13 @@ namespace Listenarr.Application.Common
                 ];
             }
 
-            return BuildSeriesBrackets(series, sanitizeForPath);
+            return BuildSeriesBrackets(series, sanitizeForPath, metadata);
         }
 
         private string BuildSeriesBrackets(
             IReadOnlyList<SeriesReference> series,
-            bool sanitizeForPath)
+            bool sanitizeForPath,
+            AudioMetadata? widths = null)
         {
             var builder = new StringBuilder();
             foreach (var entry in series)
@@ -191,7 +196,13 @@ namespace Listenarr.Application.Common
                     continue;
                 }
 
-                var number = StripBrackets(StripControlCharacters(entry.Number));
+                // Each bracket is widened to its own series: a book in two of them is not
+                // in both at the same depth, and the album tag has to mirror the folder
+                // name a plain string sort reads.
+                var number = StripBrackets(StripControlCharacters(
+                    SeriesNumberFormatting.Pad(
+                        entry.Number,
+                        widths?.SeriesPositionWidthFor(entry.Name) ?? 1)));
 
                 builder.Append('[').Append(name);
                 if (!string.IsNullOrWhiteSpace(number))
@@ -275,10 +286,16 @@ namespace Listenarr.Application.Common
                 { "SeriesBrackets", BuildSeriesBrackets(
                     AudiobookSeriesMembershipHelper
                         .Normalize(metadata.SeriesMemberships, metadata.Series, metadata.SeriesNumber)
-                        .Select(m => new SeriesReference(m.SeriesName!, m.SeriesNumber))
+                        .Select(m => new SeriesReference(
+                            m.SeriesName!,
+                            SeriesNumberFormatting.Pad(
+                                m.SeriesNumber,
+                                metadata.SeriesPositionWidthFor(m.SeriesName))))
                         .ToList(),
                     sanitizeForPath: true) },
-                { "SeriesNumber", metadata.SeriesNumber?.ToString() ?? string.Empty },
+                { "SeriesNumber", SeriesNumberFormatting.Pad(
+                    metadata.SeriesNumber?.ToString(),
+                    metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty },
                 { "Year", metadata.PublishYear?.ToString() ?? string.Empty },
                 { "Quality", string.Empty },
                 { "DiskNumber", string.Empty },

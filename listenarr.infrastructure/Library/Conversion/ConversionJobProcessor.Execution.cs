@@ -80,6 +80,11 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 ffmpegService,
                 services.GetRequiredService<AudiobookTagPlanner>(),
                 TagCatalog.Reconcile(settings.TagMappings),
+                // Conversion routes through the same planner a tag write uses so the two
+                // produce identical tags; that only holds if it also knows how wide each
+                // series writes its positions.
+                await services.GetRequiredService<IAudiobookRepository>()
+                    .GetSeriesPositionWidthsAsync(cancellationToken),
                 pathComparer,
                 cancellationToken);
 

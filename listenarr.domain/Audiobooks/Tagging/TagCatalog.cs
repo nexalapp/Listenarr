@@ -150,7 +150,7 @@ namespace Listenarr.Domain.Audiobooks.Tagging
             new(
                 SeriesPosition,
                 "Series Position",
-                "The book's position in its series, exactly as the metadata source gave it — an omnibus at '1-4' and a novella at '1.5' are both real positions.",
+                "The book's position in its series, widened to the series' longest so a player ordering by it keeps reading order — an omnibus at '1-4' and a novella at '01.5' are still real positions. Use {SeriesNumberRaw} for the value exactly as the source gave it.",
                 "{SeriesNumber}",
                 TagWriteMode.Always),
 

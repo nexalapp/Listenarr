@@ -52,15 +52,30 @@ namespace Listenarr.Domain.Audiobooks
         public decimal? SeriesPosition { get; set; }
 
         /// <summary>
-        /// How many digits this book's series needs to write its highest position.
+        /// How many digits each series needs to write its highest position, keyed by
+        /// <see cref="SeriesNumberFormatting.SeriesKey"/>.
         /// </summary>
         /// <remarks>
         /// Travels with the metadata because naming has no other way to know it: a
         /// position only needs widening in the company of its siblings, and the book
-        /// being named cannot see them. One means no widening, which is both the default
-        /// and what a standalone or a short series wants.
+        /// being named cannot see them.
+        /// <para>
+        /// A map rather than one number, because a book is not always in one series. The
+        /// album tag renders a bracket per series — <c>[Enderverse 07.5][Ender's Saga
+        /// 1.1]</c> — and each bracket has to be widened to its own series, not to
+        /// whichever one happens to be primary.
+        /// </para>
         /// </remarks>
-        public int SeriesPositionWidth { get; set; } = 1;
+        public IReadOnlyDictionary<string, int>? SeriesPositionWidths { get; set; }
+
+        /// <summary>The width for one series, or one when nothing is known about it.</summary>
+        public int SeriesPositionWidthFor(string? series) =>
+            SeriesPositionWidths != null
+            && SeriesPositionWidths.TryGetValue(
+                SeriesNumberFormatting.SeriesKey(series),
+                out var width)
+                ? width
+                : 1;
 
         /// <summary>
         /// Every series the book belongs to, in order, primary first.

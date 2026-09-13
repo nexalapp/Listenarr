@@ -22,11 +22,19 @@
         <span v-if="!loading" class="count-badge">
           {{ visibleRows.length }} of {{ rows.length }} file{{ rows.length === 1 ? '' : 's' }}
         </span>
-        <span v-if="mismatchCount > 0" class="count-badge count-badge--warn">
-          {{ mismatchCount }} need{{ mismatchCount === 1 ? 's' : '' }} writing
+        <span
+          v-if="mismatchCount > 0"
+          class="count-badge count-badge--warn"
+          title="Files carrying a tag a write would change"
+        >
+          {{ mismatchCount }} mistagged
         </span>
-        <span v-if="organizeCount > 0" class="count-badge count-badge--warn">
-          {{ organizeCount }} misfiled
+        <span
+          v-if="organizeCount > 0"
+          class="count-badge count-badge--warn"
+          title="Files an organize would move or rename"
+        >
+          {{ organizeCount }} misorganized
         </span>
         <span v-if="selectedFiles.size > 0" class="count-badge count-badge--selected">
           {{ selectedFiles.size }} file{{ selectedFiles.size === 1 ? '' : 's' }} selected
@@ -1867,7 +1875,7 @@ onBeforeUnmount(() => {
 /*
  * Drawn on every tag cell, faintly. It has to be visible to be an affordance — a padlock
  * that only appears under the pointer is one nobody finds — but it is also on several
- * hundred cells at once, so it sits well below the yellow of a cell that needs writing
+ * hundred cells at once, so it sits well below the yellow of a cell that is mistagged
  * and only comes up to full strength when it is hovered or actually holding something.
  */
 .cell-lock,

@@ -192,6 +192,65 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             Assert.Equal("Old album", plan.FinalTags[TagCatalog.Album]);
         }
 
+        /// <summary>
+        /// Everything that renders a position widens it, including the position tag: a
+        /// player ordering by that field wants reading order like everything else.
+        /// {SeriesNumberRaw} is there for anyone who wants the value untouched.
+        /// </summary>
+        [Fact]
+        public void SeriesPosition_IsWidenedLikeEverythingElse()
+        {
+            var metadata = Book();
+            metadata.Series = "Shadows of the Apt";
+            metadata.SeriesPositionRaw = "1";
+            metadata.AllSeries = [new SeriesReference("Shadows of the Apt", "1")];
+            metadata.SeriesPositionWidths = new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [SeriesNumberFormatting.SeriesKey("Shadows of the Apt")] = 2
+            };
+
+            var plan = CreatePlanner().Plan(
+                metadata,
+                TagCatalog.CreateDefaultMappings(),
+                Tags());
+
+            Assert.Equal("01", plan.FinalTags[TagCatalog.SeriesPosition]);
+            Assert.StartsWith("Shadows of the Apt 01", plan.FinalTags[TagCatalog.SortAlbum]);
+        }
+
+        /// <summary>
+        /// The album tag renders a bracket per series, and each is widened to its own: a
+        /// book in two series is not at the same depth in both, and the album tag has to
+        /// mirror the folder name a plain string sort reads.
+        /// </summary>
+        [Fact]
+        public void SeriesBrackets_WidenEachSeriesToItsOwnLength()
+        {
+            var metadata = Book();
+            metadata.Series = "Shadows of the Apt";
+            metadata.SeriesPositionRaw = "1";
+            metadata.AllSeries =
+            [
+                new SeriesReference("Shadows of the Apt", "1"),
+                new SeriesReference("Children of Time", "2")
+            ];
+            metadata.SeriesPositionWidths = new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [SeriesNumberFormatting.SeriesKey("Shadows of the Apt")] = 2,
+                [SeriesNumberFormatting.SeriesKey("Children of Time")] = 1
+            };
+
+            var plan = CreatePlanner().Plan(
+                metadata,
+                [new TagMapping(TagCatalog.Album, "{SeriesBrackets} {Title}", TagWriteMode.Always)],
+                Tags());
+
+            // Ten-book series widened, three-book series left as it reads.
+            Assert.Equal(
+                "[Shadows of the Apt 01][Children of Time 2] Drive",
+                plan.FinalTags[TagCatalog.Album]);
+        }
+
         // ---- locks, which are about the file rather than the run ----------------------
 
         [Fact]

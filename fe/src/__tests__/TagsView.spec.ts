@@ -564,7 +564,7 @@ describe('TagsView', () => {
     expect(changed).toHaveLength(1)
     expect(changed[0].text()).toBe('Old Folder')
     expect(changed[0].attributes('title')).toContain('[The Expanse 2.7] Drive')
-    expect(wrapper.text()).toContain('1 misfiled')
+    expect(wrapper.text()).toContain('1 misorganized')
   })
 
   it('leaves a path alone when organizing could not say where it belongs', async () => {
@@ -596,7 +596,7 @@ describe('TagsView', () => {
       ]),
     )
 
-    expect(wrapper.text()).toContain('1 misfiled')
+    expect(wrapper.text()).toContain('1 misorganized')
 
     // Both halves read as wrong: the folder would move and the file would be renumbered.
     expect(wrapper.findAll('.tags-td--mismatch')).toHaveLength(2)
@@ -608,7 +608,7 @@ describe('TagsView', () => {
 
     expect(setPathLocks).toHaveBeenCalledWith([1], true)
     expect(wrapper.findAll('.tags-td--mismatch')).toHaveLength(0)
-    expect(wrapper.text()).not.toContain('misfiled')
+    expect(wrapper.text()).not.toContain('misorganized')
   })
 
   it('locks the paths of a whole selection from the Filename heading', async () => {

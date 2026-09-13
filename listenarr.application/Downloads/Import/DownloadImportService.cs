@@ -65,6 +65,10 @@ namespace Listenarr.Application.Downloads.Import
             }
 
             var settings = await configurationService.GetApplicationSettingsAsync();
+
+            // Loaded once for the import: a position is widened to its series' longest,
+            // and the series is rarely the book being imported.
+            var seriesPositionWidths = await audiobookRepository.GetSeriesPositionWidthsAsync();
             var expectedBasePath = audiobook.BasePath;
             var destinationResolution = await ResolveDestinationResolutionAsync(
                 expectedBasePath,
@@ -291,7 +295,11 @@ namespace Listenarr.Application.Downloads.Import
                             }
 
                             string destDirForFile = audiobook.BasePath;
-                            var namingMetadata = BuildNamingMetadata(audiobook, candidateMetadata, Path.GetFileNameWithoutExtension(file));
+                            var namingMetadata = BuildNamingMetadata(
+                                audiobook,
+                                candidateMetadata,
+                                Path.GetFileNameWithoutExtension(file),
+                                seriesPositionWidths);
                             var effectiveDiskNumber = namingDiskNumber > 0 ? namingDiskNumber : (namingMetadata.DiscNumber ?? plan?.DiskNumberHint);
                             var effectiveChapterNumber = namingChapterNumber > 0 ? namingChapterNumber : (namingMetadata.TrackNumber ?? plan?.ChapterNumberHint);
                             if (isMultiFileBatch)
@@ -300,23 +308,11 @@ namespace Listenarr.Application.Downloads.Import
                                 effectiveChapterNumber ??= effectiveDiskNumber;
                             }
 
-                            var variablesForFile = new Dictionary<string, object>
-                            {
-                                { "Author", namingMetadata.Artist ?? "Unknown Author" },
-                                { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
-                                { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
-                                { "Subtitle", string.IsNullOrWhiteSpace(namingMetadata.Subtitle) ? string.Empty : namingMetadata.Subtitle },
-                                { "Edition", string.IsNullOrWhiteSpace(namingMetadata.Edition) ? string.Empty : namingMetadata.Edition },
-                                { "Narrator", string.IsNullOrWhiteSpace(namingMetadata.Narrator) ? string.Empty : namingMetadata.Narrator },
-                                { "Publisher", string.IsNullOrWhiteSpace(namingMetadata.Publisher) ? string.Empty : namingMetadata.Publisher },
-                                { "Language", string.IsNullOrWhiteSpace(namingMetadata.Language) ? string.Empty : namingMetadata.Language },
-                                { "Asin", string.IsNullOrWhiteSpace(namingMetadata.Asin) ? string.Empty : namingMetadata.Asin },
-                                { "SeriesNumber", SeriesNumberToken(namingMetadata, effectiveChapterNumber) },
-                                { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
-                                { "Quality", (namingMetadata.BitRate.HasValue ? $"{namingMetadata.BitRate}kbps" : null) ?? namingMetadata.Format ?? string.Empty },
-                                { "DiskNumber", effectiveDiskNumber?.ToString() ?? string.Empty },
-                                { "ChapterNumber", effectiveChapterNumber?.ToString() ?? string.Empty }
-                            };
+                            var variablesForFile = BuildFileNamingVariables(
+                                namingMetadata,
+                                file,
+                                effectiveDiskNumber,
+                                effectiveChapterNumber);
 
                             var folderRelative = fileNamingService.ApplyNamingPattern(folderPattern, variablesForFile, treatAsFilename: false);
                             if (string.IsNullOrEmpty(audiobook.BasePath) && !string.IsNullOrWhiteSpace(folderRelative))

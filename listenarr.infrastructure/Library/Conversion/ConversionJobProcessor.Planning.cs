@@ -34,6 +34,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             IFfmpegService ffmpegService,
             AudiobookTagPlanner tagPlanner,
             IReadOnlyList<TagMapping> tagMappings,
+            IReadOnlyDictionary<string, int> seriesPositionWidths,
             StringComparer pathComparer,
             CancellationToken cancellationToken)
         {
@@ -99,7 +100,10 @@ namespace Listenarr.Infrastructure.Library.Conversion
             // protect: every mapping that resolves to something is written. Routing
             // through the same planner a tag write uses is what makes a converted book
             // and an enriched one carry identical tags.
-            var bookMetadata = AudiobookTagMetadata.Create(audiobook, bookTags);
+            var bookMetadata = AudiobookTagMetadata.Create(
+                audiobook,
+                bookTags,
+                seriesPositionWidths);
             var tags = tagPlanner.Plan(bookMetadata, tagMappings, existingTags: null).FinalTags;
 
             logger.LogInformation(
