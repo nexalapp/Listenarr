@@ -22,6 +22,7 @@ import type { LibraryTagRow, LibraryTagTable } from '@/types'
 const getLibraryTags = vi.fn()
 const setTagLocks = vi.fn()
 const setPathLocks = vi.fn()
+const buildLibraryFileAudioUrl = vi.fn((id: number) => `/api/v1/tagging/files/${id}/audio`)
 const writeTags = vi.fn()
 const push = vi.fn()
 
@@ -30,6 +31,8 @@ vi.mock('@/services/api', () => ({
     getLibraryTags: (...args: unknown[]) => getLibraryTags(...args),
     setTagLocks: (...args: unknown[]) => setTagLocks(...args),
     setPathLocks: (...args: unknown[]) => setPathLocks(...args),
+    buildLibraryFileAudioUrl: (...args: unknown[]) =>
+      buildLibraryFileAudioUrl(...(args as [number])),
     writeTags: (...args: unknown[]) => writeTags(...args),
   },
 }))
@@ -47,6 +50,12 @@ vi.mock('@/components/domain/organize/RenamePreviewModal.vue', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
 }))
+
+// jsdom has no media pipeline, so the element's transport is stubbed rather than driven.
+const play = vi.fn()
+const pause = vi.fn()
+Object.defineProperty(HTMLMediaElement.prototype, 'play', { writable: true, value: play })
+Object.defineProperty(HTMLMediaElement.prototype, 'pause', { writable: true, value: pause })
 
 const row = (overrides: Partial<LibraryTagRow> = {}): LibraryTagRow => ({
   audiobookId: 7,
@@ -97,6 +106,14 @@ describe('TagsView', () => {
     getLibraryTags.mockReset()
     setTagLocks.mockReset()
     setPathLocks.mockReset()
+    // Every lock call answers with an empty set unless a test says otherwise, so a click
+    // that is incidental to what a test is about does not fail inside the view.
+    setTagLocks.mockResolvedValue({})
+    setPathLocks.mockResolvedValue({})
+
+    play.mockReset()
+    play.mockResolvedValue(undefined)
+    pause.mockReset()
     writeTags.mockReset()
     push.mockReset()
     localStorage.clear()
@@ -261,10 +278,9 @@ describe('TagsView', () => {
     expect(headers).toEqual(['Filename', 'Path', 'Album'])
   })
 
-  it('ticks a book once, however many files it has', async () => {
-    // A tag write is queued for a book, so a column that let its parts be ticked
-    // separately would promise something the job cannot do.
-    // Named so the table's own filename sort leaves the two parts of one book first.
+  it('ticks one file, not its siblings', async () => {
+    // A collection of short stories arrives as one title whose files are different
+    // works, so ticking one must not drag the other three along.
     const wrapper = await mountView(
       table([
         row({ audiobookId: 7, fileId: 1, fileName: 'A - Part 1.m4b' }),
@@ -279,8 +295,37 @@ describe('TagsView', () => {
     const checked = wrapper
       .findAll('.tags-row .row-select')
       .map((box) => (box.element as HTMLInputElement).checked)
-    expect(checked).toEqual([true, true, false])
-    expect(wrapper.text()).toContain('1 book selected')
+    expect(checked).toEqual([true, false, false])
+    expect(wrapper.text()).toContain('1 file selected')
+  })
+
+  it("queues one job per book, carrying just that book's ticked files", async () => {
+    // The tick is per file and the job is per book, so the files are grouped rather
+    // than one job being queued per tick.
+    writeTags.mockResolvedValue({ queued: true })
+
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'A - Part 1.m4b' }),
+        row({ audiobookId: 7, fileId: 2, fileName: 'B - Part 2.m4b' }),
+        row({ audiobookId: 9, fileId: 3, fileName: 'C - Other book.m4b' }),
+      ]),
+    )
+
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[0].setValue(true)
+    await boxes[1].setValue(true)
+    await boxes[2].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.apply-btn').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(writeTags).toHaveBeenCalledTimes(2)
+    expect(writeTags).toHaveBeenCalledWith(7, undefined, undefined, [1, 2])
+    expect(writeTags).toHaveBeenCalledWith(9, undefined, undefined, [3])
+    expect(wrapper.text()).toContain('Queued 3 files')
   })
 
   it('queues a write for each selected book and nothing else', async () => {
@@ -296,28 +341,69 @@ describe('TagsView', () => {
     await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
     await wrapper.vm.$nextTick()
 
-    const write = wrapper.findAll('.toolbar-btn').find((btn) => btn.text().includes('Write tags'))!
-    await write.trigger('click')
+    await wrapper.find('.apply-btn').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
     expect(writeTags).toHaveBeenCalledTimes(1)
-    expect(writeTags).toHaveBeenCalledWith(7)
-    expect(wrapper.text()).toContain('Queued 1 book')
+    expect(writeTags).toHaveBeenCalledWith(7, undefined, undefined, [1])
+    expect(wrapper.text()).toContain('Queued 1 file')
   })
 
-  it('hands the organize modal the selected books', async () => {
+  it('says what Apply covers, and covers only that', async () => {
+    // A tick column sitting left of every other column reads as "this whole row", so
+    // the button rather than the tick is what has to name the parts it reaches.
+    writeTags.mockResolvedValue({ queued: true })
     const wrapper = await mountView(table([row({ audiobookId: 42 })]))
 
     await wrapper.find('.tags-row .row-select').setValue(true)
     await wrapper.vm.$nextTick()
 
-    const organize = wrapper.findAll('.toolbar-btn').find((btn) => btn.text().includes('Organize'))!
-    await organize.trigger('click')
+    expect(wrapper.find('.apply-btn').text()).toContain('Apply tags (1)')
+
+    // Tags alone: nothing is organized.
+    await wrapper.find('.apply-btn').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'RenamePreviewModal' }).exists()).toBe(false)
+    expect(writeTags).toHaveBeenCalledWith(42, undefined, undefined, [1])
+  })
+
+  it('organizes only when paths are in scope, and says so on the button', async () => {
+    const wrapper = await mountView(table([row({ audiobookId: 42 })]))
+
+    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.find('.apply-caret').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const boxes = wrapper.findAll('.apply-dropdown input')
+    await boxes[0].setValue(false) // tags off
+    await boxes[1].setValue(true) // paths on
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.apply-btn').text()).toContain('Apply paths (1)')
+
+    await wrapper.find('.apply-btn').trigger('click')
     await wrapper.vm.$nextTick()
 
     const modal = wrapper.findComponent({ name: 'RenamePreviewModal' })
     expect(modal.props('audiobookIds')).toEqual([42])
+    // Paths alone: no tag write went out.
+    expect(writeTags).not.toHaveBeenCalled()
+  })
+
+  it('refuses to act when the scope is empty', async () => {
+    const wrapper = await mountView(table([row({ audiobookId: 42 })]))
+
+    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.find('.apply-caret').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.findAll('.apply-dropdown input')[0].setValue(false)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.apply-btn').text().trim()).toBe('Apply (1)')
+    expect(wrapper.find('.apply-btn').attributes('disabled')).toBeDefined()
   })
 
   it('stops a locked cell reading as wrong, without waiting for a re-read', async () => {
@@ -346,12 +432,12 @@ describe('TagsView', () => {
     await wrapper.vm.$nextTick()
 
     expect(push).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('1 book selected')
+    expect(wrapper.text()).toContain('1 file selected')
 
     // And the checkbox itself still toggles exactly once, not twice via the cell.
     await wrapper.find('.tags-row .row-select').setValue(false)
     await wrapper.vm.$nextTick()
-    expect(wrapper.text()).not.toContain('book selected')
+    expect(wrapper.text()).not.toContain('file selected')
   })
 
   it('does not change any lock when a book is ticked', async () => {
@@ -375,6 +461,59 @@ describe('TagsView', () => {
     expect(checked).toEqual([true, false])
   })
 
+  it('plays a file from its row, and stops it on a second click', async () => {
+    const wrapper = await mountView(table([row({ fileId: 12, audiobookId: 42 })]))
+
+    await wrapper.find('.row-play').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(buildLibraryFileAudioUrl).toHaveBeenCalledWith(12)
+    expect(play).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.row-play--on').exists()).toBe(true)
+    // A row click navigates; the transport must not.
+    expect(push).not.toHaveBeenCalled()
+
+    await wrapper.find('.row-play').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(pause).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.row-play--on').exists()).toBe(false)
+  })
+
+  it('moves one shared player between rows rather than stacking them', async () => {
+    // Only one file can usefully play at a time, so starting a second is what stops the
+    // first — there is no state in which two are audible.
+    const wrapper = await mountView(
+      table([row({ fileId: 1, fileName: 'A.m4b' }), row({ fileId: 2, fileName: 'B.m4b' })]),
+    )
+
+    expect(wrapper.findAll('audio')).toHaveLength(1)
+
+    await wrapper.findAll('.row-play')[0].trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.findAll('.row-play')[1].trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(buildLibraryFileAudioUrl).toHaveBeenLastCalledWith(2)
+    const lit = wrapper.findAll('.row-play--on')
+    expect(lit).toHaveLength(1)
+  })
+
+  it('says so when the browser cannot play the file', async () => {
+    play.mockRejectedValue(new Error('no decoder for this container'))
+    const wrapper = await mountView()
+
+    await wrapper.find('.row-play').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    // Silence would be indistinguishable from nothing having happened at all.
+    expect(wrapper.text()).toContain('could not be played')
+    expect(wrapper.find('.row-play--on').exists()).toBe(false)
+  })
+
   it('does not open the book when the lock or the tick is clicked', async () => {
     setTagLocks.mockResolvedValue({ '1': ['album'] })
     const wrapper = await mountView()
@@ -395,7 +534,9 @@ describe('TagsView', () => {
       ]),
     )
 
-    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[0].setValue(true)
+    await boxes[1].setValue(true)
     await wrapper.vm.$nextTick()
 
     const albumHeader = wrapper
@@ -482,7 +623,9 @@ describe('TagsView', () => {
       ]),
     )
 
-    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    const ticks = wrapper.findAll('.tags-row .row-select')
+    await ticks[0].setValue(true)
+    await ticks[1].setValue(true)
     await wrapper.vm.$nextTick()
 
     const filenameHeader = wrapper.find('.tags-th--sticky')

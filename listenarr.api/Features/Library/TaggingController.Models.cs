@@ -32,6 +32,13 @@ namespace Listenarr.Api.Features.Library
         public List<string>? Tags { get; set; }
 
         public Dictionary<string, string>? Values { get; set; }
+
+        /// <summary>
+        /// Which of the book's files to write, or null for all of them. A book's parts
+        /// are not always the same work: a collection of short stories arrives as one
+        /// title whose files carry different names.
+        /// </summary>
+        public List<int>? FileIds { get; set; }
     }
 
     /// <summary>
