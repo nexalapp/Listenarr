@@ -316,6 +316,9 @@ internal sealed partial class PinnedDirectoryCreation
                     && candidates.Any(candidate =>
                         PinnedDirectoryCreation.ArePersistedObjectIdentitiesDurablyEquivalent(
                             expectedIdentity,
+                            candidate)
+                        || PinnedDirectoryCreation.ArePersistedObjectIdentitiesSameObject(
+                            expectedIdentity,
                             candidate)));
         }
 
