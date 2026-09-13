@@ -2043,18 +2043,32 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
         }
 
         /// <summary>
-        /// The merge still has to happen where the subtitle is the thing that says what
-        /// the book is — dropping it wholesale would be the opposite mistake.
+        /// <c>{Title}</c> renders the title, and a subtitle reaches a name only where the
+        /// pattern asks for <c>{Subtitle}</c>.
         /// </summary>
-        [Fact]
-        public async Task PreviewRename_ASubtitleThatSaysSomethingNew_IsStillFoldedIn()
+        /// <remarks>
+        /// This asserted the opposite until the policy changed. A subtitle used to be
+        /// folded into <c>{Title}</c> whenever the pattern gave it nowhere else to go,
+        /// which meant a token rendered something other than what it named and produced
+        /// names nobody had asked for — "11-22-63 - A Novel" across 164 books here. Every
+        /// bug it caused was then answered with a more specific rule for when not to do
+        /// it, and each one missed a case: a subtitle restating the series the name
+        /// already showed, and the same restatement again when a provider spelled its
+        /// apostrophe differently.
+        /// </remarks>
+        [Theory]
+        [InlineData("{Title}", "The Hobbit")]
+        [InlineData("{Title} - {Subtitle}", "The Hobbit - There and Back Again")]
+        public async Task PreviewRename_ASubtitle_ReachesTheNameOnlyWhereItIsAskedFor(
+            string folderPattern,
+            string expectedFolderName)
         {
             var bookFolder = Path.Join(_tempRoot, "subtitle-adds");
             Directory.CreateDirectory(bookFolder);
             var settings = new ApplicationSettings
             {
                 OutputPath = _tempRoot,
-                FolderNamingPattern = "{Title}",
+                FolderNamingPattern = folderPattern,
                 FileNamingPattern = "{Title}"
             };
 
@@ -2071,8 +2085,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
 
             var preview = Assert.Single(await service.PreviewRenameAsync([51]));
 
-            // The colon is not a path character, so it reaches the name as " - ".
-            Assert.Equal("The Hobbit - There and Back Again", Path.GetFileName(preview.NewFolderPath));
+            Assert.Equal(expectedFolderName, Path.GetFileName(preview.NewFolderPath));
+
+            // And the file, whose pattern only asks for the title, never carries it.
+            Assert.Equal("The Hobbit.m4b", Path.GetFileName(Assert.Single(preview.FileRenames).NewPath));
         }
 
         /// <summary>
