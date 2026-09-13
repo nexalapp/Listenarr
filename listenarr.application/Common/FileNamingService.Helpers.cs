@@ -123,7 +123,7 @@ namespace Listenarr.Application.Common
                 // book 2. A series that never reaches ten is unchanged.
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
                     FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()),
-                    metadata.SeriesPositionWidth) ?? string.Empty },
+                    metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty },
                 { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
                 { "Quality", FirstNonEmpty(metadata.BitRate.HasValue ? metadata.BitRate + "kbps" : null, metadata.Format) },
                 { "DiskNumber", metadata.DiscNumber?.ToString() ?? string.Empty },
@@ -168,12 +168,13 @@ namespace Listenarr.Application.Common
                 ];
             }
 
-            return BuildSeriesBrackets(series, sanitizeForPath);
+            return BuildSeriesBrackets(series, sanitizeForPath, metadata);
         }
 
         private string BuildSeriesBrackets(
             IReadOnlyList<SeriesReference> series,
-            bool sanitizeForPath)
+            bool sanitizeForPath,
+            AudioMetadata? widths = null)
         {
             var builder = new StringBuilder();
             foreach (var entry in series)
@@ -191,7 +192,13 @@ namespace Listenarr.Application.Common
                     continue;
                 }
 
-                var number = StripBrackets(StripControlCharacters(entry.Number));
+                // Each bracket is widened to its own series: a book in two of them is not
+                // in both at the same depth, and the album tag has to mirror the folder
+                // name a plain string sort reads.
+                var number = StripBrackets(StripControlCharacters(
+                    SeriesNumberFormatting.Pad(
+                        entry.Number,
+                        widths?.SeriesPositionWidthFor(entry.Name) ?? 1)));
 
                 builder.Append('[').Append(name);
                 if (!string.IsNullOrWhiteSpace(number))

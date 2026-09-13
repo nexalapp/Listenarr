@@ -101,9 +101,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     memberships.TryGetValue(audiobook.Id, out var bookMemberships)
                         ? bookMemberships
                         : null,
-                    seriesPositionWidths.GetValueOrDefault(
-                        SeriesNumberFormatting.SeriesKey(audiobook.Series),
-                        1)));
+                    seriesPositionWidths));
 
             // Both resolved before the probes start, so the parallel row-building below
             // reads them without a lock.

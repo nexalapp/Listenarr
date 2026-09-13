@@ -81,9 +81,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 await audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
             var metadata = audiobook.CreateBasicAudioMetadata(
                 seriesMemberships: null,
-                seriesPositionWidth: seriesPositionWidths.GetValueOrDefault(
-                    SeriesNumberFormatting.SeriesKey(audiobook.Series),
-                    1));
+                seriesPositionWidths: seriesPositionWidths);
             var selection = selectedTags == null
                 ? null
                 : new HashSet<string>(selectedTags, StringComparer.OrdinalIgnoreCase);
