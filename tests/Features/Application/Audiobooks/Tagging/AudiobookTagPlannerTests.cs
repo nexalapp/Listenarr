@@ -193,11 +193,12 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
         }
 
         /// <summary>
-        /// A widening is a display choice, and the position tag's whole description is
-        /// "exactly as the metadata source gave it".
+        /// Everything that renders a position widens it, including the position tag: a
+        /// player ordering by that field wants reading order like everything else.
+        /// {SeriesNumberRaw} is there for anyone who wants the value untouched.
         /// </summary>
         [Fact]
-        public void SeriesPosition_KeepsTheValueTheSourceGave_WhileSortAlbumWidensIt()
+        public void SeriesPosition_IsWidenedLikeEverythingElse()
         {
             var metadata = Book();
             metadata.Series = "Shadows of the Apt";
@@ -213,7 +214,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                 TagCatalog.CreateDefaultMappings(),
                 Tags());
 
-            Assert.Equal("1", plan.FinalTags[TagCatalog.SeriesPosition]);
+            Assert.Equal("01", plan.FinalTags[TagCatalog.SeriesPosition]);
             Assert.StartsWith("Shadows of the Apt 01", plan.FinalTags[TagCatalog.SortAlbum]);
         }
 
