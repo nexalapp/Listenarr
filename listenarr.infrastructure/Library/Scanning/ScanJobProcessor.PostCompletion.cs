@@ -186,6 +186,8 @@ public partial class ScanJobProcessor
                 TagTrigger.Automatic,
                 selectedTags: null,
                 values: null,
+                // The automatic run is about the whole book, so it names no files.
+                fileIds: null,
                 cancellationToken);
 
             if (result.Queued)

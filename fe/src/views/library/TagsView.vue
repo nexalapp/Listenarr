@@ -28,8 +28,8 @@
         <span v-if="organizeCount > 0" class="count-badge count-badge--warn">
           {{ organizeCount }} misfiled
         </span>
-        <span v-if="selectedBooks.size > 0" class="count-badge count-badge--selected">
-          {{ selectedBooks.size }} book{{ selectedBooks.size === 1 ? '' : 's' }} selected
+        <span v-if="selectedFiles.size > 0" class="count-badge count-badge--selected">
+          {{ selectedFiles.size }} file{{ selectedFiles.size === 1 ? '' : 's' }} selected
         </span>
         <span v-if="actionMessage" class="toolbar-message">{{ actionMessage }}</span>
       </div>
@@ -211,8 +211,8 @@
                   class="row-select"
                   :checked="allVisibleSelected"
                   :indeterminate.prop="someVisibleSelected && !allVisibleSelected"
-                  :title="allVisibleSelected ? 'Clear the selection' : 'Select every book listed'"
-                  aria-label="Select every book listed"
+                  :title="allVisibleSelected ? 'Clear the selection' : 'Select every file listed'"
+                  aria-label="Select every file listed"
                   @change="toggleAllVisible"
                 />
               </template>
@@ -233,9 +233,9 @@
                   type="button"
                   class="th-lock"
                   :class="{ 'th-lock--on': columnLocked(column.key) }"
-                  :disabled="selectedBooks.size === 0 || working"
+                  :disabled="selectedFiles.size === 0 || working"
                   :title="
-                    selectedBooks.size === 0
+                    selectedFiles.size === 0
                       ? `Select books first to lock ${columnLockNoun(column.key)} on them`
                       : columnLocked(column.key)
                         ? `Unlock ${columnLockNoun(column.key)} on the selected books`
@@ -296,19 +296,18 @@
               @click="column.key === SELECT_KEY ? selectFromCell($event, row) : undefined"
             >
               <!--
-                One tick per book, not per file: a tag write is queued for a book, so a
-                column that let its parts be ticked separately would be promising
-                something the job cannot do.
+                One tick per file. The job carries the file scope, so ticking one part
+                of a four-part collection writes that part and leaves the rest alone.
               -->
               <input
                 v-if="column.key === SELECT_KEY"
                 type="checkbox"
                 class="row-select"
-                :checked="selectedBooks.has(row.audiobookId)"
-                :aria-label="`Select ${row.bookTitle}`"
+                :checked="selectedFiles.has(row.fileId)"
+                :aria-label="`Select ${row.fileName}`"
                 @click.stop
                 @keydown.stop
-                @change="toggleBook(row.audiobookId)"
+                @change="toggleFile(row.fileId)"
               />
 
               <button
@@ -401,7 +400,7 @@
     <RenamePreviewModal
       v-if="organizeOpen"
       :visible="organizeOpen"
-      :audiobookIds="[...selectedBooks]"
+      :audiobookIds="[...selectedBookIds]"
       @close="organizeOpen = false"
       @done="onOrganized"
     />
@@ -543,14 +542,17 @@ const showPath = ref(true)
 const showProposals = ref(false)
 
 /**
- * Which books the toolbar's actions are for, by audiobook id.
+ * Which files the toolbar's actions are for, by file id.
  *
- * Keyed by book rather than by file because that is what the actions take: a tag write is
- * queued for a book and an organize moves a book's folder, so ticking one part of a
- * five-part book and expecting the other four to be left alone would be a promise
- * neither could keep.
+ * By file, because a book's parts are not always the same work: a collection of short
+ * stories arrives as one title whose files carry different names, and writing tags into
+ * one of them should not touch the other three. The tag job carries the file scope, so
+ * a tick means exactly what it looks like it means.
+ *
+ * Organizing still resolves to whole books, because moving a folder moves everything in
+ * it — the modal shows which books a path change would reach before anything moves.
  */
-const selectedBooks = ref<Set<number>>(new Set())
+const selectedFiles = ref<Set<number>>(new Set())
 const organizeOpen = ref(false)
 const applyOpen = ref(false)
 const applyMenuEl = ref<HTMLElement | null>(null)
@@ -911,7 +913,7 @@ function sortBy(key: string) {
 /* -- Applying to the selection ------------------------------------------------ */
 
 const applyLabel = computed(() => {
-  const count = selectedBooks.value.size > 0 ? ` (${selectedBooks.value.size})` : ''
+  const count = selectedFiles.value.size > 0 ? ` (${selectedFiles.value.size})` : ''
   if (applyTags.value && applyPaths.value) return `Apply tags + paths${count}`
   if (applyTags.value) return `Apply tags${count}`
   if (applyPaths.value) return `Apply paths${count}`
@@ -919,11 +921,11 @@ const applyLabel = computed(() => {
 })
 
 const canApply = computed(
-  () => selectedBooks.value.size > 0 && (applyTags.value || applyPaths.value) && !working.value,
+  () => selectedFiles.value.size > 0 && (applyTags.value || applyPaths.value) && !working.value,
 )
 
 const applyHint = computed(() => {
-  if (selectedBooks.value.size === 0) return 'Tick some books first'
+  if (selectedFiles.value.size === 0) return 'Tick some files first'
   if (!applyTags.value && !applyPaths.value) return 'Choose what Apply covers'
   const parts = [
     applyTags.value ? 'write every unlocked tag into their files' : null,
@@ -997,18 +999,26 @@ function onPlaybackError() {
   }
 }
 
-/* -- Selection, which is by book -------------------------------------------- */
+/* -- Selection, which is by file --------------------------------------------- */
 
-const visibleBookIds = computed(() => new Set(visibleRows.value.map((row) => row.audiobookId)))
+const visibleFileIds = computed(() => new Set(visibleRows.value.map((row) => row.fileId)))
 
 const allVisibleSelected = computed(
   () =>
-    visibleBookIds.value.size > 0 &&
-    [...visibleBookIds.value].every((id) => selectedBooks.value.has(id)),
+    visibleFileIds.value.size > 0 &&
+    [...visibleFileIds.value].every((id) => selectedFiles.value.has(id)),
 )
 
 const someVisibleSelected = computed(() =>
-  [...visibleBookIds.value].some((id) => selectedBooks.value.has(id)),
+  [...visibleFileIds.value].some((id) => selectedFiles.value.has(id)),
+)
+
+/** The books the ticked files belong to, which is what organizing takes. */
+const selectedBookIds = computed(
+  () =>
+    new Set(
+      rows.value.filter((row) => selectedFiles.value.has(row.fileId)).map((row) => row.audiobookId),
+    ),
 )
 
 /**
@@ -1022,47 +1032,45 @@ function selectFromCell(event: MouseEvent, row: LibraryTagRow) {
   event.stopPropagation()
 
   // The checkbox raises its own change event, and handling the bubble as well would
-  // toggle the book twice and leave it exactly as it was.
+  // toggle the file twice and leave it exactly as it was.
   if ((event.target as HTMLElement)?.tagName !== 'INPUT') {
-    toggleBook(row.audiobookId)
+    toggleFile(row.fileId)
   }
 }
 
-function toggleBook(audiobookId: number) {
-  const next = new Set(selectedBooks.value)
-  if (!next.delete(audiobookId)) {
-    next.add(audiobookId)
+function toggleFile(fileId: number) {
+  const next = new Set(selectedFiles.value)
+  if (!next.delete(fileId)) {
+    next.add(fileId)
   }
 
-  selectedBooks.value = next
+  selectedFiles.value = next
   actionMessage.value = null
 }
 
 /**
- * Select or clear every book the current filter shows.
+ * Select or clear every file the current filter shows.
  *
- * Books hidden by the filter are left exactly as they were rather than cleared: the
+ * Files hidden by the filter are left exactly as they were rather than cleared: the
  * ordinary way to build a selection is to filter, tick, filter again, and a clear that
  * reached past the filter would silently undo the first half of that.
  */
 function toggleAllVisible() {
-  const next = new Set(selectedBooks.value)
+  const next = new Set(selectedFiles.value)
   if (allVisibleSelected.value) {
-    visibleBookIds.value.forEach((id) => next.delete(id))
+    visibleFileIds.value.forEach((id) => next.delete(id))
   } else {
-    visibleBookIds.value.forEach((id) => next.add(id))
+    visibleFileIds.value.forEach((id) => next.add(id))
   }
 
-  selectedBooks.value = next
+  selectedFiles.value = next
   actionMessage.value = null
 }
 
 /* -- Locks ------------------------------------------------------------------- */
 
-/** The rows of every selected book, which is what a bulk lock applies to. */
-const selectedRows = computed(() =>
-  rows.value.filter((row) => selectedBooks.value.has(row.audiobookId)),
-)
+/** The ticked rows, which is what a bulk lock applies to. */
+const selectedRows = computed(() => rows.value.filter((row) => selectedFiles.value.has(row.fileId)))
 
 /** A column reads as locked only when every selected file has it locked. */
 function columnLocked(key: string) {
@@ -1119,27 +1127,38 @@ async function applyLocks(fileIds: number[], key: string, locked: boolean) {
 /* -- Writing and organizing the selection ------------------------------------ */
 
 /**
- * Queue a tag write for every selected book.
+ * Queue a tag write for the ticked files, one job per book.
  *
- * No tag list is sent, so each book gets every tag its mapping allows minus whatever is
- * locked on its files — which is the planner's decision rather than this table's, and so
- * stays true of the write that runs a minute later.
+ * The ticks are per file but a job is per book, so the files are grouped and each book's
+ * job carries its own list — ticking one story of a four-story collection writes that
+ * story and leaves its siblings alone.
+ *
+ * No tag list is sent, so each file gets every tag its mapping allows minus whatever is
+ * locked on it, which is the planner's decision rather than this table's and so stays
+ * true of the write that runs a minute later.
  */
 async function writeSelected() {
-  const ids = [...selectedBooks.value]
-  if (ids.length === 0) return
+  const byBook = new Map<number, number[]>()
+  for (const row of rows.value) {
+    if (!selectedFiles.value.has(row.fileId)) continue
+    const forBook = byBook.get(row.audiobookId)
+    if (forBook) forBook.push(row.fileId)
+    else byBook.set(row.audiobookId, [row.fileId])
+  }
+
+  if (byBook.size === 0) return
 
   working.value = true
   actionMessage.value = null
 
-  let queued = 0
+  let queuedFiles = 0
   const refusals: string[] = []
 
-  for (const audiobookId of ids) {
+  for (const [audiobookId, fileIds] of byBook) {
     try {
-      const response = await apiService.writeTags(audiobookId)
+      const response = await apiService.writeTags(audiobookId, undefined, undefined, fileIds)
       if (response.queued) {
-        queued++
+        queuedFiles += fileIds.length
       } else if (response.reason) {
         refusals.push(response.reason)
       }
@@ -1151,8 +1170,8 @@ async function writeSelected() {
 
   working.value = false
   actionMessage.value = refusals.length
-    ? `Queued ${queued} of ${ids.length}. ${refusals.length} refused: ${refusals[0]}`
-    : `Queued ${queued} book${queued === 1 ? '' : 's'} for tag writing.`
+    ? `Queued ${queuedFiles} of ${selectedFiles.value.size} file(s). ${refusals.length} refused: ${refusals[0]}`
+    : `Queued ${queuedFiles} file${queuedFiles === 1 ? '' : 's'} for tag writing.`
 }
 
 /**

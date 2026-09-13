@@ -327,6 +327,7 @@ namespace Listenarr.Api.Features.Library
                 TagTrigger.Manual,
                 request?.Tags is { Count: > 0 } selected ? selected : null,
                 request?.Values is { Count: > 0 } values ? values : null,
+                request?.FileIds is { Count: > 0 } fileIds ? fileIds : null,
                 cancellationToken);
 
             logger.LogInformation(

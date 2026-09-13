@@ -70,8 +70,12 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 filesWritten++;
             }
 
+            // Null scope means the whole book, which is what an automatic run asks for and
+            // what every job queued before scopes existed meant.
+            var fileScope = TagQueueService.DeserializeFileIds(job.SelectedFileIdsJson);
             var files = (audiobook.Files ?? [])
                 .Where(file => TaggableFile.IsTaggable(file.Path))
+                .Where(file => fileScope == null || fileScope.Contains(file.Id))
                 .OrderBy(file => file.Path, StringComparer.Ordinal)
                 .ToList();
 
@@ -81,7 +85,9 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     ? ExecutionOutcome.Succeeded(tagsWritten, filesWritten, audiobook.Title)
                     : ExecutionOutcome.Failed(
                         TagWriteFailureKind.SourceUnreadable,
-                        "This book no longer has any M4B files to write tags into.");
+                        fileScope == null
+                            ? "This book no longer has any M4B files to write tags into."
+                            : "None of the files this run was queued for is still an M4B here.");
             }
 
             var settings = await services.GetRequiredService<IConfigurationService>()

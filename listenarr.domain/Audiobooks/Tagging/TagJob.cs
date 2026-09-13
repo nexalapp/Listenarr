@@ -103,6 +103,22 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         public string? SelectedTagsJson { get; set; }
 
         /// <summary>
+        /// Which of the book's files this run should write, or null for all of them.
+        /// </summary>
+        /// <remarks>
+        /// A book is not always one file, and its files are not always the same work: a
+        /// collection of short stories arrives as one Audible title whose parts carry
+        /// different names. Without this the job could only be told which book to write,
+        /// so a table that let one part be ticked would have been promising something the
+        /// job could not do.
+        /// <para>
+        /// Null rather than every id, so a job queued before this existed — or by the
+        /// automatic run, which is about the whole book — still means what it meant.
+        /// </para>
+        /// </remarks>
+        public string? SelectedFileIdsJson { get; set; }
+
+        /// <summary>
         /// Values the operator typed in the preview, as a JSON object of tag to value.
         ///
         /// Null means every value comes from its pattern, which is what an automatic run

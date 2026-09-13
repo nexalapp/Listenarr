@@ -278,10 +278,9 @@ describe('TagsView', () => {
     expect(headers).toEqual(['Filename', 'Path', 'Album'])
   })
 
-  it('ticks a book once, however many files it has', async () => {
-    // A tag write is queued for a book, so a column that let its parts be ticked
-    // separately would promise something the job cannot do.
-    // Named so the table's own filename sort leaves the two parts of one book first.
+  it('ticks one file, not its siblings', async () => {
+    // A collection of short stories arrives as one title whose files are different
+    // works, so ticking one must not drag the other three along.
     const wrapper = await mountView(
       table([
         row({ audiobookId: 7, fileId: 1, fileName: 'A - Part 1.m4b' }),
@@ -296,8 +295,37 @@ describe('TagsView', () => {
     const checked = wrapper
       .findAll('.tags-row .row-select')
       .map((box) => (box.element as HTMLInputElement).checked)
-    expect(checked).toEqual([true, true, false])
-    expect(wrapper.text()).toContain('1 book selected')
+    expect(checked).toEqual([true, false, false])
+    expect(wrapper.text()).toContain('1 file selected')
+  })
+
+  it("queues one job per book, carrying just that book's ticked files", async () => {
+    // The tick is per file and the job is per book, so the files are grouped rather
+    // than one job being queued per tick.
+    writeTags.mockResolvedValue({ queued: true })
+
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'A - Part 1.m4b' }),
+        row({ audiobookId: 7, fileId: 2, fileName: 'B - Part 2.m4b' }),
+        row({ audiobookId: 9, fileId: 3, fileName: 'C - Other book.m4b' }),
+      ]),
+    )
+
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[0].setValue(true)
+    await boxes[1].setValue(true)
+    await boxes[2].setValue(true)
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.apply-btn').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(writeTags).toHaveBeenCalledTimes(2)
+    expect(writeTags).toHaveBeenCalledWith(7, undefined, undefined, [1, 2])
+    expect(writeTags).toHaveBeenCalledWith(9, undefined, undefined, [3])
+    expect(wrapper.text()).toContain('Queued 3 files')
   })
 
   it('queues a write for each selected book and nothing else', async () => {
@@ -318,8 +346,8 @@ describe('TagsView', () => {
     await wrapper.vm.$nextTick()
 
     expect(writeTags).toHaveBeenCalledTimes(1)
-    expect(writeTags).toHaveBeenCalledWith(7)
-    expect(wrapper.text()).toContain('Queued 1 book')
+    expect(writeTags).toHaveBeenCalledWith(7, undefined, undefined, [1])
+    expect(wrapper.text()).toContain('Queued 1 file')
   })
 
   it('says what Apply covers, and covers only that', async () => {
@@ -338,7 +366,7 @@ describe('TagsView', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
     expect(wrapper.findComponent({ name: 'RenamePreviewModal' }).exists()).toBe(false)
-    expect(writeTags).toHaveBeenCalledWith(42)
+    expect(writeTags).toHaveBeenCalledWith(42, undefined, undefined, [1])
   })
 
   it('organizes only when paths are in scope, and says so on the button', async () => {
@@ -404,12 +432,12 @@ describe('TagsView', () => {
     await wrapper.vm.$nextTick()
 
     expect(push).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('1 book selected')
+    expect(wrapper.text()).toContain('1 file selected')
 
     // And the checkbox itself still toggles exactly once, not twice via the cell.
     await wrapper.find('.tags-row .row-select').setValue(false)
     await wrapper.vm.$nextTick()
-    expect(wrapper.text()).not.toContain('book selected')
+    expect(wrapper.text()).not.toContain('file selected')
   })
 
   it('does not change any lock when a book is ticked', async () => {
@@ -506,7 +534,9 @@ describe('TagsView', () => {
       ]),
     )
 
-    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[0].setValue(true)
+    await boxes[1].setValue(true)
     await wrapper.vm.$nextTick()
 
     const albumHeader = wrapper
@@ -593,7 +623,9 @@ describe('TagsView', () => {
       ]),
     )
 
-    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    const ticks = wrapper.findAll('.tags-row .row-select')
+    await ticks[0].setValue(true)
+    await ticks[1].setValue(true)
     await wrapper.vm.$nextTick()
 
     const filenameHeader = wrapper.find('.tags-th--sticky')

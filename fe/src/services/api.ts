@@ -1653,10 +1653,16 @@ class ApiService {
     audiobookId: number,
     tags?: string[],
     values?: Record<string, string>,
+    fileIds?: number[],
   ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
     return this.request(`/tagging/audiobooks/${audiobookId}`, {
       method: 'POST',
-      body: JSON.stringify({ tags: tags ?? null, values: values ?? null }),
+      body: JSON.stringify({
+        tags: tags ?? null,
+        values: values ?? null,
+        // Null means every file of the book, which is what a book page asks for.
+        fileIds: fileIds?.length ? fileIds : null,
+      }),
     })
   }
 

@@ -102,6 +102,88 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
         }
 
+        /// <summary>
+        /// A collection of short stories arrives as one title whose files are different
+        /// works, so a run has to be able to name which of them it is for.
+        /// </summary>
+        [Fact]
+        public async Task EnqueueAsync_RecordsTheFilesTheRunIsFor()
+        {
+            GivenSettings(automaticTagging: true);
+            GivenWriterAvailable();
+            var audiobook = GivenAudiobook("Part 1.m4b", "Part 2.m4b", "Part 3.m4b");
+            audiobook.Files![0].Id = 41;
+            audiobook.Files[1].Id = 42;
+            audiobook.Files[2].Id = 43;
+            GivenNoActiveJob();
+
+            TagJob? queued = null;
+            _repository
+                .Setup(repository => repository.AddAsync(
+                    It.IsAny<TagJob>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob job, CancellationToken _) =>
+                {
+                    queued = job;
+                    return job;
+                });
+
+            var result = await BuildService().EnqueueAsync(7, TagTrigger.Manual, fileIds: [42]);
+
+            Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
+            Assert.NotNull(queued);
+            Assert.Equal([42], TagQueueService.DeserializeFileIds(queued!.SelectedFileIdsJson));
+
+            // The count is the scope's, not the book's: a job that says three when it is
+            // writing one reports its own progress wrongly for the whole run.
+            Assert.Equal(1, queued.FileCount);
+        }
+
+        [Fact]
+        public async Task EnqueueAsync_WithNoFilesNamed_MeansTheWholeBook()
+        {
+            GivenSettings(automaticTagging: true);
+            GivenWriterAvailable();
+            GivenAudiobook("Part 1.m4b", "Part 2.m4b");
+            GivenNoActiveJob();
+
+            TagJob? queued = null;
+            _repository
+                .Setup(repository => repository.AddAsync(
+                    It.IsAny<TagJob>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob job, CancellationToken _) =>
+                {
+                    queued = job;
+                    return job;
+                });
+
+            await BuildService().EnqueueAsync(7, TagTrigger.Automatic);
+
+            // Null, not every id: an automatic run is about the book, and a job queued
+            // before scopes existed has to keep meaning what it meant.
+            Assert.Null(queued!.SelectedFileIdsJson);
+            Assert.Equal(2, queued.FileCount);
+        }
+
+        [Fact]
+        public async Task EnqueueAsync_WhenTheNamedFilesAreNotTaggable_SaysWhichRefusalItIs()
+        {
+            GivenSettings(automaticTagging: true);
+            GivenWriterAvailable();
+            var audiobook = GivenAudiobook("Part 1.m4b", "Chapter 2.mp3");
+            audiobook.Files![0].Id = 51;
+            audiobook.Files[1].Id = 52;
+            GivenNoActiveJob();
+
+            var result = await BuildService().EnqueueAsync(7, TagTrigger.Manual, fileIds: [52]);
+
+            Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
+            // The operator is looking at the row they ticked, so "this book has none" is
+            // the wrong thing to tell them.
+            Assert.Contains("selected", result.Reason, StringComparison.OrdinalIgnoreCase);
+        }
+
         [Fact]
         public async Task EnqueueAsync_RefusesAnMp3Book()
         {
