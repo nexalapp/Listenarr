@@ -317,9 +317,12 @@ internal sealed partial class PinnedDirectoryCreation
                         PinnedDirectoryCreation.ArePersistedObjectIdentitiesDurablyEquivalent(
                             expectedIdentity,
                             candidate)
-                        || PinnedDirectoryCreation.ArePersistedObjectIdentitiesSameObject(
-                            expectedIdentity,
-                            candidate)));
+                        || (PinnedDirectoryCreation.FileSystemRotatesGenerationEvidence(
+                                _fileHandle)
+                            && PinnedDirectoryCreation
+                                .ArePersistedObjectIdentitiesSameObject(
+                                    expectedIdentity,
+                                    candidate))));
         }
 
         internal bool IsOnSameVolume(PinnedDirectoryAnchor directory)
