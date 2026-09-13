@@ -32,6 +32,26 @@ namespace Listenarr.Domain.Audiobooks
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public List<AudiobookSeriesMembership>? SeriesMemberships { get; set; }
+
+        /// <summary>
+        /// How many digits each series needs to write its highest position, keyed by
+        /// <see cref="SeriesNumberFormatting.SeriesKey"/>.
+        /// </summary>
+        /// <remarks>
+        /// Carried for the same reason <see cref="AudioMetadata"/> carries it: a position
+        /// is widened to its series' longest, and the book being named cannot see its own
+        /// siblings.
+        /// </remarks>
+        public IReadOnlyDictionary<string, int>? SeriesPositionWidths { get; set; }
+
+        /// <summary>The width for one series, or one when nothing is known about it.</summary>
+        public int SeriesPositionWidthFor(string? series) =>
+            SeriesPositionWidths != null
+            && SeriesPositionWidths.TryGetValue(
+                SeriesNumberFormatting.SeriesKey(series),
+                out var width)
+                ? width
+                : 1;
         public string? Description { get; set; }
         public List<string>? Genres { get; set; }
         public List<string>? Tags { get; set; }

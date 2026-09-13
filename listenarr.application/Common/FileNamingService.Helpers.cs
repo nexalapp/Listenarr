@@ -124,6 +124,10 @@ namespace Listenarr.Application.Common
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
                     FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()),
                     metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty },
+                // The position with no widening at all, for the places that want the
+                // value rather than something that sorts: a tag a player parses as a
+                // number should say what the source said, not "01".
+                { "SeriesNumberRaw", FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()) },
                 { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
                 { "Quality", FirstNonEmpty(metadata.BitRate.HasValue ? metadata.BitRate + "kbps" : null, metadata.Format) },
                 { "DiskNumber", metadata.DiscNumber?.ToString() ?? string.Empty },
@@ -282,10 +286,16 @@ namespace Listenarr.Application.Common
                 { "SeriesBrackets", BuildSeriesBrackets(
                     AudiobookSeriesMembershipHelper
                         .Normalize(metadata.SeriesMemberships, metadata.Series, metadata.SeriesNumber)
-                        .Select(m => new SeriesReference(m.SeriesName!, m.SeriesNumber))
+                        .Select(m => new SeriesReference(
+                            m.SeriesName!,
+                            SeriesNumberFormatting.Pad(
+                                m.SeriesNumber,
+                                metadata.SeriesPositionWidthFor(m.SeriesName))))
                         .ToList(),
                     sanitizeForPath: true) },
-                { "SeriesNumber", metadata.SeriesNumber?.ToString() ?? string.Empty },
+                { "SeriesNumber", SeriesNumberFormatting.Pad(
+                    metadata.SeriesNumber?.ToString(),
+                    metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty },
                 { "Year", metadata.PublishYear?.ToString() ?? string.Empty },
                 { "Quality", string.Empty },
                 { "DiskNumber", string.Empty },

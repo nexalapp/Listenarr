@@ -27,19 +27,22 @@ namespace Listenarr.Api.Features.Library
             Audiobook audiobook,
             string rootPath,
             string fileNamingPattern,
-            IFileNamingService fileNamingService)
+            IFileNamingService fileNamingService,
+            IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
         {
             var relative = ComputeAudiobookRelativeDirectoryFromPattern(
                 audiobook,
                 fileNamingPattern,
-                fileNamingService);
+                fileNamingService,
+                seriesPositionWidths);
             return ResolvePathWithOptionalBase(rootPath, relative);
         }
 
         internal static string ComputeAudiobookRelativeDirectoryFromPattern(
             Audiobook audiobook,
             string fileNamingPattern,
-            IFileNamingService fileNamingService)
+            IFileNamingService fileNamingService,
+            IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
         {
             string directoryPattern;
             if (!string.IsNullOrWhiteSpace(fileNamingPattern))
@@ -88,7 +91,17 @@ namespace Listenarr.Api.Features.Library
                 { "Publisher", SanitizeDirectoryName(audiobook.Publisher ?? string.Empty) },
                 { "Language", SanitizeDirectoryName(audiobook.Language ?? string.Empty) },
                 { "Asin", SanitizeDirectoryName(audiobook.Asin ?? string.Empty) },
-                { "SeriesNumber", audiobook.SeriesNumber ?? string.Empty },
+                // Widened to its series the same way every other naming path does, or a
+                // book added to a ten-book series lands somewhere organizing would move it
+                // straight back out of.
+                { "SeriesNumber", SeriesNumberFormatting.Pad(
+                    audiobook.SeriesNumber,
+                    seriesPositionWidths != null
+                    && seriesPositionWidths.TryGetValue(
+                        SeriesNumberFormatting.SeriesKey(audiobook.Series),
+                        out var seriesWidth)
+                        ? seriesWidth
+                        : 1) ?? string.Empty },
                 { "Year", audiobook.PublishYear ?? string.Empty },
                 { "Quality", string.Empty },
                 { "DiskNumber", string.Empty },

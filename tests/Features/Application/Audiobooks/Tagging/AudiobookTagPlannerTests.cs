@@ -193,6 +193,31 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
         }
 
         /// <summary>
+        /// A widening is a display choice, and the position tag's whole description is
+        /// "exactly as the metadata source gave it".
+        /// </summary>
+        [Fact]
+        public void SeriesPosition_KeepsTheValueTheSourceGave_WhileSortAlbumWidensIt()
+        {
+            var metadata = Book();
+            metadata.Series = "Shadows of the Apt";
+            metadata.SeriesPositionRaw = "1";
+            metadata.AllSeries = [new SeriesReference("Shadows of the Apt", "1")];
+            metadata.SeriesPositionWidths = new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [SeriesNumberFormatting.SeriesKey("Shadows of the Apt")] = 2
+            };
+
+            var plan = CreatePlanner().Plan(
+                metadata,
+                TagCatalog.CreateDefaultMappings(),
+                Tags());
+
+            Assert.Equal("1", plan.FinalTags[TagCatalog.SeriesPosition]);
+            Assert.StartsWith("Shadows of the Apt 01", plan.FinalTags[TagCatalog.SortAlbum]);
+        }
+
+        /// <summary>
         /// The album tag renders a bracket per series, and each is widened to its own: a
         /// book in two series is not at the same depth in both, and the album tag has to
         /// mirror the folder name a plain string sort reads.
