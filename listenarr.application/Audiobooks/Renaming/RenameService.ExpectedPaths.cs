@@ -90,8 +90,14 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 return false;
             }
 
-            if (title.Contains(subtitle, StringComparison.OrdinalIgnoreCase)
-                || subtitle.Contains(title, StringComparison.OrdinalIgnoreCase))
+            // Folded before comparing, because these three strings reach the record from
+            // different places and spell their punctuation differently: a series of
+            // "Old Man's War" against a subtitle of "Old Man’s War, Book 6" is the same
+            // words and a plain comparison calls them unrelated.
+            var foldedTitle = FoldForRedundancyComparison(title);
+            var foldedSubtitle = FoldForRedundancyComparison(subtitle);
+            if (foldedTitle.Contains(foldedSubtitle, StringComparison.Ordinal)
+                || foldedSubtitle.Contains(foldedTitle, StringComparison.Ordinal))
             {
                 return false;
             }
@@ -99,7 +105,9 @@ namespace Listenarr.Application.Audiobooks.Renaming
             var series = audiobook.Series;
             if (!string.IsNullOrWhiteSpace(series)
                 && PatternUses("Series")
-                && subtitle.Contains(series, StringComparison.OrdinalIgnoreCase))
+                && foldedSubtitle.Contains(
+                    FoldForRedundancyComparison(series),
+                    StringComparison.Ordinal))
             {
                 return false;
             }
@@ -111,6 +119,48 @@ namespace Listenarr.Application.Audiobooks.Renaming
                     && folderPattern.Contains(token, StringComparison.OrdinalIgnoreCase))
                 || (!string.IsNullOrWhiteSpace(filePattern)
                     && filePattern.Contains(token, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// One spelling of a string, for deciding whether two of them say the same thing.
+        /// </summary>
+        /// <remarks>
+        /// Only ever used to compare, never to write: a title keeps its own typography in
+        /// the name it produces. Providers are inconsistent about curly punctuation
+        /// between a series field and the prose of a subtitle, and a redundancy check that
+        /// reads those as different words keeps the duplication it exists to remove.
+        /// </remarks>
+        private static string FoldForRedundancyComparison(string value)
+        {
+            var folded = new System.Text.StringBuilder(value.Length);
+            var lastWasSpace = false;
+
+            foreach (var character in value)
+            {
+                var mapped = character switch
+                {
+                    '\u2018' or '\u2019' or '\u201b' or '\u2032' => '\'',
+                    '\u201c' or '\u201d' or '\u2033' => '"',
+                    '\u2010' or '\u2011' or '\u2012' or '\u2013' or '\u2014' => '-',
+                    _ => character
+                };
+
+                if (char.IsWhiteSpace(mapped))
+                {
+                    if (!lastWasSpace && folded.Length > 0)
+                    {
+                        folded.Append(' ');
+                    }
+
+                    lastWasSpace = true;
+                    continue;
+                }
+
+                lastWasSpace = false;
+                folded.Append(char.ToLowerInvariant(mapped));
+            }
+
+            return folded.ToString().TrimEnd();
         }
 
         private static Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile, int seriesPositionWidth)

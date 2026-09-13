@@ -2006,6 +2006,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
         // "Dilation Sleep" / "Revelation Space, Book #10" — neither contains the other,
         // but the subtitle is the series the pattern is already rendering.
         [InlineData("Dilation Sleep", "Revelation Space, Book #10", "Revelation Space", "10", "[Revelation Space 10] Dilation Sleep")]
+        // The series field and the subtitle reach the record from different places and
+        // spell their apostrophes differently. Same words; a plain comparison misses it.
+        [InlineData("The End of All Things", "Old Man\u2019s War, Book 6", "Old Man's War", "6", "[Old Man's War 6] The End of All Things")]
+        [InlineData("The Expert System's Champion", "Expert System\u2019s Brother Series, Book 2", "Expert System's Brother", "2", "[Expert System's Brother 2] The Expert System's Champion")]
         public async Task PreviewRename_ASubtitleThatRestatesTheSeries_IsNotFoldedIntoTheTitle(
             string title,
             string subtitle,
