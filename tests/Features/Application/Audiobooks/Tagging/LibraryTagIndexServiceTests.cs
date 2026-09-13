@@ -98,6 +98,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                 .Setup(writer => writer.IsAvailableAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
+            _audiobooks
+                .Setup(repository => repository.GetSeriesPositionWidthsAsync(
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
+
             _rootFolders
                 .Setup(service => service.GetAllAsync())
                 .ReturnsAsync([new RootFolder { Path = _directory }]);

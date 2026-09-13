@@ -52,6 +52,17 @@ namespace Listenarr.Domain.Audiobooks
         public decimal? SeriesPosition { get; set; }
 
         /// <summary>
+        /// How many digits this book's series needs to write its highest position.
+        /// </summary>
+        /// <remarks>
+        /// Travels with the metadata because naming has no other way to know it: a
+        /// position only needs widening in the company of its siblings, and the book
+        /// being named cannot see them. One means no widening, which is both the default
+        /// and what a standalone or a short series wants.
+        /// </remarks>
+        public int SeriesPositionWidth { get; set; } = 1;
+
+        /// <summary>
         /// Every series the book belongs to, in order, primary first.
         /// <para>
         /// <see cref="Series"/> carries only the primary one, which is all a folder name

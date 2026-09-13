@@ -43,11 +43,15 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// </summary>
         public const string DefaultGenre = "Audiobook";
 
-        public static AudioMetadata Create(Audiobook audiobook, AudioMetadata? fromFile)
+        public static AudioMetadata Create(
+            Audiobook audiobook,
+            AudioMetadata? fromFile,
+            int seriesPositionWidth = 1)
         {
             ArgumentNullException.ThrowIfNull(audiobook);
 
-            var metadata = audiobook.CreateBasicAudioMetadata();
+            var metadata = audiobook.CreateBasicAudioMetadata(
+                seriesPositionWidth: seriesPositionWidth);
 
             metadata.Description = FirstNonEmpty(audiobook.Description, fromFile?.Description);
             metadata.Genre = FirstNonEmpty(metadata.Genre, fromFile?.Genre, DefaultGenre)!;
@@ -90,8 +94,12 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// </summary>
         public static AudioMetadata Create(
             Audiobook audiobook,
-            IReadOnlyDictionary<string, string>? fileTags) =>
-            Create(audiobook, fileTags == null ? null : FromTags(fileTags));
+            IReadOnlyDictionary<string, string>? fileTags,
+            int seriesPositionWidth = 1) =>
+            Create(
+                audiobook,
+                fileTags == null ? null : FromTags(fileTags),
+                seriesPositionWidth);
 
         /// <summary>
         /// Read the handful of fields a fallback needs out of a file's tags, using the

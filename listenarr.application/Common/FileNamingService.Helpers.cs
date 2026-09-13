@@ -118,7 +118,12 @@ namespace Listenarr.Application.Common
                 // position (an omnibus at "1-4") does not survive the decimal parse, and
                 // falling through to TrackNumber here would write a track number into the
                 // filename as if it were the series number.
-                { "SeriesNumber", FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()) },
+                // Widened to the series' own longest position, so a plain string sort --
+                // a folder listing, Plex's album sort tag -- stops putting book 10 before
+                // book 2. A series that never reaches ten is unchanged.
+                { "SeriesNumber", SeriesNumberFormatting.Pad(
+                    FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()),
+                    metadata.SeriesPositionWidth) ?? string.Empty },
                 { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
                 { "Quality", FirstNonEmpty(metadata.BitRate.HasValue ? metadata.BitRate + "kbps" : null, metadata.Format) },
                 { "DiskNumber", metadata.DiscNumber?.ToString() ?? string.Empty },

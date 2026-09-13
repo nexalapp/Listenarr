@@ -87,10 +87,15 @@ namespace Listenarr.Application.Audiobooks.Renaming
 
             var audiobooks = await _audiobookRepository.GetByIdsWithFilesAsync(audiobookIds, ct);
 
+            // Loaded once for the whole call: a position only needs widening in the
+            // company of its siblings, and the books being previewed are rarely all of
+            // them.
+            var seriesPositionWidths = await _audiobookRepository.GetSeriesPositionWidthsAsync(ct);
+
             var previews = new List<RenamePreview>();
             foreach (var audiobook in audiobooks)
             {
-                previews.Add(await BuildPreviewAsync(audiobook, settings, rootFolders, ct));
+                previews.Add(await BuildPreviewAsync(audiobook, settings, rootFolders, seriesPositionWidths, ct));
             }
 
             return previews;
@@ -134,7 +139,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 ct);
         }
 
-        private async Task<RenamePreview> BuildPreviewAsync(Audiobook audiobook, ApplicationSettings settings, List<RootFolder> rootFolders, CancellationToken ct)
+        private async Task<RenamePreview> BuildPreviewAsync(Audiobook audiobook, ApplicationSettings settings, List<RootFolder> rootFolders, IReadOnlyDictionary<string, int> seriesPositionWidths, CancellationToken ct)
         {
             var currentPathSeed = ComputeCurrentBasePathSeed(audiobook);
             var pathResolution = await ResolveRenamePathResolutionAsync(
@@ -158,6 +163,9 @@ namespace Listenarr.Application.Audiobooks.Renaming
             }
 
             var namingBase = ResolveNamingBasePath(preview.CurrentFolderPath, settings, rootFolders, semantics);
+            var seriesPositionWidth = seriesPositionWidths.GetValueOrDefault(
+                SeriesNumberFormatting.SeriesKey(audiobook.Series),
+                1);
             var isMultiFile = files.Count > 1;
             var expectedPaths = new List<string>();
 
@@ -170,7 +178,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
             {
                 var expectedPath = file.PathLocked
                     ? file.CurrentPath
-                    : BuildExpectedPath(audiobook, file, settings, namingBase.BasePath, namingBase.IsCustomBasePath, isMultiFile);
+                    : BuildExpectedPath(audiobook, file, settings, namingBase.BasePath, namingBase.IsCustomBasePath, isMultiFile, seriesPositionWidth);
 
                 if (folderPinned && !file.PathLocked)
                 {

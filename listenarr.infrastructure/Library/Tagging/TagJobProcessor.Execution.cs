@@ -96,6 +96,10 @@ namespace Listenarr.Infrastructure.Library.Tagging
             var selection = TagQueueService.DeserializeSelection(job.SelectedTagsJson);
             var overrides = TagQueueService.DeserializeValues(job.OverriddenValuesJson);
 
+            var seriesPositionWidth = (await audiobookRepository.GetSeriesPositionWidthsAsync(
+                    cancellationToken))
+                .GetValueOrDefault(SeriesNumberFormatting.SeriesKey(audiobook.Series), 1);
+
             var planner = services.GetRequiredService<AudiobookTagPlanner>();
             var writer = services.GetRequiredService<IAudiobookTagWriter>();
 
@@ -143,7 +147,10 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     return ExecutionOutcome.Failed(TagWriteFailureKind.SourceUnreadable, ex.Message);
                 }
 
-                var metadata = AudiobookTagMetadata.Create(audiobook, existing.Tags);
+                var metadata = AudiobookTagMetadata.Create(
+                    audiobook,
+                    existing.Tags,
+                    seriesPositionWidth);
                 var plan = planner.Plan(
                     metadata,
                     mappings,
