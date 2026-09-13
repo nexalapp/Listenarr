@@ -313,8 +313,7 @@ describe('TagsView', () => {
     await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
     await wrapper.vm.$nextTick()
 
-    const write = wrapper.findAll('.toolbar-btn').find((btn) => btn.text().includes('Write tags'))!
-    await write.trigger('click')
+    await wrapper.find('.apply-btn').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
@@ -323,18 +322,60 @@ describe('TagsView', () => {
     expect(wrapper.text()).toContain('Queued 1 book')
   })
 
-  it('hands the organize modal the selected books', async () => {
+  it('says what Apply covers, and covers only that', async () => {
+    // A tick column sitting left of every other column reads as "this whole row", so
+    // the button rather than the tick is what has to name the parts it reaches.
+    writeTags.mockResolvedValue({ queued: true })
     const wrapper = await mountView(table([row({ audiobookId: 42 })]))
 
     await wrapper.find('.tags-row .row-select').setValue(true)
     await wrapper.vm.$nextTick()
 
-    const organize = wrapper.findAll('.toolbar-btn').find((btn) => btn.text().includes('Organize'))!
-    await organize.trigger('click')
+    expect(wrapper.find('.apply-btn').text()).toContain('Apply tags (1)')
+
+    // Tags alone: nothing is organized.
+    await wrapper.find('.apply-btn').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'RenamePreviewModal' }).exists()).toBe(false)
+    expect(writeTags).toHaveBeenCalledWith(42)
+  })
+
+  it('organizes only when paths are in scope, and says so on the button', async () => {
+    const wrapper = await mountView(table([row({ audiobookId: 42 })]))
+
+    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.find('.apply-caret').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const boxes = wrapper.findAll('.apply-dropdown input')
+    await boxes[0].setValue(false) // tags off
+    await boxes[1].setValue(true) // paths on
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.apply-btn').text()).toContain('Apply paths (1)')
+
+    await wrapper.find('.apply-btn').trigger('click')
     await wrapper.vm.$nextTick()
 
     const modal = wrapper.findComponent({ name: 'RenamePreviewModal' })
     expect(modal.props('audiobookIds')).toEqual([42])
+    // Paths alone: no tag write went out.
+    expect(writeTags).not.toHaveBeenCalled()
+  })
+
+  it('refuses to act when the scope is empty', async () => {
+    const wrapper = await mountView(table([row({ audiobookId: 42 })]))
+
+    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.find('.apply-caret').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.findAll('.apply-dropdown input')[0].setValue(false)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.apply-btn').text().trim()).toBe('Apply (1)')
+    expect(wrapper.find('.apply-btn').attributes('disabled')).toBeDefined()
   })
 
   it('stops a locked cell reading as wrong, without waiting for a re-read', async () => {

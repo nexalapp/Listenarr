@@ -68,31 +68,46 @@
         </label>
 
         <!--
-          Both act on the selection rather than on the row under the pointer: the column
-          exists to say which books an action is for, and an action that quietly meant
-          something else would make it pointless.
+          One action, and its label says what it covers. Two buttons beside a tick column
+          that sits left of every other column read as two things the tick might mean;
+          the tick means "these books" and this says which of their parts it reaches.
         -->
-        <button
-          type="button"
-          class="toolbar-btn"
-          :disabled="selectedBooks.size === 0 || working"
-          title="Write every unlocked tag on the selected books"
-          @click="writeSelected"
-        >
-          <PhTag :size="16" />
-          Write tags{{ selectedBooks.size > 0 ? ` (${selectedBooks.size})` : '' }}
-        </button>
+        <div class="apply-menu" ref="applyMenuEl">
+          <button
+            type="button"
+            class="toolbar-btn apply-btn"
+            :disabled="!canApply"
+            :title="applyHint"
+            @click="applySelection"
+          >
+            <PhCheck :size="16" />
+            {{ applyLabel }}
+          </button>
+          <button
+            type="button"
+            class="toolbar-btn apply-caret"
+            :class="{ active: applyOpen }"
+            :aria-expanded="applyOpen"
+            aria-label="Choose what Apply covers"
+            title="Choose what Apply covers"
+            @click="applyOpen = !applyOpen"
+          >
+            <PhCaretDown :size="12" />
+          </button>
 
-        <button
-          type="button"
-          class="toolbar-btn"
-          :disabled="selectedBooks.size === 0 || working"
-          title="Move the selected books to where the naming pattern says they belong"
-          @click="organizeOpen = true"
-        >
-          <PhFolderOpen :size="16" />
-          Organize{{ selectedBooks.size > 0 ? ` (${selectedBooks.size})` : '' }}
-        </button>
+          <div v-if="applyOpen" class="columns-dropdown apply-dropdown">
+            <label class="columns-option">
+              <input type="checkbox" v-model="applyTags" />
+              <span>Tags</span>
+              <code>written into the files</code>
+            </label>
+            <label class="columns-option">
+              <input type="checkbox" v-model="applyPaths" />
+              <span>Paths</span>
+              <code>moved and renamed</code>
+            </label>
+          </div>
+        </div>
 
         <div class="columns-menu" ref="columnsMenuEl">
           <button
@@ -443,8 +458,8 @@ import {
   PhArrowsClockwise,
   PhCaretDown,
   PhCaretUp,
+  PhCheck,
   PhColumns,
-  PhFolderOpen,
   PhMagnifyingGlass,
   PhSpinner,
   PhTag,
@@ -503,6 +518,7 @@ const VISIBLE_TAGS_KEY = 'listenarr.tagsView.columns.v2'
 const WIDTHS_KEY = 'listenarr.tagsView.widths'
 const SHOW_PATH_KEY = 'listenarr.tagsView.showPath'
 const PROPOSALS_KEY = 'listenarr.tagsView.proposals'
+const APPLY_SCOPE_KEY = 'listenarr.tagsView.applyScope'
 
 const router = useRouter()
 
@@ -536,6 +552,18 @@ const showProposals = ref(false)
  */
 const selectedBooks = ref<Set<number>>(new Set())
 const organizeOpen = ref(false)
+const applyOpen = ref(false)
+const applyMenuEl = ref<HTMLElement | null>(null)
+
+/**
+ * Which parts of the selected books Apply reaches.
+ *
+ * Tags on, paths off: writing tags is the page's subject, and moving several hundred
+ * files is not something a default should arrange. The label restates whichever is on,
+ * so the scope is legible without opening the menu.
+ */
+const applyTags = ref(true)
+const applyPaths = ref(false)
 
 /**
  * Which row is playing, if any.
@@ -880,6 +908,50 @@ function sortBy(key: string) {
   sort.value = { key, ascending: true }
 }
 
+/* -- Applying to the selection ------------------------------------------------ */
+
+const applyLabel = computed(() => {
+  const count = selectedBooks.value.size > 0 ? ` (${selectedBooks.value.size})` : ''
+  if (applyTags.value && applyPaths.value) return `Apply tags + paths${count}`
+  if (applyTags.value) return `Apply tags${count}`
+  if (applyPaths.value) return `Apply paths${count}`
+  return `Apply${count}`
+})
+
+const canApply = computed(
+  () => selectedBooks.value.size > 0 && (applyTags.value || applyPaths.value) && !working.value,
+)
+
+const applyHint = computed(() => {
+  if (selectedBooks.value.size === 0) return 'Tick some books first'
+  if (!applyTags.value && !applyPaths.value) return 'Choose what Apply covers'
+  const parts = [
+    applyTags.value ? 'write every unlocked tag into their files' : null,
+    applyPaths.value ? 'move and rename them to match the naming pattern' : null,
+  ].filter(Boolean)
+  return `For the selected books: ${parts.join(', and ')}.`
+})
+
+/**
+ * Run whichever parts are in scope.
+ *
+ * Paths go first when both are. A tag write records the path it is rewriting before it
+ * touches anything, so moving the file out from under a queued job is exactly how that
+ * job comes back as "file is missing" — and tags written after the move land in the file
+ * where it now lives.
+ */
+async function applySelection() {
+  if (!canApply.value) return
+  applyOpen.value = false
+
+  if (applyPaths.value) {
+    organizeOpen.value = true
+    return
+  }
+
+  await writeSelected()
+}
+
 /* -- Playing a file ---------------------------------------------------------- */
 
 /**
@@ -1091,6 +1163,12 @@ async function onOrganized() {
   organizeOpen.value = false
   actionMessage.value = 'Organized. Re-reading the library…'
   await load(false)
+
+  if (applyTags.value) {
+    await writeSelected()
+    return
+  }
+
   actionMessage.value = null
 }
 
@@ -1187,9 +1265,13 @@ function openBook(row: LibraryTagRow) {
 }
 
 function onDocumentClick(event: MouseEvent) {
-  if (!columnsOpen.value) return
-  if (columnsMenuEl.value && !columnsMenuEl.value.contains(event.target as Node)) {
+  const target = event.target as Node
+  if (columnsOpen.value && columnsMenuEl.value && !columnsMenuEl.value.contains(target)) {
     columnsOpen.value = false
+  }
+
+  if (applyOpen.value && applyMenuEl.value && !applyMenuEl.value.contains(target)) {
+    applyOpen.value = false
   }
 }
 
@@ -1216,6 +1298,15 @@ function restorePreferences() {
     }
 
     showProposals.value = localStorage.getItem(PROPOSALS_KEY) === 'true'
+
+    const storedScope = localStorage.getItem(APPLY_SCOPE_KEY)
+    if (storedScope) {
+      const parsed = JSON.parse(storedScope)
+      if (parsed && typeof parsed === 'object') {
+        applyTags.value = parsed.tags !== false
+        applyPaths.value = parsed.paths === true
+      }
+    }
   } catch {
     // A browser with storage blocked still gets a working table, just not a remembered one.
   }
@@ -1237,6 +1328,12 @@ watch(
   },
   { deep: true },
 )
+
+watch([applyTags, applyPaths], ([tags, paths]) => {
+  try {
+    localStorage.setItem(APPLY_SCOPE_KEY, JSON.stringify({ tags, paths }))
+  } catch {}
+})
 
 watch(showPath, (value) => {
   try {
@@ -1384,8 +1481,46 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
-.columns-menu {
+.columns-menu,
+.apply-menu {
   position: relative;
+}
+
+/* The caret is joined to the button so the two read as one control with a choice. */
+.apply-menu {
+  display: inline-flex;
+}
+
+.apply-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.apply-caret {
+  margin-left: -1px;
+  padding: 0 6px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.apply-dropdown {
+  width: 230px;
+}
+
+/*
+ * The columns menu puts its code hint in a third column, which works there because a tag
+ * name is short. "moved and renamed" is not, so here the hint sits under its label
+ * instead of pushing the menu open past its own width.
+ */
+.apply-dropdown .columns-option {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  row-gap: 2px;
+}
+
+.apply-dropdown .columns-option code {
+  grid-column: 2;
+  font-size: 0.72rem;
 }
 
 .columns-dropdown {
