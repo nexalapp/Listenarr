@@ -289,7 +289,7 @@ describe('TagsView', () => {
       ]),
     )
 
-    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click')
     await wrapper.vm.$nextTick()
 
     const checked = wrapper
@@ -297,6 +297,122 @@ describe('TagsView', () => {
       .map((box) => (box.element as HTMLInputElement).checked)
     expect(checked).toEqual([true, false, false])
     expect(wrapper.text()).toContain('1 file selected')
+  })
+
+  it('shift-clicking selects every row between the two ticks', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'A.m4b' }),
+        row({ fileId: 2, fileName: 'B.m4b' }),
+        row({ fileId: 3, fileName: 'C.m4b' }),
+        row({ fileId: 4, fileName: 'D.m4b' }),
+      ]),
+    )
+
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[0].trigger('click')
+    await boxes[2].trigger('click', { shiftKey: true })
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper
+        .findAll('.tags-row .row-select')
+        .map((box) => (box.element as HTMLInputElement).checked),
+    ).toEqual([true, true, true, false])
+    expect(wrapper.text()).toContain('3 files selected')
+  })
+
+  it('shift-clicks a range upwards too, and re-anchors on every click', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'A.m4b' }),
+        row({ fileId: 2, fileName: 'B.m4b' }),
+        row({ fileId: 3, fileName: 'C.m4b' }),
+        row({ fileId: 4, fileName: 'D.m4b' }),
+      ]),
+    )
+
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[3].trigger('click')
+    await boxes[1].trigger('click', { shiftKey: true })
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper
+        .findAll('.tags-row .row-select')
+        .map((box) => (box.element as HTMLInputElement).checked),
+    ).toEqual([false, true, true, true])
+
+    // The shift-click moved the anchor to row 1, so the next one reaches from there.
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click', { shiftKey: true })
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper
+        .findAll('.tags-row .row-select')
+        .map((box) => (box.element as HTMLInputElement).checked),
+    ).toEqual([true, true, true, true])
+  })
+
+  it('shift-clicking a ticked row clears the range rather than setting it', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'A.m4b' }),
+        row({ fileId: 2, fileName: 'B.m4b' }),
+        row({ fileId: 3, fileName: 'C.m4b' }),
+      ]),
+    )
+
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[0].trigger('click')
+    await boxes[2].trigger('click', { shiftKey: true })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('3 files selected')
+
+    // Untick the last one, then shift back to the top: the whole run comes off.
+    await wrapper.findAll('.tags-row .row-select')[2].trigger('click')
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click', { shiftKey: true })
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper
+        .findAll('.tags-row .row-select')
+        .map((box) => (box.element as HTMLInputElement).checked),
+    ).toEqual([false, false, false])
+    expect(wrapper.text()).not.toContain('selected')
+  })
+
+  it('ranges over the rows as they are shown, not as they arrived', async () => {
+    // The operator is drawing a line between two rows they can see, so a sort has to
+    // change what lies between them.
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'C.m4b', tags: { title: 'Charlie' } }),
+        row({ fileId: 2, fileName: 'A.m4b', tags: { title: 'Alpha' } }),
+        row({ fileId: 3, fileName: 'B.m4b', tags: { title: 'Bravo' } }),
+      ]),
+    )
+
+    const titleHeader = wrapper
+      .findAll('.tags-th-label')
+      .find((header) => header.text() === 'Title')!
+    await titleHeader.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const boxes = wrapper.findAll('.tags-row .row-select')
+    await boxes[0].trigger('click')
+    await boxes[1].trigger('click', { shiftKey: true })
+    await wrapper.vm.$nextTick()
+
+    // Alpha and Bravo are adjacent on screen; in arrival order Charlie sat between them.
+    const rows = wrapper.findAll('.tags-row')
+    expect(rows[0].text()).toContain('Alpha')
+    expect(rows[2].text()).toContain('Charlie')
+    expect(
+      wrapper
+        .findAll('.tags-row .row-select')
+        .map((box) => (box.element as HTMLInputElement).checked),
+    ).toEqual([true, true, false])
   })
 
   it("queues one job per book, carrying just that book's ticked files", async () => {
@@ -313,9 +429,9 @@ describe('TagsView', () => {
     )
 
     const boxes = wrapper.findAll('.tags-row .row-select')
-    await boxes[0].setValue(true)
-    await boxes[1].setValue(true)
-    await boxes[2].setValue(true)
+    await boxes[0].trigger('click')
+    await boxes[1].trigger('click')
+    await boxes[2].trigger('click')
     await wrapper.vm.$nextTick()
 
     await wrapper.find('.apply-btn').trigger('click')
@@ -338,7 +454,7 @@ describe('TagsView', () => {
       ]),
     )
 
-    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click')
     await wrapper.vm.$nextTick()
 
     await wrapper.find('.apply-btn').trigger('click')
@@ -356,7 +472,7 @@ describe('TagsView', () => {
     writeTags.mockResolvedValue({ queued: true })
     const wrapper = await mountView(table([row({ audiobookId: 42 })]))
 
-    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.find('.tags-row .row-select').trigger('click')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.apply-btn').text()).toContain('Apply tags (1)')
@@ -372,7 +488,7 @@ describe('TagsView', () => {
   it('organizes only when paths are in scope, and says so on the button', async () => {
     const wrapper = await mountView(table([row({ audiobookId: 42 })]))
 
-    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.find('.tags-row .row-select').trigger('click')
     await wrapper.find('.apply-caret').trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -395,7 +511,7 @@ describe('TagsView', () => {
   it('refuses to act when the scope is empty', async () => {
     const wrapper = await mountView(table([row({ audiobookId: 42 })]))
 
-    await wrapper.find('.tags-row .row-select').setValue(true)
+    await wrapper.find('.tags-row .row-select').trigger('click')
     await wrapper.find('.apply-caret').trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -435,7 +551,7 @@ describe('TagsView', () => {
     expect(wrapper.text()).toContain('1 file selected')
 
     // And the checkbox itself still toggles exactly once, not twice via the cell.
-    await wrapper.find('.tags-row .row-select').setValue(false)
+    await wrapper.find('.tags-row .row-select').trigger('click')
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).not.toContain('file selected')
   })
@@ -448,7 +564,7 @@ describe('TagsView', () => {
       ]),
     )
 
-    await wrapper.findAll('.tags-row .row-select')[0].setValue(true)
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click')
     await wrapper.vm.$nextTick()
 
     // Selection is keyed on the book alone: a locked row of another book is untouched,
@@ -535,8 +651,8 @@ describe('TagsView', () => {
     )
 
     const boxes = wrapper.findAll('.tags-row .row-select')
-    await boxes[0].setValue(true)
-    await boxes[1].setValue(true)
+    await boxes[0].trigger('click')
+    await boxes[1].trigger('click')
     await wrapper.vm.$nextTick()
 
     const albumHeader = wrapper
@@ -624,8 +740,8 @@ describe('TagsView', () => {
     )
 
     const ticks = wrapper.findAll('.tags-row .row-select')
-    await ticks[0].setValue(true)
-    await ticks[1].setValue(true)
+    await ticks[0].trigger('click')
+    await ticks[1].trigger('click')
     await wrapper.vm.$nextTick()
 
     const filenameHeader = wrapper.find('.tags-th--sticky')
