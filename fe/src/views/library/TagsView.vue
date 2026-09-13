@@ -313,9 +313,8 @@
                 class="row-select"
                 :checked="selectedFiles.has(row.fileId)"
                 :aria-label="`Select ${row.fileName}`"
-                @click.stop
+                @click.stop.prevent="tickFrom($event, row)"
                 @keydown.stop
-                @change="toggleFile(row.fileId)"
               />
 
               <button
@@ -561,6 +560,9 @@ const showProposals = ref(false)
  * it — the modal shows which books a path change would reach before anything moves.
  */
 const selectedFiles = ref<Set<number>>(new Set())
+
+/** The row a shift-click measures from: the last one ticked without one. */
+const rangeAnchorFileId = ref<number | null>(null)
 const organizeOpen = ref(false)
 const applyOpen = ref(false)
 const applyMenuEl = ref<HTMLElement | null>(null)
@@ -1039,11 +1041,58 @@ const selectedBookIds = computed(
 function selectFromCell(event: MouseEvent, row: LibraryTagRow) {
   event.stopPropagation()
 
-  // The checkbox raises its own change event, and handling the bubble as well would
-  // toggle the file twice and leave it exactly as it was.
+  // The checkbox handles its own click, so only the space around it arrives here.
   if ((event.target as HTMLElement)?.tagName !== 'INPUT') {
+    tickFrom(event, row)
+  }
+}
+
+/**
+ * Tick one row, or every row between it and the last one ticked when shift is held.
+ *
+ * The range runs over the rows as they are currently shown, not as they are stored: the
+ * operator is drawing a line between two things they can see, and a range that followed
+ * some other order would select rows they were not looking at.
+ */
+function tickFrom(event: MouseEvent, row: LibraryTagRow) {
+  const selecting = !selectedFiles.value.has(row.fileId)
+
+  if (event.shiftKey && rangeAnchorFileId.value != null) {
+    selectRange(rangeAnchorFileId.value, row.fileId, selecting)
+  } else {
     toggleFile(row.fileId)
   }
+
+  // The row just clicked anchors the next range, shift or no shift — which is what makes
+  // a second shift-click extend from where the last one landed.
+  rangeAnchorFileId.value = row.fileId
+}
+
+function selectRange(fromFileId: number, toFileId: number, selecting: boolean) {
+  const shown = visibleRows.value
+  const from = shown.findIndex((candidate) => candidate.fileId === fromFileId)
+  const to = shown.findIndex((candidate) => candidate.fileId === toFileId)
+
+  // An anchor the filter or the sort has since hidden cannot bound anything, so the
+  // click falls back to meaning only itself.
+  if (from === -1 || to === -1) {
+    toggleFile(toFileId)
+    return
+  }
+
+  const [start, end] = from <= to ? [from, to] : [to, from]
+  const next = new Set(selectedFiles.value)
+  for (let index = start; index <= end; index++) {
+    const fileId = shown[index].fileId
+    if (selecting) {
+      next.add(fileId)
+    } else {
+      next.delete(fileId)
+    }
+  }
+
+  selectedFiles.value = next
+  actionMessage.value = null
 }
 
 function toggleFile(fileId: number) {
@@ -1744,6 +1793,7 @@ onBeforeUnmount(() => {
   padding: 0;
   text-align: center;
   cursor: pointer;
+  user-select: none;
 }
 
 .tags-td--audio {
