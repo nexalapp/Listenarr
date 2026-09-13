@@ -37,6 +37,7 @@ namespace Listenarr.Api.Features.Library
         /// </para>
         /// </remarks>
         /// <param name="fileId">The registered audiobook file to play.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <response code="200">The audio, as a range-capable stream.</response>
         /// <response code="404">No such file, or it is not readable from here.</response>
         /// <response code="400">The registered file is not an audio file.</response>
