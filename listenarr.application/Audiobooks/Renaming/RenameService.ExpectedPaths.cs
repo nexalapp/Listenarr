@@ -48,76 +48,9 @@ namespace Listenarr.Application.Audiobooks.Renaming
             return string.IsNullOrWhiteSpace(basePath) ? NormalizePath(relativePath) : NormalizePath(CombineWithOptionalBase(basePath, relativePath));
         }
 
-        /// <summary>
-        /// Whether folding the subtitle into <c>{Title}</c> would tell the name anything
-        /// it is not already going to say.
-        /// </summary>
-        /// <remarks>
-        /// A title alone is often ambiguous, so a subtitle is folded in when the pattern
-        /// gives it nowhere else to go. The cases below are the ones where doing that
-        /// states the same fact twice:
-        /// <list type="bullet">
-        /// <item>
-        /// The pattern uses <c>{Subtitle}</c> itself, so the subtitle already has a place.
-        /// </item>
-        /// <item>
-        /// Either of the two contains the other. Audible files a series book's subtitle as
-        /// the title restated — "Dogs of War, Book 1" against a title of "Dogs of War" —
-        /// and only the reverse of that was caught before, so the pattern produced
-        /// "Dogs of War - Dogs of War, Book 1".
-        /// </item>
-        /// <item>
-        /// The pattern renders <c>{Series}</c> and the subtitle is that series named
-        /// again: "[Revelation Space 10] Dilation Sleep - Revelation Space, Book #10"
-        /// says the series twice and the position twice.
-        /// </item>
-        /// </list>
-        /// </remarks>
-        private static bool SubtitleAddsSomething(
-            Audiobook audiobook,
-            string? folderPattern,
-            string? filePattern)
-        {
-            var title = audiobook.Title;
-            var subtitle = audiobook.Subtitle;
-            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(subtitle))
-            {
-                return false;
-            }
-
-            if (PatternUses("Subtitle"))
-            {
-                return false;
-            }
-
-            if (title.Contains(subtitle, StringComparison.OrdinalIgnoreCase)
-                || subtitle.Contains(title, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            var series = audiobook.Series;
-            if (!string.IsNullOrWhiteSpace(series)
-                && PatternUses("Series")
-                && subtitle.Contains(series, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            return true;
-
-            bool PatternUses(string token) =>
-                (!string.IsNullOrWhiteSpace(folderPattern)
-                    && folderPattern.Contains(token, StringComparison.OrdinalIgnoreCase))
-                || (!string.IsNullOrWhiteSpace(filePattern)
-                    && filePattern.Contains(token, StringComparison.OrdinalIgnoreCase));
-        }
-
         private static Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile, int seriesPositionWidth)
         {
-            var combinedTitle = SubtitleAddsSomething(audiobook, folderPattern, filePattern)
-                ? $"{audiobook.Title}: {audiobook.Subtitle}"
-                : audiobook.Title;
+            var combinedTitle = audiobook.Title;
             var narrator = audiobook.Narrators != null ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n))) : string.Empty;
 
             return new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
