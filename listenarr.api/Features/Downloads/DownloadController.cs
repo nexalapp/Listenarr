@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Common;
+using Listenarr.Application.Common.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Downloads
@@ -109,6 +110,24 @@ namespace Listenarr.Api.Features.Downloads
                 return StatusCode(
                     ex.IsExpired ? StatusCodes.Status410Gone : StatusCodes.Status400BadRequest,
                     new { message = "Unable to use download reference", error = ex.Message });
+            }
+            catch (ApplicationConflictException ex)
+            {
+                // The operator's own configuration is wrong, and the detail says how to
+                // fix it. A 4xx keeps that detail: ServerErrorProblemDetailsFilter only
+                // rewrites 5xx, which is where this used to land and lose its advice.
+                _logger.LogWarning("Download cannot be sent: {Detail}", ex.SafeDetail);
+
+                var conflict = new ProblemDetails
+                {
+                    Status = StatusCodes.Status409Conflict,
+                    Title = "Cannot send to a download client",
+                    Detail = ex.SafeDetail,
+                    Instance = HttpContext.Request.Path
+                };
+                conflict.Extensions["code"] = ex.Code;
+
+                return Conflict(conflict);
             }
             catch (DownloadClientSubmissionException ex)
             {

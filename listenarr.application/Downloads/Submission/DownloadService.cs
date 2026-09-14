@@ -17,11 +17,12 @@
  */
 
 using Listenarr.Application.Common;
+using Listenarr.Application.Common.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
 {
-    public class DownloadService(
+    public partial class DownloadService(
         IAudiobookRepository audiobookRepository,
         IConfigurationService configurationService,
         IDownloadRepository downloadRepository,
@@ -117,114 +118,6 @@ namespace Listenarr.Application.Downloads.Submission
             return await Task.FromResult(new List<ReprocessResult>());
         }
 
-        public async Task<SearchAndDownloadResult> SearchAndDownloadAsync(int audiobookId)
-        {
-            // Get the audiobook
-            var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
-            if (audiobook == null)
-            {
-                return new SearchAndDownloadResult
-                {
-                    Success = false,
-                    Message = "Audiobook not found"
-                };
-            }
-
-            if (audiobook.QualityProfile == null)
-            {
-                logger.LogWarning("Audiobook '{Title}' has no quality profile assigned", audiobook.Title);
-                return new SearchAndDownloadResult
-                {
-                    Success = false,
-                    Message = "Audiobook has no quality profile assigned"
-                };
-            }
-
-            // Build search query from audiobook metadata
-            var searchQuery = DownloadSearchQueryBuilder.Build(audiobook);
-            logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(searchQuery));
-
-            // Search using the working search service. This is an automatic search (triggered
-            // by the background/manual 'search-and-download' endpoint), so set isAutomaticSearch
-            // to true to ensure only indexers are queried (no Amazon/Audible scraping).
-            var searchResults = await searchService.SearchAsync(searchQuery, isAutomaticSearch: true);
-
-            if (searchResults == null || !searchResults.Any())
-            {
-                return new SearchAndDownloadResult
-                {
-                    Success = false,
-                    Message = "No search results found"
-                };
-            }
-
-            // Score results against quality profile
-            var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile);
-
-            // Log all scored results for debugging
-            logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
-            foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
-            {
-                var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
-                logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
-                    status, scoredResult.TotalScore, LogRedaction.SanitizeText(scoredResult.SearchResult.Title), LogRedaction.SanitizeText(scoredResult.SearchResult.Source),
-                    scoredResult.SearchResult.Size / 1024 / 1024, scoredResult.SearchResult.Seeders, scoredResult.SearchResult.Quality);
-                if (scoredResult.IsRejected && scoredResult.RejectionReasons.Any())
-                {
-                    logger.LogInformation("    Rejection reasons: {Reasons}", string.Join(", ", scoredResult.RejectionReasons));
-                }
-            }
-
-            // Only consider non-rejected, score > 0 results
-            var topResult = scoredResults
-                .Where(s => !s.IsRejected && s.TotalScore > 0)
-                .OrderByDescending(s => s.TotalScore)
-                .FirstOrDefault();
-
-            if (topResult == null)
-            {
-                logger.LogWarning("No acceptable search results found for audiobook '{Title}' after quality filtering", audiobook.Title);
-                return new SearchAndDownloadResult
-                {
-                    Success = false,
-                    Message = "No acceptable search results found"
-                };
-            }
-
-            // Assign score to SearchResult
-            topResult.SearchResult.Score = topResult.TotalScore;
-
-            var candidate = TrustedDownloadCandidateFactory.Create(topResult.SearchResult);
-            var isTorrent = candidate.SourceDescriptor.Protocol == DownloadProtocol.Torrent;
-            var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(isTorrent);
-
-            if (downloadClientId == null)
-            {
-                logger.LogWarning("No suitable download client found for type: {Type}", isTorrent ? "Torrent" : "NZB");
-                return new SearchAndDownloadResult
-                {
-                    Success = false,
-                    Message = $"No suitable download client found for {(isTorrent ? "torrent" : "NZB")} results"
-                };
-            }
-
-            // Send to download client with audiobookId for proper metadata linking
-            var downloadId2 = await SendToDownloadClientAsync(candidate, downloadClientId, audiobookId);
-
-            // Log to history
-            await LogDownloadHistory(audiobook, "Search", topResult.SearchResult);
-
-            return new SearchAndDownloadResult
-            {
-                Success = true,
-                Message = $"Successfully sent to download client",
-                DownloadId = downloadId2,
-                IndexerUsed = "Search",
-                DownloadClientUsed = downloadClientId,
-                SearchResult = topResult.SearchResult
-            };
-        }
-
         public async Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null)
         {
             return await SendToDownloadClientAsync(
@@ -292,7 +185,17 @@ namespace Listenarr.Application.Downloads.Submission
                 {
                     var clientType = isTorrent ? "torrent" : "NZB";
                     var neededClients = isTorrent ? "qBittorrent or Transmission" : "SABnzbd or NZBGet";
-                    throw new Exception($"No suitable download client found for {clientType}. Please configure and enable a {clientType} client ({neededClients}) in Settings.");
+
+                    // A typed conflict, not a bare Exception. This is the operator's own
+                    // configuration, and the message says exactly what to do about it - but
+                    // a bare Exception reaches the controller's catch-all as a 500, and
+                    // ServerErrorProblemDetailsFilter rewrites every 5xx body outside
+                    // Development to "Internal server error" with no detail. The advice was
+                    // being written and then thrown away on the way out.
+                    throw new ApplicationConflictException(
+                        "download_client_unavailable",
+                        $"No {clientType} download client is enabled, so this release cannot be sent anywhere. "
+                            + $"Add and enable {neededClients} under Settings > Download Clients, then try again.");
                 }
 
                 logger.LogInformation("Auto-selected download client {ClientId} for {ClientType}", downloadClientId, isTorrent ? "torrent" : "NZB");

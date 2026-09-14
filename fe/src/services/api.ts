@@ -922,6 +922,21 @@ class ApiService {
     return this.request<ApplicationSettings>('/configuration/settings')
   }
 
+  /**
+   * Replace the books page's saved custom filters.
+   *
+   * Its own endpoint rather than a settings save: the settings object carries an
+   * optimistic-concurrency version, so creating a filter would be rejected whenever
+   * anything else had touched settings since the page loaded. A UI preference should
+   * not conflict with unrelated configuration.
+   */
+  async saveLibraryCustomFilters(filters: unknown[]): Promise<{ saved: boolean }> {
+    return this.request<{ saved: boolean }>('/configuration/library-filters', {
+      method: 'POST',
+      body: JSON.stringify(filters),
+    })
+  }
+
   async saveApplicationSettings(settings: ApplicationSettings): Promise<ApplicationSettings> {
     // Delegate CSRF handling to request(); it will fetch/attach a fresh token and
     // wait for any login-related tokenReadyPromise if necessary. Avoid manually

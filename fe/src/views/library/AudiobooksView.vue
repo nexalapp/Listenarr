@@ -1130,19 +1130,72 @@ const selectedFilterId = ref<string | null>(null)
 const showCustomFilterModal = ref(false)
 const editingFilter = ref<CustomFilter | null>(null)
 
-function loadCustomFilters() {
+function parseFilters(raw: string | null | undefined): CustomFilter[] {
+  if (!raw) return []
   try {
-    const raw = localStorage.getItem(CUSTOM_FILTERS_KEY)
-    if (raw) customFilters.value = JSON.parse(raw)
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
   } catch {
-    customFilters.value = []
+    return []
   }
 }
 
-function saveCustomFilters() {
+/**
+ * Filters come from the server, so the same library shows the same filters on every
+ * machine. They used to live in localStorage, which is per-browser - a filter built on
+ * a laptop simply did not exist on a desktop.
+ *
+ * Anything still in localStorage from before is adopted once and handed to the server,
+ * so upgrading does not silently lose the filters someone already built. It only
+ * applies when the server has none, so a second machine's stale copy cannot overwrite
+ * the set that is now shared.
+ */
+async function loadCustomFilters() {
+  const stored = parseFilters(configStore.applicationSettings?.libraryCustomFiltersJson)
+  if (stored.length > 0) {
+    customFilters.value = stored
+    forgetLocalCustomFilters()
+    return
+  }
+
+  const local = parseFilters(localStorage.getItem(CUSTOM_FILTERS_KEY))
+  if (local.length === 0) {
+    customFilters.value = []
+    return
+  }
+
+  customFilters.value = local
   try {
-    localStorage.setItem(CUSTOM_FILTERS_KEY, JSON.stringify(customFilters.value || []))
+    await apiService.saveLibraryCustomFilters(local)
+    forgetLocalCustomFilters()
+  } catch (err) {
+    // Keep the local copy: it is the only one that exists, and the next load retries.
+    logger.warn('Could not migrate saved filters to the server', err)
+  }
+}
+
+/** Once the server holds them, the browser copy is only a source of stale duplicates. */
+function forgetLocalCustomFilters() {
+  try {
+    localStorage.removeItem(CUSTOM_FILTERS_KEY)
   } catch {}
+}
+
+async function saveCustomFilters() {
+  const filters = customFilters.value || []
+  try {
+    await apiService.saveLibraryCustomFilters(filters)
+    if (configStore.applicationSettings) {
+      // Keep the loaded settings in step, so a remount does not read a stale list back.
+      configStore.applicationSettings.libraryCustomFiltersJson = JSON.stringify(filters)
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobooksView',
+      operation: 'saveCustomFilters',
+    })
+    toast.error('Filter not saved', 'The filter could not be saved. It may be gone on reload.')
+  }
 }
 
 function handleCreateCustomFilter() {
@@ -1211,11 +1264,8 @@ watch(selectedFilterId, (v) => {
   } catch {}
 })
 
-// load on mount
-try {
-  loadCustomFilters()
-  loadSelectedFilter()
-} catch {}
+// Loaded in onMounted, not here: the filters live in application settings now, so they
+// are only readable once those have arrived.
 
 // sortOrder toggled via sortKeyProxy when selecting same key; explicit toggle removed
 
@@ -2164,6 +2214,11 @@ onMounted(async () => {
     configStore.loadApplicationSettings(),
     loadQualityProfiles(),
   ])
+
+  // Filters before the selection: a stored selection naming a custom filter is only
+  // honoured if that filter is among the ones just loaded.
+  await loadCustomFilters()
+  loadSelectedFilter()
 
   // Load persisted view mode (if available) before layout calc
   try {

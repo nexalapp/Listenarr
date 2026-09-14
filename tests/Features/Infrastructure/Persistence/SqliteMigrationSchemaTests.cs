@@ -58,6 +58,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260911142625_AddAudiobookFilePathLock";
     private const string TagJobSelectedFileIdsMigrationId =
         "20260913004012_AddTagJobSelectedFileIds";
+    private const string LibraryCustomFiltersMigrationId =
+        "20260914144441_AddLibraryCustomFilters";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -191,7 +193,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 RootFolderLibraryMarkerMigrationId,
                 AudiobookFileLockedTagsMigrationId,
                 AudiobookFilePathLockMigrationId,
-                TagJobSelectedFileIdsMigrationId
+                TagJobSelectedFileIdsMigrationId,
+                LibraryCustomFiltersMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
