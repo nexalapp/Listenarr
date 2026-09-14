@@ -610,9 +610,20 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   }
 }
 
+/**
+ * What a job row calls its book when the library cannot name it - a book removed while
+ * its job was queued, or a library that has not loaded.
+ *
+ * Not the action name. The action already has its own badge directly under the title,
+ * so falling back to it produced rows reading "Convert to M4B" above "Convert to M4B",
+ * which named neither the book nor which of several identical-looking rows this was.
+ */
+const unnamedBookLabel = (audiobookId?: number): string =>
+  audiobookId ? `Audiobook #${audiobookId}` : 'Unknown audiobook'
+
 const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
   id: `move:${job.jobId}`,
-  title: 'Library move',
+  title: unnamedBookLabel(job.audiobookId),
   audiobookId: job.audiobookId,
   status: job.status === 'Queued' || job.status === 'RetryScheduled' ? 'queued' : 'moving',
   progress: job.progress,
@@ -642,7 +653,7 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
 
   return {
     id: `conversion:${job.jobId}`,
-    title: 'Convert to M4B',
+    title: unnamedBookLabel(job.audiobookId),
     audiobookId: job.audiobookId,
     status: failed ? 'importblocked' : job.status === 'Running' ? 'processing' : 'queued',
     progress: job.progress,
@@ -690,7 +701,7 @@ const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
 
   return {
     id: `tagging:${job.jobId}`,
-    title: 'Write metadata tags',
+    title: unnamedBookLabel(job.audiobookId),
     audiobookId: job.audiobookId,
     status: failed ? 'importblocked' : job.status === 'Running' ? 'processing' : 'queued',
     progress: job.progress,
@@ -1160,6 +1171,19 @@ onMounted(async () => {
 
   await downloadsStore.loadDownloads()
   await configStore.loadApplicationSettings()
+
+  // Rows name their book through this store, so without it every conversion, move and
+  // tag row falls back to its action name - a list of "Convert to M4B" above badges
+  // already saying "Convert to M4B". Activity is reachable directly, so it cannot
+  // assume the library page has been visited. The fetch de-duplicates itself, so
+  // arriving with it already loaded costs nothing.
+  if (libraryStore.audiobooks.length === 0) {
+    try {
+      await libraryStore.fetchLibrary()
+    } catch {
+      // A row falling back to "Audiobook #267" is a worse label, not a broken page.
+    }
+  }
 
   unsubscribeQueue = signalRService.onQueueUpdate((updatedQueue) => {
     applyQueueSnapshot(updatedQueue)
@@ -1657,6 +1681,11 @@ onUnmounted(() => {
 }
 
 /* Actions */
+/* Every button in the actions column looks the same at rest; only the hover colour
+   says whether it is destructive. Without a .btn-icon rule the dismiss button fell
+   back to the browser's default button chrome - a pale background and a border -
+   beside two flat ones. */
+.btn-icon,
 .btn-danger-icon {
   background: none;
   border: none;
@@ -1670,11 +1699,23 @@ onUnmounted(() => {
   transition: all 0.2s;
 }
 
-.btn-danger-icon:hover {
+.btn-icon:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ced4da;
+}
+
+.btn-danger-icon:hover:not(:disabled) {
   background: rgba(250, 82, 82, 0.15);
   color: #fa5252;
 }
 
+.btn-icon:disabled,
+.btn-danger-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-icon svg,
 .btn-danger-icon svg {
   width: 16px;
   height: 16px;
