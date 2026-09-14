@@ -111,6 +111,45 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
         }
 
         [Fact]
+        public void BuildArguments_TakesChaptersFromThePlanRatherThanTheSource()
+        {
+            // ffmpeg's default is "the first input file with at least one chapter", which
+            // is the source itself whenever a book is one already chaptered MP3 - the
+            // shape most of this library is in. The plan's marks were discarded for
+            // exactly those books, and its chapter titles never reached an output.
+            //
+            // It also failed a sound conversion: a source whose marks run past the end of
+            // its own audio has them trimmed by the planner, so the plan held nine marks
+            // and the written file held fifteen, and verification refused the difference.
+            var args = FfmpegCommandBuilder.BuildArguments(Plan(), "/tmp/meta", "/tmp/out.m4b", null);
+
+            // The metadata file is the input after the sources, and it is the authority
+            // for both metadata and chapters.
+            var metadataIndex = ArgumentAfter(args, "-map_metadata");
+            Assert.Equal(metadataIndex, ArgumentAfter(args, "-map_chapters"));
+        }
+
+        [Fact]
+        public void BuildArguments_TakesChaptersFromThePlan_ForEverySourceCount()
+        {
+            // A multi-file book worked only by accident: its inputs carry no chapters, so
+            // ffmpeg fell through to the metadata file anyway. The mapping is explicit now
+            // rather than a coincidence of the input order.
+            foreach (var sourceCount in new[] { 1, 2, 5 })
+            {
+                var args = FfmpegCommandBuilder.BuildArguments(
+                    Plan(sourceCount: sourceCount),
+                    "/tmp/meta",
+                    "/tmp/out.m4b",
+                    null);
+
+                Assert.Equal(
+                    sourceCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ArgumentAfter(args, "-map_chapters"));
+            }
+        }
+
+        [Fact]
         public void BuildArguments_MapsCoverArtAsAttachedPicture_WhenSupplied()
         {
             var args = FfmpegCommandBuilder.BuildArguments(Plan(), "/tmp/meta", "/tmp/out.m4b", "/tmp/cover.jpg");
