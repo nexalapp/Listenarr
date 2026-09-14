@@ -611,6 +611,12 @@ export interface TagMapping {
 export interface ApplicationSettings {
   version: number
   outputPath: string
+  /**
+   * The books page's saved custom filters, as the JSON array the filter editor defines.
+   * Server-side so a filter built on one machine is there on the next one; localStorage
+   * is per-browser, which is why a laptop and a desktop showed different filters.
+   */
+  libraryCustomFiltersJson?: string
   folderNamingPattern: string
   fileNamingPattern: string
   multiFileNamingPattern: string
