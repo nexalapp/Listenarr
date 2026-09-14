@@ -179,6 +179,9 @@ const importButtonLabel = computed(() => {
   return `Import ${count > 0 ? count : ''} ${noun}`.replace(/\s+/g, ' ').trim()
 })
 
+const MAX_REPORTED_IMPORT_ERRORS = 5
+const IMPORT_ERROR_TOAST_MS = 30000
+
 async function handleImport() {
   if (isImporting.value || store.selectedCount === 0 || !filesystemReadinessStore.filesystemReady) {
     return
@@ -197,10 +200,19 @@ async function handleImport() {
     }
 
     if (errors.length > 0) {
-      toast.error(
-        'Import errors',
-        `${errors.length} item${errors.length !== 1 ? 's' : ''} failed - check logs`,
-      )
+      // The reasons are the whole point: "check logs" sent people to logs that, for
+      // the most common failure, contained nothing at all. Show what actually
+      // happened, and only fall back to a count when there are too many to read.
+      const heading = `${errors.length} item${errors.length !== 1 ? 's' : ''} failed`
+      const detail =
+        errors.length <= MAX_REPORTED_IMPORT_ERRORS
+          ? errors.join('\n')
+          : `${errors.slice(0, MAX_REPORTED_IMPORT_ERRORS).join('\n')}\n...and ${
+              errors.length - MAX_REPORTED_IMPORT_ERRORS
+            } more`
+      // Five seconds is enough to read "check logs" and nowhere near enough to read
+      // several sentences explaining what went wrong with which book.
+      toast.error('Import errors', `${heading}\n${detail}`, IMPORT_ERROR_TOAST_MS)
     }
 
     if (warnings.length > 0) {

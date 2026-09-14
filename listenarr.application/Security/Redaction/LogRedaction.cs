@@ -163,5 +163,51 @@ namespace Listenarr.Application.Security.Redaction
                 return "[invalid-path]";
             }
         }
+
+        /// <summary>
+        /// Sanitize a directory path for logging, keeping its parent's name as well as
+        /// its own.
+        /// </summary>
+        /// <remarks>
+        /// A directory's own name is routinely not enough to tell two directories apart:
+        /// a library folder and the folder a file was imported from are both commonly
+        /// named after the book, so <see cref="SanitizeFilePath"/> renders the two as the
+        /// same string and a log line comparing them says nothing. Keeping one more
+        /// segment is what makes them distinguishable, and it still does not disclose the
+        /// path above them.
+        /// <para>
+        /// A trailing separator is dropped first, because a directory path is routinely
+        /// stored with one and <c>GetFileName</c> returns empty for it.
+        /// </para>
+        /// </remarks>
+        public static string SanitizeDirectoryPath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return "[empty-path]";
+
+            try
+            {
+                var trimmed = path.TrimEnd(
+                    System.IO.Path.DirectorySeparatorChar,
+                    System.IO.Path.AltDirectorySeparatorChar);
+
+                // A path that was nothing but separators has no name to show.
+                if (trimmed.Length == 0)
+                    return "[empty-path]";
+
+                var leaf = System.IO.Path.GetFileName(trimmed);
+                var parent = System.IO.Path.GetFileName(
+                    System.IO.Path.GetDirectoryName(trimmed) ?? string.Empty);
+
+                if (string.IsNullOrEmpty(leaf))
+                    return "[empty-path]";
+
+                return string.IsNullOrEmpty(parent) ? leaf : $"{parent}/{leaf}";
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                return "[invalid-path]";
+            }
+        }
     }
 }

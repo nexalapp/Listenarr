@@ -3257,9 +3257,13 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 payload.GetType().GetProperty("results")!.GetValue(payload));
             var result = Assert.Single(returnedResults);
             Assert.False(result.Success);
-            Assert.Equal(
-                "The selected existing-file folder does not match the audiobook library folder.",
-                result.Error);
+            // Asserted by its parts rather than verbatim: what makes this message worth
+            // having is that it names both folders and the book, so the operator can see
+            // why the two do not match without going to the logs.
+            Assert.NotNull(result.Error);
+            Assert.Contains(selectedFolder, result.Error);
+            Assert.Contains(existingBasePath, result.Error);
+            Assert.Contains("Jack of Shadows", result.Error);
             Assert.Equal(existingBasePath, book.BasePath);
             audiobookScanService.VerifyNoOtherCalls();
             scanQueue.VerifyNoOtherCalls();

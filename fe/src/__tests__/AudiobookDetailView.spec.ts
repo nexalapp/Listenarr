@@ -17,13 +17,14 @@
  */
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
-import { describe, it, beforeEach, expect, vi } from 'vitest'
+import { describe, it, beforeAll, beforeEach, expect, vi } from 'vitest'
 import { API_BASE_PATH } from '@/services/apiBase'
 import { useLibraryStore } from '@/stores/library'
 import { useScanNotificationsStore } from '@/stores/scanNotifications'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
 import { apiService, ensureImageCached } from '@/services/api'
 import AudiobookDetailViewCmp from '@/views/library/AudiobookDetailView.vue'
+import { activePreviewId } from '@/composables/useAudioPreview'
 const routerPushMock = vi.fn()
 // Mock useRoute to provide params for the detail view
 vi.mock('vue-router', () => ({
@@ -38,6 +39,7 @@ vi.mock('@/services/api', () => ({
     getQualityProfiles: vi.fn(async () => []),
     getLibrary: vi.fn(async () => []),
     scanAudiobook: vi.fn(),
+    buildLibraryFileAudioUrl: vi.fn((fileId: number) => `/api/v1/tagging/files/${fileId}/audio`),
   },
   ensureImageCached: vi.fn(async () => true),
 }))
@@ -568,5 +570,118 @@ describe('AudiobookDetailView image recache behavior', () => {
     expect(scanButton.attributes('title')).toContain('filesystem initialization')
     await scanButton.trigger('click')
     expect(apiService.scanAudiobook).not.toHaveBeenCalled()
+  })
+})
+
+describe('AudiobookDetailView audio preview', () => {
+  // jsdom ships no media pipeline, so play/pause are unimplemented and log on every call.
+  beforeAll(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: vi.fn(function (this: HTMLMediaElement) {
+        this.dispatchEvent(new Event('play'))
+        return Promise.resolve()
+      }),
+    })
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
+      configurable: true,
+      value: vi.fn(),
+    })
+  })
+
+  const mountWithFiles = async (
+    files: Array<{ id: number; path?: string }>,
+  ): Promise<ReturnType<typeof mount>> => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 5, title: 'Detail Book', basePath: '/books/Detail Book', files },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    return wrapper
+  }
+
+  // Which player is sounding is module state shared by every instance, so it outlives a
+  // mount and has to be cleared between cases.
+  beforeEach(() => {
+    activePreviewId.value = null
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    vi.clearAllMocks()
+  })
+
+  it('previews the file the book opens with, not whichever row came back first', async () => {
+    const wrapper = await mountWithFiles([
+      { id: 22, path: 'Part 10.mp3' },
+      { id: 11, path: 'Part 02.mp3' },
+      { id: 33, path: 'Part 01.mp3' },
+    ])
+
+    await wrapper.get('.hero-preview .btn-preview').trigger('click')
+
+    // Part 01, not Part 10 — the ordering is numeric, the way the parts are named.
+    expect(wrapper.get('.hero-preview audio').attributes('src')).toBe(
+      '/api/v1/tagging/files/33/audio',
+    )
+  })
+
+  it('leaves the header button inert for a book with no files yet', async () => {
+    const wrapper = await mountWithFiles([])
+
+    const button = wrapper.get('.hero-preview .btn-preview')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe('This book has no files to play yet')
+  })
+
+  it('gives every file in the Files tab its own play button', async () => {
+    const wrapper = await mountWithFiles([
+      { id: 11, path: 'Part 01.mp3' },
+      { id: 22, path: 'Part 02.mp3' },
+    ])
+
+    const filesTab = wrapper.findAll('.tab').find((t) => t.text().includes('Files'))
+    await filesTab!.trigger('click')
+
+    const players = wrapper.findAll('.file-preview .btn-preview')
+    expect(players).toHaveLength(2)
+
+    await players[1].trigger('click')
+
+    expect(wrapper.get('.file-preview audio').attributes('src')).toBe(
+      '/api/v1/tagging/files/22/audio',
+    )
+  })
+
+  it('does not open the file accordion when its play button is clicked', async () => {
+    const wrapper = await mountWithFiles([{ id: 11, path: 'Part 01.mp3' }])
+
+    const filesTab = wrapper.findAll('.tab').find((t) => t.text().includes('Files'))
+    await filesTab!.trigger('click')
+    expect(wrapper.find('.file-accordion').exists()).toBe(false)
+
+    await wrapper.get('.file-preview .btn-preview').trigger('click')
+
+    expect(wrapper.find('.file-accordion').exists()).toBe(false)
+  })
+
+  it('stops the header preview when a file in the list starts, so two never overlap', async () => {
+    const wrapper = await mountWithFiles([
+      { id: 11, path: 'Part 01.mp3' },
+      { id: 22, path: 'Part 02.mp3' },
+    ])
+
+    await wrapper.get('.hero-preview .btn-preview').trigger('click')
+    expect(wrapper.find('.hero-preview audio').exists()).toBe(true)
+
+    const filesTab = wrapper.findAll('.tab').find((t) => t.text().includes('Files'))
+    await filesTab!.trigger('click')
+    await wrapper.findAll('.file-preview .btn-preview')[1].trigger('click')
+
+    expect(wrapper.find('.hero-preview audio').exists()).toBe(false)
+    expect(wrapper.find('.file-preview audio').exists()).toBe(true)
   })
 })
