@@ -46,14 +46,18 @@ namespace Listenarr.Infrastructure.Library.Conversion
             using var scope = scopeFactory.CreateScope();
             var queue = scope.ServiceProvider.GetRequiredService<IConversionQueueService>();
 
-            // Reclaim anything a previous process left mid-flight before looking for new
-            // work, so a restart resumes rather than stalls.
-            await queue.RecoverAbandonedJobsAsync(cancellationToken);
-
             await SweepOrphanedScratchFilesAsync(scope.ServiceProvider, queue, cancellationToken);
 
             while (!cancellationToken.IsCancellationRequested)
             {
+                // Before every claim, not once per cycle. A cycle runs until the queue is
+                // empty, so a whole library's worth of work is one cycle lasting hours -
+                // and a job stranded inside it would wait out the entire queue before
+                // anything looked at it. Checking per job bounds that to one job's
+                // duration. It is an indexed update that usually matches nothing, against
+                // an encode measured in minutes.
+                await queue.RecoverAbandonedJobsAsync(cancellationToken);
+
                 var job = await queue.ClaimNextAsync(_leaseOwner, cancellationToken);
                 if (job == null)
                 {
@@ -78,7 +82,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 cancellationToken,
                 heartbeat.Token);
 
-            var heartbeatTask = KeepLeaseAliveAsync(job.Id, queue, heartbeat, cancellationToken);
+            var heartbeatTask = KeepLeaseAliveAsync(job.Id, heartbeat, cancellationToken);
 
             try
             {
@@ -123,11 +127,12 @@ namespace Listenarr.Infrastructure.Library.Conversion
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 logger.LogError(ex, "Conversion {JobId} failed unexpectedly", job.Id);
-                await queue.FailAsync(
-                    job.Id,
-                    ConversionFailureKind.Unknown,
-                    ex.Message,
-                    CancellationToken.None);
+
+                // On a scope of its own, because what failed may be this job's own
+                // DbContext. Recording the failure through it would throw again, and the
+                // job would be left Running with nothing to move it - which is worse than
+                // the failure, since a stranded job is never retried.
+                await MarkFailedAsync(job.Id, ex.Message);
             }
             finally
             {
@@ -144,16 +149,49 @@ namespace Listenarr.Infrastructure.Library.Conversion
         }
 
         /// <summary>
+        /// Record a terminal failure through a context that has nothing to do with the
+        /// one the job was using. Best-effort: if even this cannot write, the lease still
+        /// expires and the job returns to the queue on its own.
+        /// </summary>
+        private async Task MarkFailedAsync(Guid jobId, string error)
+        {
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var queue = scope.ServiceProvider.GetRequiredService<IConversionQueueService>();
+                await queue.FailAsync(
+                    jobId,
+                    ConversionFailureKind.Unknown,
+                    error,
+                    CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogError(
+                    ex,
+                    "Could not record the failure of conversion {JobId}; its lease will expire and requeue it",
+                    jobId);
+            }
+        }
+
+        /// <summary>
         /// Renew the lease until the job finishes. Cancels <paramref name="heartbeat"/>
         /// when the lease is lost, which stops the encode rather than letting two workers
         /// write the same output.
         /// </summary>
         private async Task KeepLeaseAliveAsync(
             Guid jobId,
-            IConversionQueueService queue,
             CancellationTokenSource heartbeat,
             CancellationToken cancellationToken)
         {
+            // Its own scope, and so its own DbContext. This loop runs concurrently with
+            // the job body, and EF's context is not thread-safe: sharing one turned an
+            // ordinary overlap between a renewal and a progress report into
+            // "A second operation was started on this context instance", which failed
+            // the conversion and left the job stranded as Running.
+            using var scope = scopeFactory.CreateScope();
+            var queue = scope.ServiceProvider.GetRequiredService<IConversionQueueService>();
+
             try
             {
                 while (!heartbeat.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
