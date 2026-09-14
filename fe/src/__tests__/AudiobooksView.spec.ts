@@ -1228,3 +1228,123 @@ describe('AudiobooksView Grouping', () => {
     expect(wrapper.find('.series-bottom-placard').exists()).toBe(true)
   })
 })
+
+describe('AudiobooksView Filter Persistence', () => {
+  const SELECTED_FILTER_KEY = 'listenarr.selectedFilter'
+  const CUSTOM_FILTERS_KEY = 'listenarr.customFilters'
+
+  const mountView = async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
+      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
+        /* noop */
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+      ],
+    })
+    await router.push('/books')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 1, title: 'Watched Book', authors: ['Author A'], monitored: true, files: [] },
+      { id: 2, title: 'Ignored Book', authors: ['Author B'], monitored: false, files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'ViewOptionsDropdown',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    return wrapper
+  }
+
+  beforeEach(() => {
+    localStorage.removeItem(SELECTED_FILTER_KEY)
+    localStorage.removeItem(CUSTOM_FILTERS_KEY)
+    localStorage.removeItem('listenarr.searchQuery')
+    const pinia = createPinia()
+    setActivePinia(pinia)
+  })
+
+  it('restores a built-in filter selected in an earlier session', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'unmonitored')
+
+    const wrapper = await mountView()
+
+    expect(
+      (getVm(wrapper) as unknown as { selectedFilterId: string | null }).selectedFilterId,
+    ).toBe('unmonitored')
+    expect(wrapper.text()).toContain('Ignored Book')
+    expect(wrapper.text()).not.toContain('Watched Book')
+  })
+
+  it('restores a custom filter that still exists', async () => {
+    localStorage.setItem(
+      CUSTOM_FILTERS_KEY,
+      JSON.stringify([{ id: 'cf-1', label: 'Mine', rules: [] }]),
+    )
+    localStorage.setItem(SELECTED_FILTER_KEY, 'cf-1')
+
+    const wrapper = await mountView()
+
+    expect(
+      (getVm(wrapper) as unknown as { selectedFilterId: string | null }).selectedFilterId,
+    ).toBe('cf-1')
+  })
+
+  it('discards a stored filter whose custom filter has been deleted', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'cf-gone')
+
+    const wrapper = await mountView()
+
+    expect(
+      (getVm(wrapper) as unknown as { selectedFilterId: string | null }).selectedFilterId,
+    ).toBeNull()
+    expect(localStorage.getItem(SELECTED_FILTER_KEY)).toBeNull()
+    expect(wrapper.text()).toContain('Watched Book')
+    expect(wrapper.text()).toContain('Ignored Book')
+  })
+
+  it('persists a newly selected filter and clears it when reset', async () => {
+    const wrapper = await mountView()
+    const vm = getVm(wrapper) as unknown as { selectedFilterId: string | null }
+
+    vm.selectedFilterId = 'missing'
+    await wrapper.vm.$nextTick()
+    expect(localStorage.getItem(SELECTED_FILTER_KEY)).toBe('missing')
+
+    vm.selectedFilterId = null
+    await wrapper.vm.$nextTick()
+    expect(localStorage.getItem(SELECTED_FILTER_KEY)).toBeNull()
+  })
+})
