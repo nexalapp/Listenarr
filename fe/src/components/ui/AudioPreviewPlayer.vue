@@ -15,12 +15,20 @@
   You should have received a copy of the GNU Affero General Public License
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
+<!--
+  Plays the opening of one audio file, capped at PREVIEW_SECONDS.
+
+  The component knows nothing about where the file comes from: it is handed a URL an
+  <audio> element can load, so the import page (root-folder-scoped, addressed by path)
+  and the library (addressed by registered file id) share one player and one definition
+  of how long a preview is.
+-->
 <template>
   <div class="preview" :class="{ 'preview-open': isActive }">
     <button
       class="btn-preview"
-      :class="{ active: isActive }"
-      :disabled="!rootFolderId"
+      :class="{ active: isActive, 'has-label': !!label }"
+      :disabled="!src"
       :title="buttonTitle"
       :aria-label="buttonTitle"
       @click="toggle"
@@ -28,6 +36,7 @@
       <PhSpinner v-if="isLoading" class="ph-spin" :size="14" />
       <PhPause v-else-if="isPlaying" :size="14" weight="fill" />
       <PhPlay v-else :size="14" weight="fill" />
+      <span v-if="label" class="btn-preview-label">{{ label }}</span>
     </button>
 
     <div v-if="isActive" class="preview-bar">
@@ -63,41 +72,21 @@
   </div>
 </template>
 
-<script lang="ts">
-import { ref } from 'vue'
-
-/**
- * How much of a book the import page will play.
- *
- * The endpoint serves the whole file so the browser can seek — an M4B keeps its moov
- * atom at the end and cannot start without reading it — so this limit lives here, in
- * the player, and is a convention of this page rather than a boundary the API enforces.
- * It is enough to answer "is this the book I think it is?" without streaming a whole
- * audiobook across the network.
- */
-export const PREVIEW_SECONDS = 120
-
-/**
- * The row currently previewing.
- *
- * This lives in the plain script block rather than in <script setup>, which runs once
- * per instance: the whole point is that every row reads the same value, so starting one
- * preview stops the one already playing. Two books talking over each other tells you
- * nothing about either.
- */
-export const activePreviewId = ref<string | null>(null)
-</script>
-
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { PhPlay, PhPause, PhSpinner, PhX } from '@phosphor-icons/vue'
-import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
+import { PREVIEW_SECONDS, activePreviewId } from '@/composables/useAudioPreview'
 
 const props = defineProps<{
-  itemId: string
-  path: string
-  rootFolderId: number | null
+  /** Identifies this player among all of them; whoever is active is the one sounding. */
+  previewId: string
+  /** URL an <audio> element can load. Empty means there is nothing to play yet. */
+  src: string
+  /** Optional text beside the icon, for places with room for a worded button. */
+  label?: string
+  /** Why the button is inert, shown in its tooltip when `src` is empty. */
+  disabledTitle?: string
 }>()
 
 const toast = useToast()
@@ -107,28 +96,25 @@ const isLoading = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 
-const isActive = computed(() => activePreviewId.value === props.itemId)
-
-const src = computed(() =>
-  props.rootFolderId ? apiService.buildAudioPreviewUrl(props.rootFolderId, props.path) : '',
-)
+const isActive = computed(() => activePreviewId.value === props.previewId)
 
 // A book shorter than the preview window should not show dead space on the seek bar.
 const seekMax = computed(() =>
   duration.value > 0 ? Math.min(duration.value, PREVIEW_SECONDS) : PREVIEW_SECONDS,
 )
 
-const buttonTitle = computed(() =>
-  isActive.value ? 'Stop preview' : `Play the first ${PREVIEW_SECONDS / 60} minutes`,
-)
+const buttonTitle = computed(() => {
+  if (!props.src) return props.disabledTitle || 'Nothing to preview'
+  return isActive.value ? 'Stop preview' : `Play the first ${PREVIEW_SECONDS / 60} minutes`
+})
 
 function toggle() {
-  if (!props.rootFolderId) return
+  if (!props.src) return
 
   if (!isActive.value) {
     reset()
     isLoading.value = true
-    activePreviewId.value = props.itemId
+    activePreviewId.value = props.previewId
     return
   }
 
@@ -190,21 +176,29 @@ function formatTime(seconds: number): string {
 }
 
 function onError() {
-  const message =
-    props.rootFolderId === null
-      ? 'Select a root folder first.'
-      : 'This file could not be played. It may have moved, or the browser may not support its format.'
-  toast.error('Preview failed', message)
+  toast.error(
+    'Preview failed',
+    'This file could not be played. It may have moved, or the browser may not support its format.',
+  )
   stop()
 }
 
-// Another row taking over tears this player down; make sure it stops making noise first.
+// Another player taking over tears this one down; make sure it stops making noise first.
 watch(isActive, (active) => {
   if (!active) {
     audioEl.value?.pause()
     reset()
   }
 })
+
+// A src that changes under an open player — the hero button when the book's files are
+// reloaded — must not leave the old file playing against the new label.
+watch(
+  () => props.src,
+  () => {
+    if (isActive.value) stop()
+  },
+)
 
 // Leaving the page mid-playback must not leave audio running against a detached element.
 onBeforeUnmount(() => {
@@ -219,8 +213,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.4rem;
   vertical-align: middle;
-  /* A flex item of the row's path line: sized to the button while closed, and taking
-     the whole line once open so the seek bar has room and the path wraps beneath it. */
+  /* Sized to the button while closed, and taking the whole line once open so the seek
+     bar has room and whatever shares the line wraps beneath it. */
   flex: 0 0 auto;
 }
 
@@ -239,6 +233,12 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 0.3rem;
+}
+
+.btn-preview.has-label {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
 }
 
 .btn-preview:hover:not(:disabled) {

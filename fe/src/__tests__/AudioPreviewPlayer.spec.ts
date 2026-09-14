@@ -9,9 +9,8 @@
  */
 import { mount } from '@vue/test-utils'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import LibraryImportPreview, {
-  activePreviewId,
-} from '@/components/domain/audiobook/LibraryImportPreview.vue'
+import AudioPreviewPlayer from '@/components/ui/AudioPreviewPlayer.vue'
+import { activePreviewId } from '@/composables/useAudioPreview'
 
 // jsdom ships no media pipeline: play/pause throw, and currentTime is read-only. Stand in
 // a minimal one so the component's own limit logic is what the assertions exercise.
@@ -39,42 +38,42 @@ beforeAll(() => {
   })
 })
 
-function mountPreview(overrides: Partial<{ itemId: string; path: string; rootFolderId: number }>) {
-  return mount(LibraryImportPreview, {
+function mountPreview(
+  overrides: Partial<{ previewId: string; src: string; label: string; disabledTitle: string }>,
+) {
+  return mount(AudioPreviewPlayer, {
     props: {
-      itemId: 'row-1',
-      path: '/books/Alpha/book.m4b',
-      rootFolderId: 3,
+      previewId: 'row-1',
+      src: '/api/v1/rootfolders/3/audio-preview?path=%2Fbooks%2FAlpha%2Fbook.m4b',
       ...overrides,
     },
     attachTo: document.body,
   })
 }
 
-describe('LibraryImportPreview', () => {
+describe('AudioPreviewPlayer', () => {
   // Which row is playing is deliberately shared across every instance, so it outlives a
   // single mount and has to be cleared between cases.
   beforeEach(() => {
     activePreviewId.value = null
   })
 
-  it('is inert until a root folder is chosen, because the URL is scoped to one', () => {
-    const wrapper = mountPreview({ rootFolderId: null as unknown as number })
+  it('is inert with nothing to play, and says why', () => {
+    const wrapper = mountPreview({ src: '', disabledTitle: 'Select a root folder first' })
 
     expect(wrapper.get('.btn-preview').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.btn-preview').attributes('title')).toBe('Select a root folder first')
     expect(wrapper.find('audio').exists()).toBe(false)
   })
 
-  it('loads the file through the root-scoped preview endpoint when played', async () => {
+  it('loads the URL it was handed when played', async () => {
     const wrapper = mountPreview({})
 
     await wrapper.get('.btn-preview').trigger('click')
 
-    const src = wrapper.get('audio').attributes('src') ?? ''
-    expect(src).toContain('/rootfolders/3/audio-preview')
-    // The path is a query value, so it has to survive the spaces and slashes a book
-    // folder carries.
-    expect(src).toContain(`path=${encodeURIComponent('/books/Alpha/book.m4b')}`)
+    expect(wrapper.get('audio').attributes('src')).toBe(
+      '/api/v1/rootfolders/3/audio-preview?path=%2Fbooks%2FAlpha%2Fbook.m4b',
+    )
   })
 
   it('stops at the two-minute mark rather than playing on into the book', async () => {
@@ -117,8 +116,8 @@ describe('LibraryImportPreview', () => {
   })
 
   it('stops the playing row when another row starts, so two books never overlap', async () => {
-    const first = mountPreview({ itemId: 'row-1' })
-    const second = mountPreview({ itemId: 'row-2', path: '/books/Beta/book.mp3' })
+    const first = mountPreview({ previewId: 'row-1' })
+    const second = mountPreview({ previewId: 'row-2', src: '/api/v1/tagging/files/9/audio' })
 
     await first.get('.btn-preview').trigger('click')
     expect(first.find('audio').exists()).toBe(true)
@@ -127,6 +126,17 @@ describe('LibraryImportPreview', () => {
 
     expect(second.find('audio').exists()).toBe(true)
     expect(first.find('audio').exists()).toBe(false)
+  })
+
+  it('stops when the file underneath it changes, so the label never lies', async () => {
+    const wrapper = mountPreview({})
+    await wrapper.get('.btn-preview').trigger('click')
+    expect(wrapper.find('audio').exists()).toBe(true)
+
+    await wrapper.setProps({ src: '/api/v1/tagging/files/9/audio' })
+
+    expect(wrapper.find('audio').exists()).toBe(false)
+    expect(activePreviewId.value).toBeNull()
   })
 
   it('tears the player down when the preview is closed', async () => {

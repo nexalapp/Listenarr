@@ -201,6 +201,13 @@
               <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
               {{ audiobook.monitored ? 'Monitored' : 'Not Monitored' }}
             </Pill>
+            <AudioPreviewPlayer
+              class="hero-preview"
+              :preview-id="`book-${audiobook.id}`"
+              :src="firstPlayableFile ? filePreviewSrc(firstPlayableFile.id) : ''"
+              label="Preview"
+              disabled-title="This book has no files to play yet"
+            />
             <div class="detail-item" v-if="displayBasePath">
               <PhFolder />
               <span class="file-path">{{ displayBasePath }}</span>
@@ -486,6 +493,13 @@
           >
             <div class="file-header" @click="toggleFileAccordion(f.id)">
               <div class="file-info">
+                <!-- The player owns its own clicks; the row around it opens the accordion. -->
+                <AudioPreviewPlayer
+                  class="file-preview"
+                  :preview-id="`file-${f.id}`"
+                  :src="filePreviewSrc(f.id)"
+                  @click.stop
+                />
                 <PhFileAudio />
                 <span class="file-name">{{ getFileName(f.path) }}</span>
                 <small class="file-meta"
@@ -777,6 +791,7 @@ import AudiobookTagsPanel from '@/components/domain/tagging/AudiobookTagsPanel.v
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
+import AudioPreviewPlayer from '@/components/ui/AudioPreviewPlayer.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { Pill } from '@/components/base'
 import {
@@ -866,6 +881,36 @@ const fileFormats = computed(() => {
   }
 
   return Array.from(found).sort()
+})
+
+/**
+ * A registered file, played by id.
+ *
+ * By id rather than by path: the root-folder preview the import page uses has to prove a
+ * client-supplied path canonicalizes inside the folder before it will open it, and this
+ * page never names a file — it names a row the scanner registered.
+ */
+function filePreviewSrc(fileId: number): string {
+  return apiService.buildLibraryFileAudioUrl(fileId)
+}
+
+/**
+ * The file the book opens with, for the preview button in the header.
+ *
+ * Ordered by filename the way the converter orders parts, so "the first two minutes"
+ * means the start of the book and not whichever row the API happened to return first.
+ * A single merged file is the common case here and sorts to itself.
+ */
+const firstPlayableFile = computed(() => {
+  const files = (audiobook.value?.files || []).filter((f) => !!f.path)
+  if (files.length === 0) return null
+
+  return files.slice().sort((a, b) =>
+    getFileName(a.path).localeCompare(getFileName(b.path), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    }),
+  )[0]
 })
 
 /**
@@ -2737,6 +2782,26 @@ function formatDate(dateString?: string): string {
   white-space: nowrap;
 }
 
+/*
+ * The preview button shares this row with the detail boxes and the pills, so it takes
+ * their metrics too. Keep in step with .detail-item above.
+ */
+.hero-preview :deep(.btn-preview.has-label) {
+  padding: 10px 14px;
+  border-radius: 6px;
+  border-color: rgba(255, 255, 255, 0.12);
+  background-color: rgba(255, 255, 255, 0.05);
+  font-size: 14px;
+  gap: 10px;
+}
+
+/* Open, it takes the width the seek bar needs rather than the whole row, so the pills
+   beside it keep their line. */
+.hero-preview.preview-open {
+  flex: 0 1 24rem;
+  align-items: center;
+}
+
 .detail-item i {
   color: var(--brand-500);
 }
@@ -3250,6 +3315,9 @@ a.identifier-link:hover {
   gap: 12px;
   color: #fff;
   flex: 1;
+  /* The open player takes the line, so the name wraps beneath it rather than being
+     squeezed out of the row. */
+  flex-wrap: wrap;
 }
 
 .file-info i {

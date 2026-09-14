@@ -1169,9 +1169,35 @@ function handleSaveCustomFilterFromModal(f: CustomFilter) {
   showCustomFilterModal.value = false
 }
 
+// The filter selection is remembered across reloads, like the search text and the layout
+// choice. A stored custom-filter id is only honoured while that filter still exists —
+// deleting a filter must not leave the list quietly filtered by something unnamed.
+const SELECTED_FILTER_KEY = 'listenarr.selectedFilter'
+const BUILT_IN_FILTER_IDS = ['monitored', 'unmonitored', 'missing', 'recent']
+
+function loadSelectedFilter() {
+  try {
+    const stored = localStorage.getItem(SELECTED_FILTER_KEY)
+    if (!stored) return
+    const known =
+      BUILT_IN_FILTER_IDS.includes(stored) ||
+      (customFilters.value || []).some((f) => f.id === stored)
+    if (known) selectedFilterId.value = stored
+    else localStorage.removeItem(SELECTED_FILTER_KEY)
+  } catch {}
+}
+
+watch(selectedFilterId, (v) => {
+  try {
+    if (v) localStorage.setItem(SELECTED_FILTER_KEY, v)
+    else localStorage.removeItem(SELECTED_FILTER_KEY)
+  } catch {}
+})
+
 // load on mount
 try {
   loadCustomFilters()
+  loadSelectedFilter()
 } catch {}
 
 // sortOrder toggled via sortKeyProxy when selecting same key; explicit toggle removed
