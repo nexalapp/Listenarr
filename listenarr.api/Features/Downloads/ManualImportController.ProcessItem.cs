@@ -77,8 +77,16 @@ public partial class ManualImportController
                         sourceDirectory,
                         sourceSemantics))
                 {
+                    // This is the most common way an in-place import fails, and it used
+                    // to return silently - leaving "check logs" pointing at logs that
+                    // said nothing about it.
+                    _logger.LogWarning(
+                        "Rejected in-place import for audiobook {AudiobookId}: its library folder {BasePath} is not the folder the file is in ({SourceDirectory}).",
+                        audiobook.Id,
+                        LogRedaction.SanitizeFilePath(audiobook.BasePath),
+                        LogRedaction.SanitizeFilePath(sourceDirectory));
                     return ManualImportResultDto.FailureResult(
-                        "The selected existing-file folder does not match the audiobook library folder.",
+                        $"This file is in {sourceDirectory}, but \"{audiobook.Title}\" is already in the library at {audiobook.BasePath}. Tick \"Separate book\" to add it as its own record, or choose Move/Copy to place the file into that folder.",
                         item.FullPath);
                 }
 
