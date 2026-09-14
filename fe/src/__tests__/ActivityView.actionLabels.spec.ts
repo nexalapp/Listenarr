@@ -17,13 +17,17 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { reactive } from 'vue'
 
+let fetchLibraryMock: ReturnType<typeof vi.fn>
 let moveJobsStore: Record<string, unknown>
 let conversionJobsStore: Record<string, unknown>
 let tagJobsStore: Record<string, unknown>
 
 const mountWith = async (options: {
   audiobooks?: Array<{ id: number; title: string }>
+  lateAudiobooks?: Array<{ id: number; title: string }>
+  failLibraryFetch?: boolean
   moveJobs?: unknown[]
   conversionJobs?: unknown[]
   tagJobs?: unknown[]
@@ -46,8 +50,21 @@ const mountWith = async (options: {
       loadApplicationSettings: vi.fn(async () => undefined),
     }),
   }))
+  // Reactive, because the real store's list is a ref: a row only picks up a book the
+  // fetch added if the title map recomputes.
+  const libraryState = reactive({ audiobooks: options.audiobooks ?? [] })
+  fetchLibraryMock = vi.fn(async () => {
+    if (options.failLibraryFetch) throw new Error('library unavailable')
+    // Stands in for the real fetch populating the store, so a row can find its book.
+    libraryState.audiobooks.push(...(options.lateAudiobooks ?? []))
+  })
   vi.doMock('@/stores/library', () => ({
-    useLibraryStore: () => ({ audiobooks: options.audiobooks ?? [] }),
+    useLibraryStore: () => ({
+      get audiobooks() {
+        return libraryState.audiobooks
+      },
+      fetchLibrary: fetchLibraryMock,
+    }),
   }))
 
   moveJobsStore = { trackedJobs: options.moveJobs ?? [], start: vi.fn() }
@@ -230,5 +247,75 @@ describe('ActivityView action labels', () => {
     vm.filterText = 'convert'
     await wrapper.vm.$nextTick()
     expect(vm.filteredQueue).toHaveLength(1)
+  })
+})
+
+describe('ActivityView row titles', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    vi.spyOn(globalThis, 'setInterval').mockReturnValue(
+      1 as unknown as ReturnType<typeof setInterval>,
+    )
+    vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const runningConversion = {
+    jobId: 'c1',
+    audiobookId: 267,
+    status: 'Running',
+    phase: 'Encoding',
+    progress: 42,
+    sourceFileCount: 1,
+  }
+
+  it('loads the library so a row can name its book, since Activity is reachable directly', async () => {
+    const wrapper = await mountWith({
+      audiobooks: [],
+      lateAudiobooks: [{ id: 267, title: 'Blackout' }],
+      conversionJobs: [runningConversion],
+    })
+
+    expect(fetchLibraryMock).toHaveBeenCalled()
+    expect(wrapper.find('.queue-row').text()).toContain('Blackout')
+  })
+
+  it('does not refetch a library that is already loaded', async () => {
+    await mountWith({
+      audiobooks: [{ id: 267, title: 'Blackout' }],
+      conversionJobs: [runningConversion],
+    })
+
+    expect(fetchLibraryMock).not.toHaveBeenCalled()
+  })
+
+  it('names the book rather than repeating the action already in the badge below', async () => {
+    // The book is gone from the library, so the row has to fall back. The old fallback
+    // was the action name, which read "Convert to M4B" directly above a badge saying
+    // "Convert to M4B" - naming neither the book nor which row this was.
+    const wrapper = await mountWith({
+      audiobooks: [],
+      conversionJobs: [runningConversion],
+    })
+
+    const row = wrapper.find('.queue-row')
+    expect(row.find('.title-link').text()).toBe('Audiobook #267')
+    expect(row.find('.action-label').text()).toBe('Convert to M4B')
+  })
+
+  it('still renders its rows when the library cannot be loaded', async () => {
+    const wrapper = await mountWith({
+      audiobooks: [],
+      failLibraryFetch: true,
+      conversionJobs: [runningConversion],
+    })
+
+    // A row falling back to its id is a worse label, not a broken page.
+    expect(wrapper.find('.queue-row').exists()).toBe(true)
+    expect(wrapper.find('.title-link').text()).toBe('Audiobook #267')
   })
 })

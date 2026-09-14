@@ -46,16 +46,17 @@ namespace Listenarr.Infrastructure.Library.Tagging
             using var scope = scopeFactory.CreateScope();
             var queue = scope.ServiceProvider.GetRequiredService<ITagQueueService>();
 
-            // Reclaim anything a previous process left mid-flight before looking for new
-            // work, so a restart resumes rather than stalls. This matters more here than
-            // for a conversion: an interrupted job may have removed a library file and be
-            // holding its only replacement.
-            await queue.RecoverAbandonedJobsAsync(cancellationToken);
-
             await SweepOrphanedScratchFilesAsync(scope.ServiceProvider, queue, cancellationToken);
 
             while (!cancellationToken.IsCancellationRequested)
             {
+                // Before every claim, not once per cycle. A cycle runs until the queue is
+                // empty, so a long run is one cycle lasting hours, and a job stranded
+                // inside it would wait out the whole queue before anything looked at it.
+                // This matters more here than for a conversion: an interrupted job may
+                // have removed a library file and be holding its only replacement.
+                await queue.RecoverAbandonedJobsAsync(cancellationToken);
+
                 var job = await queue.ClaimNextAsync(_leaseOwner, cancellationToken);
                 if (job == null)
                 {
@@ -80,7 +81,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 cancellationToken,
                 heartbeat.Token);
 
-            var heartbeatTask = KeepLeaseAliveAsync(job.Id, queue, heartbeat, cancellationToken);
+            var heartbeatTask = KeepLeaseAliveAsync(job.Id, heartbeat, cancellationToken);
 
             try
             {
@@ -118,11 +119,12 @@ namespace Listenarr.Infrastructure.Library.Tagging
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 logger.LogError(ex, "Tag write {JobId} failed unexpectedly", job.Id);
-                await queue.FailAsync(
-                    job.Id,
-                    TagWriteFailureKind.Unknown,
-                    ex.Message,
-                    CancellationToken.None);
+
+                // On a scope of its own, because what failed may be this job's own
+                // DbContext. Recording the failure through it would throw again, leaving
+                // the job Running with nothing to move it - worse than the failure, since
+                // a stranded job is never retried.
+                await MarkFailedAsync(job.Id, ex.Message);
             }
             finally
             {
@@ -143,12 +145,45 @@ namespace Listenarr.Infrastructure.Library.Tagging
         /// when the lease is lost, which stops the rewrite rather than letting two workers
         /// replace the same library file.
         /// </summary>
+        /// <summary>
+        /// Record a terminal failure through a context that has nothing to do with the
+        /// one the job was using. Best-effort: if even this cannot write, the lease still
+        /// expires and the job returns to the queue on its own.
+        /// </summary>
+        private async Task MarkFailedAsync(Guid jobId, string error)
+        {
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var queue = scope.ServiceProvider.GetRequiredService<ITagQueueService>();
+                await queue.FailAsync(
+                    jobId,
+                    TagWriteFailureKind.Unknown,
+                    error,
+                    CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogError(
+                    ex,
+                    "Could not record the failure of tag write {JobId}; its lease will expire and requeue it",
+                    jobId);
+            }
+        }
+
         private async Task KeepLeaseAliveAsync(
             Guid jobId,
-            ITagQueueService queue,
             CancellationTokenSource heartbeat,
             CancellationToken cancellationToken)
         {
+            // Its own scope, and so its own DbContext. This loop runs concurrently with
+            // the job body, and EF's context is not thread-safe: sharing one turned an
+            // ordinary overlap between a renewal and a progress report into
+            // "A second operation was started on this context instance", which failed
+            // the job and left it stranded as Running.
+            using var scope = scopeFactory.CreateScope();
+            var queue = scope.ServiceProvider.GetRequiredService<ITagQueueService>();
+
             try
             {
                 while (!heartbeat.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
