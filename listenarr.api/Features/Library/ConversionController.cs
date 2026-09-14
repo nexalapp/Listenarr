@@ -28,7 +28,7 @@ namespace Listenarr.Api.Features.Library
     [ApiController]
     [Route("api/v{version:apiVersion}/conversion")]
     [Tags("Library")]
-    public sealed class ConversionController(
+    public sealed partial class ConversionController(
         IConversionQueueService conversionQueue,
         ILogger<ConversionController> logger) : ControllerBase
     {
