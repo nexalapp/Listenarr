@@ -180,6 +180,7 @@ const importButtonLabel = computed(() => {
 })
 
 const MAX_REPORTED_IMPORT_ERRORS = 5
+const IMPORT_ERROR_TOAST_MS = 30000
 
 async function handleImport() {
   if (isImporting.value || store.selectedCount === 0 || !filesystemReadinessStore.filesystemReady) {
@@ -209,7 +210,9 @@ async function handleImport() {
           : `${errors.slice(0, MAX_REPORTED_IMPORT_ERRORS).join('\n')}\n...and ${
               errors.length - MAX_REPORTED_IMPORT_ERRORS
             } more`
-      toast.error('Import errors', `${heading}\n${detail}`)
+      // Five seconds is enough to read "check logs" and nowhere near enough to read
+      // several sentences explaining what went wrong with which book.
+      toast.error('Import errors', `${heading}\n${detail}`, IMPORT_ERROR_TOAST_MS)
     }
 
     if (warnings.length > 0) {

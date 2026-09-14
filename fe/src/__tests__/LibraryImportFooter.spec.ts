@@ -197,4 +197,123 @@ describe('LibraryImportFooter', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="move-policy-warning"]').exists()).toBe(false)
   })
+  it('reports the reasons an import failed, with time enough to read them', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryImportStore()
+    useFilesystemReadinessStore().readiness = {
+      isReady: true,
+      status: 'ready',
+      databaseConnected: true,
+      migrationsCurrent: true,
+      errorCode: null,
+      filesystemReady: true,
+      filesystemStatus: 'Ready',
+      filesystemPhase: null,
+      filesystemErrorCode: null,
+      filesystemErrorMessage: null,
+    }
+
+    store.items = {
+      'C:\\incoming\\Book 1.mp3': {
+        id: 'C:\\incoming\\Book 1.mp3',
+        fullPath: 'C:\\incoming\\Book 1.mp3',
+        sourceFiles: ['C:\\incoming\\Book 1.mp3'],
+        folderPath: 'C:\\incoming',
+        relativePath: 'Book 1',
+        folderName: 'Book 1',
+        format: 'MP3',
+        fileCount: 1,
+        selectedMatch: { title: 'Book 1', authors: [] } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+
+    const reasons = [
+      'Book 1: This file is in C:\\incoming, but "Book 1" is already in the library at D:\\library\\Book 1.',
+      'Book 2: Source file not found',
+    ]
+    vi.spyOn(store, 'importSelected').mockResolvedValue({ imported: 0, errors: reasons })
+
+    const wrapper = mount(LibraryImportFooter, {
+      props: {
+        folders: [{ id: 1, path: 'D:\\library' }] as unknown as RootFolder[],
+      },
+      global: { plugins: [pinia] },
+    })
+
+    await wrapper.find('button.btn.btn-primary').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(error).toHaveBeenCalledTimes(1)
+    const [title, message, timeoutMs] = error.mock.calls[0] as [string, string, number]
+    expect(title).toBe('Import errors')
+    // The reasons themselves, not a count pointing at the logs.
+    expect(message).toContain('2 items failed')
+    for (const reason of reasons) {
+      expect(message).toContain(reason)
+    }
+    // One reason per line; the stylesheet renders these because .toast-message sets
+    // white-space: pre-line. Collapsed, they are an unreadable paragraph.
+    expect(message.split('\n')).toHaveLength(3)
+    // Long enough to actually read several sentences.
+    expect(timeoutMs).toBeGreaterThanOrEqual(15000)
+  })
+
+  it('falls back to a count once there are more failures than fit in a toast', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryImportStore()
+    useFilesystemReadinessStore().readiness = {
+      isReady: true,
+      status: 'ready',
+      databaseConnected: true,
+      migrationsCurrent: true,
+      errorCode: null,
+      filesystemReady: true,
+      filesystemStatus: 'Ready',
+      filesystemPhase: null,
+      filesystemErrorCode: null,
+      filesystemErrorMessage: null,
+    }
+
+    store.items = {
+      'C:\\incoming\\Book 1.mp3': {
+        id: 'C:\\incoming\\Book 1.mp3',
+        fullPath: 'C:\\incoming\\Book 1.mp3',
+        sourceFiles: ['C:\\incoming\\Book 1.mp3'],
+        folderPath: 'C:\\incoming',
+        relativePath: 'Book 1',
+        folderName: 'Book 1',
+        format: 'MP3',
+        fileCount: 1,
+        selectedMatch: { title: 'Book 1', authors: [] } as unknown as SearchResult,
+        hasSearched: true,
+        isSearching: false,
+        selected: true,
+      },
+    }
+
+    const reasons = Array.from({ length: 7 }, (_, index) => `Book ${index + 1}: failed`)
+    vi.spyOn(store, 'importSelected').mockResolvedValue({ imported: 0, errors: reasons })
+
+    const wrapper = mount(LibraryImportFooter, {
+      props: {
+        folders: [{ id: 1, path: 'D:\\library' }] as unknown as RootFolder[],
+      },
+      global: { plugins: [pinia] },
+    })
+
+    await wrapper.find('button.btn.btn-primary').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    const message = (error.mock.calls[0] as [string, string, number])[1]
+    expect(message).toContain('Book 5: failed')
+    expect(message).not.toContain('Book 6: failed')
+    expect(message).toContain('...and 2 more')
+  })
 })

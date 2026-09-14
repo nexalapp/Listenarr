@@ -44,6 +44,10 @@
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.9);
   word-break: break-word;
+  /* A message that lists several reasons separates them with newlines. HTML would
+     otherwise collapse those into one run-on paragraph, which is exactly what made
+     the reasons unreadable in a 420px toast. */
+  white-space: pre-line;
 }
 .global-toast .toast-close {
   background: transparent;

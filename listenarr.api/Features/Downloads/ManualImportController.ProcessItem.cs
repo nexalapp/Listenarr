@@ -83,8 +83,8 @@ public partial class ManualImportController
                     _logger.LogWarning(
                         "Rejected in-place import for audiobook {AudiobookId}: its library folder {BasePath} is not the folder the file is in ({SourceDirectory}).",
                         audiobook.Id,
-                        LogRedaction.SanitizeFilePath(audiobook.BasePath),
-                        LogRedaction.SanitizeFilePath(sourceDirectory));
+                        LogRedaction.SanitizeDirectoryPath(audiobook.BasePath),
+                        LogRedaction.SanitizeDirectoryPath(sourceDirectory));
                     return ManualImportResultDto.FailureResult(
                         $"This file is in {sourceDirectory}, but \"{audiobook.Title}\" is already in the library at {audiobook.BasePath}. Tick \"Separate book\" to add it as its own record, or choose Move/Copy to place the file into that folder.",
                         item.FullPath);
