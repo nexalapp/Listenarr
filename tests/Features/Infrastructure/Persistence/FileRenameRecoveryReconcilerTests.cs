@@ -185,6 +185,13 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
             SourcePath = scenario.Source,
             DestinationPath = scenario.Destination,
             SourcePhysicalObjectIdentity = scenario.SourceIdentity,
+            // Every journal a real move writes records the source length - all 349 on a
+            // live install carry one - and adoption is proved against it. Seeding without
+            // it described a shape that does not occur, and left the repair with nothing
+            // to check but a name.
+            SourceLength = new FileInfo(scenario.Destination).Exists
+                ? new FileInfo(scenario.Destination).Length
+                : new FileInfo(scenario.Source).Length,
             AudiobookId = scenario.AudiobookId,
             AudiobookFileId = scenario.FileId,
             State = FileMutationJournalState.NeedsAttention,

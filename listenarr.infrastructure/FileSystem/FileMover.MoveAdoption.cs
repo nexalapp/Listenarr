@@ -177,9 +177,12 @@ public partial class FileMover
             return false;
         }
 
-        // Without recorded bytes there is nothing to prove adoption against, and guessing
-        // is what this method exists to avoid.
-        if (journal.SourceLength <= 0 || string.IsNullOrWhiteSpace(journal.SourceSha256))
+        // A length is always recorded and is the floor: without it there is nothing to
+        // prove adoption against, and guessing is what this method exists to avoid. A
+        // hash is not always recorded - a hardlink does not capture one up front, and
+        // older journals predate it - so it strengthens the proof when present rather
+        // than gating it. Requiring one would refuse legitimate repairs.
+        if (journal.SourceLength <= 0)
         {
             return false;
         }
@@ -197,6 +200,14 @@ public partial class FileMover
             if (stream.Length != journal.SourceLength)
             {
                 return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(journal.SourceSha256))
+            {
+                // Length alone. Weaker, but it is the whole of the evidence recorded for
+                // this move, and it still rejects the replacement-by-a-different-file
+                // case whenever the sizes differ.
+                return true;
             }
 
             stream.Position = 0;
