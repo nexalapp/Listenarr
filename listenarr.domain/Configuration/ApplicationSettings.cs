@@ -125,6 +125,19 @@ namespace Listenarr.Domain.Configuration
         // Whether to show completed downloads from external clients in the Activity view
         public bool ShowCompletedExternalDownloads { get; set; } = false;
 
+        /// <summary>
+        /// The books page's saved custom filters, as the JSON array the UI defines them in.
+        ///
+        /// Here rather than in the browser because a filter someone builds on one machine
+        /// is invisible on the next one otherwise - localStorage is per-browser, so the
+        /// same library showed a different set of filters on a laptop and a desktop.
+        ///
+        /// Stored as opaque JSON on purpose: the rule grammar belongs to the filter
+        /// editor, which is free to change it without a migration here. The server never
+        /// interprets it - it only has to hand back what it was given.
+        /// </summary>
+        public string LibraryCustomFiltersJson { get; set; } = "[]";
+
         // Number of days to retain action history. Zero keeps history indefinitely.
         public int HistoryRetentionDays { get; set; } = 0;
 

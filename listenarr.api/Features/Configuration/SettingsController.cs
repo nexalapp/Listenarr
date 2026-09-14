@@ -115,6 +115,40 @@ namespace Listenarr.Api.Features.Configuration
             }
         }
 
+        /// <summary>
+        /// Replace the books page's saved custom filters.
+        /// </summary>
+        /// <remarks>
+        /// Narrow on purpose. Saving these through the settings endpoint would mean
+        /// sending the whole settings object, which carries an optimistic-concurrency
+        /// version - so creating a filter would be rejected whenever anything else had
+        /// touched settings since the page loaded. A filter is a UI preference and has no
+        /// business conflicting with unrelated configuration.
+        /// <para>
+        /// The body is stored as given and never interpreted here; the rule grammar
+        /// belongs to the filter editor. It must be a JSON array, which is the one thing
+        /// worth refusing - anything else would come back as filters the page cannot read.
+        /// </para>
+        /// </remarks>
+        /// <response code="200">The filters were saved.</response>
+        /// <response code="400">The body was not a JSON array.</response>
+        [Tags("Settings")]
+        [HttpPost("library-filters")]
+        public async Task<IActionResult> SaveLibraryCustomFilters(
+            [FromBody] JsonElement filters)
+        {
+            if (filters.ValueKind != JsonValueKind.Array)
+            {
+                return BadRequest(new { message = "Filters must be a JSON array." });
+            }
+
+            var settings = await _configurationService.GetApplicationSettingsAsync();
+            settings.LibraryCustomFiltersJson = filters.GetRawText();
+            await _configurationService.SaveApplicationSettingsAsync(settings);
+
+            return Ok(new { saved = true });
+        }
+
         private static ApplicationSettings PrepareApplicationSettingsResponse(ApplicationSettings settings)
         {
             var clone = JsonSerializer.Deserialize<ApplicationSettings>(JsonSerializer.Serialize(settings))

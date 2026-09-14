@@ -24,6 +24,8 @@ import { useLibraryStore } from '@/stores/library'
 // apiService stubbed in vi.mock below if needed
 
 const convertAudiobooksBulkMock = vi.fn()
+const saveLibraryCustomFiltersMock = vi.fn(async () => ({ saved: true }))
+const getApplicationSettingsMock = vi.fn(async () => ({}) as Record<string, unknown>)
 const successToast = vi.fn()
 const warningToast = vi.fn()
 const errorToast = vi.fn()
@@ -35,7 +37,9 @@ vi.mock('@/services/api', () => ({
     getImageUrl: vi.fn((url: string) => url || 'https://via.placeholder.com/300x450?text=No+Image'),
     getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
-    getApplicationSettings: vi.fn(async () => ({})),
+    getApplicationSettings: (...args: unknown[]) => getApplicationSettingsMock(...args),
+    saveLibraryCustomFilters: (...args: unknown[]) =>
+      saveLibraryCustomFiltersMock(...(args as [unknown[]])),
     convertAudiobooksBulk: (...args: unknown[]) =>
       convertAudiobooksBulkMock(...(args as [number[]])),
     getConversionJobs: vi.fn(async () => []),
@@ -1535,5 +1539,144 @@ describe('AudiobooksView Bulk Conversion', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(useLibraryStore().selectedIds.size).toBe(2)
+  })
+})
+
+describe('AudiobooksView Filter Storage', () => {
+  const CUSTOM_FILTERS_KEY = 'listenarr.customFilters'
+  const SELECTED_FILTER_KEY = 'listenarr.selectedFilter'
+  const aFilter = (id: string, label: string) => ({ id, label, rules: [] })
+
+  const mountView = async () => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
+      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
+        /* noop */
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+      ],
+    })
+    await router.push('/books')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [] as unknown as import('@/types').Audiobook[]
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'ViewOptionsDropdown',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    return wrapper
+  }
+
+  const filtersOf = (wrapper: ReturnType<typeof mount>) =>
+    (wrapper.vm as unknown as { customFilters: Array<{ id: string }> }).customFilters
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    saveLibraryCustomFiltersMock.mockResolvedValue({ saved: true })
+    getApplicationSettingsMock.mockResolvedValue({})
+    const pinia = createPinia()
+    setActivePinia(pinia)
+  })
+
+  it('reads its filters from the server, so every machine shows the same ones', async () => {
+    getApplicationSettingsMock.mockResolvedValue({
+      libraryCustomFiltersJson: JSON.stringify([aFilter('srv-1', 'Shared')]),
+    })
+
+    const wrapper = await mountView()
+
+    expect(filtersOf(wrapper).map((f) => f.id)).toEqual(['srv-1'])
+  })
+
+  it('adopts filters left in the browser by an older version and hands them to the server', async () => {
+    localStorage.setItem(CUSTOM_FILTERS_KEY, JSON.stringify([aFilter('local-1', 'Mine')]))
+
+    const wrapper = await mountView()
+
+    expect(saveLibraryCustomFiltersMock).toHaveBeenCalledWith([aFilter('local-1', 'Mine')])
+    expect(filtersOf(wrapper).map((f) => f.id)).toEqual(['local-1'])
+    // Once the server holds them the browser copy is only a source of stale duplicates.
+    expect(localStorage.getItem(CUSTOM_FILTERS_KEY)).toBeNull()
+  })
+
+  it("does not let a second machine's stale copy overwrite the shared set", async () => {
+    getApplicationSettingsMock.mockResolvedValue({
+      libraryCustomFiltersJson: JSON.stringify([aFilter('srv-1', 'Shared')]),
+    })
+    localStorage.setItem(CUSTOM_FILTERS_KEY, JSON.stringify([aFilter('stale-1', 'Old')]))
+
+    const wrapper = await mountView()
+
+    expect(saveLibraryCustomFiltersMock).not.toHaveBeenCalled()
+    expect(filtersOf(wrapper).map((f) => f.id)).toEqual(['srv-1'])
+    expect(localStorage.getItem(CUSTOM_FILTERS_KEY)).toBeNull()
+  })
+
+  it('keeps the browser copy when the migration cannot reach the server', async () => {
+    localStorage.setItem(CUSTOM_FILTERS_KEY, JSON.stringify([aFilter('local-1', 'Mine')]))
+    saveLibraryCustomFiltersMock.mockRejectedValue(new Error('offline'))
+
+    const wrapper = await mountView()
+
+    // It is the only copy that exists; the next load retries.
+    expect(localStorage.getItem(CUSTOM_FILTERS_KEY)).not.toBeNull()
+    expect(filtersOf(wrapper).map((f) => f.id)).toEqual(['local-1'])
+  })
+
+  it('honours a stored selection naming a filter the server returned', async () => {
+    getApplicationSettingsMock.mockResolvedValue({
+      libraryCustomFiltersJson: JSON.stringify([aFilter('srv-1', 'Shared')]),
+    })
+    localStorage.setItem(SELECTED_FILTER_KEY, 'srv-1')
+
+    const wrapper = await mountView()
+
+    expect((wrapper.vm as unknown as { selectedFilterId: string | null }).selectedFilterId).toBe(
+      'srv-1',
+    )
+  })
+
+  it('survives a filters column that is empty or not valid JSON', async () => {
+    getApplicationSettingsMock.mockResolvedValue({ libraryCustomFiltersJson: '' })
+    expect(filtersOf(await mountView())).toEqual([])
+
+    getApplicationSettingsMock.mockResolvedValue({ libraryCustomFiltersJson: 'not json' })
+    expect(filtersOf(await mountView())).toEqual([])
+
+    getApplicationSettingsMock.mockResolvedValue({ libraryCustomFiltersJson: '{"not":"array"}' })
+    expect(filtersOf(await mountView())).toEqual([])
   })
 })

@@ -106,6 +106,11 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 );
             builder.Property(e => e.TagMappings)
                 .Metadata.SetValueComparer(TagMappingListComparer());
+
+            // An empty JSON array, not an empty string: rows that predate this column are
+            // read straight back into the books page, and "" is not something it can parse.
+            builder.Property(e => e.LibraryCustomFiltersJson)
+                .HasDefaultValue("[]");
         }
     }
 }
