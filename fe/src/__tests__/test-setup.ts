@@ -180,6 +180,7 @@ vi.mock('@/services/api', () => {
       (rootFolderId: number, path: string) =>
         `/api/v1/rootfolders/${rootFolderId}/audio-preview?path=${encodeURIComponent(path)}`,
     ),
+    buildLibraryFileAudioUrl: vi.fn((fileId: number) => `/api/v1/tagging/files/${fileId}/audio`),
 
     // add checkVolume to apiService so components that call `apiService.checkVolume` in
     // unit tests have a sensible default value that matches the real API signature.

@@ -50,10 +50,10 @@
 
     <td class="cell-file-path" data-label="Path">
       <div class="file-path-line">
-        <LibraryImportPreview
-          :item-id="item.id"
-          :path="item.fullPath"
-          :root-folder-id="store.rootFolderId"
+        <AudioPreviewPlayer
+          :preview-id="`import-${item.id}`"
+          :src="previewSrc"
+          disabled-title="Select a root folder first"
         />
         <span class="file-path" :title="item.fullPath">{{ item.fullPath }}</span>
       </div>
@@ -141,7 +141,9 @@
             type="checkbox"
             :checked="item.importAsSeparateBook === true"
             data-cy="import-as-separate-book"
-            @change="store.setImportAsSeparateBook(item.id, ($event.target as HTMLInputElement).checked)"
+            @change="
+              store.setImportAsSeparateBook(item.id, ($event.target as HTMLInputElement).checked)
+            "
           />
           <span>Separate book</span>
         </label>
@@ -188,17 +190,26 @@ import {
   PhFileAudio,
 } from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
+import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import type { LibraryImportItem } from '@/stores/libraryImport'
 import type { SearchResult } from '@/types'
 import LibraryImportSearchModal from './LibraryImportSearchModal.vue'
-import LibraryImportPreview from './LibraryImportPreview.vue'
+import AudioPreviewPlayer from '@/components/ui/AudioPreviewPlayer.vue'
 
 const props = defineProps<{ item: LibraryImportItem }>()
 
 const store = useLibraryImportStore()
 const toast = useToast()
 const showSearchModal = ref(false)
+
+// The preview endpoint is scoped to a root folder, so there is nothing to play until one
+// is chosen; an empty URL is what leaves the player's button inert.
+const previewSrc = computed(() =>
+  store.rootFolderId
+    ? apiService.buildAudioPreviewUrl(store.rootFolderId, props.item.fullPath)
+    : '',
+)
 
 const bookDisplayTitle = computed(() => props.item.detectedTitle?.trim() || props.item.folderName)
 const bookMetaLine = computed(() =>
