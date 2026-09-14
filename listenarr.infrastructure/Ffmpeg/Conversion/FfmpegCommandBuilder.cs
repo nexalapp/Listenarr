@@ -144,6 +144,21 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
             args.Add("-map_metadata");
             args.Add(metadataIndex.ToString(CultureInfo.InvariantCulture));
 
+            // Chapters come from the planned metadata, not from whichever input happens
+            // to carry some. ffmpeg's default is "the first input file with at least one
+            // chapter", which is the source itself whenever the book is one already
+            // chaptered MP3 - so the plan's marks were silently discarded for exactly the
+            // shape this library is mostly made of, and its chapter titles never reached
+            // an output.
+            //
+            // It also rejected a sound conversion outright: a source whose marks run past
+            // the end of its own audio has those trimmed by the planner, so the plan held
+            // nine and the file ffmpeg wrote held fifteen, and verification refused the
+            // difference. Mapping chapters explicitly makes the plan the single authority,
+            // which is what the rest of the pipeline already assumes it is.
+            args.Add("-map_chapters");
+            args.Add(metadataIndex.ToString(CultureInfo.InvariantCulture));
+
             args.Add("-c:a");
             args.Add("aac");
             args.Add("-b:a");
