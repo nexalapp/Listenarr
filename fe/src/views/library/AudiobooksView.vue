@@ -85,6 +85,17 @@
           <PhFolderOpen />
           Organize Selected
         </button>
+        <button
+          v-if="selectedCount > 0"
+          class="toolbar-btn"
+          :disabled="converting"
+          :title="convertSelectedTitle"
+          @click="confirmBulkConvert"
+        >
+          <PhSpinner v-if="converting" class="ph-spin" />
+          <PhFileAudio v-else />
+          {{ converting ? 'Queueing...' : 'Convert Selected' }}
+        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn delete-btn" @click="confirmBulkDelete">
           <PhTrash />
           Delete Selected ({{ selectedCount }})
@@ -946,6 +957,7 @@ import {
   PhUser,
   PhBooks,
   PhFolderOpen,
+  PhFileAudio,
 } from '@phosphor-icons/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
@@ -953,6 +965,7 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
+import { useConversionJobsStore } from '@/stores/conversionJobs'
 import { apiService } from '@/services/api'
 import { buildApiPath } from '@/services/apiBase'
 import { logger } from '@/utils/logger'
@@ -965,10 +978,12 @@ import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
 import CustomFilterModal from '@/components/domain/collection/CustomFilterModal.vue'
 import { EmptyState } from '@/components/base'
 import { showConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/services/toastService'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import type { Audiobook, AudiobookStatus, QualityProfile } from '@/types'
 import { evaluateRules } from '@/utils/customFilterEvaluator'
 import type { RuleLike } from '@/utils/customFilterEvaluator'
+import type { BulkConversionResponse } from '@/types'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText } from '@/utils/textUtils'
 import { formatSeriesMemberships, getSeriesNames, matchesSeries } from '@/utils/seriesUtils'
@@ -1013,6 +1028,8 @@ const route = useRoute()
 const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
+const conversionJobsStore = useConversionJobsStore()
+const toast = useToast()
 const downloadsStore = useDownloadsStore()
 const filesystemReadinessStore = useFilesystemReadinessStore()
 const { getProtectedImageSrc } = useProtectedImages()
@@ -2492,6 +2509,106 @@ async function confirmBulkDelete() {
   } finally {
     deleting.value = false
   }
+}
+
+/* -- Converting a selection to M4B ------------------------------------------- */
+
+// A breakdown of skipped books is several lines; five seconds is not enough to read it.
+const BULK_CONVERT_TOAST_MS = 15000
+
+const converting = ref(false)
+
+const convertSelectedTitle = computed(
+  () =>
+    `Queue MP3-to-M4B conversions for the ${selectedCount.value} selected book${
+      selectedCount.value !== 1 ? 's' : ''
+    }`,
+)
+
+/**
+ * Queue conversions for everything selected.
+ *
+ * Confirmed first because conversion is hours of encoding against the NAS and it
+ * rewrites the books in place - not something to start by mis-clicking a toolbar.
+ *
+ * Books that cannot convert are expected, not errors: a selection routinely holds
+ * books already in M4B and books already queued. The server reports each one, and
+ * what comes back here is a count per reason rather than a toast per book.
+ */
+async function confirmBulkConvert() {
+  const ids = Array.from(libraryStore.selectedIds)
+  if (ids.length === 0 || converting.value) return
+
+  const ok = await showConfirm(
+    `Queue ${ids.length} book${ids.length !== 1 ? 's' : ''} for MP3-to-M4B conversion? ` +
+      'Books already in M4B are skipped. Converting replaces the files in your library ' +
+      'and can take a long time.',
+    'Convert to M4B',
+    { confirmText: 'Queue Conversions', cancelText: 'Cancel' },
+  )
+  if (!ok) return
+
+  converting.value = true
+  try {
+    const response = await conversionJobsStore.convertMany(ids)
+    reportBulkConversion(response)
+    if (response.queuedCount > 0) libraryStore.clearSelection()
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobooksView',
+      operation: 'confirmBulkConvert',
+      metadata: { count: ids.length },
+    })
+    toast.error('Conversion not queued', 'The request failed. Nothing was queued.')
+  } finally {
+    converting.value = false
+  }
+}
+
+/** Why the books that were skipped were skipped, worded for a count rather than a book. */
+const SKIP_REASONS: Record<string, string> = {
+  AlreadyQueued: 'already queued',
+  NothingToConvert: 'nothing to convert',
+  EncoderUnavailable: 'no encoder installed',
+  Disabled: 'conversion disabled',
+  NotFound: 'no longer in the library',
+}
+
+function reportBulkConversion(response: BulkConversionResponse) {
+  const skipped = response.results.filter((r) => r.outcome !== 'Queued')
+
+  if (skipped.length === 0) {
+    toast.success(
+      'Conversions queued',
+      `${response.queuedCount} book${response.queuedCount !== 1 ? 's' : ''} queued. ` +
+        'Progress shows in Activity.',
+    )
+    return
+  }
+
+  // One line per reason, in the order the server reported them, so a selection of
+  // hundreds reads as a handful of lines instead of hundreds of rows.
+  const counts = new Map<string, number>()
+  for (const result of skipped) {
+    const label = SKIP_REASONS[String(result.outcome)] ?? String(result.outcome)
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  const breakdown = [...counts.entries()].map(([label, count]) => `${count} ${label}`).join('\n')
+
+  if (response.queuedCount === 0) {
+    toast.warning(
+      'Nothing queued',
+      `None of the ${response.requestedCount} selected books could be converted:\n${breakdown}`,
+      BULK_CONVERT_TOAST_MS,
+    )
+    return
+  }
+
+  toast.success(
+    'Conversions queued',
+    `${response.queuedCount} of ${response.requestedCount} queued. Skipped:\n${breakdown}`,
+    BULK_CONVERT_TOAST_MS,
+  )
 }
 
 function resetDeleteOptions() {

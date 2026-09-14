@@ -169,6 +169,21 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     return response
   }
 
+  /**
+   * Queue conversions for several books at once.
+   *
+   * Refreshes once, after the whole batch, rather than per book: the server owns the
+   * jobs' shapes and one round trip settles all of them.
+   */
+  async function convertMany(audiobookIds: number[]) {
+    const response = await apiService.convertAudiobooksBulk(audiobookIds)
+    if (response.queuedCount > 0) {
+      await refresh()
+    }
+
+    return response
+  }
+
   async function retry(jobId: string) {
     const response = await apiService.retryConversion(jobId)
     if (response.queued) {
@@ -200,6 +215,7 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     forget,
     refresh,
     convert,
+    convertMany,
     retry,
     start,
     stop,
