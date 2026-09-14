@@ -18,6 +18,7 @@
 import type {
   SearchResult,
   ConversionJobUpdate,
+  BulkConversionResponse,
   LibraryTagTable,
   TagDefinition,
   TagJobUpdate,
@@ -1518,6 +1519,22 @@ class ApiService {
     audiobookId: number,
   ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
     return this.request(`/conversion/audiobooks/${audiobookId}`, { method: 'POST' })
+  }
+
+  /**
+   * Queue manual conversions for a set of books.
+   *
+   * One request rather than N, because the outcome that matters is the summary: a
+   * selection made from the library routinely holds books that are already M4B or
+   * already queued, and N separate calls would report that as N separate toasts.
+   * The response is 200 even when nothing was queued - every book carries its own
+   * outcome, so the status says nothing useful.
+   */
+  async convertAudiobooksBulk(audiobookIds: number[]): Promise<BulkConversionResponse> {
+    return this.request<BulkConversionResponse>('/conversion/audiobooks/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ audiobookIds }),
+    })
   }
 
   /** Re-run a conversion that failed. */

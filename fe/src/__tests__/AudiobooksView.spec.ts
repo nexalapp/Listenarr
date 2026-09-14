@@ -23,6 +23,12 @@ import AudiobooksView from '@/views/library/AudiobooksView.vue'
 import { useLibraryStore } from '@/stores/library'
 // apiService stubbed in vi.mock below if needed
 
+const convertAudiobooksBulkMock = vi.fn()
+const successToast = vi.fn()
+const warningToast = vi.fn()
+const errorToast = vi.fn()
+const showConfirmMock = vi.fn()
+
 vi.mock('@/services/api', () => ({
   apiService: {
     getQualityProfiles: vi.fn(async () => []),
@@ -30,7 +36,23 @@ vi.mock('@/services/api', () => ({
     getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
+    convertAudiobooksBulk: (...args: unknown[]) =>
+      convertAudiobooksBulkMock(...(args as [number[]])),
+    getConversionJobs: vi.fn(async () => []),
   },
+}))
+
+vi.mock('@/services/toastService', () => ({
+  useToast: () => ({
+    success: successToast,
+    warning: warningToast,
+    error: errorToast,
+    info: vi.fn(),
+  }),
+}))
+
+vi.mock('@/composables/useConfirm', () => ({
+  showConfirm: (...args: unknown[]) => showConfirmMock(...args),
 }))
 
 type AudiobooksVm = {
@@ -1346,5 +1368,172 @@ describe('AudiobooksView Filter Persistence', () => {
     vm.selectedFilterId = null
     await wrapper.vm.$nextTick()
     expect(localStorage.getItem(SELECTED_FILTER_KEY)).toBeNull()
+  })
+})
+
+describe('AudiobooksView Bulk Conversion', () => {
+  const mountWithSelection = async (ids: number[]) => {
+    if (
+      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+    ) {
+      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        disconnect() {}
+      }
+    }
+    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
+      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
+        /* noop */
+      }
+    }
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        {
+          path: '/books',
+          name: 'books',
+          component: AudiobooksView,
+          meta: { libraryGroup: 'books' },
+        },
+      ],
+    })
+    await router.push('/books')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = ids.map((id) => ({
+      id,
+      title: `Book ${id}`,
+      authors: ['Author'],
+      files: [],
+    })) as unknown as import('@/types').Audiobook[]
+    store.fetchLibrary = vi.fn(async () => undefined)
+    ids.forEach((id) => store.selectedIds.add(id))
+
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'ViewOptionsDropdown',
+        ],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    return wrapper
+  }
+
+  const convertButton = (wrapper: ReturnType<typeof mount>) =>
+    wrapper.findAll('button.toolbar-btn').find((b) => b.text().includes('Convert Selected'))
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    showConfirmMock.mockResolvedValue(true)
+    const pinia = createPinia()
+    setActivePinia(pinia)
+  })
+
+  it('offers the action only once books are selected', async () => {
+    const empty = await mountWithSelection([])
+    expect(convertButton(empty)).toBeUndefined()
+
+    const selected = await mountWithSelection([1, 2])
+    expect(convertButton(selected)).toBeDefined()
+  })
+
+  it('confirms before queueing, because converting rewrites the library', async () => {
+    showConfirmMock.mockResolvedValue(false)
+    const wrapper = await mountWithSelection([1, 2])
+
+    await convertButton(wrapper)!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(showConfirmMock).toHaveBeenCalled()
+    expect(convertAudiobooksBulkMock).not.toHaveBeenCalled()
+  })
+
+  it('sends every selected id in one request, not one request per book', async () => {
+    convertAudiobooksBulkMock.mockResolvedValue({
+      requestedCount: 3,
+      queuedCount: 3,
+      results: [1, 2, 3].map((audiobookId) => ({ audiobookId, outcome: 'Queued' })),
+    })
+    const wrapper = await mountWithSelection([1, 2, 3])
+
+    await convertButton(wrapper)!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(convertAudiobooksBulkMock).toHaveBeenCalledTimes(1)
+    expect(convertAudiobooksBulkMock).toHaveBeenCalledWith([1, 2, 3])
+    expect(successToast).toHaveBeenCalled()
+    expect((successToast.mock.calls[0] as [string, string])[1]).toContain('3 books queued')
+  })
+
+  it('summarises skipped books by reason rather than one message each', async () => {
+    convertAudiobooksBulkMock.mockResolvedValue({
+      requestedCount: 4,
+      queuedCount: 1,
+      results: [
+        { audiobookId: 1, outcome: 'Queued' },
+        { audiobookId: 2, outcome: 'NothingToConvert' },
+        { audiobookId: 3, outcome: 'NothingToConvert' },
+        { audiobookId: 4, outcome: 'AlreadyQueued' },
+      ],
+    })
+    const wrapper = await mountWithSelection([1, 2, 3, 4])
+
+    await convertButton(wrapper)!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(successToast).toHaveBeenCalledTimes(1)
+    const [, message] = successToast.mock.calls[0] as [string, string]
+    expect(message).toContain('1 of 4 queued')
+    expect(message).toContain('2 nothing to convert')
+    expect(message).toContain('1 already queued')
+  })
+
+  it('warns rather than claiming success when nothing could be queued', async () => {
+    convertAudiobooksBulkMock.mockResolvedValue({
+      requestedCount: 2,
+      queuedCount: 0,
+      results: [
+        { audiobookId: 1, outcome: 'EncoderUnavailable' },
+        { audiobookId: 2, outcome: 'EncoderUnavailable' },
+      ],
+    })
+    const wrapper = await mountWithSelection([1, 2])
+
+    await convertButton(wrapper)!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(successToast).not.toHaveBeenCalled()
+    expect(warningToast).toHaveBeenCalled()
+    const [, message] = warningToast.mock.calls[0] as [string, string]
+    expect(message).toContain('2 no encoder installed')
+  })
+
+  it('keeps the selection when nothing was queued, so it can be retried', async () => {
+    convertAudiobooksBulkMock.mockResolvedValue({
+      requestedCount: 2,
+      queuedCount: 0,
+      results: [
+        { audiobookId: 1, outcome: 'EncoderUnavailable' },
+        { audiobookId: 2, outcome: 'EncoderUnavailable' },
+      ],
+    })
+    const wrapper = await mountWithSelection([1, 2])
+
+    await convertButton(wrapper)!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(useLibraryStore().selectedIds.size).toBe(2)
   })
 })

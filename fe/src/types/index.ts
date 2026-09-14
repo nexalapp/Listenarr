@@ -441,6 +441,35 @@ export interface ConversionJobUpdate {
   completedAt?: string | null
 }
 
+/** Why one book in a bulk conversion request was or was not queued. */
+export type ConversionEnqueueOutcome =
+  | 'Queued'
+  | 'AlreadyQueued'
+  | 'NothingToConvert'
+  | 'EncoderUnavailable'
+  | 'Disabled'
+  | 'NotFound'
+
+export interface BulkConversionResult {
+  audiobookId: number
+  outcome: ConversionEnqueueOutcome | string
+  jobId?: string | null
+  reason?: string | null
+}
+
+/**
+ * What a bulk conversion request did, book by book.
+ *
+ * `queuedCount` is rarely the whole selection: books already in M4B and books already
+ * queued are ordinary members of a selection, not errors, so the per-book results are
+ * what the UI summarises.
+ */
+export interface BulkConversionResponse {
+  requestedCount: number
+  queuedCount: number
+  results: BulkConversionResult[]
+}
+
 /** One tag-writing run, as the server reports it over SignalR and REST. */
 export interface TagJobUpdate {
   jobId: string
