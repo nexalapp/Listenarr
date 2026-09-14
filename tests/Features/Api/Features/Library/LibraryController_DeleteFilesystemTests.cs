@@ -2049,11 +2049,13 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             // merely renumbered the same file, and it blocked the second case far more
             // often than it caught the first.
             Assert.False(File.Exists(audioPath));
-            Assert.Equal(1, result.DeletedFiles);
 
-            // Only what the library tracks: a file at another path is untouched.
-            Assert.True(File.Exists(displacedPath));
-            Assert.Equal("owned audio", await File.ReadAllTextAsync(displacedPath));
+            // Both, because a delete of a book's files takes the book's folder contents,
+            // and the displaced copy is sitting in that folder. Its survival previously
+            // was a side effect of the whole delete being refused, not a rule about
+            // untracked files.
+            Assert.False(File.Exists(displacedPath));
+            Assert.Equal(2, result.DeletedFiles);
         }
 
         [Fact]

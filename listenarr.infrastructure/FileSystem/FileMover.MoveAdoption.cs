@@ -67,9 +67,7 @@ public partial class FileMover
             return false;
         }
 
-        if (!MatchesAdoptableDestination(
-                destination,
-                expectedSourcePhysicalObjectIdentity))
+        if (!MatchesAdoptableDestination(destination, journal))
         {
             return false;
         }
@@ -125,7 +123,7 @@ public partial class FileMover
             return false;
         }
 
-        if (!MatchesAdoptableDestination(destination, expectedSourcePhysicalObjectIdentity))
+        if (!MatchesAdoptableDestination(destination, journal))
         {
             return false;
         }
@@ -138,7 +136,7 @@ public partial class FileMover
 
         _logger.LogInformation(
             "Repaired parked organize journal {OperationId} for audiobook {AudiobookId} at an operator's request: "
-                + "the destination carries the object identity the journal recorded for its source",
+                + "the destination holds the bytes the journal recorded for its source",
             operationId,
             audiobookId);
 
@@ -146,12 +144,31 @@ public partial class FileMover
     }
 
     /// <summary>
-    /// Whether the destination is the moved file itself, judged on object identity
-    /// rather than on name or length. Every failure to prove that is a false.
+    /// Whether the destination holds the file that was being moved, judged on its bytes.
+    /// Every failure to prove that is a false.
     /// </summary>
+    /// <remarks>
+    /// This asks a different question from "which file is at this path" - it asks whether
+    /// the work already happened - and a path cannot answer it. Anything may occupy a
+    /// name: an older copy of the same book, a colliding edition, a delivery from a sync
+    /// client sharing the folder. Answering "yes" for any of them marks an organize
+    /// complete that never ran, and lets its source be retired.
+    /// <para>
+    /// It used to compare the inode, which was a sound proof - a rename preserves it - but
+    /// only a proxy for "the same bytes", and one that pooled FUSE filesystems break by
+    /// renumbering an untouched file. The bytes themselves are what the question was
+    /// always about, they are already recorded on the journal, and they do not renumber.
+    /// </para>
+    /// <para>
+    /// Note that a size check alone would not catch an interrupted same-volume move:
+    /// those go through renameat2 and are atomic, so the destination is either the whole
+    /// file or absent, never a partial. The case worth catching is a different complete
+    /// file wearing the same name.
+    /// </para>
+    /// </remarks>
     private static bool MatchesAdoptableDestination(
         string destination,
-        string expectedSourcePhysicalObjectIdentity)
+        FileMutationJournal journal)
     {
         var parentPath = Path.GetDirectoryName(destination);
         var name = Path.GetFileName(destination);
@@ -160,13 +177,32 @@ public partial class FileMover
             return false;
         }
 
+        // Without recorded bytes there is nothing to prove adoption against, and guessing
+        // is what this method exists to avoid.
+        if (journal.SourceLength <= 0 || string.IsNullOrWhiteSpace(journal.SourceSha256))
+        {
+            return false;
+        }
+
         try
         {
             using var parent = PinnedDirectoryCreation.OpenPinnedDirectoryNoFollow(parentPath);
             using var target = parent.TryOpenExistingFile(name, requireDeleteAccess: false);
-            return target != null
-                && target.VisiblePathMatches()
-                && target.MatchesObjectIdentity(expectedSourcePhysicalObjectIdentity);
+            if (target == null || !target.VisiblePathMatches())
+            {
+                return false;
+            }
+
+            using var stream = target.OpenReadStream(bufferSize: 128 * 1024, asynchronous: false);
+            if (stream.Length != journal.SourceLength)
+            {
+                return false;
+            }
+
+            stream.Position = 0;
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(stream));
+            return string.Equals(hash, journal.SourceSha256, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception exception) when (
             exception is IOException
