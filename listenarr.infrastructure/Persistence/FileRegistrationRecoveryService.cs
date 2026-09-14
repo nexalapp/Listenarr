@@ -30,18 +30,31 @@ public sealed partial class FileRegistrationRecoveryService(
     {
         await AdoptCommittedAnonymousAsync(cancellationToken);
         await using var readContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var attentionOperationId = await readContext.FileMutationJournals
+        // Journals needing attention are reported, not fatal.
+        //
+        // This used to throw, which failed startup reconciliation and disabled every
+        // filesystem operation - imports, renames, conversions, the lot - until someone
+        // edited the database by hand. One book's stalled publication took the whole
+        // library offline for six hours, and the row that did it turned out to describe
+        // an intact file on a filesystem that had merely renumbered an inode.
+        //
+        // A parked row is a thing to look at, not a reason to stop working. The
+        // operations it names stay parked; everything else carries on.
+        var attentionOperationIds = await readContext.FileMutationJournals
             .AsNoTracking()
             .Where(RegistrationMoveOwnerPredicate)
             .Where(journal => journal.State == FileMutationJournalState.NeedsAttention)
             .OrderBy(journal => journal.CreatedAt)
             .ThenBy(journal => journal.OperationId)
-            .Select(journal => (Guid?)journal.OperationId)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (attentionOperationId.HasValue)
+            .Select(journal => journal.OperationId)
+            .ToListAsync(cancellationToken);
+        if (attentionOperationIds.Count > 0)
         {
-            throw new InvalidOperationException(
-                $"File-registration move journal {attentionOperationId.Value} requires operator repair before filesystem mutations can resume.");
+            logger.LogWarning(
+                "{Count} file-registration move journal(s) need attention and are parked: {OperationIds}. "
+                    + "Filesystem operations continue; these publications will not resume until they are resolved.",
+                attentionOperationIds.Count,
+                string.Join(", ", attentionOperationIds));
         }
 
         var operationIds = await readContext.FileMutationJournals
