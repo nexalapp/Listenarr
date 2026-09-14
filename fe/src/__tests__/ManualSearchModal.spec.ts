@@ -45,6 +45,14 @@ if (!(apiService as unknown as Record<string, unknown>).scoreSearchResults) {
   ).scoreSearchResults = async () => []
 }
 
+if (!(apiService as unknown as Record<string, unknown>).sendToDownloadClient) {
+  ;(
+    apiService as unknown as {
+      sendToDownloadClient: () => Promise<{ downloadId: string; message: string }>
+    }
+  ).sendToDownloadClient = async () => ({ downloadId: '', message: '' })
+}
+
 type ManualSearchResult = {
   id: string
   title?: string
@@ -86,6 +94,7 @@ describe('ManualSearchModal.vue', () => {
     PhXCircle: true,
     PhDownloadSimple: true,
     PhArrowsDownUp: true,
+    PhWarningCircle: true,
     // Ensure ScorePopover renders its default slot in tests so the inner badge is present
     ScorePopover: { template: '<div><slot /></div>' },
     Modal: { template: '<div><slot name="header" /><slot /></div>' },
@@ -480,5 +489,79 @@ describe('ManualSearchModal.vue', () => {
     const badge = wrapper.find('.col-score .score-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('88')
+  })
+
+  it('reports a failed grab inline, and keeps it there rather than auto-dismissing', async () => {
+    // It used to be a toast: five seconds, easy to miss on a request that takes a
+    // while to fail, and it printed the raw `API error: 500 {...}` wrapper.
+    const wrapper = mount(ManualSearchModal, {
+      props: { isOpen: true, audiobook: null },
+      global: { stubs },
+    })
+    const vm = wrapper.vm as unknown as {
+      results: ManualSearchResult[]
+      downloadResult: (r: ManualSearchResult) => Promise<void>
+    }
+
+    const result = {
+      id: 'r1',
+      title: 'Leave the World Behind',
+      downloadType: 'Usenet',
+      downloadReference: 'ref-1',
+    } as ManualSearchResult
+
+    setResultsOnVm(vm, [result])
+    await nextTick()
+
+    vi.spyOn(apiService, 'sendToDownloadClient').mockRejectedValue(
+      Object.assign(new Error('API error: 409 x'), {
+        status: 409,
+        body: JSON.stringify({
+          title: 'Cannot send to a download client',
+          detail: 'No NZB download client is enabled. Add one under Settings.',
+        }),
+      }),
+    )
+
+    await vm.downloadResult(result)
+    await nextTick()
+
+    const banner = wrapper.find('.download-error')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Leave the World Behind')
+    // The server's advice, not the wrapper.
+    expect(banner.text()).toContain('No NZB download client is enabled')
+    expect(banner.text()).not.toContain('API error')
+
+    // Dismissed only when the reader chooses to.
+    await banner.find('.download-error-close').trigger('click')
+    expect(wrapper.find('.download-error').exists()).toBe(false)
+  })
+
+  it('clears a previous failure when another grab is started', async () => {
+    const wrapper = mount(ManualSearchModal, {
+      props: { isOpen: true, audiobook: null },
+      global: { stubs },
+    })
+    const vm = wrapper.vm as unknown as {
+      results: ManualSearchResult[]
+      downloadResult: (r: ManualSearchResult) => Promise<void>
+    }
+
+    const result = { id: 'r1', title: 'A Book', downloadReference: 'ref-1' } as ManualSearchResult
+    setResultsOnVm(vm, [result])
+    await nextTick()
+
+    const send = vi.spyOn(apiService, 'sendToDownloadClient')
+    send.mockRejectedValue(Object.assign(new Error('nope'), { status: 409, body: '{}' }))
+    await vm.downloadResult(result)
+    await nextTick()
+    expect(wrapper.find('.download-error').exists()).toBe(true)
+
+    send.mockResolvedValue({ downloadId: 'd1', message: 'ok' })
+    await vm.downloadResult(result)
+    await nextTick()
+
+    expect(wrapper.find('.download-error').exists()).toBe(false)
   })
 })

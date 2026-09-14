@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Common;
+using Listenarr.Application.Common.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
@@ -292,7 +293,17 @@ namespace Listenarr.Application.Downloads.Submission
                 {
                     var clientType = isTorrent ? "torrent" : "NZB";
                     var neededClients = isTorrent ? "qBittorrent or Transmission" : "SABnzbd or NZBGet";
-                    throw new Exception($"No suitable download client found for {clientType}. Please configure and enable a {clientType} client ({neededClients}) in Settings.");
+
+                    // A typed conflict, not a bare Exception. This is the operator's own
+                    // configuration, and the message says exactly what to do about it - but
+                    // a bare Exception reaches the controller's catch-all as a 500, and
+                    // ServerErrorProblemDetailsFilter rewrites every 5xx body outside
+                    // Development to "Internal server error" with no detail. The advice was
+                    // being written and then thrown away on the way out.
+                    throw new ApplicationConflictException(
+                        "download_client_unavailable",
+                        $"No {clientType} download client is enabled, so this release cannot be sent anywhere. "
+                            + $"Add and enable {neededClients} under Settings > Download Clients, then try again.");
                 }
 
                 logger.LogInformation("Auto-selected download client {ClientId} for {ClientType}", downloadClientId, isTorrent ? "torrent" : "NZB");

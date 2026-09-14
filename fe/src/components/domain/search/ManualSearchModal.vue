@@ -27,6 +27,25 @@
 
     <template #default>
       <ModalBody>
+        <!-- A grab that failed says so here and stays until it is dismissed. It used to
+             be a toast, which auto-dismissed after five seconds - easy to miss when you
+             have looked away from a request that takes a while to fail. -->
+        <div v-if="downloadError" class="download-error" role="alert">
+          <PhWarningCircle class="download-error-icon" />
+          <div class="download-error-copy">
+            <strong>{{ downloadError.title }}</strong>
+            <span>{{ downloadError.detail }}</span>
+          </div>
+          <button
+            class="download-error-close"
+            title="Dismiss"
+            aria-label="Dismiss"
+            @click="downloadError = null"
+          >
+            <PhX :size="14" />
+          </button>
+        </div>
+
         <!-- Search Status -->
         <div v-if="searching" class="search-status">
           <PhSpinner class="ph-spin" />
@@ -281,10 +300,12 @@ import {
   PhXCircle,
   PhDownloadSimple,
   PhArrowsDownUp,
+  PhWarningCircle,
+  PhX,
 } from '@phosphor-icons/vue'
-import { useToast } from '@/services/toastService'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
+import { describeApiError } from '@/utils/apiError'
 import type {
   Audiobook,
   SearchResult,
@@ -731,9 +752,13 @@ function buildSearchQuery(): string {
   return parts.join(' ')
 }
 
+/** The last grab failure, shown in the modal until dismissed or superseded. */
+const downloadError = ref<{ title: string; detail: string } | null>(null)
+
 async function downloadResult(result: SearchResult) {
   downloading.value[result.id] = true
-  const toast = useToast()
+  // Last attempt's failure must not sit above this one's outcome.
+  downloadError.value = null
 
   try {
     // Check if this is a DDL
@@ -763,18 +788,19 @@ async function downloadResult(result: SearchResult) {
       }, 2000)
     }
   } catch (err) {
-    console.error('Download failed:', err)
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    logger.error('Download failed', err)
 
-    // Show error in alert with more context
-    let userMessage = `Download failed: ${errorMessage}`
-    if (errorMessage.includes('Output path not configured')) {
-      userMessage =
-        'Download path not configured. Please go to Settings and configure the Output Path before downloading.'
+    const detail = describeApiError(
+      err,
+      'The release could not be sent to a download client. Check the logs for the reason.',
+    )
+
+    downloadError.value = {
+      title: `Could not grab "${result.title}"`,
+      detail: detail.includes('Output path not configured')
+        ? 'No output path is configured. Set one under Settings before downloading.'
+        : detail,
     }
-
-    // Show error as a non-blocking toast instead of a modal alert
-    toast.error('Download failed', userMessage)
     delete downloading.value[result.id]
   }
 }
@@ -929,6 +955,52 @@ function getScoreClass(score: number): string {
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.download-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(250, 82, 82, 0.4);
+  border-radius: 6px;
+  background: rgba(250, 82, 82, 0.12);
+  color: #ffc9c9;
+}
+
+.download-error-icon {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: #fa5252;
+}
+
+.download-error-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.download-error-copy strong {
+  color: #fff;
+}
+
+.download-error-close {
+  background: none;
+  border: none;
+  color: #ffc9c9;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0.15rem;
+  flex-shrink: 0;
+}
+
+.download-error-close:hover {
+  color: #fff;
 }
 
 .modal-header {
