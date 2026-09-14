@@ -184,7 +184,26 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             if (!tagged.Success)
             {
-                TryDeleteScratch(scratchPath);
+                // A file that was written and then failed inspection is the only
+                // evidence of why: tag writing has produced M4Bs that read back corrupt,
+                // and others carrying chapters they were never given, and neither
+                // reproduces from the source. Deleting it on failure meant every
+                // occurrence destroyed what was needed to explain it.
+                //
+                // Kept by renaming out of the sweeper's "conversion-*.m4b" pattern. The
+                // one field that would otherwise protect it is VerifiedOutputPath, and a
+                // retry republishes whatever that names - so recording it there would
+                // publish the corrupt bytes rather than preserve them for inspection.
+                //
+                // A transient failure keeps nothing; that file is incidental, and
+                // book-sized scratch would fill the volume a retry at a time.
+                var kept = tagged.FailureKind == TagWriteFailureKind.OutputRejected
+                    && TryKeepRejectedOutput(job.Id, scratchPath);
+                if (!kept)
+                {
+                    TryDeleteScratch(scratchPath);
+                }
+
                 return ExecutionOutcome.Failed(
                     ConversionFailureKind.OutputRejected,
                     $"The converted file's tags could not be written: {tagged.Message}");
@@ -241,122 +260,6 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 warning);
         }
 
-        /// <summary>
-        /// Reuse a verified encode from an earlier attempt, when there is one that still
-        /// matches the book as it is now. Returns null when the encode must be run.
-        ///
-        /// The plan is rebuilt from the current sources before this is called, so
-        /// verifying against it is what stops a stale output — produced before the book's
-        /// files changed — from being published as though it were current.
-        /// </summary>
-        private async Task<ConversionResult?> TryReuseVerifiedOutputAsync(
-            ConversionJob job,
-            ConversionRequest request,
-            IConversionQueueService queue,
-            IAudiobookConverter converter,
-            CancellationToken cancellationToken)
-        {
-            if (string.IsNullOrWhiteSpace(job.VerifiedOutputPath) || job.VerifiedOutputLength is null)
-            {
-                return null;
-            }
-
-            if (!string.Equals(job.VerifiedOutputPath, request.ScratchOutputPath, StringComparison.Ordinal)
-                || !File.Exists(request.ScratchOutputPath))
-            {
-                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
-                return null;
-            }
-
-            // Length first: it is free, and a truncated or replaced file is not the one
-            // that was verified.
-            long length;
-            try
-            {
-                length = new FileInfo(request.ScratchOutputPath).Length;
-            }
-            catch (Exception ex) when (IsNonFatal(ex))
-            {
-                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
-                return null;
-            }
-
-            if (length != job.VerifiedOutputLength)
-            {
-                logger.LogInformation(
-                    "Discarding the kept encode for conversion {JobId}: it is {Actual} bytes, not the {Expected} that were verified",
-                    job.Id,
-                    length,
-                    job.VerifiedOutputLength);
-                TryDeleteScratch(request.ScratchOutputPath);
-                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
-                return null;
-            }
-
-            await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Verifying, 90, cancellationToken);
-
-            var verification = await converter.VerifyExistingOutputAsync(request, cancellationToken);
-            if (!verification.Success)
-            {
-                logger.LogInformation(
-                    "Re-encoding conversion {JobId}: the kept encode no longer matches this book ({Reason})",
-                    job.Id,
-                    verification.Message);
-                TryDeleteScratch(request.ScratchOutputPath);
-                await queue.ClearVerifiedOutputAsync(job.Id, cancellationToken);
-                return null;
-            }
-
-            logger.LogInformation(
-                "Reusing the verified encode for conversion {JobId}; only publication is retried",
-                job.Id);
-            return verification;
-        }
-
-        /// <summary>
-        /// Record a verified encode against the job so a retry can publish it directly.
-        /// Best effort: failing to remember it costs an encode, never correctness.
-        /// </summary>
-        private async Task RememberVerifiedOutputAsync(
-            ConversionJob job,
-            string scratchPath,
-            ConversionResult result,
-            IConversionQueueService queue)
-        {
-            try
-            {
-                if (!File.Exists(scratchPath))
-                {
-                    return;
-                }
-
-                await queue.RecordVerifiedOutputAsync(
-                    job.Id,
-                    scratchPath,
-                    new FileInfo(scratchPath).Length,
-                    result.ChapterCount,
-                    CancellationToken.None);
-            }
-            catch (Exception ex) when (IsNonFatal(ex))
-            {
-                logger.LogDebug(ex, "Could not keep the verified encode for conversion {JobId}", job.Id);
-                TryDeleteScratch(scratchPath);
-            }
-        }
-
-        /// <summary>
-        /// Persist one progress report, absorbing anything that goes wrong.
-        ///
-        /// <para>
-        /// In its own scope: these run on the encoder's reader thread, and sharing the
-        /// job scope's DbContext with the flow around them lets two operations overlap on
-        /// one context, which EF refuses outright.
-        /// </para>
-        /// <para>
-        /// Progress is a courtesy: it is derived from the encode rather than driving it,
-        /// and the job's durable state does not depend on any single report landing.
-        /// </para>
-        /// </summary>
         private async Task ReportProgressSafelyAsync(Guid jobId, int percent)
         {
             try
