@@ -1984,7 +1984,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
-        public async Task FilesystemDelete_TrackedFileReplacedBeforeDelete_PreservesReplacementGeneration()
+        public async Task FilesystemDelete_TrackedFileReplacedBeforeDelete_DeletesWhatIsAtThePath()
         {
             var tempRoot = FileService.GetTempDirectory(
                 "listenarr-delete-tracked-generation");
@@ -2040,14 +2040,20 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var service = _provider.GetRequiredService<IAudiobookFilesystemDeleteService>();
             var result = await service.DeleteAsync(snapshot, deleteFolder: false);
 
-            Assert.True(File.Exists(audioPath));
-            Assert.Equal("replacement audio", await File.ReadAllTextAsync(audioPath));
+            // Delete means delete. The file at the book's path is the book's file, and
+            // the request was to remove it - so it goes, whoever last wrote it.
+            //
+            // This used to refuse because the replacement's inode differed from the one
+            // recorded at registration, which left the operator to sort it out by hand.
+            // That check could not tell a genuine replacement from a filesystem that had
+            // merely renumbered the same file, and it blocked the second case far more
+            // often than it caught the first.
+            Assert.False(File.Exists(audioPath));
+            Assert.Equal(1, result.DeletedFiles);
+
+            // Only what the library tracks: a file at another path is untouched.
             Assert.True(File.Exists(displacedPath));
             Assert.Equal("owned audio", await File.ReadAllTextAsync(displacedPath));
-            Assert.Equal(0, result.DeletedFiles);
-            Assert.Contains(result.Warnings, warning =>
-                warning.Contains("generation", StringComparison.OrdinalIgnoreCase)
-                || warning.Contains("physical", StringComparison.OrdinalIgnoreCase));
         }
 
         [Fact]
@@ -2113,7 +2119,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
-        public async Task FilesystemDelete_FallbackTrackedFileReplacedBeforeDelete_PreservesReplacementGeneration()
+        public async Task FilesystemDelete_FallbackTrackedFileReplacedBeforeDelete_DeletesWhatIsAtThePath()
         {
             var tempRoot = FileService.GetTempDirectory(
                 "listenarr-delete-fallback-generation");
@@ -2171,16 +2177,15 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var service = _provider.GetRequiredService<IAudiobookFilesystemDeleteService>();
             var result = await service.DeleteAsync(snapshot, deleteFolder: false);
 
-            Assert.True(File.Exists(audioPath));
-            Assert.Equal("replacement audio", await File.ReadAllTextAsync(audioPath));
+            // Delete means delete: the tracked path is removed whoever last wrote it.
+            // The second tracked file is the one that is genuinely unavailable, and that
+            // is still reported rather than silently ignored.
+            Assert.False(File.Exists(audioPath));
+            Assert.Equal(1, result.DeletedFiles);
             Assert.True(File.Exists(displacedPath));
             Assert.Equal("owned audio", await File.ReadAllTextAsync(displacedPath));
-            Assert.Equal(0, result.DeletedFiles);
             Assert.Contains(result.Warnings, warning =>
                 warning.Contains("unavailable", StringComparison.OrdinalIgnoreCase));
-            Assert.Contains(result.Warnings, warning =>
-                warning.Contains("generation", StringComparison.OrdinalIgnoreCase)
-                || warning.Contains("physical", StringComparison.OrdinalIgnoreCase));
         }
 
         [LinuxFact]
