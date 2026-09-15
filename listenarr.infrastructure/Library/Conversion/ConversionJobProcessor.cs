@@ -304,6 +304,60 @@ namespace Listenarr.Infrastructure.Library.Conversion
         internal static bool IsWithinKeptOutputRetention(ConversionJob job, DateTime now) =>
             now - (job.CompletedAt ?? job.UpdatedAt ?? job.EnqueuedAt) < KeptOutputRetention;
 
+        /// <summary>
+        /// Move a rejected tag-write output aside so it survives the sweeper, and report
+        /// whether it was kept.
+        /// </summary>
+        /// <remarks>
+        /// Out of the "conversion-*.m4b" pattern on purpose: the sweeper reclaims anything
+        /// matching it whose job is no longer active, and a terminally failed job is not.
+        /// The rename is the whole protection - nothing is recorded against the job,
+        /// because the only field that would protect it is VerifiedOutputPath and a retry
+        /// republishes whatever that names.
+        /// <para>
+        /// These accumulate: nothing removes them, which is the point. They are rare
+        /// enough to be worth the disk, and the log line says where they are.
+        /// </para>
+        /// </remarks>
+        internal bool TryKeepRejectedOutput(Guid jobId, string scratchPath)
+        {
+            try
+            {
+                if (!File.Exists(scratchPath))
+                {
+                    return false;
+                }
+
+                var directory = Path.GetDirectoryName(scratchPath);
+                if (string.IsNullOrWhiteSpace(directory))
+                {
+                    return false;
+                }
+
+                var kept = Path.Join(
+                    directory,
+                    $"rejected-tags-{jobId:N}-{DateTime.UtcNow:yyyyMMddHHmmss}.m4b");
+                File.Move(scratchPath, kept, overwrite: false);
+
+                logger.LogWarning(
+                    "Tag writing produced a file that failed inspection for conversion {JobId}. "
+                        + "It has been kept at {Path} so the failure can be examined, and nothing "
+                        + "will remove it automatically.",
+                    jobId,
+                    kept);
+
+                return true;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Could not set aside the rejected tag-write output for conversion {JobId}",
+                    jobId);
+                return false;
+            }
+        }
+
         private void TryDeleteScratch(string scratchPath)
         {
             try
