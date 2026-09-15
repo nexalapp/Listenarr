@@ -319,3 +319,79 @@ describe('ActivityView row titles', () => {
     expect(wrapper.find('.title-link').text()).toBe('Audiobook #267')
   })
 })
+
+describe('ActivityView conversion ETA', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    vi.spyOn(globalThis, 'setInterval').mockReturnValue(
+      1 as unknown as ReturnType<typeof setInterval>,
+    )
+    vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+
+  const job = (overrides: Record<string, unknown>) => ({
+    jobId: 'c1',
+    audiobookId: 7,
+    status: 'Running',
+    phase: 'Encoding',
+    progress: 50,
+    sourceFileCount: 1,
+    ...overrides,
+  })
+
+  it('estimates from when the work began, not when it was queued', async () => {
+    // Half done after twenty minutes means roughly twenty left.
+    const wrapper = await mountWith({
+      audiobooks: [{ id: 7, title: 'A Book' }],
+      conversionJobs: [job({ progress: 50, startedAt: minutesAgo(20) })],
+    })
+
+    expect(wrapper.find('.col-eta').exists()).toBe(true)
+    expect(wrapper.find('.eta-text').text()).toBe('20m')
+  })
+
+  it('says nothing while the sample is too small to divide by', async () => {
+    // Three seconds in at a fraction of a percent would claim days.
+    const wrapper = await mountWith({
+      audiobooks: [{ id: 7, title: 'A Book' }],
+      conversionJobs: [job({ progress: 0.2, startedAt: minutesAgo(0.05) })],
+    })
+
+    expect(wrapper.find('.eta-text').exists()).toBe(false)
+  })
+
+  it('says nothing for a job that has not started', async () => {
+    const wrapper = await mountWith({
+      audiobooks: [{ id: 7, title: 'A Book' }],
+      conversionJobs: [job({ status: 'Queued', progress: 0, startedAt: null })],
+    })
+
+    expect(wrapper.find('.eta-text').exists()).toBe(false)
+  })
+
+  it('says nothing rather than something absurd when the clock disagrees', async () => {
+    // A startedAt in the future, or a stalled job, must not render "412d".
+    const wrapper = await mountWith({
+      audiobooks: [{ id: 7, title: 'A Book' }],
+      conversionJobs: [job({ progress: 50, startedAt: minutesAgo(-30) })],
+    })
+
+    expect(wrapper.find('.eta-text').exists()).toBe(false)
+  })
+
+  it('says nothing once the work is finished', async () => {
+    const wrapper = await mountWith({
+      audiobooks: [{ id: 7, title: 'A Book' }],
+      conversionJobs: [job({ status: 'Completed', progress: 100, startedAt: minutesAgo(40) })],
+    })
+
+    expect(wrapper.find('.eta-text').exists()).toBe(false)
+  })
+})

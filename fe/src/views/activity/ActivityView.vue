@@ -647,6 +647,43 @@ const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
  * A conversion reports the same way an import does: one row, a progress bar while
  * it runs, and on failure a clickable status carrying the reason and a retry.
  */
+/**
+ * Seconds of work left, from how long this job has taken to reach where it is.
+ *
+ * Measured from when the work began, not from when it joined the queue: a book can
+ * wait hours behind others, and measuring from there would report a remaining time
+ * several times the real one.
+ *
+ * Progress is not perfectly linear - encoding is nearly all of it, and the verify,
+ * publish and tidy phases that follow are quick by comparison - so this runs slightly
+ * long near the end. That errs the right way for an estimate nobody should plan around
+ * to the minute.
+ */
+const estimateRemainingSeconds = (
+  startedAt: string | null | undefined,
+  progress: number | undefined,
+  isRunning: boolean,
+): number | undefined => {
+  if (!isRunning || !startedAt) return undefined
+
+  const percent = typeof progress === 'number' ? progress : 0
+  // Below a percent or so the sample is too small to divide by: a job three seconds in
+  // would claim days.
+  if (percent < 1 || percent >= 100) return undefined
+
+  const started = new Date(startedAt.endsWith('Z') ? startedAt : `${startedAt}Z`).getTime()
+  if (Number.isNaN(started)) return undefined
+
+  const elapsedSeconds = (Date.now() - started) / 1000
+  if (elapsedSeconds <= 0) return undefined
+
+  const remaining = Math.round((elapsedSeconds * (100 - percent)) / percent)
+
+  // A clock skew or a stalled job can produce something absurd; showing nothing beats
+  // showing "412d".
+  return remaining > 0 && remaining < 7 * 24 * 3600 ? remaining : undefined
+}
+
 const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem => {
   const failed = job.status === 'Failed'
   const phaseLabel = CONVERSION_PHASE_LABELS[job.phase] ?? 'Converting'
@@ -660,7 +697,7 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
     size: 0,
     downloaded: 0,
     downloadSpeed: 0,
-    eta: undefined,
+    eta: estimateRemainingSeconds(job.startedAt, job.progress, job.status === 'Running'),
     quality: '',
     actionLabel: 'Convert to M4B',
     actionDetail: failed

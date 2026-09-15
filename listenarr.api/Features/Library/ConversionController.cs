@@ -179,6 +179,7 @@ namespace Listenarr.Api.Features.Library
             canRetry = job.CanRetry,
             attemptCount = job.AttemptCount,
             enqueuedAt = job.EnqueuedAt,
+            startedAt = job.StartedAt,
             completedAt = job.CompletedAt
         };
     }
