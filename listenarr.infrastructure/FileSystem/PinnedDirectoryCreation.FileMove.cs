@@ -307,26 +307,22 @@ internal sealed partial class PinnedDirectoryCreation
                 : [GetDirectoryObjectIdentity(_fileHandle)];
         }
 
-        /// <summary>
-        /// Whether this entry is the file the caller is asking about.
-        ///
-        /// It is, by construction: the handle was opened by name through a pinned,
-        /// no-follow parent, so it is the file at that path and nothing else can have
-        /// been substituted through a symlink. The path is the identity.
-        /// </summary>
-        /// <remarks>
-        /// This used to compare the inode and generation evidence recorded earlier, and
-        /// report a mismatch on any difference. On pooled FUSE filesystems - unraid's
-        /// shfs, where one directory is backed by both an array disk and a cache pool -
-        /// the same object reports different inodes depending on which pool answers, so
-        /// untouched files were declared to be different files. It also meant a file a
-        /// person fixed by hand, over a share or through a sync client, was rejected
-        /// rather than adopted. If the file is at the path, it is the file.
-        /// </remarks>
         internal bool MatchesObjectIdentity(string expectedIdentity)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(expectedIdentity);
-            return true;
+            var candidates = GetObjectIdentityCandidates();
+            return candidates.Contains(expectedIdentity, StringComparer.Ordinal)
+                || (OperatingSystem.IsLinux()
+                    && candidates.Any(candidate =>
+                        PinnedDirectoryCreation.ArePersistedObjectIdentitiesDurablyEquivalent(
+                            expectedIdentity,
+                            candidate)
+                        || (PinnedDirectoryCreation.FileSystemRotatesGenerationEvidence(
+                                _fileHandle)
+                            && PinnedDirectoryCreation
+                                .ArePersistedObjectIdentitiesSameObject(
+                                    expectedIdentity,
+                                    candidate))));
         }
 
         internal bool IsOnSameVolume(PinnedDirectoryAnchor directory)

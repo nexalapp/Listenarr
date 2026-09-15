@@ -167,23 +167,23 @@ internal sealed partial class PinnedDirectoryCreation
                     nativeIdentity));
         }
 
-        /// <summary>
-        /// Whether this anchor is the directory the caller is asking about.
-        ///
-        /// It is, by construction: the hierarchy was opened no-follow along the path the
-        /// caller named, so it is that directory. The path is the identity.
-        /// </summary>
-        /// <remarks>
-        /// See <c>PinnedFileEntry.MatchesObjectIdentity</c>. This comparison is what
-        /// rejected a verified encode on unraid: the journal recorded the directory
-        /// through its array-backed inode and the commit re-read it through its
-        /// cache-backed one, for the same directory at the same path.
-        /// </remarks>
         internal bool MatchesDirectoryObjectIdentity(string expectedIdentity)
         {
             ThrowIfDisposed();
             ArgumentException.ThrowIfNullOrWhiteSpace(expectedIdentity);
-            return true;
+            var candidates = GetDirectoryObjectIdentityCandidates();
+            return candidates.Contains(expectedIdentity, StringComparer.Ordinal)
+                || (OperatingSystem.IsLinux()
+                    && candidates.Any(candidate =>
+                        PinnedDirectoryCreation.ArePersistedObjectIdentitiesDurablyEquivalent(
+                            expectedIdentity,
+                            candidate)
+                        || (PinnedDirectoryCreation.FileSystemRotatesGenerationEvidence(
+                                _handle)
+                            && PinnedDirectoryCreation
+                                .ArePersistedObjectIdentitiesSameObject(
+                                    expectedIdentity,
+                                    candidate))));
         }
 
         internal bool MatchesManagedDirectoryOwnershipIdentity(
