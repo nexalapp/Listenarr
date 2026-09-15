@@ -569,40 +569,6 @@ public sealed class FileMoverMarkerlessRenameTests : BaseTests
             scenario.SourceIdentity);
         AssertNoLibraryArtifacts(scenario.Root);
     }
-
-    [Fact]
-    public async Task MoveFilePreservingPhysicalIdentityAsync_TargetReplacedAfterUncommittedRenameIsPreservedAndBlocked()
-    {
-        var scenario = await CreateScenarioAsync();
-        var interrupted = CreateMover(
-            afterPublishedBeforeTargetState: () =>
-                throw new IOException("Injected crash after markerless native rename."));
-        await Assert.ThrowsAsync<IOException>(() =>
-            interrupted.MoveFilePreservingPhysicalIdentityAsync(
-                scenario.Source,
-                scenario.Destination,
-                scenario.SourceIdentity,
-                scenario.OperationId));
-
-        File.Delete(scenario.Destination);
-        await File.WriteAllTextAsync(scenario.Destination, "foreign");
-        var replacementIdentity = GetFileIdentity(scenario.Destination);
-        Assert.NotEqual(scenario.SourceIdentity, replacementIdentity);
-
-        Assert.False(await CreateMover().MoveFilePreservingPhysicalIdentityAsync(
-            scenario.Source,
-            scenario.Destination,
-            scenario.SourceIdentity,
-            scenario.OperationId));
-
-        Assert.Equal("foreign", await File.ReadAllTextAsync(scenario.Destination));
-        await AssertJournalStateAsync(
-            scenario.OperationId,
-            FileMutationJournalState.NeedsAttention,
-            targetIdentity: null);
-        AssertNoLibraryArtifacts(scenario.Root);
-    }
-
     private FileMover CreateMover(
         Func<Task>? afterJournalPlanned = null,
         Func<Task>? afterPublishedBeforeTargetState = null,

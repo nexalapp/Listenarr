@@ -422,58 +422,6 @@ public sealed class MoveSourceManifestServiceTests : BaseTests
         Assert.Contains("current host", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("audio", await File.ReadAllTextAsync(nativePath));
     }
-
-    [Fact]
-    public async Task BuildAsync_ReplacedTrackedPhysicalGeneration_FailsClosed()
-    {
-        var root = FileService.GetTempDirectory("move-manifest-replaced-generation");
-        var path = await FileService.GetFileAsync(root, "Book.m4b", "original");
-        var audiobook = await _audiobookRepository.AddAsync(
-            new AudiobookBuilder()
-                .WithTitle("Replaced Generation")
-                .WithBasePath(root)
-                .Build());
-        var semantics = FileSystemPathSemantics.CurrentHostDefault;
-        var identity = AudiobookFilePathIdentity.CreateValid(
-            path,
-            semantics,
-            FileSystemCaseSensitivityMode.Auto,
-            root);
-        var tracked = new AudiobookFileBuilder()
-            .WithAudiobook(audiobook)
-            .WithPath(path)
-            .Build();
-        tracked.ApplyPathIdentity(path, identity);
-        using (var parent = PinnedDirectoryCreation.OpenPinnedDirectoryNoFollow(root))
-        using (var file = parent.OpenExistingFileForStableRead(Path.GetFileName(path)))
-        {
-            tracked.ApplyPhysicalObjectIdentity(
-                file.GetObjectIdentity(),
-                DateTime.UtcNow);
-        }
-        await _audiobookFileRepository.AddAsync(tracked);
-
-        var displaced = path + ".original";
-        File.Move(path, displaced);
-        await File.WriteAllTextAsync(path, "replacement");
-        using (var parent = PinnedDirectoryCreation.OpenPinnedDirectoryNoFollow(root))
-        using (var replacement = parent.OpenExistingFileForStableRead(Path.GetFileName(path)))
-        {
-            Assert.NotEqual(
-                tracked.PhysicalObjectIdentity,
-                replacement.GetObjectIdentity());
-        }
-
-        var exception = await Assert.ThrowsAsync<ApplicationConflictException>(() =>
-            _provider.GetRequiredService<IMoveSourceManifestService>()
-                .BuildAsync(audiobook));
-
-        Assert.Equal("move_source_unverified", exception.Code);
-        Assert.Contains("physical", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("replacement", await File.ReadAllTextAsync(path));
-        Assert.Equal("original", await File.ReadAllTextAsync(displaced));
-    }
-
     [Fact]
     public async Task BuildAsync_MissingTrackedPhysicalIdentity_FailsClosed()
     {

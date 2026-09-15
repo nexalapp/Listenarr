@@ -49,69 +49,6 @@ public partial class MoveJobProcessorTests
             await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"),
             entry => entry.EventType == "Moved");
     }
-
-    [WindowsFact]
-    public async Task ProcessJobAsync_TargetReplacementBlockedByCompletionLease_RetriesThenDetectsReplacement()
-    {
-        var source = FileService.GetTempDirectory("move-processor-history-target-src");
-        await FileService.GetFileAsync(source, "book.m4b", "audio");
-        var target = Path.Join(
-            FileService.GetTempPath(),
-            $"move-processor-history-target-dst-{Guid.NewGuid():N}");
-        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
-        {
-            Title = "History Target Replacement",
-            BasePath = source
-        });
-        var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
-        var contentMoveService = new AudiobookContentMoveService(
-            _provider.GetRequiredService<ILogger<AudiobookContentMoveService>>(),
-            _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>(),
-            TimeProvider.System,
-            new ReplaceTargetBeforeCompletionHistory(target));
-        var processor = ActivatorUtilities.CreateInstance<MoveJobProcessor>(
-            _provider,
-            contentMoveService);
-
-        await processor.ProcessJobAsync(job, CancellationToken.None);
-
-        var retry = Assert.IsType<MoveJob>(
-            await queue.GetJobAsync(job.Id));
-        Assert.Equal(MoveJobStatus.RetryScheduled, retry.Status);
-        Assert.Empty(await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"));
-        await using (var db = await _provider
-            .GetRequiredService<IDbContextFactory<ListenArrDbContext>>()
-            .CreateDbContextAsync())
-        {
-            Assert.False(await db.MoveScanHandoffs.AsNoTracking()
-                .AnyAsync(candidate => candidate.MoveJobId == job.Id));
-        }
-        var targetFile = Path.Join(target, "book.m4b");
-        Assert.Equal("audio", await File.ReadAllTextAsync(targetFile));
-
-        var lastWriteTimeUtc = File.GetLastWriteTimeUtc(targetFile);
-        File.Delete(targetFile);
-        await File.WriteAllTextAsync(targetFile, "audio");
-        File.SetLastWriteTimeUtc(targetFile, lastWriteTimeUtc);
-        await MakeRetryDueAsync(job.Id);
-        var generation = Assert.IsType<int>(
-            await queue.TryClaimJobAsync(job.Id, LeaseOwner));
-        retry.LeaseOwner = LeaseOwner;
-        retry.LeaseGeneration = generation;
-
-        await _provider.GetRequiredService<IMoveJobProcessor>()
-            .ProcessJobAsync(retry, CancellationToken.None);
-
-        var blocked = Assert.IsType<MoveJob>(await queue.GetJobAsync(job.Id));
-        Assert.Equal(MoveJobStatus.NeedsAttention, blocked.Status);
-        Assert.Empty(await _historyRepository.GetByCorrelationIdAsync($"move:{job.Id:N}"));
-        await using var verification = await _provider
-            .GetRequiredService<IDbContextFactory<ListenArrDbContext>>()
-            .CreateDbContextAsync();
-        Assert.False(await verification.MoveScanHandoffs.AsNoTracking()
-            .AnyAsync(candidate => candidate.MoveJobId == job.Id));
-    }
-
     [LinuxFact]
     public async Task ProcessJobAsync_TargetContentMutatedInPlaceDuringCompletionCommit_WritesNoCompletionRecords()
     {

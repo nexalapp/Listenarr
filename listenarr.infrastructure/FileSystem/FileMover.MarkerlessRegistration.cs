@@ -77,9 +77,15 @@ public partial class FileMover
             }
             if (initialDestination != null)
             {
-                if (string.IsNullOrWhiteSpace(proof.Sha256)
-                    && !initialDestination.MatchesObjectIdentity(
-                        proof.PhysicalObjectIdentity))
+                // Always hash when something already occupies the destination.
+                //
+                // This used to skip the hash when the destination was the same object as
+                // the source, which was sound while an inode proved that. It no longer
+                // does, and without the hash the comparison below falls back to length
+                // alone - which accepts any different file that happens to be the same
+                // size. That is not a hypothetical: two files of equal length is exactly
+                // what an interrupted publication and its replacement look like.
+                if (string.IsNullOrWhiteSpace(proof.Sha256))
                 {
                     proof = await CaptureMarkerlessSourceProofAsync(
                         initialSource,

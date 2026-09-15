@@ -141,11 +141,6 @@ namespace Listenarr.Infrastructure.Library.Tagging
         }
 
         /// <summary>
-        /// Renew the lease until the job finishes. Cancels <paramref name="heartbeat"/>
-        /// when the lease is lost, which stops the rewrite rather than letting two workers
-        /// replace the same library file.
-        /// </summary>
-        /// <summary>
         /// Record a terminal failure through a context that has nothing to do with the
         /// one the job was using. Best-effort: if even this cannot write, the lease still
         /// expires and the job returns to the queue on its own.
@@ -171,6 +166,11 @@ namespace Listenarr.Infrastructure.Library.Tagging
             }
         }
 
+        /// <summary>
+        /// Renew the lease until the job finishes. Cancels <paramref name="heartbeat"/>
+        /// when the lease is lost, which stops the rewrite rather than letting two workers
+        /// replace the same library file.
+        /// </summary>
         private async Task KeepLeaseAliveAsync(
             Guid jobId,
             CancellationTokenSource heartbeat,

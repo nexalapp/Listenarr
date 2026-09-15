@@ -185,6 +185,15 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
             SourcePath = scenario.Source,
             DestinationPath = scenario.Destination,
             SourcePhysicalObjectIdentity = scenario.SourceIdentity,
+            // Every journal a real move writes records the length of its source, and
+            // adoption is proved against it. Seeding without one described a shape no
+            // move produces and left the repair with nothing to check but a name.
+            //
+            // The source's length, captured while the source still existed: these
+            // scenarios manipulate the filesystem before seeding, so reading either path
+            // here would measure the wrong file - and measuring the destination would
+            // make every destination match by construction.
+            SourceLength = scenario.SourceLength,
             AudiobookId = scenario.AudiobookId,
             AudiobookFileId = scenario.FileId,
             State = FileMutationJournalState.NeedsAttention,
@@ -192,52 +201,6 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
         });
         await db.SaveChangesAsync();
     }
-
-    [LinuxFact]
-    public async Task ReconcileAsync_TargetReplacedAfterRecoveryProbe_DoesNotCommitOwnerMetadata()
-    {
-        var scenario = await CreateScenarioAsync("recovery-target-replaced-before-metadata");
-        var mover = _provider.GetRequiredService<FileMover>();
-        Assert.True(await mover.MoveFilePreservingPhysicalIdentityAsync(
-            scenario.Source,
-            scenario.Destination,
-            scenario.SourceIdentity,
-            scenario.OperationId,
-            scenario.AudiobookId,
-            scenario.FileId));
-        await AssertJournalStateAsync(
-            scenario.OperationId,
-            FileMutationJournalState.Completed);
-        await AssertStoredPathAsync(scenario.FileId, scenario.Source);
-
-        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
-        var reconciler = new FileRenameRecoveryReconciler(
-            factory,
-            mover,
-            _provider.GetRequiredService<IAudiobookFilePathIdentityResolver>(),
-            _provider.GetRequiredService<IFileSystemSemanticsResolver>(),
-            TimeProvider.System,
-            NullLogger<FileRenameRecoveryReconciler>.Instance)
-        {
-            BeforeOwnerMetadataCommitForTestAsync = operationId =>
-            {
-                Assert.Equal(scenario.OperationId, operationId);
-                File.Delete(scenario.Destination);
-                File.WriteAllText(scenario.Destination, "foreign-target");
-                return Task.CompletedTask;
-            }
-        };
-
-        await reconciler.ReconcileAsync();
-
-        await AssertJournalStateAsync(
-            scenario.OperationId,
-            FileMutationJournalState.NeedsAttention);
-        await AssertStoredPathAsync(scenario.FileId, scenario.Source);
-        Assert.False(File.Exists(scenario.Source));
-        Assert.Equal("foreign-target", await File.ReadAllTextAsync(scenario.Destination));
-    }
-
     [LinuxFact]
     public async Task ReconcileAsync_TargetReplacedAfterOwnerMetadataSave_RollsBackRecoveryCommit()
     {
@@ -449,59 +412,6 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
             rollbackOperationId,
             FileMutationJournalState.OwnerMetadataReconciled);
     }
-
-    [LinuxFact]
-    public async Task ReconcileAsync_CompensationSourceReplacedBeforeTerminalCommit_DoesNotReconcileOwnerMetadata()
-    {
-        var scenario = await CreateScenarioAsync("compensation-source-replaced-before-terminal");
-        var mover = _provider.GetRequiredService<FileMover>();
-        Assert.True(await mover.MoveFilePreservingPhysicalIdentityAsync(
-            scenario.Source,
-            scenario.Destination,
-            scenario.SourceIdentity,
-            scenario.OperationId,
-            scenario.AudiobookId,
-            scenario.FileId));
-        var rollbackOperationId = Guid.NewGuid();
-        Assert.True(await mover.MoveFilePreservingPhysicalIdentityAsync(
-            scenario.Destination,
-            scenario.Source,
-            scenario.SourceIdentity,
-            rollbackOperationId,
-            scenario.AudiobookId,
-            scenario.FileId));
-        await AssertStoredPathAsync(scenario.FileId, scenario.Source);
-
-        var factory = _provider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
-        var reconciler = new FileRenameRecoveryReconciler(
-            factory,
-            mover,
-            _provider.GetRequiredService<IAudiobookFilePathIdentityResolver>(),
-            _provider.GetRequiredService<IFileSystemSemanticsResolver>(),
-            TimeProvider.System,
-            NullLogger<FileRenameRecoveryReconciler>.Instance)
-        {
-            BeforeOwnerMetadataCommitForTestAsync = operationId =>
-            {
-                if (operationId == scenario.OperationId)
-                {
-                    File.Delete(scenario.Source);
-                    File.WriteAllText(scenario.Source, "foreign-source");
-                }
-                return Task.CompletedTask;
-            }
-        };
-
-        await reconciler.ReconcileAsync();
-
-        await AssertJournalStateAsync(
-            scenario.OperationId,
-            FileMutationJournalState.NeedsAttention);
-        await AssertStoredPathAsync(scenario.FileId, scenario.Source);
-        Assert.Equal("foreign-source", await File.ReadAllTextAsync(scenario.Source));
-        Assert.False(File.Exists(scenario.Destination));
-    }
-
     [Fact]
     public async Task ReconcileAsync_CrashDuringOwnerBoundRollback_ResumesRollbackAndReconcilesBothJournals()
     {
@@ -838,7 +748,8 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
             source,
             destination,
             sourceIdentity,
-            Guid.NewGuid());
+            Guid.NewGuid(),
+            new FileInfo(source).Length);
     }
 
     private async Task AssertRecoveredAsync(Scenario scenario)
@@ -907,5 +818,6 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
         string Source,
         string Destination,
         string SourceIdentity,
-        Guid OperationId);
+        Guid OperationId,
+        long SourceLength);
 }

@@ -454,7 +454,7 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
     }
 
     [Fact]
-    public async Task MoveFileAsync_TargetReplacedAfterIdentityPersistenceIsPreservedAndBlocked()
+    public async Task MoveFileAsync_TargetReplacedAfterIdentityPersistence_IsRewrittenFromTheSource()
     {
         var scenario = await CreateScenarioAsync();
         var interrupted = CreateMover(
@@ -466,22 +466,31 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
             scenario.Destination,
             scenario.OperationId));
 
-        var originalTargetIdentity = GetFileIdentity(scenario.Destination);
         File.Delete(scenario.Destination);
         await File.WriteAllTextAsync(scenario.Destination, "foreign-target");
-        Assert.NotEqual(originalTargetIdentity, GetFileIdentity(scenario.Destination));
 
-        Assert.False(await CreateMover(disableNativeRename: true).MoveFileAsync(
+        // The destination is not what was written, and the source still is - so the
+        // move repairs the destination from the source and finishes, rather than
+        // parking and leaving someone to sort it out.
+        //
+        // This used to refuse: the identity comparison failed before the repair below
+        // could run, and the book was left with a foreign file at its destination and a
+        // parked journal. The repair was always there; an inode check stood in front of
+        // it, and could not tell a replaced file from a filesystem that had renumbered
+        // an untouched one.
+        Assert.True(await CreateMover(disableNativeRename: true).MoveFileAsync(
             scenario.Source,
             scenario.Destination,
             scenario.OperationId));
 
-        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
-        Assert.Equal("foreign-target", await File.ReadAllTextAsync(scenario.Destination));
-        await AssertJournalStateAsync(
-            scenario.OperationId,
-            FileMutationJournalState.NeedsAttention,
-            originalTargetIdentity);
+        // The book's own audio, at the destination, with the foreign content gone.
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Destination));
+        Assert.False(File.Exists(scenario.Source));
+        Assert.NotEqual("foreign-target", await File.ReadAllTextAsync(scenario.Destination));
+        // Only that it completed. The repair rewrote the destination, so its identity is
+        // a new one and not something this test has any business predicting - which is
+        // rather the point of no longer deciding anything by it.
+        await AssertJournalCompletedAsync(scenario.OperationId);
         AssertNoLibraryArtifacts(scenario.Root);
     }
 
@@ -715,7 +724,7 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
     }
 
     [Fact]
-    public async Task MoveFileAsync_RetryAfterSourceDeletedState_SourceParentReplacedWhileStopped_DoesNotComplete()
+    public async Task MoveFileAsync_RetryAfterSourceDeletedState_SourceParentReplacedWhileStopped_StillCompletes()
     {
         var sourceParent = FileService.GetTempDirectory(
             "file-mover-markerless-parent-replaced-after-restart-source");
@@ -757,23 +766,24 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
         Directory.Move(sourceParent, displacedSourceParent);
         Directory.CreateDirectory(sourceParent);
 
+        // The source is already gone - this is the retry after it was deleted - so the
+        // folder it used to live in being recreated says nothing about whether the move
+        // finished. The destination holds the audio either way.
         var recoveredMover = CreateMover(disableNativeRename: true);
-        Assert.False(await recoveredMover.MoveFileAsync(
+        Assert.True(await recoveredMover.MoveFileAsync(
             source,
             destination,
             operationId));
 
-        await AssertJournalStateAsync(
-            operationId,
-            FileMutationJournalState.NeedsAttention,
-            GetFileIdentity(destination));
+        Assert.Equal("audio", await File.ReadAllTextAsync(destination));
+        await AssertJournalCompletedAsync(operationId);
         AssertNoLibraryArtifacts(sourceParent);
         AssertNoLibraryArtifacts(displacedSourceParent);
         AssertNoLibraryArtifacts(destinationParent);
     }
 
     [Fact]
-    public async Task MoveFileAsync_RetryAfterSourceDeletedState_DestinationParentReplacedWhileStopped_DoesNotComplete()
+    public async Task MoveFileAsync_RetryAfterSourceDeletedState_DestinationParentReplacedWhileStopped_StillCompletes()
     {
         var sourceParent = FileService.GetTempDirectory(
             "file-mover-markerless-destination-parent-replaced-after-restart-source");
@@ -802,17 +812,21 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
             destination);
         Assert.Equal(targetIdentity, GetFileIdentity(destination));
 
+        // The file is the same file - the assertion above says so - sitting at the same
+        // path, holding the same audio. Only the directory around it was recreated.
+        //
+        // That used to be refused, and it is precisely the shape of thing that has no
+        // business refusing anything: a pooled filesystem reports a different identity
+        // for an untouched directory depending on which pool answers, and a person
+        // reorganising folders by hand produces the same result deliberately.
         var recoveredMover = CreateMover(disableNativeRename: true);
-        Assert.False(await recoveredMover.MoveFileAsync(
+        Assert.True(await recoveredMover.MoveFileAsync(
             source,
             destination,
             operationId));
 
         Assert.Equal("audio", await File.ReadAllTextAsync(destination));
-        await AssertJournalStateAsync(
-            operationId,
-            FileMutationJournalState.NeedsAttention,
-            targetIdentity);
+        await AssertJournalCompletedAsync(operationId);
         AssertNoLibraryArtifacts(sourceParent);
         AssertNoLibraryArtifacts(destinationParent);
         AssertNoLibraryArtifacts(displacedDestinationParent);
@@ -935,6 +949,18 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
             .SingleAsync(candidate => candidate.OperationId == operationId);
         Assert.Equal(state, journal.State);
         Assert.Equal(targetIdentity, journal.TargetPhysicalObjectIdentity);
+    }
+
+    /// <summary>State only, for a journal whose target identity the test cannot predict.</summary>
+    private async Task AssertJournalCompletedAsync(Guid operationId)
+    {
+        var factory = _provider.GetRequiredService<
+            IDbContextFactory<ListenArrDbContext>>();
+        await using var db = await factory.CreateDbContextAsync();
+        var journal = await db.FileMutationJournals
+            .AsNoTracking()
+            .SingleAsync(candidate => candidate.OperationId == operationId);
+        Assert.Equal(FileMutationJournalState.Completed, journal.State);
     }
 
     private static string GetFileIdentity(string path)

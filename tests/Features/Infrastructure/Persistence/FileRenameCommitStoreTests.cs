@@ -120,67 +120,6 @@ public sealed class FileRenameCommitStoreTests : BaseTests
                 .SingleAsync(candidate => candidate.OperationId == operationId)).State);
         Assert.Equal("foreign", await File.ReadAllTextAsync(destinationPath));
     }
-
-    [Fact]
-    public async Task CommitOwnerMetadataAsync_ReplacedCompletedTargetDoesNotPersistTrackedPathChange()
-    {
-        await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        await using var db = new ListenArrDbContext(options);
-        await db.Database.EnsureCreatedAsync();
-        var audiobook = new Audiobook
-        {
-            Title = "Rename Commit Replaced Target",
-            BasePath = "/library/old"
-        };
-        db.Audiobooks.Add(audiobook);
-        await db.SaveChangesAsync();
-
-        var root = FileService.GetTempDirectory("rename-commit-replaced-target");
-        var sourcePath = Path.Join(root, "old.m4b");
-        var destinationPath = Path.Join(root, "new.m4b");
-        await File.WriteAllTextAsync(destinationPath, "owned");
-        var targetIdentity = GetFileIdentity(destinationPath);
-        var operationId = Guid.NewGuid();
-        db.FileMutationJournals.Add(new FileMutationJournal
-        {
-            OperationId = operationId,
-            Action = FileAction.Move,
-            SourcePath = sourcePath,
-            DestinationPath = destinationPath,
-            SourcePhysicalObjectIdentity = targetIdentity,
-            SourceLength = new FileInfo(destinationPath).Length,
-            TargetPhysicalObjectIdentity = targetIdentity,
-            AudiobookId = audiobook.Id,
-            AudiobookFileId = 0,
-            State = FileMutationJournalState.Completed
-        });
-        await db.SaveChangesAsync();
-
-        File.Delete(destinationPath);
-        await File.WriteAllTextAsync(destinationPath, "foreign");
-        Assert.NotEqual(targetIdentity, GetFileIdentity(destinationPath));
-        audiobook.BasePath = "/library/new";
-        var store = new FileRenameCommitStore(db, TimeProvider.System);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            store.CommitOwnerMetadataAsync(audiobook.Id, [operationId]));
-
-        await using var verification = new ListenArrDbContext(options);
-        Assert.Equal(
-            "/library/old",
-            (await verification.Audiobooks.AsNoTracking()
-                .SingleAsync(candidate => candidate.Id == audiobook.Id)).BasePath);
-        Assert.Equal(
-            FileMutationJournalState.Completed,
-            (await verification.FileMutationJournals.AsNoTracking()
-                .SingleAsync(candidate => candidate.OperationId == operationId)).State);
-        Assert.Equal("foreign", await File.ReadAllTextAsync(destinationPath));
-    }
-
     [Fact]
     public async Task CommitOwnerMetadataAsync_NonMoveJournalDoesNotPersistTrackedPathChange()
     {

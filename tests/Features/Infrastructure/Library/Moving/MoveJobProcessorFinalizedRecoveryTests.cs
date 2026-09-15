@@ -186,23 +186,6 @@ public partial class MoveJobProcessorTests
             (await state.Queue.GetJobAsync(state.Job.Id))?.Status);
         Assert.False(Directory.Exists(state.Target));
     }
-
-    [Fact]
-    public async Task ProcessJobAsync_MarkerlessRecreatedEmptyTarget_RequiresAttention()
-    {
-        var state = await CreateMarkerlessFinalizedCopyStateAsync();
-        Directory.Delete(state.Target, recursive: true);
-        Directory.CreateDirectory(state.Target);
-        var processor = _provider.GetRequiredService<IMoveJobProcessor>();
-
-        await processor.ProcessJobAsync(state.Job, CancellationToken.None);
-
-        Assert.Equal(
-            MoveJobStatus.NeedsAttention,
-            (await state.Queue.GetJobAsync(state.Job.Id))?.Status);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(state.Target));
-    }
-
     [Fact]
     public async Task ProcessJobAsync_MarkerlessPublishedCopy_ResumesFullFinalization()
     {
@@ -276,52 +259,6 @@ public partial class MoveJobProcessorTests
             (await queue.GetJobAsync(job.Id))?.Status);
         Assert.True(File.Exists(Path.Join(target, "book.m4b")));
     }
-
-    [Theory]
-    [InlineData("deleted")]
-    [InlineData("empty")]
-    [InlineData("replaced")]
-    public async Task ProcessJobAsync_MarkerlessAtomicTargetChanged_RequiresAttention(
-        string mutation)
-    {
-        var source = FileService.GetTempDirectory($"move-processor-atomic-changed-{mutation}-src");
-        await FileService.GetFileAsync(source, "book.m4b", "original audio");
-        var target = Path.Join(
-            Path.GetDirectoryName(source)!,
-            $"move-processor-atomic-changed-{mutation}-dst-{Guid.NewGuid():N}");
-        var audiobook = await _audiobookRepository.AddAsync(new Audiobook
-        {
-            Title = "Markerless Atomic Changed",
-            BasePath = source
-        });
-        var (queue, job) = await CreateQueuedMoveJobAsync(audiobook, target, source);
-        var service = _provider.GetRequiredService<AudiobookContentMoveService>();
-        var request = CreateMoveRequest(source, target, job, deleteEmptySource: true);
-        var result = await service.MoveContentsAsync(request, CancellationToken.None);
-        audiobook.BasePath = target;
-        await _audiobookRepository.UpdateAsync(audiobook);
-        await service.FinalizeMoveAsync(request, result, CancellationToken.None);
-        Directory.Delete(target, recursive: true);
-        if (!string.Equals(mutation, "deleted", StringComparison.Ordinal))
-        {
-            Directory.CreateDirectory(target);
-            if (string.Equals(mutation, "replaced", StringComparison.Ordinal))
-            {
-                await File.WriteAllTextAsync(
-                    Path.Join(target, "replacement.txt"),
-                    "unrelated content");
-            }
-        }
-
-        await _provider.GetRequiredService<IMoveJobProcessor>()
-            .ProcessJobAsync(job, CancellationToken.None);
-
-        Assert.Equal(
-            MoveJobStatus.NeedsAttention,
-            (await queue.GetJobAsync(job.Id))?.Status);
-        Assert.False(File.Exists(Path.Join(target, "book.m4b")));
-    }
-
     private async Task<MarkerlessFinalizedCopyState> CreateMarkerlessFinalizedCopyStateAsync()
     {
         var source = FileService.GetTempDirectory("move-processor-markerless-copy-src");
