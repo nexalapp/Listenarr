@@ -184,6 +184,12 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return null;
         }
 
+        public Task<List<AuthorCacheEntry>> GetAllCachedAuthorsAsync(CancellationToken ct = default) =>
+            _db.AuthorCacheEntries.AsNoTracking().ToListAsync(ct);
+
+        public Task<List<SeriesCacheEntry>> GetAllCachedSeriesAsync(CancellationToken ct = default) =>
+            _db.SeriesCacheEntries.AsNoTracking().ToListAsync(ct);
+
         public async Task<AuthorCacheEntry?> GetCachedAuthorByNameAsync(string name, string region)
         {
             var normalizedName = NormalizeAuthorName(name);

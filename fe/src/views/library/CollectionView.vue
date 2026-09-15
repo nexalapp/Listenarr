@@ -808,6 +808,7 @@ import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
+import { buildCatalogMetadata } from '@/utils/catalogMetadata'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -1064,32 +1065,6 @@ function resolveSeriesForCollection(
     }
   }
   return null
-}
-
-function buildCatalogMetadata(book: RemoteCatalogBook): AudibleBookMetadata {
-  const authors = (book.authors || []).filter(Boolean)
-  const publishYear = book.publishedDate?.match(/\d{4}/)?.[0]
-
-  return {
-    asin: book.asin || '',
-    title: book.title || 'Unknown Title',
-    subtitle: book.subtitle,
-    authors,
-    imageUrl: book.imageUrl,
-    runtime: book.runtime,
-    language: book.language,
-    publisher: book.publisher,
-    narrators: book.narrators || [],
-    genres: book.genres || [],
-    series: book.series,
-    seriesNumber: book.seriesNumber,
-    publishedDate: book.publishedDate,
-    publishYear,
-    isbn: book.isbn,
-    source: book.metadataSource || 'Audible',
-    sourceLink: book.link,
-    metadataSource: book.metadataSource || 'Audible',
-  }
 }
 
 function mapCatalogItem(

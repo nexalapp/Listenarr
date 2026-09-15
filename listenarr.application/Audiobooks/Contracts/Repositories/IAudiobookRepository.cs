@@ -89,6 +89,10 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region);
         Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region);
         Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry);
+        /// <summary>Every cached author catalog, for suggestions; read-only snapshots.</summary>
+        Task<List<AuthorCacheEntry>> GetAllCachedAuthorsAsync(CancellationToken ct = default);
+        /// <summary>Every cached series catalog, for suggestions; read-only snapshots.</summary>
+        Task<List<SeriesCacheEntry>> GetAllCachedSeriesAsync(CancellationToken ct = default);
         Task<Audiobook> AddAsync(Audiobook audiobook);
         Task<bool> UpdateAsync(Audiobook audiobook);
         Task<bool> RewritePathReferencesAsync(

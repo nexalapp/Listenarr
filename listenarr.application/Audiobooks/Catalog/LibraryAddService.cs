@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Suggestions;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Audiobooks.Catalog
@@ -35,6 +36,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
         private readonly IFileSystem _fileSystem;
         private readonly IFilesystemMutationCoordinator _mutationCoordinator;
         private readonly INotificationService? _notificationService;
+        private readonly ISuggestionRefreshService? _suggestionRefresh;
 
         public LibraryAddService(
             IAudiobookRepository repo,
@@ -50,7 +52,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
             IFileSystemSemanticsResolver semanticsResolver,
             IFileSystem fileSystem,
             IFilesystemMutationCoordinator mutationCoordinator,
-            INotificationService? notificationService = null)
+            INotificationService? notificationService = null,
+            ISuggestionRefreshService? suggestionRefresh = null)
         {
             _repo = repo;
             _commitStore = commitStore;
@@ -68,6 +71,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
             _mutationCoordinator = mutationCoordinator ?? throw new ArgumentNullException(nameof(mutationCoordinator));
             _notificationService = notificationService;
+            _suggestionRefresh = suggestionRefresh;
         }
 
         public async Task<LibraryAddOperationResult> AddToLibraryAsync(
@@ -186,6 +190,11 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 preparedImage,
                 preparedAuthorImages);
             await TrySendAddedNotificationAsync(audiobook);
+            // Whatever this book's author and series have that the library does not is
+            // now worth knowing, so make sure their catalogs are cached.
+            _suggestionRefresh?.QueueIfMissing(
+                audiobook.Authors ?? [],
+                string.IsNullOrWhiteSpace(audiobook.Series) ? [] : [audiobook.Series]);
 
             _logger.LogInformation(
                 "Added audiobook '{Title}' (ASIN: {Asin}) to library with Monitored={Monitored}, QualityProfileId={QualityProfileId}, AutoSearch={AutoSearch}",
