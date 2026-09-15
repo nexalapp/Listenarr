@@ -361,7 +361,9 @@
             >
               <PhActivity />
               <span>Activity</span>
-              <Pill variant="count" v-if="activityCount > 0">{{ activityCount }}</Pill>
+              <Pill variant="count" size="small" class="nav-count" v-if="activityCount > 0">{{
+                activityCount
+              }}</Pill>
             </RouterLink>
             <RouterLink
               to="/wanted"
@@ -374,7 +376,6 @@
             >
               <PhHeart />
               <span>Wanted</span>
-              <Pill variant="count" v-if="wantedCount > 0">{{ wantedCount }}</Pill>
             </RouterLink>
           </div>
 
@@ -582,6 +583,8 @@ import { useNzbKingTokensStore } from '@/stores/nzbKingTokens'
 import NzbKingTokenWidget from '@/components/domain/nzbking/NzbKingTokenWidget.vue'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore } from '@/stores/moveJobs'
+import { useConversionJobsStore } from '@/stores/conversionJobs'
+import { useTagJobsStore } from '@/stores/tagJobs'
 import { useLibraryDeleteOperationsStore } from '@/stores/libraryDeleteOperations'
 import { useScanNotificationsStore } from '@/stores/scanNotifications'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
@@ -615,6 +618,8 @@ const { getProtectedImageSrc } = useProtectedImages()
 const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
 const moveJobsStore = useMoveJobsStore()
+const conversionJobsStore = useConversionJobsStore()
+const tagJobsStore = useTagJobsStore()
 const deleteOperationsStore = useLibraryDeleteOperationsStore()
 const scanNotificationsStore = useScanNotificationsStore()
 const filesystemReadinessStore = useFilesystemReadinessStore()
@@ -826,9 +831,6 @@ const closeMobileMenu = () => {
 
 // Reactive state for badges and counters
 const queueItems = ref<QueueItem[]>([])
-const wantedCount = computed(
-  () => libraryStore.audiobooks.filter((book) => book.wanted === true).length,
-)
 const systemIssues = ref(0)
 
 // Activity count: Optimized with memoized intermediate computations
@@ -869,17 +871,29 @@ const externalDownloadsCount = computed(
   () => activeDownloads.value.length - ddlDownloadsCount.value,
 )
 
-// Step 5: Final activity count (uses cached intermediate results)
+// Step 5: Library jobs the Activity page also lists - conversions, tag writes and
+// moves - so the count is everything in progress there, not just downloads.
+const activeLibraryJobsCount = computed(
+  () =>
+    conversionJobsStore.activeJobs.length +
+    tagJobsStore.activeJobs.length +
+    moveJobsStore.activeJobs.length,
+)
+
+// Step 6: Final activity count (uses cached intermediate results)
 const activityCount = computed(() => {
   // Total = DDL (unique) + max(external in downloads, external in queue)
   // This avoids double-counting external clients that appear in both places
   const count =
-    ddlDownloadsCount.value + Math.max(externalDownloadsCount.value, activeQueueCount.value)
+    ddlDownloadsCount.value +
+    Math.max(externalDownloadsCount.value, activeQueueCount.value) +
+    activeLibraryJobsCount.value
 
   logger.debug('App Badge - Activity count calculated', {
     ddl: ddlDownloadsCount.value,
     external: externalDownloadsCount.value,
     queue: activeQueueCount.value,
+    libraryJobs: activeLibraryJobsCount.value,
     total: count,
   })
 
@@ -1423,6 +1437,8 @@ onMounted(async () => {
     // Keep durable move jobs globally visible so the notification dropdown can
     // show progress even when the Activity page is not mounted.
     moveJobsStore.start()
+    conversionJobsStore.start()
+    tagJobsStore.start()
 
     // Hydrate the app once, then keep it current from SignalR updates.
     await Promise.all([downloadsStore.loadDownloads(), syncLibrarySnapshot()])
@@ -1621,6 +1637,8 @@ onUnmounted(() => {
     unsubscribeSignalRConnected()
   }
   moveJobsStore.stop()
+  conversionJobsStore.stop()
+  tagJobsStore.stop()
   filesystemReadinessStore.stop()
   // Event listeners are automatically cleaned up by VueUse
 })
@@ -2091,10 +2109,15 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   gap: 0.75rem;
 }
 
-/* Push count pills to the end of sidebar nav items */
-.sidebar .nav-item .pill-count,
-.sidebar .nav-item .pill.pill-count {
+/* The Activity count sits at the end of its nav item, sized like Sonarr's: a
+   tight rectangle that reads as a number, not a button. */
+.sidebar .nav-item .nav-count {
   margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  min-width: 1.6rem;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  border-radius: 4px;
 }
 
 .nav-item:hover {
