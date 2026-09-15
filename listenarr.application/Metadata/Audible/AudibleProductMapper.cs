@@ -130,7 +130,8 @@ namespace Listenarr.Application.Metadata.Audible
                 Narrators = book.Narrators,
                 ReleaseDate = book.ReleaseDate,
                 Link = string.IsNullOrWhiteSpace(book.Asin) ? null : $"{AudibleRequestHelper.GetBaseUrl(book.Region ?? "us")}/pd/{book.Asin}",
-                Isbn = book.Isbn
+                Isbn = book.Isbn,
+                Rating = book.Rating
             };
         }
 

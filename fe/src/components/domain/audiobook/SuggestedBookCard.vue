@@ -34,6 +34,13 @@
         <span v-if="year"> · {{ year }}</span>
         <span v-if="book.runtime"> · {{ formatRuntime(book.runtime) }}</span>
       </div>
+      <div v-if="rating" class="rating" :title="ratingTitle">
+        <PhStar weight="fill" />
+        <span>{{ rating }}</span>
+        <span v-if="book.ratingCount" class="rating-count"
+          >({{ compactCount(book.ratingCount) }})</span
+        >
+      </div>
     </div>
     <div class="actions">
       <button class="btn btn-primary btn-sm" title="Add to library" @click="emit('add')">
@@ -45,7 +52,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { PhPlus } from '@phosphor-icons/vue'
+import { PhPlus, PhStar } from '@phosphor-icons/vue'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { formatRuntime } from '@/utils/searchResultFormatting'
@@ -63,6 +70,22 @@ const emit = defineEmits<{
 const { getProtectedImageSrc } = useProtectedImages()
 
 const year = computed(() => props.book.publishedDate?.match(/\d{4}/)?.[0])
+
+// Overall is the number people know from Audible's page; story and performance
+// stay in the tooltip for anyone choosing between narrations.
+const rating = computed(() =>
+  props.book.ratingOverall != null ? props.book.ratingOverall.toFixed(1) : null,
+)
+const ratingTitle = computed(() => {
+  const parts = [`Overall ${rating.value}`]
+  if (props.book.ratingStory != null) parts.push(`Story ${props.book.ratingStory.toFixed(1)}`)
+  if (props.book.ratingCount) parts.push(`${props.book.ratingCount.toLocaleString()} ratings`)
+  return parts.join(' · ')
+})
+
+function compactCount(count: number): string {
+  return count >= 1000 ? `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k` : String(count)
+}
 
 // Anthologies credit a dozen names; two is enough to place the book.
 const authorLine = computed(() => {
@@ -127,6 +150,19 @@ const authorLine = computed(() => {
   color: #999;
   font-size: 0.75rem;
   margin-top: 0.25rem;
+}
+
+.rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #fcc419;
+  font-size: 0.75rem;
+  margin-top: 0.3rem;
+}
+
+.rating-count {
+  color: #888;
 }
 
 .actions {

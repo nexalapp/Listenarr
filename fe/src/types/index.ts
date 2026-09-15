@@ -805,6 +805,9 @@ export interface SuggestedBook extends AuthorCatalogBook {
   authors: string[]
   narrators: string[]
   genres: string[]
+  ratingOverall?: number
+  ratingCount?: number
+  ratingStory?: number
 }
 
 export interface AuthorSuggestionGroup {

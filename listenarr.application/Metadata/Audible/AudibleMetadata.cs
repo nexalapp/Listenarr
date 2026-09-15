@@ -101,6 +101,8 @@ namespace Listenarr.Application.Metadata.Audible
         public string? ReleaseDate { get; set; }
         public string? Link { get; set; }
         public string? Isbn { get; set; }
+        /// <summary>Listener ratings, when the product lookup returned them; null from plain search.</summary>
+        public AudibleRating? Rating { get; set; }
     }
 
     // Helper types for simple author lookup parsing

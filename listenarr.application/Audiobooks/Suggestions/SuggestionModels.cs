@@ -72,7 +72,10 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         string? PublishedDate,
         string? Isbn,
         string? Link,
-        string? MetadataSource);
+        string? MetadataSource,
+        double? RatingOverall,
+        int? RatingCount,
+        double? RatingStory);
 
     /// <summary>How much of the library the cached catalogs cover.</summary>
     public sealed record SuggestionCoverage(

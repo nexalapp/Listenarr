@@ -190,7 +190,15 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     },
                 ReleaseDate = book.PublishedDate,
                 Isbn = book.Isbn,
-                Link = book.Link
+                Link = book.Link,
+                Rating = book.RatingOverall == null && book.RatingStory == null
+                    ? null
+                    : new AudibleRating
+                    {
+                        Overall = new AudibleRatingDistribution { AverageRating = book.RatingOverall, NumRatings = book.RatingCount },
+                        Performance = new AudibleRatingDistribution { AverageRating = book.RatingPerformance },
+                        Story = new AudibleRatingDistribution { AverageRating = book.RatingStory }
+                    }
             };
         }
 
@@ -228,7 +236,11 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 PublishedDate = book.ReleaseDate,
                 Isbn = book.Isbn,
                 Link = book.Link,
-                MetadataSource = "Audible"
+                MetadataSource = "Audible",
+                RatingOverall = book.Rating?.Overall?.AverageRating,
+                RatingCount = book.Rating?.Overall?.NumRatings,
+                RatingPerformance = book.Rating?.Performance?.AverageRating,
+                RatingStory = book.Rating?.Story?.AverageRating
             };
         }
 

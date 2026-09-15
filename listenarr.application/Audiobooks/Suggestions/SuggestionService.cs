@@ -168,12 +168,14 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         private static SuggestedBook Map(CachedAuthorCatalogBook book) => new(
             book.Asin, book.Title, book.Subtitle, book.Authors, book.Narrators, book.ImageUrl,
             book.Runtime, book.Language, book.Publisher, book.Genres, book.Series,
-            book.SeriesNumber, book.PublishedDate, book.Isbn, book.Link, book.MetadataSource);
+            book.SeriesNumber, book.PublishedDate, book.Isbn, book.Link, book.MetadataSource,
+            book.RatingOverall, book.RatingCount, book.RatingStory);
 
         private static SuggestedBook Map(CachedSeriesCatalogBook book) => new(
             book.Asin, book.Title, book.Subtitle, book.Authors, book.Narrators, book.ImageUrl,
             book.Runtime, book.Language, book.Publisher, book.Genres, book.Series,
-            book.SeriesNumber, book.PublishedDate, book.Isbn, book.Link, book.MetadataSource);
+            book.SeriesNumber, book.PublishedDate, book.Isbn, book.Link, book.MetadataSource,
+            book.RatingOverall, book.RatingCount, book.RatingStory);
 
         /// <summary>The library, indexed every way a catalog book might match it.</summary>
         private sealed class HeldBooks
