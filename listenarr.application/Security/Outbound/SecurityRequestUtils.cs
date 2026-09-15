@@ -60,6 +60,17 @@ public static class SecurityRequestUtils
             return true;
         }
 
+        // A dual-stack listener - which ASPNETCORE_URLS=http://*:port produces - reports
+        // IPv4 clients as ::ffff:a.b.c.d. Judged as IPv6 those match none of the rules
+        // below, so every request from a private network read as public: the whole LAN
+        // was refused by anything gated on being local, including reading the server's
+        // own API key from its settings screen.
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+            && ip.IsIPv4MappedToIPv6)
+        {
+            ip = ip.MapToIPv4();
+        }
+
         if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
         {
             var b = ip.GetAddressBytes();
