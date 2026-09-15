@@ -34,6 +34,8 @@ export interface TrackedConversionJob {
   failureKind?: string | null
   canRetry: boolean
   trigger: string
+  /** When the work began. Absent until a worker claims the job. */
+  startedAt?: string | null
 }
 
 const terminalStatuses = new Set<ConversionJobStatus>([
@@ -95,6 +97,9 @@ function toTracked(
     failureKind: update.failureKind ?? null,
     canRetry: update.canRetry ?? existing?.canRetry ?? false,
     trigger: update.trigger ?? existing?.trigger ?? 'Automatic',
+    // Kept across updates: a progress frame carries it, but holding the first one
+    // seen means an estimate survives a frame that happens to omit it.
+    startedAt: update.startedAt ?? existing?.startedAt ?? null,
   }
 }
 

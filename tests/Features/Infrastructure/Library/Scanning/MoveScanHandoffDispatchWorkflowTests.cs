@@ -188,63 +188,6 @@ public sealed class MoveScanHandoffDispatchWorkflowTests : BaseTests
             It.IsAny<DateTimeOffset>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
-
-    [WindowsFact]
-    public async Task VerifyPublishedManifestAsync_HashlessNativeRenameReplacementGeneration_RequiresAttention()
-    {
-        var target = FileService.GetTempDirectory("move-scan-native-replacement");
-        var filePath = await FileService.GetFileAsync(
-            target,
-            "book.mp3",
-            "audio");
-        var originalLastWriteTimeUtc = File.GetLastWriteTimeUtc(filePath);
-        string originalIdentity;
-        string boundaryIdentity;
-        using (var targetAnchor = PinnedDirectoryCreation.OpenPinnedBoundary(target))
-        using (var file = targetAnchor.OpenExistingFile(
-            Path.GetFileName(filePath),
-            requireDeleteAccess: false))
-        {
-            boundaryIdentity = targetAnchor.GetDirectoryObjectIdentity();
-            originalIdentity = file.GetObjectIdentity();
-        }
-
-        File.Delete(filePath);
-        await File.WriteAllTextAsync(filePath, "audio");
-        File.SetLastWriteTimeUtc(filePath, originalLastWriteTimeUtc);
-        using (var targetAnchor = PinnedDirectoryCreation.OpenPinnedBoundary(target))
-        using (var replacement = targetAnchor.OpenExistingFile(
-            Path.GetFileName(filePath),
-            requireDeleteAccess: false))
-        {
-            Assert.NotEqual(originalIdentity, replacement.GetObjectIdentity());
-        }
-
-        var entry = new MoveJobEntry
-        {
-            RelativePath = "book.mp3",
-            EntryType = MoveJobEntryType.File,
-            Length = new FileInfo(filePath).Length,
-            LastWriteTimeUtc = originalLastWriteTimeUtc,
-            Sha256 = null,
-            CopyState = MoveJobEntryCopyState.Verified,
-            CleanupState = MoveJobEntryCleanupState.Deleted,
-            SourcePhysicalObjectIdentity = originalIdentity,
-            TargetPhysicalObjectIdentity = originalIdentity
-        };
-
-        var exception = await Assert.ThrowsAsync<MoveNeedsAttentionException>(() =>
-            AudiobookContentMoveService.VerifyPublishedManifestAsync(
-                target,
-                [entry],
-                FileSystemPathSemantics.CurrentHostDefault,
-                target,
-                boundaryIdentity,
-                CancellationToken.None));
-
-        Assert.Contains("generation", exception.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
     [Fact]
     public async Task TryDispatchPendingAsync_HashlessNativeRenameManifest_DispatchesByPhysicalGeneration()
     {

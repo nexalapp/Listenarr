@@ -438,6 +438,8 @@ export interface ConversionJobUpdate {
   canRetry?: boolean
   attemptCount?: number
   enqueuedAt?: string
+  /** When the work began, as opposed to when it joined the queue. Drives the estimate. */
+  startedAt?: string | null
   completedAt?: string | null
 }
 

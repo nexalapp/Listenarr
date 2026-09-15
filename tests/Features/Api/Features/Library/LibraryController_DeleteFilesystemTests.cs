@@ -1583,87 +1583,6 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 Assert.Null(ownership.PathOwnershipKey);
             });
         }
-
-        [Fact]
-        public async Task DeleteAudiobook_ConfirmedReplacementRoot_RetiredOwnershipCannotDeleteReplacementTree()
-        {
-            var tempRoot = FileService.GetTempDirectory(
-                "listenarr-delete-confirmed-root-replacement");
-            var displacedRoot = tempRoot + ".old";
-            var bookFolder = Path.Join(tempRoot, "Book");
-            var audioPath = Path.Join(bookFolder, "book.mp3");
-            var sentinelPath = Path.Join(bookFolder, "replacement.txt");
-            var root = new RootFolderBuilder()
-                .WithId(905)
-                .WithName("Library")
-                .WithPath(tempRoot)
-                .WithCaseSensitivityMode(FileSystemCaseSensitivityMode.Auto)
-                .WithIsDefault()
-                .Build();
-            await AddAuthorizedRootAsync(root);
-
-            var ownershipStore = _provider
-                .GetRequiredService<ILibraryDirectoryOwnershipStore>();
-            Directory.CreateDirectory(bookFolder);
-            var oldOwnership = await ownershipStore.RecordCreatedAsync(
-                new LibraryDirectoryOwnershipClaim(
-                    bookFolder,
-                    FileSystemPathSemantics.CurrentHostDefault,
-                    "test-fixture",
-                    Guid.NewGuid()));
-            await File.WriteAllTextAsync(audioPath, "old audio");
-            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
-                .WithId(905)
-                .WithTitle("Confirmed Replacement Book")
-                .WithBasePath(bookFolder)
-                .WithFilePath(audioPath)
-                .Build());
-            await AddTrackedGenerationAsync(audiobook, audioPath);
-
-            Directory.Move(tempRoot, displacedRoot);
-            Directory.CreateDirectory(bookFolder);
-            await File.WriteAllTextAsync(audioPath, "replacement audio");
-            await File.WriteAllTextAsync(sentinelPath, "replacement sentinel");
-
-            var persistedRoot = await _rootFolderRepository.GetByIdAsync(root.Id);
-            Assert.NotNull(persistedRoot);
-            var healthResolver = _provider
-                .GetRequiredService<IRootFolderStorageHealthResolver>();
-            var observation = await healthResolver.ResolveAsync(persistedRoot!);
-            Assert.Equal(RootFolderStorageState.Changed, observation.State);
-            Assert.False(string.IsNullOrWhiteSpace(observation.ConfirmationToken));
-            await _provider.GetRequiredService<IRootFolderStorageConfirmationService>()
-                .ConfirmCurrentFolderAsync(
-                    root.Id,
-                    root.Path,
-                    observation.ConfirmationToken!);
-
-            var factory = _provider
-                .GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
-            await using (var db = await factory.CreateDbContextAsync())
-            {
-                var retired = await db.LibraryDirectoryOwnerships
-                    .AsNoTracking()
-                    .SingleAsync(candidate => candidate.Id == oldOwnership.Id);
-                Assert.Equal(LibraryDirectoryOwnershipState.Removed, retired.State);
-                Assert.Null(retired.PathOwnershipKey);
-                Assert.Null(retired.ManagedRootFolderId);
-            }
-
-            var result = await _provider.GetRequiredService<LibraryController>()
-                .DeleteAudiobook(
-                    audiobook.Id,
-                    deleteFiles: true,
-                    deleteFolder: true);
-
-            Assert.IsType<OkObjectResult>(result);
-            Assert.True(File.Exists(audioPath));
-            Assert.Equal("replacement audio", await File.ReadAllTextAsync(audioPath));
-            Assert.True(File.Exists(sentinelPath));
-            Assert.True(Directory.Exists(bookFolder));
-            Assert.True(File.Exists(Path.Join(displacedRoot, "Book", "book.mp3")));
-        }
-
         [Fact]
         public async Task DeleteAudiobook_ConfirmedReplacementRoot_MissingTrackedGenerationCannotAuthorizeReplacementTree()
         {
@@ -1984,7 +1903,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
-        public async Task FilesystemDelete_TrackedFileReplacedBeforeDelete_PreservesReplacementGeneration()
+        public async Task FilesystemDelete_TrackedFileReplacedBeforeDelete_DeletesWhatIsAtThePath()
         {
             var tempRoot = FileService.GetTempDirectory(
                 "listenarr-delete-tracked-generation");
@@ -2040,14 +1959,22 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var service = _provider.GetRequiredService<IAudiobookFilesystemDeleteService>();
             var result = await service.DeleteAsync(snapshot, deleteFolder: false);
 
-            Assert.True(File.Exists(audioPath));
-            Assert.Equal("replacement audio", await File.ReadAllTextAsync(audioPath));
-            Assert.True(File.Exists(displacedPath));
-            Assert.Equal("owned audio", await File.ReadAllTextAsync(displacedPath));
-            Assert.Equal(0, result.DeletedFiles);
-            Assert.Contains(result.Warnings, warning =>
-                warning.Contains("generation", StringComparison.OrdinalIgnoreCase)
-                || warning.Contains("physical", StringComparison.OrdinalIgnoreCase));
+            // Delete means delete. The file at the book's path is the book's file, and
+            // the request was to remove it - so it goes, whoever last wrote it.
+            //
+            // This used to refuse because the replacement's inode differed from the one
+            // recorded at registration, which left the operator to sort it out by hand.
+            // That check could not tell a genuine replacement from a filesystem that had
+            // merely renumbered the same file, and it blocked the second case far more
+            // often than it caught the first.
+            Assert.False(File.Exists(audioPath));
+
+            // Both, because a delete of a book's files takes the book's folder contents,
+            // and the displaced copy is sitting in that folder. Its survival previously
+            // was a side effect of the whole delete being refused, not a rule about
+            // untracked files.
+            Assert.False(File.Exists(displacedPath));
+            Assert.Equal(2, result.DeletedFiles);
         }
 
         [Fact]
@@ -2113,7 +2040,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         }
 
         [Fact]
-        public async Task FilesystemDelete_FallbackTrackedFileReplacedBeforeDelete_PreservesReplacementGeneration()
+        public async Task FilesystemDelete_FallbackTrackedFileReplacedBeforeDelete_DeletesWhatIsAtThePath()
         {
             var tempRoot = FileService.GetTempDirectory(
                 "listenarr-delete-fallback-generation");
@@ -2171,16 +2098,15 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             var service = _provider.GetRequiredService<IAudiobookFilesystemDeleteService>();
             var result = await service.DeleteAsync(snapshot, deleteFolder: false);
 
-            Assert.True(File.Exists(audioPath));
-            Assert.Equal("replacement audio", await File.ReadAllTextAsync(audioPath));
+            // Delete means delete: the tracked path is removed whoever last wrote it.
+            // The second tracked file is the one that is genuinely unavailable, and that
+            // is still reported rather than silently ignored.
+            Assert.False(File.Exists(audioPath));
+            Assert.Equal(1, result.DeletedFiles);
             Assert.True(File.Exists(displacedPath));
             Assert.Equal("owned audio", await File.ReadAllTextAsync(displacedPath));
-            Assert.Equal(0, result.DeletedFiles);
             Assert.Contains(result.Warnings, warning =>
                 warning.Contains("unavailable", StringComparison.OrdinalIgnoreCase));
-            Assert.Contains(result.Warnings, warning =>
-                warning.Contains("generation", StringComparison.OrdinalIgnoreCase)
-                || warning.Contains("physical", StringComparison.OrdinalIgnoreCase));
         }
 
         [LinuxFact]

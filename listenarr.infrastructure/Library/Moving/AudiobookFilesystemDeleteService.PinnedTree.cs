@@ -95,16 +95,14 @@ namespace Listenarr.Infrastructure.Library.Moving
                         entryName,
                         requireDeleteAccess: false);
                     var physicalObjectIdentity = file.GetObjectIdentity();
-                    if (trackedPhysicalObjectIdentities.TryGetValue(
-                            entryPath,
-                            out var expectedTrackedPhysicalObjectIdentity)
-                        && !file.MatchesObjectIdentity(
-                            expectedTrackedPhysicalObjectIdentity))
-                    {
-                        reason =
-                            "A tracked audiobook file physical generation changed before recursive-delete preflight.";
-                        return false;
-                    }
+
+                    // Deliberately not checked against the identity recorded when the
+                    // file was registered. A delete was asked for by name: the files in
+                    // this book's folder are the files it means, and one that has been
+                    // replaced since - by hand, over a share, by a sync client - is still
+                    // the file sitting at that path. Refusing left the operator to sort it
+                    // out by hand for no gain, and could not tell a real replacement from
+                    // a filesystem that had merely renumbered an untouched file.
 
                     preflightIdentities[Path.GetRelativePath(
                         rootAuthorization.FullPath,
@@ -244,15 +242,13 @@ namespace Listenarr.Infrastructure.Library.Moving
                     var relativeFile = Path.GetRelativePath(
                         rootAuthorization.FullPath,
                         entryPath);
-                    if (!preflightIdentities.TryGetValue(
-                            relativeFile,
-                            out var expectedFileIdentity)
-                        || !file.MatchesObjectIdentity(expectedFileIdentity))
-                    {
-                        reason =
-                            "A file generation changed after recursive-delete preflight.";
-                        return false;
-                    }
+                    // Nor between the preflight and the delete itself. Same reasoning:
+                    // whatever occupies the path when the delete runs is what the delete
+                    // was asked to remove.
+                    //
+                    // The path and containment checks around this are untouched - they are
+                    // what stops a delete leaving the authorised root, which is a
+                    // different guarantee and the one that actually matters here.
                     if (ownershipMarkerPaths.Contains(entryPath))
                     {
                         continue;

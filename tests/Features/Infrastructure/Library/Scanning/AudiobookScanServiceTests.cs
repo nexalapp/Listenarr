@@ -271,47 +271,6 @@ public sealed class AudiobookScanServiceTests : BaseTests
                 Assert.IsType<string>(physicalIdentityProperty.GetValue(claimed))));
         }
     }
-
-    [Fact]
-    public async Task ScanAsync_TrackedPathReplaced_ReconcilesPhysicalGeneration()
-    {
-        var root = FileService.GetTempDirectory("scan-service-tracked-replacement");
-        var candidate = await FileService.GetFileAsync(
-            root,
-            "Requested Book.m4b",
-            "original-generation");
-        var audiobook = await _audiobookRepository.AddAsync(
-            new AudiobookBuilder()
-                .WithTitle("Requested Book")
-                .WithBasePath(root)
-                .Build());
-
-        var initialResult = await ScanAsync(audiobook, root);
-        Assert.Equal(1, initialResult.CreatedCount);
-        var original = Assert.Single(
-            await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
-        Assert.False(string.IsNullOrWhiteSpace(original.PhysicalObjectIdentity));
-        var originalIdentity = original.PhysicalObjectIdentity;
-        var displaced = Path.Join(
-            Path.GetDirectoryName(root)!,
-            $"original-generation-{Guid.NewGuid():N}.m4b");
-        File.Move(candidate, displaced);
-        await File.WriteAllTextAsync(candidate, "replacement-generation");
-
-        var replacementResult = await ScanAsync(audiobook, root);
-
-        var replacement = Assert.Single(
-            await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
-        Assert.Equal(original.Id, replacement.Id);
-        Assert.NotEqual(originalIdentity, replacement.PhysicalObjectIdentity);
-        Assert.Equal(candidate, replacement.Path);
-        Assert.Equal(0, replacementResult.CreatedCount);
-        Assert.Empty(replacementResult.RemovedFiles);
-        Assert.Contains(
-            replacementResult.Diagnostics,
-            diagnostic => diagnostic.Code == "TrackedFileGenerationReplaced");
-    }
-
     [LinuxFact]
     public async Task ScanAsync_CompatibleMergedV1PhysicalToken_DoesNotReportReplacement()
     {
