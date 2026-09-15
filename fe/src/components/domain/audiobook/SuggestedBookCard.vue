@@ -177,13 +177,19 @@ function compactCount(count: number): string {
   margin-right: 0.2rem;
 }
 
-.add {
+/* The global .btn is sized for modal footers; this one sits beside a title. */
+.suggested-card .add {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.35rem 0.75rem;
+  padding: 0.35rem 0.7rem;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
   font-size: 0.8rem;
+  line-height: 1.2;
+  border-radius: 6px;
 }
 
 .added-badge {
