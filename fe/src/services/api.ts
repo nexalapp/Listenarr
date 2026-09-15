@@ -50,6 +50,8 @@ import type {
   AudibleBookMetadata,
   AudibleSeriesSearchItem,
   AuthorCatalogResponse,
+  SuggestionSnapshot,
+  SuggestionRefreshStatus,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
   MonitorAuthorResponse,
@@ -440,6 +442,22 @@ class ApiService {
     } catch {
       return null
     }
+  }
+
+  // ---- Suggestions -----------------------------------------------------------
+
+  /** Never touches the network server-side: it reads cached catalogs only. */
+  async getSuggestions(): Promise<SuggestionSnapshot> {
+    return this.request<SuggestionSnapshot>('/suggestions')
+  }
+
+  async getSuggestionRefreshStatus(): Promise<SuggestionRefreshStatus> {
+    return this.request<SuggestionRefreshStatus>('/suggestions/refresh')
+  }
+
+  /** Starts fetching missing/stale catalogs in the background; 409 when already running. */
+  async refreshSuggestions(): Promise<SuggestionRefreshStatus> {
+    return this.request<SuggestionRefreshStatus>('/suggestions/refresh', { method: 'POST' })
   }
 
   async getAuthorCatalog(

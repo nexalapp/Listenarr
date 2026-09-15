@@ -250,7 +250,7 @@ namespace Listenarr.Application.Metadata.Audible
                 ["num_results"] = Math.Clamp(limit, 1, 50).ToString(),
                 ["page"] = Math.Max(0, page - 1).ToString(),
                 ["products_sort_by"] = string.IsNullOrWhiteSpace(sortBy) ? "Relevance" : sortBy,
-                ["response_groups"] = "media,contributors,series,product_attrs,product_desc,product_extended_attrs,category_ladders"
+                ["response_groups"] = "media,contributors,series,product_attrs,product_desc,product_extended_attrs,category_ladders,rating"
             };
 
             if (!string.IsNullOrWhiteSpace(query)) parameters["keywords"] = query;

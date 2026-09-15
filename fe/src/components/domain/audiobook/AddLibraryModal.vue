@@ -490,6 +490,8 @@ interface Props {
   visible: boolean
   book: AudibleBookMetadata
   resolvedImageUrl?: string
+  /** What "search for downloads immediately" starts as; the user can still untick it. */
+  autoSearchDefault?: boolean
 }
 
 interface Emits {
@@ -509,7 +511,7 @@ const qualityProfiles = ref<QualityProfile[]>([])
 const options = ref({
   monitored: true,
   qualityProfileId: null as number | null,
-  autoSearch: false,
+  autoSearch: props.autoSearchDefault ?? false,
   // editable relative path portion (relative to rootPath)
   relativePath: '' as string | null,
 })
@@ -1204,6 +1206,7 @@ watch(
   () => props.visible,
   (value) => {
     if (value) {
+      options.value.autoSearch = props.autoSearchDefault ?? false
       void seedPreview()
       return
     }
