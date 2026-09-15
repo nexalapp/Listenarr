@@ -314,15 +314,46 @@
             <RouterLink
               to="/add-new"
               class="nav-item"
-              :class="{ 'router-link-active': pendingNavPath === '/add-new' }"
-              @mouseenter="preload('add-new')"
-              @focus="preload('add-new')"
+              :class="{ 'router-link-active': addNewNavActive }"
+              @mouseenter="onPrimaryNavMouseEnter('add-new', 'add-new')"
+              @mouseleave="onNavMouseLeave('add-new')"
+              @focus="onPrimaryNavFocus('add-new', 'add-new')"
+              @blur="onNavBlur('add-new')"
               @touchstart.passive="preload('add-new')"
-              @click="closeMobileMenu"
+              @click="onPrimaryNavClick('add-new')"
             >
               <PhPlus />
               <span>Add New</span>
             </RouterLink>
+            <!-- The two ways in: search the web, or import what is already on disk -->
+            <div
+              class="nav-sub"
+              @mouseenter="onNavMouseEnter('add-new')"
+              @mouseleave="onNavMouseLeave('add-new')"
+              @focusin="onNavFocus('add-new')"
+              @focusout="onNavBlur('add-new')"
+              :class="{
+                open: hoverNav === 'add-new' || persistentNav === 'add-new' || isAddNewRoute,
+              }"
+            >
+              <RouterLink
+                to="/add-new"
+                class="nav-subitem"
+                @click="closeMobileMenu"
+                :class="{ active: route.path === '/add-new' }"
+              >
+                <span>Search</span>
+              </RouterLink>
+              <RouterLink
+                to="/library-import"
+                class="nav-subitem"
+                @mouseenter="preload('library-import')"
+                @click="closeMobileMenu"
+                :class="{ active: route.path === '/library-import' }"
+              >
+                <span>Library Import</span>
+              </RouterLink>
+            </div>
             <RouterLink
               to="/calendar"
               class="nav-item"
@@ -334,18 +365,6 @@
             >
               <PhCalendar />
               <span>Calendar</span>
-            </RouterLink>
-            <RouterLink
-              to="/library-import"
-              class="nav-item"
-              :class="{ 'router-link-active': pendingNavPath === '/library-import' }"
-              @mouseenter="preload('library-import')"
-              @focus="preload('library-import')"
-              @touchstart.passive="preload('library-import')"
-              @click="closeMobileMenu"
-            >
-              <PhFolderOpen />
-              <span>Library Import</span>
             </RouterLink>
           </div>
 
@@ -566,7 +585,6 @@ import {
   PhDownload,
   PhCheckCircle,
   PhList,
-  PhFolderOpen,
 } from '@phosphor-icons/vue'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
@@ -1652,6 +1670,15 @@ const isLibraryPath = (path: string) => LIBRARY_PATHS.includes(path) || path.sta
 const isLibraryRoute = computed(() => isLibraryPath(route.path))
 const libraryNavActive = computed(
   () => isLibraryRoute.value || isLibraryPath(pendingNavPath.value ?? ''),
+)
+
+// Add New groups the two ways a book gets in: searching the web and importing
+// what is already on disk.
+const ADD_NEW_PATHS = ['/add-new', '/library-import']
+const isAddNewPath = (path: string) => ADD_NEW_PATHS.includes(path)
+const isAddNewRoute = computed(() => isAddNewPath(route.path))
+const addNewNavActive = computed(
+  () => isAddNewRoute.value || isAddNewPath(pendingNavPath.value ?? ''),
 )
 
 const refreshSecurityWarningBannerPreference = () => {
