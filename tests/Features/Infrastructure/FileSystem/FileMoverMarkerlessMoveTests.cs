@@ -454,7 +454,7 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
     }
 
     [Fact]
-    public async Task MoveFileAsync_TargetReplacedAfterIdentityPersistenceIsPreservedAndBlocked()
+    public async Task MoveFileAsync_TargetReplacedAfterIdentityPersistence_IsRewrittenFromTheSource()
     {
         var scenario = await CreateScenarioAsync();
         var interrupted = CreateMover(
@@ -466,22 +466,31 @@ public sealed class FileMoverMarkerlessMoveTests : BaseTests
             scenario.Destination,
             scenario.OperationId));
 
-        var originalTargetIdentity = GetFileIdentity(scenario.Destination);
         File.Delete(scenario.Destination);
         await File.WriteAllTextAsync(scenario.Destination, "foreign-target");
-        Assert.NotEqual(originalTargetIdentity, GetFileIdentity(scenario.Destination));
 
-        Assert.False(await CreateMover(disableNativeRename: true).MoveFileAsync(
+        // The destination is not what was written, and the source still is - so the
+        // move repairs the destination from the source and finishes, rather than
+        // parking and leaving someone to sort it out.
+        //
+        // This used to refuse: the identity comparison failed before the repair below
+        // could run, and the book was left with a foreign file at its destination and a
+        // parked journal. The repair was always there; an inode check stood in front of
+        // it, and could not tell a replaced file from a filesystem that had renumbered
+        // an untouched one.
+        Assert.True(await CreateMover(disableNativeRename: true).MoveFileAsync(
             scenario.Source,
             scenario.Destination,
             scenario.OperationId));
 
-        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
-        Assert.Equal("foreign-target", await File.ReadAllTextAsync(scenario.Destination));
+        // The book's own audio, at the destination, with the foreign content gone.
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Destination));
+        Assert.False(File.Exists(scenario.Source));
+        Assert.NotEqual("foreign-target", await File.ReadAllTextAsync(scenario.Destination));
         await AssertJournalStateAsync(
             scenario.OperationId,
-            FileMutationJournalState.NeedsAttention,
-            originalTargetIdentity);
+            FileMutationJournalState.Completed,
+            GetFileIdentity(scenario.Destination));
         AssertNoLibraryArtifacts(scenario.Root);
     }
 
