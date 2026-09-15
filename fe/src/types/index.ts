@@ -808,6 +808,7 @@ export interface SuggestedBook extends AuthorCatalogBook {
   ratingOverall?: number
   ratingCount?: number
   ratingStory?: number
+  description?: string
 }
 
 export interface AuthorSuggestionGroup {
@@ -815,6 +816,7 @@ export interface AuthorSuggestionGroup {
   authorAsin?: string
   imageUrl?: string
   libraryCount: number
+  monitored: boolean
   missing: SuggestedBook[]
 }
 
@@ -822,6 +824,7 @@ export interface SeriesSuggestionGroup {
   series: string
   seriesAsin?: string
   libraryCount: number
+  monitored: boolean
   missing: SuggestedBook[]
 }
 

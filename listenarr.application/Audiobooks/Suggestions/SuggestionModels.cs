@@ -37,6 +37,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         string? AuthorAsin,
         string? ImageUrl,
         int LibraryCount,
+        bool Monitored,
         IReadOnlyList<SuggestedBook> Missing);
 
     /// <summary>Books in a series the library has started that it is missing.</summary>
@@ -44,6 +45,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         string Series,
         string? SeriesAsin,
         int LibraryCount,
+        bool Monitored,
         IReadOnlyList<SuggestedBook> Missing);
 
     /// <summary>An author Audible lists as similar to one or more the library holds.</summary>
@@ -75,7 +77,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         string? MetadataSource,
         double? RatingOverall,
         int? RatingCount,
-        double? RatingStory);
+        double? RatingStory,
+        string? Description);
 
     /// <summary>How much of the library the cached catalogs cover.</summary>
     public sealed record SuggestionCoverage(

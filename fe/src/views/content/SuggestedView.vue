@@ -89,12 +89,21 @@
             <span class="group-meta">
               {{ group.libraryCount }} in library · {{ group.missing.length }} missing
             </span>
+            <span v-if="group.monitored" class="monitor-pill"><i />Monitoring author</span>
+            <button
+              v-if="group.missing.length > PREVIEW_COUNT"
+              class="link-btn show-all"
+              @click="toggleGroup(group.author)"
+            >
+              {{ isExpanded(group.author) ? 'Show fewer' : `Show all ${group.missing.length} →` }}
+            </button>
           </header>
           <div class="cards">
             <SuggestedBookCard
-              v-for="book in group.missing"
+              v-for="book in visibleBooks(group.author, group.missing)"
               :key="bookKey(book)"
               :book="book"
+              :added="addedKeys.has(bookKey(book))"
               @add="openAdd(book)"
             />
           </div>
@@ -123,13 +132,26 @@
             <span class="group-meta">
               {{ group.libraryCount }} in library · {{ group.missing.length }} missing
             </span>
+            <span v-if="group.monitored" class="monitor-pill"><i />Monitoring series</span>
+            <button
+              v-if="group.missing.length > PREVIEW_COUNT"
+              class="link-btn show-all"
+              @click="toggleGroup(`series:${group.series}`)"
+            >
+              {{
+                isExpanded(`series:${group.series}`)
+                  ? 'Show fewer'
+                  : `Show all ${group.missing.length} →`
+              }}
+            </button>
           </header>
           <div class="cards">
             <SuggestedBookCard
-              v-for="book in group.missing"
+              v-for="book in visibleBooks(`series:${group.series}`, group.missing)"
               :key="bookKey(book)"
               :book="book"
               show-position
+              :added="addedKeys.has(bookKey(book))"
               @add="openAdd(book)"
             />
           </div>
@@ -246,6 +268,24 @@ const uncovered = computed(() => {
   return c.authorsInLibrary - c.authorsWithCatalog + (c.seriesInLibrary - c.seriesWithCatalog)
 })
 
+// Groups open with a few cards; a 137-book catalog is a scroll, not a suggestion.
+const PREVIEW_COUNT = 6
+const expandedGroups = ref(new Set<string>())
+const isExpanded = (key: string) => expandedGroups.value.has(key)
+function toggleGroup(key: string) {
+  const next = new Set(expandedGroups.value)
+  if (!next.delete(key)) next.add(key)
+  expandedGroups.value = next
+}
+function visibleBooks(key: string, books: SuggestedBook[]): SuggestedBook[] {
+  return isExpanded(key) ? books : books.slice(0, PREVIEW_COUNT)
+}
+
+// Books added during this visit stay in place, marked, rather than vanishing
+// from under the cursor; the next load drops them.
+const addedKeys = ref(new Set<string>())
+let pendingAddKey: string | null = null
+
 function bookKey(book: SuggestedBook): string {
   return book.asin || `${book.title}|${book.authors[0] ?? ''}`
 }
@@ -315,12 +355,16 @@ async function startRefresh() {
 }
 
 function openAdd(book: SuggestedBook) {
+  pendingAddKey = bookKey(book)
   pendingAddBook.value = buildCatalogMetadata(book)
 }
 
-async function handleAdded() {
+function handleAdded() {
+  if (pendingAddKey) {
+    addedKeys.value = new Set(addedKeys.value).add(pendingAddKey)
+  }
+  pendingAddKey = null
   pendingAddBook.value = null
-  await load()
 }
 
 onMounted(async () => {
@@ -432,9 +476,10 @@ onBeforeUnmount(stopPolling)
 
 .group-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .group-title {
@@ -455,8 +500,50 @@ onBeforeUnmount(stopPolling)
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.monitor-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 5px;
+  border: 1px solid rgba(90, 162, 245, 0.45);
+  background: rgba(90, 162, 245, 0.12);
+  color: #7fb8ff;
+  font-size: 0.72rem;
+}
+
+.monitor-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7fb8ff;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #5aa2f5;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: #7fb8ff;
+}
+
+.show-all {
+  margin-left: auto;
 }
 
 .related-list {

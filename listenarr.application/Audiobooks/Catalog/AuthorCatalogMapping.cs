@@ -198,7 +198,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
                         Overall = new AudibleRatingDistribution { AverageRating = book.RatingOverall, NumRatings = book.RatingCount },
                         Performance = new AudibleRatingDistribution { AverageRating = book.RatingPerformance },
                         Story = new AudibleRatingDistribution { AverageRating = book.RatingStory }
-                    }
+                    },
+                Description = book.Description
             };
         }
 
@@ -240,7 +241,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 RatingOverall = book.Rating?.Overall?.AverageRating,
                 RatingCount = book.Rating?.Overall?.NumRatings,
                 RatingPerformance = book.Rating?.Performance?.AverageRating,
-                RatingStory = book.Rating?.Story?.AverageRating
+                RatingStory = book.Rating?.Story?.AverageRating,
+                Description = book.Description
             };
         }
 

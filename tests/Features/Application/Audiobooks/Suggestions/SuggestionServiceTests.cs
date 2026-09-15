@@ -30,6 +30,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
     public sealed class SuggestionServiceTests : BaseTests
     {
         private readonly Mock<IAudiobookRepository> _repository = new();
+        private readonly Mock<IAuthorMonitoringService> _authorMonitoring = new();
+        private readonly Mock<ISeriesMonitoringService> _seriesMonitoring = new();
+        private readonly List<MonitoredAuthor> _monitoredAuthors = [];
         private readonly List<Audiobook> _library = [];
         private readonly List<AuthorCacheEntry> _authors = [];
         private readonly List<SeriesCacheEntry> _series = [];
@@ -48,7 +51,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             _repository
                 .Setup(r => r.GetAllCachedSeriesAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_series);
-            return new SuggestionService(_repository.Object);
+            _authorMonitoring
+                .Setup(m => m.GetAllMonitoredAuthorsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(_monitoredAuthors);
+            _seriesMonitoring
+                .Setup(m => m.GetAllMonitoredSeriesAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
+            return new SuggestionService(_repository.Object, _authorMonitoring.Object, _seriesMonitoring.Object);
         }
 
         private int _nextId = 1;
@@ -239,6 +248,20 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             var snapshot = await BuildService().GetAsync();
 
             Assert.Single(Assert.Single(snapshot.Authors).Missing);
+        }
+
+        [Fact]
+        public async Task Get_SaysWhetherTheAuthorIsAlreadyMonitored()
+        {
+            // Monitoring already watches for new releases, so the page can say so
+            // rather than offer to.
+            Held("Dune", "Frank Herbert", asin: "D1");
+            CachedAuthor("Frank Herbert", Catalog("Dune Messiah", "Frank Herbert", asin: "D2"));
+            _monitoredAuthors.Add(new MonitoredAuthor { AuthorName = "Frank  Herbert" });
+
+            var snapshot = await BuildService().GetAsync();
+
+            Assert.True(Assert.Single(snapshot.Authors).Monitored);
         }
 
         [Fact]

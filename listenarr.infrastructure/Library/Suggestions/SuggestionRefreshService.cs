@@ -117,8 +117,9 @@ namespace Listenarr.Infrastructure.Library.Suggestions
                 var fresh = cachedAuthors.TryGetValue(SuggestionNames.Normalize(author), out var entry)
                     && entry.CatalogBooks is { Count: > 0 }
                     && (entry.LastFetchedAt ?? entry.UpdatedAt) >= cutoff
-                    // Cached before ratings were kept: worth one more fetch.
-                    && entry.CatalogBooks.Any(book => book.RatingOverall != null);
+                    // Cached before ratings and descriptions were kept: worth one more fetch.
+                    && entry.CatalogBooks.Any(book => book.RatingOverall != null)
+                    && entry.CatalogBooks.Any(book => book.Description != null);
                 if (!fresh && Enqueue(new WorkItem(false, author, Force: entry != null)))
                 {
                     queued++;
@@ -130,7 +131,8 @@ namespace Listenarr.Infrastructure.Library.Suggestions
                 var fresh = cachedSeries.TryGetValue(SuggestionNames.Normalize(name), out var entry)
                     && entry.CatalogBooks is { Count: > 0 }
                     && (entry.LastFetchedAt ?? entry.UpdatedAt) >= cutoff
-                    && entry.CatalogBooks.Any(book => book.RatingOverall != null);
+                    && entry.CatalogBooks.Any(book => book.RatingOverall != null)
+                    && entry.CatalogBooks.Any(book => book.Description != null);
                 if (!fresh && Enqueue(new WorkItem(true, name, Force: entry != null)))
                 {
                     queued++;

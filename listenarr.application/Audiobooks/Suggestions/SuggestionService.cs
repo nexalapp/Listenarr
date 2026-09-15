@@ -28,10 +28,20 @@ namespace Listenarr.Application.Audiobooks.Suggestions
     /// a book already on the shelf is the fastest way to make the page ignorable.
     /// </para>
     /// </summary>
-    public sealed class SuggestionService(IAudiobookRepository repository) : ISuggestionService
+    public sealed class SuggestionService(
+        IAudiobookRepository repository,
+        IAuthorMonitoringService authorMonitoring,
+        ISeriesMonitoringService seriesMonitoring) : ISuggestionService
     {
         public async Task<SuggestionSnapshot> GetAsync(CancellationToken cancellationToken = default)
         {
+            var monitoredAuthors = (await authorMonitoring.GetAllMonitoredAuthorsAsync(cancellationToken))
+                .Select(author => SuggestionNames.Normalize(author.AuthorName))
+                .ToHashSet(StringComparer.Ordinal);
+            var monitoredSeries = (await seriesMonitoring.GetAllMonitoredSeriesAsync(cancellationToken))
+                .Select(series => SuggestionNames.Normalize(series.SeriesName))
+                .ToHashSet(StringComparer.Ordinal);
+
             var library = await repository.GetAllAsync();
             cancellationToken.ThrowIfCancellationRequested();
             var memberships = await repository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync(cancellationToken);
@@ -92,7 +102,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 if (missing.Count > 0)
                 {
                     authorGroups.Add(new AuthorSuggestionGroup(
-                        entry.AuthorName, entry.AuthorAsin, entry.ImageUrl, libraryCount, missing));
+                        entry.AuthorName,
+                        entry.AuthorAsin,
+                        entry.ImageUrl,
+                        libraryCount,
+                        monitoredAuthors.Contains(key),
+                        missing));
                 }
             }
 
@@ -119,7 +134,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 if (missing.Count > 0)
                 {
                     seriesGroups.Add(new SeriesSuggestionGroup(
-                        entry.SeriesName, entry.SeriesAsin, libraryCount, missing));
+                        entry.SeriesName, entry.SeriesAsin, libraryCount, monitoredSeries.Contains(key), missing));
                 }
             }
 
@@ -169,13 +184,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             book.Asin, book.Title, book.Subtitle, book.Authors, book.Narrators, book.ImageUrl,
             book.Runtime, book.Language, book.Publisher, book.Genres, book.Series,
             book.SeriesNumber, book.PublishedDate, book.Isbn, book.Link, book.MetadataSource,
-            book.RatingOverall, book.RatingCount, book.RatingStory);
+            book.RatingOverall, book.RatingCount, book.RatingStory, book.Description);
 
         private static SuggestedBook Map(CachedSeriesCatalogBook book) => new(
             book.Asin, book.Title, book.Subtitle, book.Authors, book.Narrators, book.ImageUrl,
             book.Runtime, book.Language, book.Publisher, book.Genres, book.Series,
             book.SeriesNumber, book.PublishedDate, book.Isbn, book.Link, book.MetadataSource,
-            book.RatingOverall, book.RatingCount, book.RatingStory);
+            book.RatingOverall, book.RatingCount, book.RatingStory, book.Description);
 
         /// <summary>The library, indexed every way a catalog book might match it.</summary>
         private sealed class HeldBooks

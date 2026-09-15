@@ -87,5 +87,8 @@ namespace Listenarr.Domain.Audiobooks
         public int? RatingCount { get; set; }
         public double? RatingPerformance { get; set; }
         public double? RatingStory { get; set; }
+
+        /// <summary>The publisher's summary, as the catalog fetch returned it.</summary>
+        public string? Description { get; set; }
     }
 }
