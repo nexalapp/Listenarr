@@ -123,6 +123,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/suggested',
+    name: 'suggested',
+    component: () => import('../views/content/SuggestedView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/calendar',
     name: 'calendar',
     component: () => import('../views/content/CalendarView.vue'),

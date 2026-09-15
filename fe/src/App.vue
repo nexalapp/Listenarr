@@ -377,6 +377,18 @@
               <PhHeart />
               <span>Wanted</span>
             </RouterLink>
+            <RouterLink
+              to="/suggested"
+              class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/suggested' }"
+              @mouseenter="preload('suggested')"
+              @focus="preload('suggested')"
+              @touchstart.passive="preload('suggested')"
+              @click="closeMobileMenu"
+            >
+              <PhSparkle />
+              <span>Suggested</span>
+            </RouterLink>
           </div>
 
           <div class="nav-section">
@@ -561,6 +573,7 @@ import {
   PhActivity,
   PhCalendar,
   PhHeart,
+  PhSparkle,
   PhGear,
   PhMonitor,
   PhFileMinus,
