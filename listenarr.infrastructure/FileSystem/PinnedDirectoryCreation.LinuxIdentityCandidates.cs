@@ -11,10 +11,7 @@ internal sealed partial class PinnedDirectoryCreation
     {
         const uint statxInode = 0x00000100;
         const uint statxBirthTime = 0x00000800;
-        const uint statxSize = 0x00000200;
-        const uint statxModificationTime = 0x00000020;
-        const uint requestedMask =
-            statxInode | statxBirthTime | statxSize | statxModificationTime;
+        const uint requestedMask = statxInode | statxBirthTime;
         if (Statx(
                 handle.DangerousGetHandle().ToInt32(),
                 string.Empty,
@@ -31,7 +28,7 @@ internal sealed partial class PinnedDirectoryCreation
         }
 
         var generationIdentities = GetLinuxGenerationIdentityCandidates(handle);
-        var candidates = CreateLinuxObjectIdentityCandidatesFromEvidence(
+        return CreateLinuxObjectIdentityCandidatesFromEvidence(
             information.DeviceMajor,
             information.DeviceMinor,
             information.Inode,
@@ -39,30 +36,6 @@ internal sealed partial class PinnedDirectoryCreation
             information.BirthTime.Seconds,
             information.BirthTime.Nanoseconds,
             generationIdentities);
-
-        // A content-shaped spelling alongside the inode ones.
-        //
-        // The inode spellings are the stronger evidence and stay first, but they are not
-        // durable everywhere: a pooled FUSE filesystem - unraid's shfs, backed by an
-        // array disk and a cache pool at once - reports a different inode for the same
-        // untouched object depending on which pool answers. An encode was rejected and
-        // deleted over exactly that, and every filesystem operation was disabled behind
-        // it.
-        //
-        // Size and modification time come from the underlying file rather than being
-        // synthesised by the union layer, so they do not rotate. They are weaker than a
-        // generation - two different files could share both - but they are only ever an
-        // additional way to say "yes, the same object", never the only one, and a
-        // genuinely replaced file matches none of the spellings.
-        if ((information.Mask & statxSize) != 0
-            && (information.Mask & statxModificationTime) != 0)
-        {
-            var contentCandidate = FormattableString.Invariant(
-                $"linux-content:{information.Size:x16}:{information.ModificationTime.Seconds:x16}:{information.ModificationTime.Nanoseconds:x8}");
-            return [.. candidates, contentCandidate];
-        }
-
-        return candidates;
     }
 
     internal static string CreateLinuxObjectIdentityFromEvidence(
