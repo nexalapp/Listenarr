@@ -234,6 +234,81 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
         }
 
         [EncoderFact]
+        public async Task WriteAsync_KeepsTheNeroChapterAtomByteForByte()
+        {
+            // Bug B. TagLib# copies any atom it does not know from 24 bytes past its
+            // start, so every save shifted and shortened chpl. ffprobe's chapter count
+            // did not catch it: a mangled chpl usually parses as no chapters at all and
+            // the chapter track fills in - until a first title whose bytes read as a
+            // version and a count, when the file is rejected or will not open. Only the
+            // bytes prove the atom survived.
+            var source = await WriteBookAsync(chapters: 3, seconds: 6);
+            var writer = BuildWriter();
+            var existing = await writer.ReadAsync(source);
+
+            var result = await writer.WriteAsync(new TagWriteRequest(
+                source,
+                OutputPath,
+                Tags(("title", "Drive"), ("SERIES", "The Expanse")),
+                existing));
+
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(ChplAtom(await File.ReadAllBytesAsync(source)), ChplAtom(await File.ReadAllBytesAsync(OutputPath)));
+
+            var titles = await ChapterTitlesAsync(OutputPath);
+            Assert.Equal(["Chapter 1", "Chapter 2", "Chapter 3"], titles);
+        }
+
+        [EncoderFact]
+        public async Task ApplyAsync_KeepsTheNeroChapterAtomByteForByte()
+        {
+            // The in-place path conversion uses; the same save, the same damage.
+            var source = await WriteBookAsync(chapters: 3, seconds: 6);
+            var before = ChplAtom(await File.ReadAllBytesAsync(source));
+
+            var result = await BuildWriter().ApplyAsync(source, Tags(("title", "Drive")));
+
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(before, ChplAtom(await File.ReadAllBytesAsync(source)));
+        }
+
+        /// <summary>The Nero chapter atom, header included, as ffmpeg wrote it.</summary>
+        private static byte[] ChplAtom(byte[] file)
+        {
+            var at = IndexOf(file, "chpl"u8);
+            Assert.True(at >= 4, "no chpl atom");
+            var size = (file[at - 4] << 24) | (file[at - 3] << 16) | (file[at - 2] << 8) | file[at - 1];
+            Assert.True(size > 8 && at - 4 + size <= file.Length, $"chpl claims {size} bytes");
+            // The version byte, which the shift replaced with the first title's characters.
+            Assert.Equal(1, file[at + 4]);
+            return file[(at - 4)..(at - 4 + size)];
+        }
+
+        private async Task<IReadOnlyList<string>> ChapterTitlesAsync(string path)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = FindOnPath("ffprobe")!,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[] { "-v", "error", "-show_chapters", "-of", "csv=p=0", path })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            var runner = new SystemProcessRunner(NullLogger<SystemProcessRunner>.Instance);
+            var result = await runner.RunAsync(startInfo, 60_000);
+            Assert.True(result.ExitCode == 0, result.Stderr);
+            return result.Stdout
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line[(line.LastIndexOf(',') + 1)..].Trim())
+                .ToList();
+        }
+
+        [EncoderFact]
         public async Task WriteAsync_KeepsCoverArtWhileWritingFreeformTags()
         {
             // The combination that ruled ffmpeg out. Its mov muxer will write freeform
