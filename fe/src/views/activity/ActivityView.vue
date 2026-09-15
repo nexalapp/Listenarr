@@ -654,10 +654,11 @@ const convertMoveJobToQueueItem = (job: TrackedMoveJob): QueueItem => ({
  * wait hours behind others, and measuring from there would report a remaining time
  * several times the real one.
  *
- * Progress is not perfectly linear - encoding is nearly all of it, and the verify,
- * publish and tidy phases that follow are quick by comparison - so this runs slightly
- * long near the end. That errs the right way for an estimate nobody should plan around
- * to the minute.
+ * Progress tracks the encode across its whole range, so this estimates when the encode
+ * finishes rather than when the job does. Publishing and tidying follow it and are
+ * reported as 95 and 98, but they take about six seconds against a conversion averaging
+ * five and a half minutes - so the estimate is short by roughly that, which is well
+ * inside the noise of a variable-rate encode. Not worth padding for.
  */
 const estimateRemainingSeconds = (
   startedAt: string | null | undefined,
