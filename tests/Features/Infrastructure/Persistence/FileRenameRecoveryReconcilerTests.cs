@@ -185,13 +185,15 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
             SourcePath = scenario.Source,
             DestinationPath = scenario.Destination,
             SourcePhysicalObjectIdentity = scenario.SourceIdentity,
-            // Every journal a real move writes records the source length - all 349 on a
-            // live install carry one - and adoption is proved against it. Seeding without
-            // it described a shape that does not occur, and left the repair with nothing
-            // to check but a name.
-            SourceLength = new FileInfo(scenario.Destination).Exists
-                ? new FileInfo(scenario.Destination).Length
-                : new FileInfo(scenario.Source).Length,
+            // Every journal a real move writes records the length of its source, and
+            // adoption is proved against it. Seeding without one described a shape no
+            // move produces and left the repair with nothing to check but a name.
+            //
+            // The source's length, captured while the source still existed: these
+            // scenarios manipulate the filesystem before seeding, so reading either path
+            // here would measure the wrong file - and measuring the destination would
+            // make every destination match by construction.
+            SourceLength = scenario.SourceLength,
             AudiobookId = scenario.AudiobookId,
             AudiobookFileId = scenario.FileId,
             State = FileMutationJournalState.NeedsAttention,
@@ -845,7 +847,8 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
             source,
             destination,
             sourceIdentity,
-            Guid.NewGuid());
+            Guid.NewGuid(),
+            new FileInfo(source).Length);
     }
 
     private async Task AssertRecoveredAsync(Scenario scenario)
@@ -914,5 +917,6 @@ public sealed class FileRenameRecoveryReconcilerTests : BaseTests
         string Source,
         string Destination,
         string SourceIdentity,
-        Guid OperationId);
+        Guid OperationId,
+        long SourceLength);
 }
