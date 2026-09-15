@@ -39,16 +39,13 @@
       <button class="btn btn-primary btn-sm" title="Add to library" @click="emit('add')">
         <PhPlus /> Add
       </button>
-      <button class="btn btn-secondary btn-sm" title="Search for a release" @click="emit('search')">
-        <PhMagnifyingGlass />
-      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { PhMagnifyingGlass, PhPlus } from '@phosphor-icons/vue'
+import { PhPlus } from '@phosphor-icons/vue'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { formatRuntime } from '@/utils/searchResultFormatting'
@@ -61,7 +58,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   add: []
-  search: []
 }>()
 
 const { getProtectedImageSrc } = useProtectedImages()
@@ -141,11 +137,6 @@ const authorLine = computed(() => {
 
 .actions .btn-primary {
   flex: 1;
-}
-
-.actions .btn-secondary {
-  flex: 0 0 2.25rem;
-  padding-inline: 0;
 }
 
 .btn-sm {

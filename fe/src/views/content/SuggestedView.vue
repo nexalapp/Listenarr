@@ -23,6 +23,7 @@
         Suggested
       </h1>
       <div class="header-actions">
+        <Checkbox v-model="searchOnAdd" class="search-on-add">Search for downloads on add</Checkbox>
         <span v-if="refreshStatus?.running" class="refresh-progress">
           Fetching catalogs… {{ refreshStatus.completed }} / {{ refreshStatus.total }}
           <template v-if="refreshStatus.current"> · {{ refreshStatus.current }}</template>
@@ -95,7 +96,6 @@
               :key="bookKey(book)"
               :book="book"
               @add="openAdd(book)"
-              @search="search(book)"
             />
           </div>
         </section>
@@ -131,7 +131,6 @@
               :book="book"
               show-position
               @add="openAdd(book)"
-              @search="search(book)"
             />
           </div>
         </section>
@@ -164,6 +163,7 @@
       v-if="pendingAddBook"
       :visible="true"
       :book="pendingAddBook"
+      :auto-search-default="searchOnAdd"
       @close="pendingAddBook = null"
       @added="handleAdded"
     />
@@ -171,10 +171,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { PhArrowsClockwise, PhSparkle } from '@phosphor-icons/vue'
 import { EmptyState, LoadingState, Pill } from '@/components/base'
+import { Checkbox } from '@/components/form'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.vue'
 import { apiService } from '@/services/api'
@@ -190,7 +190,6 @@ import type {
 
 type TabId = 'authors' | 'series' | 'related'
 
-const router = useRouter()
 const toast = useToast()
 
 const snapshot = ref<SuggestionSnapshot | null>(null)
@@ -198,6 +197,26 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const activeTab = ref<TabId>('authors')
 const pendingAddBook = ref<AudibleBookMetadata | null>(null)
+
+// Whether adding from here also kicks off a release search. On by default - a
+// suggestion someone acts on is one they want now - and remembered per browser.
+const SEARCH_ON_ADD_KEY = 'listenarr.suggested.searchOnAdd'
+const searchOnAdd = ref(readSearchOnAdd())
+watch(searchOnAdd, (value) => {
+  try {
+    localStorage.setItem(SEARCH_ON_ADD_KEY, value ? '1' : '0')
+  } catch {
+    // Storage unavailable: the toggle still works for this visit.
+  }
+})
+
+function readSearchOnAdd(): boolean {
+  try {
+    return localStorage.getItem(SEARCH_ON_ADD_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
 
 const refreshStatus = ref<SuggestionRefreshStatus | null>(null)
 const refreshing = ref(false)
@@ -304,14 +323,6 @@ async function handleAdded() {
   await load()
 }
 
-function search(book: SuggestedBook) {
-  const author = book.authors[0]
-  void router.push({
-    name: 'add-new',
-    query: { q: author ? `${book.title} ${author}` : book.title },
-  })
-}
-
 onMounted(async () => {
   await Promise.all([load(), pollRefresh()])
 })
@@ -352,6 +363,11 @@ onBeforeUnmount(stopPolling)
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+.search-on-add {
+  color: #bbb;
+  font-size: 0.85rem;
 }
 
 .refresh-progress {
