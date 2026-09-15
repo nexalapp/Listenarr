@@ -282,7 +282,31 @@ namespace Listenarr.Infrastructure.Library.Tagging
             IReadOnlyDictionary<string, string> tags,
             string? coverArtPath)
         {
-            using var file = TagLib.File.Create(path);
+            // TagLib# mangles the chapter atom on every save (see NeroChapterAtom), so
+            // it is taken out of harm's way here and put back once the save is done.
+            var chapters = NeroChapterAtom.Capture(path);
+
+            using (var file = TagLib.File.Create(path))
+            {
+                Edit(file, tags, coverArtPath);
+            }
+
+            if (chapters != null)
+            {
+                NeroChapterAtom.Restore(path, chapters);
+            }
+
+            logger.LogDebug(
+                "Set {Count} tag(s) on {Path}",
+                tags.Count,
+                LogRedaction.SanitizeFilePath(path));
+        }
+
+        private static void Edit(
+            TagLib.File file,
+            IReadOnlyDictionary<string, string> tags,
+            string? coverArtPath)
+        {
             if (file.GetTag(TagLib.TagTypes.Apple, create: true) is not TagLib.Mpeg4.AppleTag apple)
             {
                 throw new InvalidOperationException(
@@ -320,11 +344,6 @@ namespace Listenarr.Infrastructure.Library.Tagging
             }
 
             file.Save();
-
-            logger.LogDebug(
-                "Set {Count} tag(s) on {Path}",
-                tags.Count,
-                LogRedaction.SanitizeFilePath(path));
         }
 
         /// <summary>
