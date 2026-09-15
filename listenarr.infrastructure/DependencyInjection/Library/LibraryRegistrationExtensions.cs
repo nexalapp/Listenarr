@@ -7,6 +7,8 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Audiobooks.Suggestions;
+using Listenarr.Infrastructure.Library.Suggestions;
 using Listenarr.Application.Audiobooks.Deletion;
 using Listenarr.Application.Audiobooks.RootFolders;
 using Listenarr.Infrastructure.Library.Realtime;
@@ -62,6 +64,8 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<IEmbeddedFileMetadataService, EmbeddedFileMetadataService>();
         services.AddSingleton<IEmbeddedCoverExtractor, TagLibEmbeddedCoverExtractor>();
         services.AddScoped<ISeriesCatalogService, SeriesCatalogService>();
+        services.AddScoped<ISuggestionService, SuggestionService>();
+        services.AddSingleton<ISuggestionRefreshService, SuggestionRefreshService>();
         services.AddScoped<ILibraryDestinationMutationGuard, LibraryDestinationMutationGuard>();
         services.AddScoped<ILibraryAddService, LibraryAddService>();
         services.AddScoped<IAudiobookFilesystemDeleteService, AudiobookFilesystemDeleteService>();

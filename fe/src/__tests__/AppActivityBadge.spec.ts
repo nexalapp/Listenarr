@@ -76,6 +76,7 @@ const moveJobsMock = vi.hoisted(() => ({
   start: vi.fn(),
   stop: vi.fn(),
   loadActiveJobs: vi.fn(async () => undefined),
+  activeJobs: [] as Array<{ jobId: string }>,
 }))
 
 vi.mock('@/stores/moveJobs', () => ({
@@ -121,6 +122,8 @@ vi.mock('@/services/signalr', () => ({
     onDownloadUpdate: vi.fn(() => () => undefined),
     onDownloadsList: vi.fn(() => () => undefined),
     onNotification: vi.fn(() => () => undefined),
+    onConversionJobUpdate: vi.fn(() => () => undefined),
+    onTagJobUpdate: vi.fn(() => () => undefined),
   },
 }))
 
@@ -133,6 +136,8 @@ vi.mock('@/services/api', () => ({
     getStartupConfig: vi.fn(async () => ({ authenticationRequired: false })),
     getLibrary: vi.fn(async () => []),
     getScanJobStatus: scanJobStatusMock,
+    getConversionJobs: vi.fn(async () => []),
+    getTagJobs: vi.fn(async () => []),
   },
 }))
 
@@ -651,6 +656,8 @@ describe('App.vue activity badge', () => {
         onDownloadUpdate: vi.fn(() => () => undefined),
         onDownloadsList: vi.fn(() => () => undefined),
         onNotification: vi.fn(() => () => undefined),
+        onConversionJobUpdate: vi.fn(() => () => undefined),
+        onTagJobUpdate: vi.fn(() => () => undefined),
       },
     }))
 
@@ -682,7 +689,7 @@ describe('App.vue activity badge', () => {
     expect(vm.activityCount).toBe(2)
   })
 
-  it('derives wantedCount from the hydrated library store without polling timers', async () => {
+  it('hydrates the library store once without polling timers', async () => {
     const setIntervalSpy = vi.spyOn(window, 'setInterval')
 
     vi.doMock('@/services/api', () => ({
@@ -713,8 +720,9 @@ describe('App.vue activity badge', () => {
 
     await new Promise((r) => setTimeout(r, 20))
 
-    const vm = wrapper.vm as unknown as { wantedCount: number }
-    expect(vm.wantedCount).toBe(1)
+    const { useLibraryStore } = await import('@/stores/library')
+    const wantedCount = useLibraryStore().audiobooks.filter((book) => book.wanted).length
+    expect(wantedCount).toBe(1)
     expect(setIntervalSpy).not.toHaveBeenCalled()
 
     setIntervalSpy.mockRestore()
@@ -751,6 +759,8 @@ describe('App.vue activity badge', () => {
         onDownloadUpdate: vi.fn(() => () => undefined),
         onDownloadsList: vi.fn(() => () => undefined),
         onNotification: vi.fn(() => () => undefined),
+        onConversionJobUpdate: vi.fn(() => () => undefined),
+        onTagJobUpdate: vi.fn(() => () => undefined),
       },
     }))
 
@@ -775,8 +785,8 @@ describe('App.vue activity badge', () => {
     connectedCallbacks[0]!()
     await new Promise((r) => setTimeout(r, 20))
 
-    const vm = wrapper.vm as unknown as { wantedCount: number }
+    const { useLibraryStore } = await import('@/stores/library')
     expect(getLibrary).toHaveBeenCalledTimes(2)
-    expect(vm.wantedCount).toBe(1)
+    expect(useLibraryStore().audiobooks.filter((book) => book.wanted).length).toBe(1)
   })
 })

@@ -798,6 +798,66 @@ export interface AuthorCatalogResponse {
   totalBooks: number
 }
 
+// ---- Suggestions -------------------------------------------------------------
+// The Suggested page: what the library is missing, read from cached catalogs.
+
+export interface SuggestedBook extends AuthorCatalogBook {
+  authors: string[]
+  narrators: string[]
+  genres: string[]
+  ratingOverall?: number
+  ratingCount?: number
+  ratingStory?: number
+  description?: string
+}
+
+export interface AuthorSuggestionGroup {
+  author: string
+  authorAsin?: string
+  imageUrl?: string
+  libraryCount: number
+  monitored: boolean
+  missing: SuggestedBook[]
+}
+
+export interface SeriesSuggestionGroup {
+  series: string
+  seriesAsin?: string
+  libraryCount: number
+  monitored: boolean
+  missing: SuggestedBook[]
+}
+
+export interface RelatedAuthorSuggestion {
+  name: string
+  asin?: string
+  because: string[]
+}
+
+export interface SuggestionCoverage {
+  authorsInLibrary: number
+  authorsWithCatalog: number
+  seriesInLibrary: number
+  seriesWithCatalog: number
+}
+
+export interface SuggestionSnapshot {
+  authors: AuthorSuggestionGroup[]
+  series: SeriesSuggestionGroup[]
+  relatedAuthors: RelatedAuthorSuggestion[]
+  coverage: SuggestionCoverage
+}
+
+export interface SuggestionRefreshStatus {
+  running: boolean
+  completed: number
+  total: number
+  current?: string
+  startedAt?: string
+  finishedAt?: string
+  failed: number
+}
+
 export interface RelatedAuthorItem {
   asin?: string
   name: string

@@ -314,15 +314,46 @@
             <RouterLink
               to="/add-new"
               class="nav-item"
-              :class="{ 'router-link-active': pendingNavPath === '/add-new' }"
-              @mouseenter="preload('add-new')"
-              @focus="preload('add-new')"
+              :class="{ 'router-link-active': addNewNavActive }"
+              @mouseenter="onPrimaryNavMouseEnter('add-new', 'add-new')"
+              @mouseleave="onNavMouseLeave('add-new')"
+              @focus="onPrimaryNavFocus('add-new', 'add-new')"
+              @blur="onNavBlur('add-new')"
               @touchstart.passive="preload('add-new')"
-              @click="closeMobileMenu"
+              @click="onPrimaryNavClick('add-new')"
             >
               <PhPlus />
               <span>Add New</span>
             </RouterLink>
+            <!-- The two ways in: search the web, or import what is already on disk -->
+            <div
+              class="nav-sub"
+              @mouseenter="onNavMouseEnter('add-new')"
+              @mouseleave="onNavMouseLeave('add-new')"
+              @focusin="onNavFocus('add-new')"
+              @focusout="onNavBlur('add-new')"
+              :class="{
+                open: hoverNav === 'add-new' || persistentNav === 'add-new' || isAddNewRoute,
+              }"
+            >
+              <RouterLink
+                to="/add-new"
+                class="nav-subitem"
+                @click="closeMobileMenu"
+                :class="{ active: route.path === '/add-new' }"
+              >
+                <span>Search</span>
+              </RouterLink>
+              <RouterLink
+                to="/library-import"
+                class="nav-subitem"
+                @mouseenter="preload('library-import')"
+                @click="closeMobileMenu"
+                :class="{ active: route.path === '/library-import' }"
+              >
+                <span>Library Import</span>
+              </RouterLink>
+            </div>
             <RouterLink
               to="/calendar"
               class="nav-item"
@@ -334,18 +365,6 @@
             >
               <PhCalendar />
               <span>Calendar</span>
-            </RouterLink>
-            <RouterLink
-              to="/library-import"
-              class="nav-item"
-              :class="{ 'router-link-active': pendingNavPath === '/library-import' }"
-              @mouseenter="preload('library-import')"
-              @focus="preload('library-import')"
-              @touchstart.passive="preload('library-import')"
-              @click="closeMobileMenu"
-            >
-              <PhFolderOpen />
-              <span>Library Import</span>
             </RouterLink>
           </div>
 
@@ -361,7 +380,9 @@
             >
               <PhActivity />
               <span>Activity</span>
-              <Pill variant="count" v-if="activityCount > 0">{{ activityCount }}</Pill>
+              <Pill variant="count" size="small" class="nav-count" v-if="activityCount > 0">{{
+                activityCount
+              }}</Pill>
             </RouterLink>
             <RouterLink
               to="/wanted"
@@ -374,7 +395,18 @@
             >
               <PhHeart />
               <span>Wanted</span>
-              <Pill variant="count" v-if="wantedCount > 0">{{ wantedCount }}</Pill>
+            </RouterLink>
+            <RouterLink
+              to="/suggested"
+              class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/suggested' }"
+              @mouseenter="preload('suggested')"
+              @focus="preload('suggested')"
+              @touchstart.passive="preload('suggested')"
+              @click="closeMobileMenu"
+            >
+              <PhSparkle />
+              <span>Suggested</span>
             </RouterLink>
           </div>
 
@@ -560,13 +592,13 @@ import {
   PhActivity,
   PhCalendar,
   PhHeart,
+  PhSparkle,
   PhGear,
   PhMonitor,
   PhFileMinus,
   PhDownload,
   PhCheckCircle,
   PhList,
-  PhFolderOpen,
 } from '@phosphor-icons/vue'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
@@ -582,6 +614,8 @@ import { useNzbKingTokensStore } from '@/stores/nzbKingTokens'
 import NzbKingTokenWidget from '@/components/domain/nzbking/NzbKingTokenWidget.vue'
 import { useLibraryStore } from '@/stores/library'
 import { useMoveJobsStore } from '@/stores/moveJobs'
+import { useConversionJobsStore } from '@/stores/conversionJobs'
+import { useTagJobsStore } from '@/stores/tagJobs'
 import { useLibraryDeleteOperationsStore } from '@/stores/libraryDeleteOperations'
 import { useScanNotificationsStore } from '@/stores/scanNotifications'
 import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
@@ -615,6 +649,8 @@ const { getProtectedImageSrc } = useProtectedImages()
 const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
 const moveJobsStore = useMoveJobsStore()
+const conversionJobsStore = useConversionJobsStore()
+const tagJobsStore = useTagJobsStore()
 const deleteOperationsStore = useLibraryDeleteOperationsStore()
 const scanNotificationsStore = useScanNotificationsStore()
 const filesystemReadinessStore = useFilesystemReadinessStore()
@@ -826,9 +862,6 @@ const closeMobileMenu = () => {
 
 // Reactive state for badges and counters
 const queueItems = ref<QueueItem[]>([])
-const wantedCount = computed(
-  () => libraryStore.audiobooks.filter((book) => book.wanted === true).length,
-)
 const systemIssues = ref(0)
 
 // Activity count: Optimized with memoized intermediate computations
@@ -869,17 +902,29 @@ const externalDownloadsCount = computed(
   () => activeDownloads.value.length - ddlDownloadsCount.value,
 )
 
-// Step 5: Final activity count (uses cached intermediate results)
+// Step 5: Library jobs the Activity page also lists - conversions, tag writes and
+// moves - so the count is everything in progress there, not just downloads.
+const activeLibraryJobsCount = computed(
+  () =>
+    conversionJobsStore.activeJobs.length +
+    tagJobsStore.activeJobs.length +
+    moveJobsStore.activeJobs.length,
+)
+
+// Step 6: Final activity count (uses cached intermediate results)
 const activityCount = computed(() => {
   // Total = DDL (unique) + max(external in downloads, external in queue)
   // This avoids double-counting external clients that appear in both places
   const count =
-    ddlDownloadsCount.value + Math.max(externalDownloadsCount.value, activeQueueCount.value)
+    ddlDownloadsCount.value +
+    Math.max(externalDownloadsCount.value, activeQueueCount.value) +
+    activeLibraryJobsCount.value
 
   logger.debug('App Badge - Activity count calculated', {
     ddl: ddlDownloadsCount.value,
     external: externalDownloadsCount.value,
     queue: activeQueueCount.value,
+    libraryJobs: activeLibraryJobsCount.value,
     total: count,
   })
 
@@ -1423,6 +1468,8 @@ onMounted(async () => {
     // Keep durable move jobs globally visible so the notification dropdown can
     // show progress even when the Activity page is not mounted.
     moveJobsStore.start()
+    conversionJobsStore.start()
+    tagJobsStore.start()
 
     // Hydrate the app once, then keep it current from SignalR updates.
     await Promise.all([downloadsStore.loadDownloads(), syncLibrarySnapshot()])
@@ -1621,6 +1668,8 @@ onUnmounted(() => {
     unsubscribeSignalRConnected()
   }
   moveJobsStore.stop()
+  conversionJobsStore.stop()
+  tagJobsStore.stop()
   filesystemReadinessStore.stop()
   // Event listeners are automatically cleaned up by VueUse
 })
@@ -1652,6 +1701,15 @@ const isLibraryPath = (path: string) => LIBRARY_PATHS.includes(path) || path.sta
 const isLibraryRoute = computed(() => isLibraryPath(route.path))
 const libraryNavActive = computed(
   () => isLibraryRoute.value || isLibraryPath(pendingNavPath.value ?? ''),
+)
+
+// Add New groups the two ways a book gets in: searching the web and importing
+// what is already on disk.
+const ADD_NEW_PATHS = ['/add-new', '/library-import']
+const isAddNewPath = (path: string) => ADD_NEW_PATHS.includes(path)
+const isAddNewRoute = computed(() => isAddNewPath(route.path))
+const addNewNavActive = computed(
+  () => isAddNewRoute.value || isAddNewPath(pendingNavPath.value ?? ''),
 )
 
 const refreshSecurityWarningBannerPreference = () => {
@@ -2091,10 +2149,15 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   gap: 0.75rem;
 }
 
-/* Push count pills to the end of sidebar nav items */
-.sidebar .nav-item .pill-count,
-.sidebar .nav-item .pill.pill-count {
+/* The Activity count sits at the end of its nav item, sized like Sonarr's: a
+   tight rectangle that reads as a number, not a button. */
+.sidebar .nav-item .nav-count {
   margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  min-width: 1.6rem;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  border-radius: 4px;
 }
 
 .nav-item:hover {

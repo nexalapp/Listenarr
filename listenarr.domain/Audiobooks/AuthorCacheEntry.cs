@@ -87,5 +87,17 @@ namespace Listenarr.Domain.Audiobooks
         public string? Link { get; set; }
 
         public string? MetadataSource { get; set; }
+
+        /// <summary>
+        /// Audible's listener ratings at the time the catalog was fetched. Averages are
+        /// kept at the precision reported; rounding is a display decision.
+        /// </summary>
+        public double? RatingOverall { get; set; }
+        public int? RatingCount { get; set; }
+        public double? RatingPerformance { get; set; }
+        public double? RatingStory { get; set; }
+
+        /// <summary>The publisher's summary, as the catalog fetch returned it.</summary>
+        public string? Description { get; set; }
     }
 }
