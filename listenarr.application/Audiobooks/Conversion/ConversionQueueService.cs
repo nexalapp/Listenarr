@@ -433,7 +433,12 @@ namespace Listenarr.Application.Audiobooks.Conversion
                     error = job.Error,
                     failureKind = job.FailureKind,
                     canRetry = job.CanRetry,
-                    trigger = job.Trigger.ToString()
+                    trigger = job.Trigger.ToString(),
+                    // When the work actually began, which is what an estimate is built
+                    // from. EnqueuedAt cannot serve: a book can sit in the queue for
+                    // hours behind others, and measuring from there would report a
+                    // remaining time several times the real one.
+                    startedAt = job.StartedAt
                 }, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
