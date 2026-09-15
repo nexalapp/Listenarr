@@ -116,6 +116,9 @@ export const useMoveJobsStore = defineStore('moveJobs', () => {
   const evidenceVersionById = new Map<string, number>()
 
   const trackedJobs = computed(() => Object.values(trackedById.value))
+  const activeJobs = computed(() =>
+    trackedJobs.value.filter((job) => !terminalStatuses.has(job.status)),
+  )
 
   function getEvidenceVersion(key: string): number {
     return evidenceVersionById.get(key) ?? 0
@@ -400,6 +403,7 @@ export const useMoveJobsStore = defineStore('moveJobs', () => {
 
   return {
     trackedJobs,
+    activeJobs,
     trackedById,
     getActiveJobForAudiobook,
     getRecoveryStateForAudiobook,
