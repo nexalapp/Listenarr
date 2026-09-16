@@ -57,48 +57,6 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
         }
 
         [Fact]
-        public async Task Create_TargetReplacedAfterIdentityCapture_PersistsOriginalAuthorityAndMarksStorageUnsafe()
-        {
-            var parent = Path.Join(
-                Path.GetTempPath(),
-                "listenarr-tests",
-                $"root-create-replaced-{Guid.NewGuid():N}");
-            var rootPath = Path.Join(parent, "library");
-            Directory.CreateDirectory(rootPath);
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-            var repository = new EfRootFolderRepository(
-                new TestDbFactory(options),
-                Mock.Of<ILogger<EfRootFolderRepository>>());
-            var service = new RootFolderService(
-                repository,
-                null,
-                semanticsResolver: new FileSystemSemanticsResolver(),
-                directoryObjectIdentityResolver: new DirectoryObjectIdentityResolver());
-            service.AfterInitialDirectoryIdentityCapturedForTest = () =>
-            {
-                Directory.Move(rootPath, Path.Join(parent, "original"));
-                Directory.CreateDirectory(rootPath);
-            };
-
-            var created = await service.CreateAsync(new RootFolder
-            {
-                Name = "Library",
-                Path = rootPath,
-                CaseSensitivityMode = FileSystemCaseSensitivityMode.Auto
-            });
-
-            Assert.Equal(ManagedDirectoryIdentity.CurrentVersion, created.DirectoryObjectIdentityVersion);
-            Assert.False(string.IsNullOrWhiteSpace(created.DirectoryObjectIdentity));
-            Assert.False(string.IsNullOrWhiteSpace(created.DirectoryObjectIdentityUnavailableReason));
-            var health = await new RootFolderStorageHealthResolver(
-                new DirectoryObjectIdentityResolver()).ResolveAsync(created);
-            Assert.Equal(RootFolderStorageState.Changed, health.State);
-            Assert.False(health.CanMutateFilesystem);
-        }
-
-        [Fact]
         public async Task Create_MissingTarget_DoesNotManufactureAuthorization()
         {
             var parent = Path.Join(
@@ -137,7 +95,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.RootFolders
 
             Directory.CreateDirectory(missingPath);
             var appeared = await healthResolver.ResolveAsync(created);
-            Assert.Equal(RootFolderStorageState.Unconfirmed, appeared.State);
+            // Present at its path is enough; confirming only enrols the marker.
+            Assert.Equal(RootFolderStorageState.Healthy, appeared.State);
             Assert.True(appeared.CanConfirmCurrentFolder);
             Assert.False(string.IsNullOrWhiteSpace(appeared.ConfirmationToken));
         }

@@ -38,29 +38,7 @@
         </div>
 
         <div class="form-group">
-          <label for="default-search-language">Preferred Default Language</label>
-          <select
-            id="default-search-language"
-            :value="defaultSearchLanguage"
-            class="form-select"
-            @change="updateDefaultSearchLanguage"
-          >
-            <option
-              v-for="option in preferredSearchLanguageOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-          <small class="form-help">
-            Used as the default language filter for Add New searches. Choose All to disable language
-            filtering.
-          </small>
-        </div>
-
-        <div class="form-group">
-          <label for="library-languages">Library Languages</label>
+          <label for="library-languages">Your Languages</label>
           <select
             id="library-languages"
             class="form-select library-languages"
@@ -78,9 +56,8 @@
             </option>
           </select>
           <small class="form-help">
-            The languages you read in. Suggested only offers books in these; a translation into any
-            other language is left out. Leave none selected to use the Preferred Default Language
-            above.
+            The languages you read in. Searches, author and series pages and Suggested stay within
+            them; a translation into any other language is left out. Select none for all languages.
           </small>
         </div>
       </div>
@@ -126,45 +103,44 @@ const defaultSearchRegion = computed(() =>
   normalizeSearchRegion(props.settings.defaultSearchRegion),
 )
 
-const defaultSearchLanguage = computed(() =>
-  normalizePreferredSearchLanguage(props.settings.defaultSearchLanguage),
-)
-
 // "All" is not a language someone reads in; the default-language field covers that.
 const libraryLanguageOptions = preferredSearchLanguageOptions.filter(
   (option) => option.value !== 'all',
 )
 
+// One picker. Older settings only had the single default language; a saved
+// list wins, otherwise that default is shown as the one selection.
 const libraryLanguages = computed<string[]>(() => {
   try {
     const parsed = JSON.parse(props.settings.libraryLanguagesJson || '[]')
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.filter((v): v is string => typeof v === 'string')
+    }
   } catch {
-    return []
+    // fall through
   }
+  const single = normalizePreferredSearchLanguage(props.settings.defaultSearchLanguage)
+  return single === 'all' ? [] : [single]
 })
 
 function updateLibraryLanguages(event: Event) {
   const selected = Array.from((event.target as HTMLSelectElement).selectedOptions).map(
     (option) => option.value,
   )
-  updateField('libraryLanguagesJson', JSON.stringify(selected))
+  // Keep the single field in step for anything that still reads it.
+  emit('update:settings', {
+    ...(props.settings || {}),
+    libraryLanguagesJson: JSON.stringify(selected),
+    defaultSearchLanguage: selected[0] ?? 'all',
+  } as Partial<ApplicationSettings>)
 }
 
 function updateDefaultSearchRegion(event: Event) {
   updateField('defaultSearchRegion', (event.target as HTMLSelectElement).value)
 }
-
-function updateDefaultSearchLanguage(event: Event) {
-  updateField('defaultSearchLanguage', (event.target as HTMLSelectElement).value)
-}
 </script>
 
 <style scoped>
-.library-languages {
-  height: auto;
-}
-
 h3 {
   margin: 0 0 1.5rem 0;
   padding: 0;
@@ -210,6 +186,10 @@ h3 {
 .form-group select,
 .form-group input[type='number'] {
   width: 100%;
+  /* The global .form-select fixes a height sized for its own padding; with this
+     section's larger padding that clipped the text. Let the padding set the height. */
+  height: auto;
+  line-height: 1.3;
   padding: 0.9rem 0.85rem;
   border: 1px solid #444;
   border-radius: 6px;
