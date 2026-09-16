@@ -58,6 +58,31 @@
             filtering.
           </small>
         </div>
+
+        <div class="form-group">
+          <label for="library-languages">Library Languages</label>
+          <select
+            id="library-languages"
+            class="form-select library-languages"
+            multiple
+            :size="6"
+            @change="updateLibraryLanguages"
+          >
+            <option
+              v-for="option in libraryLanguageOptions"
+              :key="option.value"
+              :value="option.value"
+              :selected="libraryLanguages.includes(option.value)"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <small class="form-help">
+            The languages you read in. Suggested only offers books in these; a translation into any
+            other language is left out. Leave none selected to use the Preferred Default Language
+            above.
+          </small>
+        </div>
       </div>
 
       <CheckboxCard
@@ -105,6 +130,27 @@ const defaultSearchLanguage = computed(() =>
   normalizePreferredSearchLanguage(props.settings.defaultSearchLanguage),
 )
 
+// "All" is not a language someone reads in; the default-language field covers that.
+const libraryLanguageOptions = preferredSearchLanguageOptions.filter(
+  (option) => option.value !== 'all',
+)
+
+const libraryLanguages = computed<string[]>(() => {
+  try {
+    const parsed = JSON.parse(props.settings.libraryLanguagesJson || '[]')
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+  } catch {
+    return []
+  }
+})
+
+function updateLibraryLanguages(event: Event) {
+  const selected = Array.from((event.target as HTMLSelectElement).selectedOptions).map(
+    (option) => option.value,
+  )
+  updateField('libraryLanguagesJson', JSON.stringify(selected))
+}
+
 function updateDefaultSearchRegion(event: Event) {
   updateField('defaultSearchRegion', (event.target as HTMLSelectElement).value)
 }
@@ -115,6 +161,10 @@ function updateDefaultSearchLanguage(event: Event) {
 </script>
 
 <style scoped>
+.library-languages {
+  height: auto;
+}
+
 h3 {
   margin: 0 0 1.5rem 0;
   padding: 0;

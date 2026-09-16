@@ -339,6 +339,12 @@ namespace Listenarr.Application.Audiobooks.Catalog
             }
 
             var trimmed = language.Trim();
+            if (trimmed.Contains(','))
+            {
+                // A list of languages: each part is normalised where it is applied.
+                return trimmed.ToLowerInvariant();
+            }
+
             return LanguageAliases.TryGetValue(trimmed, out var normalized)
                 ? normalized
                 : trimmed.ToLowerInvariant();
@@ -349,19 +355,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
             string? normalizedLanguage)
         {
             var bookList = books.ToList();
-            if (string.IsNullOrWhiteSpace(normalizedLanguage) ||
-                string.Equals(normalizedLanguage, "all", StringComparison.OrdinalIgnoreCase))
+            if (LanguageFilter.IsUnfiltered(normalizedLanguage))
             {
                 return bookList;
             }
 
             return bookList
-                .Where(book =>
-                {
-                    var bookLanguage = NormalizeLanguage(book.Language);
-                    return !string.IsNullOrWhiteSpace(bookLanguage) &&
-                        string.Equals(bookLanguage, normalizedLanguage, StringComparison.OrdinalIgnoreCase);
-                })
+                .Where(book => LanguageFilter.Matches(normalizedLanguage, book.Language, acceptUnknown: false))
                 .ToList();
         }
 

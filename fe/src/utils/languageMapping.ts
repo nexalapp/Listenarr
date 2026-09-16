@@ -277,11 +277,69 @@ export function normalizePreferredSearchLanguage(language: string | undefined | 
   return 'english'
 }
 
+/**
+ * The filter a language choice produces: one language, a comma-separated list of them
+ * (the library-languages setting), or undefined for no filter. A list containing
+ * "all" is no filter.
+ */
 export function getPreferredSearchLanguageFilter(
   language: string | undefined | null,
 ): string | undefined {
-  const normalized = normalizePreferredSearchLanguage(language)
-  return normalized === 'all' ? undefined : normalized
+  const parts = (language || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length === 0) return undefined
+  const normalizedParts = parts.map(normalizePreferredSearchLanguage)
+  if (normalizedParts.includes('all')) return undefined
+  return Array.from(new Set(normalizedParts)).join(',')
+}
+
+/** Whether a result's language passes a filter from getPreferredSearchLanguageFilter. */
+export function languageFilterAdmits(
+  filter: string | undefined | null,
+  resultLanguage: string | undefined | null,
+): boolean {
+  if (!filter) return true
+  const normalized = normalizeSearchResultLanguage(resultLanguage)
+  if (!normalized) return false
+  return filter.split(',').includes(normalized)
+}
+
+/** Human label for a filter: "English" or "English, German". */
+export function describeLanguageFilter(filter: string | undefined | null): string {
+  if (!filter) return 'All Languages'
+  return filter
+    .split(',')
+    .map(
+      (value) =>
+        preferredSearchLanguageOptions.find((option) => option.value === value)?.label ?? value,
+    )
+    .join(', ')
+}
+
+/**
+ * The languages the library is read in, as a filter: the Library Languages setting
+ * when set, else the single Preferred Default Language.
+ */
+export function getLibraryLanguageFilter(
+  settings:
+    | {
+        libraryLanguagesJson?: string
+        defaultSearchLanguage?: string
+      }
+    | null
+    | undefined,
+): string | undefined {
+  try {
+    const parsed = JSON.parse(settings?.libraryLanguagesJson || '[]')
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return getPreferredSearchLanguageFilter(parsed.filter((v) => typeof v === 'string').join(','))
+    }
+  } catch {
+    // fall through to the single default
+  }
+  return getPreferredSearchLanguageFilter(settings?.defaultSearchLanguage)
 }
 
 export function normalizeSearchResultLanguage(

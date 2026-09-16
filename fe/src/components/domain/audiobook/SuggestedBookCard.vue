@@ -31,6 +31,15 @@
           >
           {{ book.title }}
         </h3>
+        <button
+          v-if="!added"
+          class="ignore"
+          title="Not interested - stop suggesting this"
+          aria-label="Ignore this suggestion"
+          @click="emit('ignore')"
+        >
+          <PhX />
+        </button>
         <span v-if="added" class="added-badge"><PhCheck weight="bold" /> Added</span>
         <button
           v-else
@@ -67,7 +76,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { PhCheck, PhPlus } from '@phosphor-icons/vue'
+import { PhCheck, PhPlus, PhX } from '@phosphor-icons/vue'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { formatRuntime } from '@/utils/searchResultFormatting'
@@ -82,6 +91,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   add: []
+  ignore: []
 }>()
 
 const { getProtectedImageSrc } = useProtectedImages()
@@ -190,6 +200,27 @@ function compactCount(count: number): string {
   font-size: 0.8rem;
   line-height: 1.2;
   border-radius: 6px;
+}
+
+.ignore {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: #6b747d;
+  cursor: pointer;
+}
+
+.ignore:hover {
+  color: #e8eaed;
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .added-badge {

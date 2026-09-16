@@ -35,6 +35,34 @@ namespace Listenarr.Api.Features.Library
         public async Task<ActionResult<SuggestionSnapshot>> Get(CancellationToken cancellationToken = default) =>
             Ok(await suggestions.GetAsync(cancellationToken));
 
+        /// <summary>Stop offering a book; it stays listed under "ignored" so it can be restored.</summary>
+        [HttpPost("ignore")]
+        public async Task<ActionResult<object>> Ignore(
+            [FromBody] IgnoreSuggestionRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Title))
+            {
+                return BadRequest(new { message = "A title is required." });
+            }
+
+            try
+            {
+                var key = await suggestions.IgnoreAsync(request, cancellationToken);
+                return Ok(new { key });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("ignore/{key}")]
+        public async Task<IActionResult> Restore(string key, CancellationToken cancellationToken = default) =>
+            await suggestions.RestoreAsync(Uri.UnescapeDataString(key), cancellationToken)
+                ? NoContent()
+                : NotFound();
+
         [HttpGet("refresh")]
         public ActionResult<SuggestionRefreshStatus> RefreshStatus() => Ok(refresh.Status);
 

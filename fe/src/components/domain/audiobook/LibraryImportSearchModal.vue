@@ -45,6 +45,10 @@
             />
             <PhSpinner v-if="isSearching" class="ph-spin search-spinner" :size="16" />
           </div>
+          <label v-if="libraryLanguageLabel" class="any-language">
+            <input v-model="anyLanguage" type="checkbox" @change="runSearch" />
+            Any language <span class="muted">(otherwise {{ libraryLanguageLabel }})</span>
+          </label>
         </div>
 
         <div v-if="searchResults.length > 0" class="results-list">
@@ -89,10 +93,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
 import { PhSpinner } from '@phosphor-icons/vue'
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import { apiService } from '@/services/api'
+import { useConfigurationStore } from '@/stores/configuration'
+import { describeLanguageFilter, getLibraryLanguageFilter } from '@/utils/languageMapping'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import type { LibraryImportItem } from '@/stores/libraryImport'
 import {
@@ -118,6 +124,12 @@ function initialQuery(): string {
 }
 const searchQuery = ref(initialQuery())
 const authorQuery = ref(buildLibraryImportInitialAuthor(props.item))
+const configStore = useConfigurationStore()
+const anyLanguage = ref(false)
+const libraryLanguageLabel = computed(() => {
+  const filter = getLibraryLanguageFilter(configStore.applicationSettings)
+  return filter ? describeLanguageFilter(filter) : ''
+})
 const searchResults = ref<SearchResult[]>([])
 const isSearching = ref(false)
 const hasSearched = ref(false)
@@ -143,9 +155,14 @@ async function runSearch() {
   hasSearched.value = false
   try {
     const isAsin = /^[A-Z0-9]{10}$/i.test(q)
+    // An ASIN names one edition; a title search stays within the library languages
+    // unless widened, because the wrong-language edition is the usual mismatch.
+    const language = anyLanguage.value
+      ? undefined
+      : getLibraryLanguageFilter(configStore.applicationSettings)
     const params = isAsin
       ? { asin: q, cap: 5 }
-      : { title: q, author: authorQuery.value.trim() || undefined, cap: 5 }
+      : { title: q, author: authorQuery.value.trim() || undefined, cap: 5, language }
     searchResults.value = await apiService.advancedSearch(params)
     hasSearched.value = true
   } finally {
@@ -160,6 +177,18 @@ function select(result: SearchResult) {
 </script>
 
 <style scoped>
+.any-language {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #bbb;
+}
+
+.any-language .muted {
+  color: #777;
+}
+
 .search-wrap {
   display: flex;
   flex-direction: column;

@@ -619,6 +619,8 @@ export interface ApplicationSettings {
    * is per-browser, which is why a laptop and a desktop showed different filters.
    */
   libraryCustomFiltersJson?: string
+  /** JSON array of Audible language names the library is read in; empty = the default language. */
+  libraryLanguagesJson?: string
   folderNamingPattern: string
   fileNamingPattern: string
   multiFileNamingPattern: string
@@ -841,11 +843,19 @@ export interface SuggestionCoverage {
   seriesWithCatalog: number
 }
 
+export interface IgnoredSuggestion {
+  key: string
+  title: string
+  author?: string
+  dismissedAt: string
+}
+
 export interface SuggestionSnapshot {
   authors: AuthorSuggestionGroup[]
   series: SeriesSuggestionGroup[]
   relatedAuthors: RelatedAuthorSuggestion[]
   coverage: SuggestionCoverage
+  ignored: IgnoredSuggestion[]
 }
 
 export interface SuggestionRefreshStatus {

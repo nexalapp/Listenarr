@@ -93,6 +93,10 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<List<AuthorCacheEntry>> GetAllCachedAuthorsAsync(CancellationToken ct = default);
         /// <summary>Every cached series catalog, for suggestions; read-only snapshots.</summary>
         Task<List<SeriesCacheEntry>> GetAllCachedSeriesAsync(CancellationToken ct = default);
+        Task<List<SuggestionDismissal>> GetSuggestionDismissalsAsync(CancellationToken ct = default);
+        /// <summary>Records a dismissal; a repeat of the same key is a no-op.</summary>
+        Task AddSuggestionDismissalAsync(SuggestionDismissal dismissal, CancellationToken ct = default);
+        Task<bool> RemoveSuggestionDismissalAsync(string key, CancellationToken ct = default);
         Task<Audiobook> AddAsync(Audiobook audiobook);
         Task<bool> UpdateAsync(Audiobook audiobook);
         Task<bool> RewritePathReferencesAsync(

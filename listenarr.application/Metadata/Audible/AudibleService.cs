@@ -200,10 +200,9 @@ namespace Listenarr.Application.Metadata.Audible
                 }
 
                 // Language filter (use explicit language param when provided)
-                if (!string.IsNullOrWhiteSpace(language))
+                if (!LanguageFilter.IsUnfiltered(language))
                 {
-                    var lang = language.Trim().ToLowerInvariant();
-                    filtered = filtered.Where(r => !string.IsNullOrWhiteSpace(r.Language) && r.Language.Trim().ToLowerInvariant() == lang);
+                    filtered = filtered.Where(r => LanguageFilter.Matches(language, r.Language, acceptUnknown: false));
                 }
 
                 var finalList = filtered.ToList();

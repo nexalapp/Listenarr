@@ -55,6 +55,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<RootFolderRelocationCreatedDirectory> RootFolderRelocationCreatedDirectories { get; set; } = null!;
         public DbSet<MonitoredAuthor> MonitoredAuthors { get; set; } = null!;
         public DbSet<MonitoredSeries> MonitoredSeries { get; set; } = null!;
+        public DbSet<SuggestionDismissal> SuggestionDismissals { get; set; } = null!;
         public DbSet<NzbKingKeyState> NzbKingKeyStates { get; set; } = null!;
         public DbSet<NzbKingApiAccess> NzbKingApiAccesses { get; set; } = null!;
         public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; } = null!;
