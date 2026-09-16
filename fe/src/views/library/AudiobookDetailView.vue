@@ -110,27 +110,29 @@
         <div class="info-section">
           <div class="hero-title-row">
             <h1 class="title">{{ safeText(audiobook.title) }}</h1>
-            <button
-              class="hero-refresh-btn"
-              :disabled="rescanningMetadata"
-              @click="rescanMetadata"
-              title="Re-fetch this book's metadata from its provider"
-            >
-              <component
-                :is="rescanningMetadata ? PhSpinner : PhArrowClockwise"
-                :class="rescanningMetadata ? 'ph-spin' : undefined"
-              />
-              {{ rescanningMetadata ? 'Refreshing...' : 'Refresh Metadata' }}
-            </button>
-            <button
-              class="hero-refresh-btn"
-              :disabled="rescanningMetadata"
-              @click="showFixMatchModal = true"
-              title="Search for the right edition and re-match this book to it"
-            >
-              <PhMagnifyingGlass />
-              Fix Match
-            </button>
+            <div class="hero-actions">
+              <button
+                class="hero-refresh-btn"
+                :disabled="rescanningMetadata"
+                @click="rescanMetadata"
+                title="Re-fetch this book's metadata from its provider"
+              >
+                <component
+                  :is="rescanningMetadata ? PhSpinner : PhArrowClockwise"
+                  :class="rescanningMetadata ? 'ph-spin' : undefined"
+                />
+                {{ rescanningMetadata ? 'Refreshing...' : 'Refresh Metadata' }}
+              </button>
+              <button
+                class="hero-refresh-btn"
+                :disabled="rescanningMetadata"
+                @click="showFixMatchModal = true"
+                title="Search for the right edition and re-match this book to it"
+              >
+                <PhMagnifyingGlass />
+                Fix Match
+              </button>
+            </div>
           </div>
           <div class="subtitle" v-if="showSubtitle">{{ safeText(audiobook.subtitle) }}</div>
           <div v-if="displaySeriesMemberships.length > 0" class="hero-series">
@@ -2656,6 +2658,12 @@ function formatDate(dateString?: string): string {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.hero-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
 }
 
 .hero-refresh-btn {
