@@ -45,7 +45,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var library = await repository.GetAllAsync();
             cancellationToken.ThrowIfCancellationRequested();
             var memberships = await repository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync(cancellationToken);
-            var held = new HeldBooks(library, memberships);
+            var dismissals = await repository.GetSuggestionDismissalsAsync(cancellationToken);
+            var held = new HeldBooks(library, memberships, dismissals.Select(d => d.Key));
 
             var cachedAuthors = await repository.GetAllCachedAuthorsAsync(cancellationToken);
             var cachedSeries = await repository.GetAllCachedSeriesAsync(cancellationToken);
@@ -95,6 +96,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     // to; those are not "their books you are missing".
                     .Where(book => book.Authors.Any(name => SuggestionNames.Normalize(name) == key))
                     .Where(book => !held.Contains(book.Asin, book.Isbn, book.Title, book.Authors))
+                    .Where(book => !held.Ignored(book.Asin, book.Title, book.Authors))
                     .Select(Map)
                     .ToList();
                 DistinctEditions(missing);
@@ -126,6 +128,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 var missing = entry.CatalogBooks
                     .Where(book => held.SpeaksLanguage(book.Language))
                     .Where(book => !held.Contains(book.Asin, book.Isbn, book.Title, book.Authors))
+                    .Where(book => !held.Ignored(book.Asin, book.Title, book.Authors))
                     .Select(Map)
                     .OrderBy(book => SeriesPosition(book.SeriesNumber))
                     .ToList();
@@ -156,8 +159,31 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     held.AuthorCounts.Count,
                     authorsWithCatalog.Count,
                     held.SeriesCounts.Count,
-                    seriesWithCatalog.Count));
+                    seriesWithCatalog.Count),
+                dismissals
+                    .Select(d => new IgnoredSuggestion(d.Key, d.Title, d.Author, d.DismissedAt))
+                    .ToList());
         }
+
+        public async Task<string> IgnoreAsync(IgnoreSuggestionRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var key = SuggestionNames.DismissalKey(request.Asin, request.Title, request.Authors)
+                ?? throw new ArgumentException("A book needs an ASIN or a title and author to be ignored.", nameof(request));
+
+            await repository.AddSuggestionDismissalAsync(
+                new SuggestionDismissal
+                {
+                    Key = key,
+                    Title = request.Title.Trim(),
+                    Author = request.Authors?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a))?.Trim()
+                },
+                cancellationToken);
+            return key;
+        }
+
+        public Task<bool> RestoreAsync(string key, CancellationToken cancellationToken = default) =>
+            repository.RemoveSuggestionDismissalAsync(key, cancellationToken);
 
         /// <summary>
         /// One card per book, not per edition: a catalog lists every narration and
@@ -199,15 +225,20 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             private readonly HashSet<string> _isbns = new(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _titleAuthorKeys = new(StringComparer.Ordinal);
 
+            private readonly Dictionary<string, int> _languageCounts = new(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _languages = new(StringComparer.OrdinalIgnoreCase);
+            private int _booksWithLanguage;
+            private readonly HashSet<string> _ignored;
 
             public Dictionary<string, int> AuthorCounts { get; } = new(StringComparer.Ordinal);
             public Dictionary<string, int> SeriesCounts { get; } = new(StringComparer.Ordinal);
 
             public HeldBooks(
                 IEnumerable<Audiobook> library,
-                IReadOnlyDictionary<int, List<AudiobookSeriesMembership>> memberships)
+                IReadOnlyDictionary<int, List<AudiobookSeriesMembership>> memberships,
+                IEnumerable<string> ignoredKeys)
             {
+                _ignored = new HashSet<string>(ignoredKeys, StringComparer.Ordinal);
                 foreach (var book in library)
                 {
                     if (!string.IsNullOrWhiteSpace(book.Asin))
@@ -231,9 +262,10 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     }
 
                     var language = AuthorCatalogMapping.NormalizeLanguage(book.Language);
-                    if (language != null)
+                    if (language != null && language != "und")
                     {
-                        _languages.Add(language);
+                        _languageCounts[language] = _languageCounts.GetValueOrDefault(language) + 1;
+                        _booksWithLanguage++;
                     }
 
                     foreach (var author in book.Authors ?? [])
@@ -256,18 +288,47 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                         CountKey(SeriesCounts, series);
                     }
                 }
+
+                // A language the library reads, not one it happens to contain: one
+                // German title in a thousand English ones must not open the door to
+                // every German translation in every catalog.
+                foreach (var (language, count) in _languageCounts)
+                {
+                    if (count >= 10 || count * 20 >= _booksWithLanguage)
+                    {
+                        _languages.Add(language);
+                    }
+                }
             }
 
             /// <summary>
-            /// Whether a catalog book is in a language the library already reads. A
-            /// catalog lists every translation, and a library with nothing but English
-            /// does not want the Italian one. A book with no language recorded passes,
-            /// as does everything when the library has no languages recorded.
+            /// Whether a catalog book is in a language the library reads - one that is a
+            /// real share of it, not a stray title. A catalog lists every translation,
+            /// and a library with nothing but English does not want the Italian one. A
+            /// book with no language recorded passes, as does everything when the library
+            /// has no languages recorded.
             /// </summary>
             public bool SpeaksLanguage(string? language)
             {
                 var normalized = AuthorCatalogMapping.NormalizeLanguage(language);
                 return normalized == null || _languages.Count == 0 || _languages.Contains(normalized);
+            }
+
+            /// <summary>Dismissed by either identity: the ASIN, or the title and author.</summary>
+            public bool Ignored(string? asin, string? title, IReadOnlyList<string>? authors)
+            {
+                if (_ignored.Count == 0)
+                {
+                    return false;
+                }
+
+                if (!string.IsNullOrWhiteSpace(asin) && _ignored.Contains("asin:" + asin.Trim()))
+                {
+                    return true;
+                }
+
+                var key = SuggestionNames.TitleAuthorKey(title, authors);
+                return key != null && _ignored.Contains("key:" + key);
             }
 
             public bool Contains(string? asin, string? isbn, string? title, IReadOnlyList<string>? authors)
@@ -322,6 +383,18 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 ' ',
                 cleaned.Split([' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries))
                 .ToLowerInvariant();
+        }
+
+        /// <summary>The key a dismissal is stored under: the ASIN when there is one.</summary>
+        public static string? DismissalKey(string? asin, string? title, IReadOnlyList<string>? authors)
+        {
+            if (!string.IsNullOrWhiteSpace(asin))
+            {
+                return "asin:" + asin.Trim();
+            }
+
+            var key = TitleAuthorKey(title, authors);
+            return key == null ? null : "key:" + key;
         }
 
         public static string Digits(string? value) =>

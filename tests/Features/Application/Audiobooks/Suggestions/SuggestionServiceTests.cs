@@ -33,6 +33,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         private readonly Mock<IAuthorMonitoringService> _authorMonitoring = new();
         private readonly Mock<ISeriesMonitoringService> _seriesMonitoring = new();
         private readonly List<MonitoredAuthor> _monitoredAuthors = [];
+        private readonly List<SuggestionDismissal> _dismissals = [];
         private readonly List<Audiobook> _library = [];
         private readonly List<AuthorCacheEntry> _authors = [];
         private readonly List<SeriesCacheEntry> _series = [];
@@ -51,6 +52,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             _repository
                 .Setup(r => r.GetAllCachedSeriesAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_series);
+            _repository
+                .Setup(r => r.GetSuggestionDismissalsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(_dismissals);
+            _repository
+                .Setup(r => r.AddSuggestionDismissalAsync(It.IsAny<SuggestionDismissal>(), It.IsAny<CancellationToken>()))
+                .Callback<SuggestionDismissal, CancellationToken>((d, _) => _dismissals.Add(d))
+                .Returns(Task.CompletedTask);
             _authorMonitoring
                 .Setup(m => m.GetAllMonitoredAuthorsAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_monitoredAuthors);
@@ -224,6 +232,25 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         }
 
         [Fact]
+        public async Task Get_DoesNotLetOneStrayTitleMakeItsLanguageALibraryLanguage()
+        {
+            // 970 English books and one German one is an English library.
+            for (var i = 0; i < 30; i++)
+            {
+                Held($"Book {i}", "Someone", asin: $"E{i}").Language = "english";
+            }
+
+            Held("Der Schwarm", "Frank Schätzing", asin: "G1").Language = "german";
+            CachedAuthor("Frank Schätzing",
+                new() { Title = "Limit", Authors = ["Frank Schätzing"], Asin = "G2", Language = "german" },
+                new() { Title = "The Swarm", Authors = ["Frank Schätzing"], Asin = "G3", Language = "english" });
+
+            var snapshot = await BuildService().GetAsync();
+
+            Assert.Equal("The Swarm", Assert.Single(Assert.Single(snapshot.Authors).Missing).Title);
+        }
+
+        [Fact]
         public async Task Get_SkipsAnthologiesTheAuthorOnlyContributedTo()
         {
             Held("Rendezvous with Rama", "Arthur C. Clarke", asin: "C1");
@@ -262,6 +289,27 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             var snapshot = await BuildService().GetAsync();
 
             Assert.True(Assert.Single(snapshot.Authors).Monitored);
+        }
+
+        [Fact]
+        public async Task Get_LeavesOutWhatWasIgnored_ByAsinOrByTitleAndAuthor()
+        {
+            // Translations and regional retitles are the usual reasons; both kinds of
+            // identity must hold so a re-fetched catalog does not bring them back.
+            Held("Dune", "Frank Herbert", asin: "D1");
+            CachedAuthor("Frank Herbert",
+                Catalog("Dune Messiah", "Frank Herbert", asin: "D2"),
+                Catalog("Der Wüstenplanet", "Frank Herbert", asin: "D3"),
+                Catalog("Children of Dune", "Frank Herbert"));
+            var service = BuildService();
+
+            await service.IgnoreAsync(new IgnoreSuggestionRequest("D3", "Der Wüstenplanet", ["Frank Herbert"]));
+            await service.IgnoreAsync(new IgnoreSuggestionRequest(null, "Children of Dune: A Novel", ["Frank Herbert"]));
+            var snapshot = await service.GetAsync();
+
+            Assert.Equal("Dune Messiah", Assert.Single(Assert.Single(snapshot.Authors).Missing).Title);
+            Assert.Equal(2, snapshot.Ignored.Count);
+            Assert.Equal("asin:D3", snapshot.Ignored[0].Key);
         }
 
         [Fact]

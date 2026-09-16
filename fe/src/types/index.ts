@@ -841,11 +841,19 @@ export interface SuggestionCoverage {
   seriesWithCatalog: number
 }
 
+export interface IgnoredSuggestion {
+  key: string
+  title: string
+  author?: string
+  dismissedAt: string
+}
+
 export interface SuggestionSnapshot {
   authors: AuthorSuggestionGroup[]
   series: SeriesSuggestionGroup[]
   relatedAuthors: RelatedAuthorSuggestion[]
   coverage: SuggestionCoverage
+  ignored: IgnoredSuggestion[]
 }
 
 export interface SuggestionRefreshStatus {

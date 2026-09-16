@@ -455,6 +455,24 @@ class ApiService {
     return this.request<SuggestionRefreshStatus>('/suggestions/refresh')
   }
 
+  /** Stop offering a book; returns the key it is ignored under. */
+  async ignoreSuggestion(book: {
+    asin?: string
+    title: string
+    authors?: string[]
+  }): Promise<{ key: string }> {
+    return this.request<{ key: string }>('/suggestions/ignore', {
+      method: 'POST',
+      body: JSON.stringify(book),
+    })
+  }
+
+  async restoreSuggestion(key: string): Promise<void> {
+    await this.request<void>(`/suggestions/ignore/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    })
+  }
+
   /** Starts fetching missing/stale catalogs in the background; 409 when already running. */
   async refreshSuggestions(): Promise<SuggestionRefreshStatus> {
     return this.request<SuggestionRefreshStatus>('/suggestions/refresh', { method: 'POST' })

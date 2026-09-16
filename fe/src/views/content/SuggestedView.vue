@@ -31,11 +31,11 @@
         <button
           class="btn btn-secondary"
           :disabled="refreshStatus?.running || refreshing"
-          title="Fetch catalogs for library authors and series that have none yet. This is the only thing on this page that goes to Audible."
+          title="Fetch catalogs for library authors and series that have none yet, or whose catalog is over a month old. This is the only thing on this page that goes to Audible."
           @click="startRefresh"
         >
           <PhArrowsClockwise :class="{ spinning: refreshStatus?.running }" />
-          Refresh
+          Fetch catalogs
         </button>
       </div>
     </div>
@@ -46,8 +46,25 @@
       {{ snapshot.coverage.authorsInLibrary }} authors and
       <strong>{{ snapshot.coverage.seriesWithCatalog }}</strong> of
       {{ snapshot.coverage.seriesInLibrary }} series in your library.
-      <template v-if="uncovered > 0"> Refresh to look at the other {{ uncovered }}. </template>
+      <template v-if="uncovered > 0">
+        Fetch catalogs to look at the other {{ uncovered }}.
+      </template>
+      <button
+        v-if="snapshot.ignored.length > 0"
+        class="link-btn"
+        @click="showIgnored = !showIgnored"
+      >
+        {{ snapshot.ignored.length }} ignored
+      </button>
     </p>
+
+    <div v-if="showIgnored && snapshot && snapshot.ignored.length > 0" class="ignored-list">
+      <div v-for="item in snapshot.ignored" :key="item.key" class="ignored-row">
+        <span class="ignored-title">{{ item.title }}</span>
+        <span v-if="item.author" class="ignored-author">{{ item.author }}</span>
+        <button class="link-btn" @click="restore(item.key)">Restore</button>
+      </div>
+    </div>
 
     <div class="tabs">
       <button
@@ -74,7 +91,7 @@
           title="Nothing missing from your authors"
           :message="
             snapshot.coverage.authorsWithCatalog === 0
-              ? 'No author catalogs are cached yet. Refresh to fetch them.'
+              ? 'No author catalogs are cached yet. Fetch catalogs to look at them.'
               : 'Every cached author catalog is fully represented in your library.'
           "
         />
@@ -105,6 +122,7 @@
               :book="book"
               :added="addedKeys.has(bookKey(book))"
               @add="openAdd(book)"
+              @ignore="ignore(book)"
             />
           </div>
         </section>
@@ -117,7 +135,7 @@
           title="No gaps in your series"
           :message="
             snapshot.coverage.seriesWithCatalog === 0
-              ? 'No series catalogs are cached yet. Refresh to fetch them.'
+              ? 'No series catalogs are cached yet. Fetch catalogs to look at them.'
               : 'Every cached series is complete in your library.'
           "
         />
@@ -153,6 +171,7 @@
               show-position
               :added="addedKeys.has(bookKey(book))"
               @add="openAdd(book)"
+              @ignore="ignore(book)"
             />
           </div>
         </section>
@@ -163,7 +182,7 @@
         <EmptyState
           v-if="snapshot.relatedAuthors.length === 0"
           title="No related authors yet"
-          message="Audible's 'similar authors' come with each author catalog. Refresh to fetch them."
+          message="Audible's 'similar authors' come with each author catalog. Fetch catalogs to look at them."
         />
         <div v-else class="related-list">
           <RouterLink
@@ -284,6 +303,42 @@ function visibleBooks(key: string, books: SuggestedBook[]): SuggestedBook[] {
 // Books added during this visit stay in place, marked, rather than vanishing
 // from under the cursor; the next load drops them.
 const addedKeys = ref(new Set<string>())
+const showIgnored = ref(false)
+
+async function ignore(book: SuggestedBook) {
+  try {
+    await apiService.ignoreSuggestion({ asin: book.asin, title: book.title, authors: book.authors })
+    // Drop it from what is shown without a round trip; the list of ignored
+    // books comes back with the next load.
+    if (snapshot.value) {
+      const drop = (books: SuggestedBook[]) => books.filter((b) => bookKey(b) !== bookKey(book))
+      snapshot.value = {
+        ...snapshot.value,
+        authors: snapshot.value.authors
+          .map((g) => ({ ...g, missing: drop(g.missing) }))
+          .filter((g) => g.missing.length > 0),
+        series: snapshot.value.series
+          .map((g) => ({ ...g, missing: drop(g.missing) }))
+          .filter((g) => g.missing.length > 0),
+        ignored: [
+          { key: bookKey(book), title: book.title, author: book.authors[0], dismissedAt: '' },
+          ...snapshot.value.ignored,
+        ],
+      }
+    }
+  } catch (e) {
+    toast.error('Could not ignore', describeApiError(e, 'The book is still suggested.'))
+  }
+}
+
+async function restore(key: string) {
+  try {
+    await apiService.restoreSuggestion(key)
+    await load()
+  } catch (e) {
+    toast.error('Could not restore', describeApiError(e, 'The book is still ignored.'))
+  }
+}
 let pendingAddKey: string | null = null
 
 function bookKey(book: SuggestedBook): string {
@@ -508,6 +563,40 @@ onBeforeUnmount(stopPolling)
   .cards {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.coverage .link-btn {
+  margin-left: 0.5rem;
+}
+
+.ignored-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: -0.5rem 0 1.25rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ignored-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.ignored-title {
+  color: #ddd;
+}
+
+.ignored-author {
+  color: #888;
+}
+
+.ignored-row .link-btn {
+  margin-left: auto;
 }
 
 .monitor-pill {
