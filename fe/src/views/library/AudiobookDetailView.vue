@@ -1862,10 +1862,8 @@ async function applyMatch(result: SearchResult) {
   // Whatever identifies the picked edition: an ASIN from Audible, else an
   // OpenLibrary work. It replaces the same kind of identifier the book had.
   const asin = (result.asin || '').trim()
-  const openLibraryId =
-    (result.openLibraryId || '').trim() ||
-    // An OpenLibrary result names its work only by link.
-    (result.link?.match(/openlibrary\.org\/(?:works|books)\/(OL\w+)/)?.[1] ?? '')
+  // An OpenLibrary result names its work only by link.
+  const openLibraryId = result.link?.match(/openlibrary\.org\/(?:works|books)\/(OL\w+)/)?.[1] ?? ''
   const chosen: AudiobookExternalIdentifierInput | null = asin
     ? { type: 'Asin', value: asin, isPrimary: true, source: 'Manual' }
     : openLibraryId
