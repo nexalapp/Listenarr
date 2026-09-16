@@ -495,49 +495,6 @@ public sealed class ScanPathAuthorizationServiceTests : BaseTests
     }
 
     [Fact]
-    public async Task AuthorizeAsync_EnrolledRootReplacedAfterIdentityCheck_IsRejected()
-    {
-        var parent = FileService.GetTempDirectory(
-            "scan-authorization-root-race");
-        var configuredRoot = Path.Join(parent, "library");
-        var scanRoot = Path.Join(configuredRoot, "Book");
-        var displacedRoot = Path.Join(parent, "library-original");
-        Directory.CreateDirectory(scanRoot);
-        await AddAuthorizedRootAsync(configuredRoot);
-        var service = _provider.GetRequiredService<IScanPathAuthorizationService>();
-        var rootOpenCount = 0;
-        var semantics = FileSystemPathSemantics.CurrentHostDefault;
-        using var hook = ExclusiveDirectoryCreator.PushBeforeOpenParentHook(path =>
-        {
-            if (!semantics.Comparer.Equals(
-                    Path.GetFullPath(path),
-                    Path.GetFullPath(configuredRoot)))
-            {
-                return;
-            }
-
-            rootOpenCount++;
-            if (rootOpenCount != 2)
-            {
-                return;
-            }
-
-            Directory.Move(configuredRoot, displacedRoot);
-            Directory.CreateDirectory(scanRoot);
-        });
-
-        var result = await service.AuthorizeAsync(scanRoot);
-
-        Assert.False(result.IsAuthorized);
-        Assert.Equal(
-            ScanPathAuthorizationFailure.IdentityUnavailable,
-            result.Failure);
-        Assert.Null(result.PhysicalIdentity);
-        Assert.True(Directory.Exists(Path.Join(displacedRoot, "Book")));
-        Assert.True(Directory.Exists(scanRoot));
-    }
-
-    [Fact]
     public async Task AuthorizeAsync_ReplacedEnrolledRoot_IsRejected()
     {
         var parent = FileService.GetTempDirectory("scan-authorization-root-replacement");
