@@ -239,7 +239,7 @@ namespace Listenarr.Application.Search.Audible
                 return books;
             }
 
-            return books.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
+            return books.Where(b => LanguageFilter.Matches(language, b.Language, acceptUnknown: false));
         }
     }
 }

@@ -345,7 +345,7 @@ namespace Listenarr.Application.Metadata.Audible
                 if (!string.IsNullOrWhiteSpace(language))
                 {
                     filteredTiles = filteredTiles
-                        .Where(result => !string.IsNullOrWhiteSpace(result.Language) && string.Equals(result.Language, language, StringComparison.OrdinalIgnoreCase))
+                        .Where(result => LanguageFilter.Matches(language, result.Language, acceptUnknown: false))
                         .ToList();
                 }
 

@@ -37,7 +37,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         public async Task<SuggestionSnapshot> GetAsync(CancellationToken cancellationToken = default)
         {
             var settings = await configuration.GetApplicationSettingsAsync();
-            var languages = LibraryLanguages.Resolve(settings);
+            var languages = LanguageFilter.Parse(LanguageFilter.FromSettings(settings));
 
             var monitoredAuthors = (await authorMonitoring.GetAllMonitoredAuthorsAsync(cancellationToken))
                 .Select(author => SuggestionNames.Normalize(author.AuthorName))
@@ -344,48 +344,6 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
             private static void CountKey(Dictionary<string, int> counts, string key) =>
                 counts[key] = counts.TryGetValue(key, out var count) ? count + 1 : 1;
-        }
-    }
-
-    /// <summary>
-    /// The languages suggestions are limited to, from settings: the explicit list when
-    /// one is set, else the single default search language, else nothing ("all").
-    /// </summary>
-    public static class LibraryLanguages
-    {
-        public static IReadOnlySet<string>? Resolve(ApplicationSettings settings)
-        {
-            ArgumentNullException.ThrowIfNull(settings);
-
-            var explicitList = Parse(settings.LibraryLanguagesJson)
-                .Select(AuthorCatalogMapping.NormalizeLanguage)
-                .Where(language => language != null)
-                .Select(language => language!)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (explicitList.Count > 0)
-            {
-                return explicitList;
-            }
-
-            var single = AuthorCatalogMapping.NormalizeLanguage(settings.DefaultSearchLanguage);
-            return single == null ? null : new HashSet<string>([single], StringComparer.OrdinalIgnoreCase);
-        }
-
-        private static IEnumerable<string> Parse(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return [];
-            }
-
-            try
-            {
-                return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? [];
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                return [];
-            }
         }
     }
 

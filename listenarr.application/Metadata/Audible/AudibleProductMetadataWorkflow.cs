@@ -40,8 +40,7 @@ namespace Listenarr.Application.Metadata.Audible
             {
                 var result = (await GetBooksMetadataByAsinsAsync(new[] { asin }, region)).FirstOrDefault();
                 if (result != null &&
-                    !string.IsNullOrWhiteSpace(language) &&
-                    !string.Equals(result.Language, language, StringComparison.OrdinalIgnoreCase))
+                    !LanguageFilter.Matches(language, result.Language, acceptUnknown: false))
                 {
                     return null;
                 }

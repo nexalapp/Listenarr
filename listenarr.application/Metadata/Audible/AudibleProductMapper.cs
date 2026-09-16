@@ -138,15 +138,13 @@ namespace Listenarr.Application.Metadata.Audible
 
         public static List<AudibleSearchResult> ApplyLanguageFilter(List<AudibleSearchResult> results, string? language)
         {
-            if (string.IsNullOrWhiteSpace(language) ||
-                string.Equals(language, "all", StringComparison.OrdinalIgnoreCase))
+            if (LanguageFilter.IsUnfiltered(language))
             {
                 return results;
             }
 
             return results
-                .Where(result => string.IsNullOrWhiteSpace(result.Language) ||
-                                 string.Equals(result.Language, language, StringComparison.OrdinalIgnoreCase))
+                .Where(result => LanguageFilter.Matches(language, result.Language, acceptUnknown: true))
                 .ToList();
         }
 

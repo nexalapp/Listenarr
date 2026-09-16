@@ -836,11 +836,11 @@ import { safeText, stripHtmlAndNormalize, truncateAtWord } from '@/utils/textUti
 import { buildLibrarySections } from '@/utils/libraryGrouping'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
-  getPreferredSearchLanguageFilter,
+  describeLanguageFilter,
+  getLibraryLanguageFilter,
+  languageFilterAdmits,
   normalizePreferredSearchLanguage,
   normalizeSearchRegion,
-  normalizeSearchResultLanguage,
-  preferredSearchLanguageOptions,
   searchRegionOptions,
 } from '@/utils/languageMapping'
 
@@ -936,20 +936,13 @@ const preferredAuthorMonitoringLanguage = computed(() =>
     configStore.applicationSettings?.defaultSearchLanguage ?? 'english',
   ),
 )
+// The languages the reader set, so an author page shows the editions they can use.
 const preferredAuthorCatalogLanguageFilter = computed(() =>
-  getPreferredSearchLanguageFilter(configStore.applicationSettings?.defaultSearchLanguage),
+  getLibraryLanguageFilter(configStore.applicationSettings),
 )
-const authorLanguageLabel = computed(() => {
-  if (preferredAuthorMonitoringLanguage.value === 'all') {
-    return 'All Languages'
-  }
-
-  return (
-    preferredSearchLanguageOptions.find(
-      (option) => option.value === preferredAuthorMonitoringLanguage.value,
-    )?.label ?? preferredAuthorMonitoringLanguage.value
-  )
-})
+const authorLanguageLabel = computed(() =>
+  describeLanguageFilter(preferredAuthorCatalogLanguageFilter.value),
+)
 const isCurrentAuthorMonitored = computed(() => Boolean(authorMonitoringStatus.value))
 const authorMonitoringContextLabel = computed(() => {
   return `${authorRegionLabel.value} / ${authorLanguageLabel.value}`
@@ -1128,12 +1121,7 @@ function shouldIncludeRemoteCatalogBook(
   book: RemoteCatalogBook,
   languageFilter: string | null | undefined,
 ): boolean {
-  if (!languageFilter) return true
-  const normalizedBookLanguage = normalizeSearchResultLanguage(book.language)
-
-  if (!normalizedBookLanguage) return false
-
-  return normalizedBookLanguage === languageFilter
+  return languageFilterAdmits(languageFilter, book.language)
 }
 
 function getSortValue(book: CollectionDisplayItem): string {
