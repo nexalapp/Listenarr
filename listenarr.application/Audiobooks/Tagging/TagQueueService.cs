@@ -172,6 +172,28 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     "That tag write is already running.");
             }
 
+            // A job that an import queued on its own answers to the setting, on retry
+            // as much as when it was first queued: switching automatic writing off is
+            // how an operator says the files are not to be rewritten unreviewed, and a
+            // retry must not be the way round that. A job someone asked for is theirs
+            // to retry regardless.
+            //
+            // A job holding a rewritten file is the exception: its library file is
+            // already gone, and publishing the copy is the only way the book gets one
+            // back. That does not write anything new.
+            if (job.Trigger == TagTrigger.Automatic
+                && string.IsNullOrWhiteSpace(job.PendingOutputPath))
+            {
+                var settings = await configurationService.GetApplicationSettingsAsync();
+                if (!settings.WriteMetadataTags)
+                {
+                    return new TagEnqueueResult(
+                        TagEnqueueOutcome.Disabled,
+                        job.Id,
+                        "Automatic metadata tag writing is switched off, so this automatic job will not be retried. Queue it from the Tags page to write it deliberately.");
+                }
+            }
+
             // Retrying re-runs from the top, so the attempt counter starts over: the
             // previous attempts were against whatever the problem was, and the operator
             // has presumably addressed it. The tag selection is kept — it was the
