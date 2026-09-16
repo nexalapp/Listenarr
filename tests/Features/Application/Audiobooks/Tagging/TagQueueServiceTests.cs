@@ -479,6 +479,63 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
         }
 
         [Fact]
+        [Trait("Method", "RetryAsync")]
+        public async Task RetryAsync_AutomaticJob_RespectsTheSettingItWasQueuedUnder()
+        {
+            // Retrying a batch of old automatic jobs rewrote 475 files while automatic
+            // writing was switched off - the setting was only ever checked when an
+            // import queued the job. Off means the files are not to be rewritten
+            // unreviewed, whichever door the job comes through.
+            GivenSettings(automaticTagging: false);
+            var job = new TagJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = TagJobStatus.Failed,
+                Trigger = TagTrigger.Automatic
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+
+            var result = await BuildService().RetryAsync(job.Id);
+
+            Assert.Equal(TagEnqueueOutcome.Disabled, result.Outcome);
+            _repository.Verify(
+                repo => repo.UpdateAsync(It.IsAny<Guid>(), It.IsAny<Action<TagJob>>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "RetryAsync")]
+        public async Task RetryAsync_AutomaticJobHoldingTheBooksOnlyCopy_StillPublishesIt()
+        {
+            // Nothing new is written here: the rewrite is done and the library file is
+            // gone, so the retry is how the book gets its file back.
+            GivenSettings(automaticTagging: false);
+            var job = new TagJob
+            {
+                Id = Guid.NewGuid(),
+                AudiobookId = 7,
+                Status = TagJobStatus.Failed,
+                Trigger = TagTrigger.Automatic,
+                PendingOutputPath = "/scratch/tagging-abc-593.m4b",
+                PendingDestinationPath = "/audiobooks/Book/Book.m4b",
+                PendingFileId = 593
+            };
+            _repository
+                .Setup(repo => repo.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(job);
+            _repository
+                .Setup(repo => repo.UpdateAsync(job.Id, It.IsAny<Action<TagJob>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var result = await BuildService().RetryAsync(job.Id);
+
+            Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
+        }
+
+        [Fact]
         [Trait("Method", "CancelAsync")]
         public async Task CancelAsync_RefusesAJobHoldingTheBooksOnlyCopy()
         {
