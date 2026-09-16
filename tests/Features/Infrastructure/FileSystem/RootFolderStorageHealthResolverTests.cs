@@ -221,7 +221,7 @@ public sealed class RootFolderStorageHealthResolverTests : BaseTests
     }
 
     [Fact]
-    public async Task ResolveAsync_AuthorizedGenerationReplaced_ReturnsChangedBoundToObservedGeneration()
+    public async Task ResolveAsync_AuthorizedGenerationReplaced_IsHealthyAndStillOffersConfirmation()
     {
         var path = Path.GetFullPath("root-storage-changed");
         var root = BuildRoot(path, identity: "authorized");
@@ -247,9 +247,12 @@ public sealed class RootFolderStorageHealthResolverTests : BaseTests
 
         var result = await resolver.ResolveAsync(root);
 
-        Assert.Equal(RootFolderStorageState.Changed, result.State);
-        Assert.Equal(RootFolderStorageReason.IdentityMismatch, result.Reason);
-        Assert.False(result.CanMutateFilesystem);
+        // The path is the identity: a re-issued native generation (every reboot of
+        // a FUSE union does this) blocks nothing. Confirming stays on offer to
+        // enrol the marker and record the new generation.
+        Assert.Equal(RootFolderStorageState.Healthy, result.State);
+        Assert.Equal(RootFolderStorageReason.None, result.Reason);
+        Assert.True(result.CanMutateFilesystem);
         Assert.True(result.CanConfirmCurrentFolder);
         Assert.False(string.IsNullOrWhiteSpace(result.ConfirmationToken));
         identityResolver.VerifyAll();
@@ -295,7 +298,7 @@ public sealed class RootFolderStorageHealthResolverTests : BaseTests
     }
 
     [Fact]
-    public async Task ResolveAsync_LegacyRootWithoutPersistedSemantics_ReturnsUnconfirmed()
+    public async Task ResolveAsync_LegacyRootWithoutPersistedSemantics_IsHealthy()
     {
         var path = Path.GetFullPath("root-storage-legacy-unconfirmed");
         var root = new RootFolder
@@ -331,17 +334,17 @@ public sealed class RootFolderStorageHealthResolverTests : BaseTests
 
         var result = await resolver.ResolveAsync(root);
 
-        Assert.Equal(RootFolderStorageState.Unconfirmed, result.State);
-        Assert.Equal(RootFolderStorageReason.NoAuthorizedIdentity, result.Reason);
+        Assert.Equal(RootFolderStorageState.Healthy, result.State);
+        Assert.Equal(RootFolderStorageReason.None, result.Reason);
         Assert.True(result.CanConfirmCurrentFolder);
-        Assert.False(result.CanMutateFilesystem);
+        Assert.True(result.CanMutateFilesystem);
         Assert.False(string.IsNullOrWhiteSpace(result.ConfirmationToken));
         identityResolver.VerifyAll();
         semanticsResolver.VerifyAll();
     }
 
     [Fact]
-    public async Task ResolveAsync_NoAuthorizedGeneration_ReturnsUnconfirmed()
+    public async Task ResolveAsync_NoAuthorizedGeneration_IsHealthyAndOffersEnrolment()
     {
         var path = Path.GetFullPath("root-storage-unconfirmed");
         var root = BuildRoot(path, identity: null);
@@ -358,16 +361,16 @@ public sealed class RootFolderStorageHealthResolverTests : BaseTests
 
         var result = await resolver.ResolveAsync(root);
 
-        Assert.Equal(RootFolderStorageState.Unconfirmed, result.State);
-        Assert.Equal(RootFolderStorageReason.NoAuthorizedIdentity, result.Reason);
-        Assert.False(result.CanMutateFilesystem);
+        Assert.Equal(RootFolderStorageState.Healthy, result.State);
+        Assert.Equal(RootFolderStorageReason.None, result.Reason);
+        Assert.True(result.CanMutateFilesystem);
         Assert.True(result.CanConfirmCurrentFolder);
         Assert.False(string.IsNullOrWhiteSpace(result.ConfirmationToken));
         identityResolver.VerifyAll();
     }
 
     [Fact]
-    public async Task ResolveAsync_ReplacementAlsoChangesFilesystemSemantics_RemainsChangedButCannotConfirm()
+    public async Task ResolveAsync_ReplacementAlsoChangesFilesystemSemantics_IsStillBlockedBySemantics()
     {
         var path = Path.GetFullPath("root-storage-replacement-semantics-changed");
         var root = BuildRoot(path, identity: "authorized");
@@ -409,7 +412,9 @@ public sealed class RootFolderStorageHealthResolverTests : BaseTests
 
         var result = await resolver.ResolveAsync(root);
 
-        Assert.Equal(RootFolderStorageState.Changed, result.State);
+        // The native identity no longer decides anything; the change in
+        // case-sensitivity rules is what blocks, as it does for a matching identity.
+        Assert.Equal(RootFolderStorageState.Unavailable, result.State);
         Assert.Equal(RootFolderStorageReason.FilesystemSemanticsChanged, result.Reason);
         Assert.False(result.CanMutateFilesystem);
         Assert.False(result.CanConfirmCurrentFolder);
