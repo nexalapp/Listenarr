@@ -313,7 +313,7 @@
                 class="row-select"
                 :checked="selectedFiles.has(row.fileId)"
                 :aria-label="`Select ${row.fileName}`"
-                @click.stop.prevent="tickFrom($event, row)"
+                @click.stop="tickFrom($event, row)"
                 @keydown.stop
               />
 
@@ -1054,6 +1054,9 @@ function selectFromCell(event: MouseEvent, row: LibraryTagRow) {
  * operator is drawing a line between two things they can see, and a range that followed
  * some other order would select rows they were not looking at.
  */
+// Not `.prevent` on the box: a cancelled click on a checkbox has the browser put the
+// old state back after the event finishes - after Vue has already re-rendered the new
+// one - so the badge said "1 file selected" while the box sat blank.
 function tickFrom(event: MouseEvent, row: LibraryTagRow) {
   const selecting = !selectedFiles.value.has(row.fileId)
 
