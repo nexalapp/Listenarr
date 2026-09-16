@@ -122,6 +122,15 @@
               />
               {{ rescanningMetadata ? 'Refreshing...' : 'Refresh Metadata' }}
             </button>
+            <button
+              class="hero-refresh-btn"
+              :disabled="rescanningMetadata"
+              @click="showFixMatchModal = true"
+              title="Search for the right edition and re-match this book to it"
+            >
+              <PhMagnifyingGlass />
+              Fix Match
+            </button>
           </div>
           <div class="subtitle" v-if="showSubtitle">{{ safeText(audiobook.subtitle) }}</div>
           <div v-if="displaySeriesMemberships.length > 0" class="hero-series">
@@ -722,6 +731,16 @@
     </button>
   </div>
 
+  <!-- Re-match to a different edition: search, pick, rescan -->
+  <LibraryImportSearchModal
+    v-if="showFixMatchModal && audiobook"
+    :heading="safeText(audiobook.title)"
+    :initial-query="audiobook.title || ''"
+    :initial-author="(audiobook.authors || [])[0] || ''"
+    @close="showFixMatchModal = false"
+    @select="applyMatch"
+  />
+
   <!-- Edit Audiobook Modal -->
   <EditAudiobookModal
     :is-open="showEditModal"
@@ -777,6 +796,7 @@ import type {
   AudiobookSeriesMembership,
   History,
   SearchResult,
+  AudiobookExternalIdentifierInput,
 } from '@/types'
 import { safeText, stripHtmlAndNormalize, truncateAtWord } from '@/utils/textUtils'
 import { isSeriesRestatement } from '@/utils/seriesUtils'
@@ -786,6 +806,7 @@ import { useProtectedImages } from '@/composables/useProtectedImages'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import { buildAudibleProductUrl } from '@/utils/marketDomains'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import LibraryImportSearchModal from '@/components/domain/audiobook/LibraryImportSearchModal.vue'
 import TagPreviewModal from '@/components/domain/tagging/TagPreviewModal.vue'
 import AudiobookTagsPanel from '@/components/domain/tagging/AudiobookTagsPanel.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
@@ -1830,6 +1851,58 @@ watch(
     }
   },
 )
+
+const showFixMatchModal = ref(false)
+
+// A wrong match is fixed by pointing the book at the right edition and letting the
+// ordinary rescan do the rest; locked fields survive it as they would any rescan.
+async function applyMatch(result: SearchResult) {
+  showFixMatchModal.value = false
+  if (!audiobook.value) return
+  // Whatever identifies the picked edition: an ASIN from Audible, else an
+  // OpenLibrary work. It replaces the same kind of identifier the book had.
+  const asin = (result.asin || '').trim()
+  // An OpenLibrary result names its work only by link.
+  const openLibraryId = result.link?.match(/openlibrary\.org\/(?:works|books)\/(OL\w+)/)?.[1] ?? ''
+  const chosen: AudiobookExternalIdentifierInput | null = asin
+    ? { type: 'Asin', value: asin, isPrimary: true, source: 'Manual' }
+    : openLibraryId
+      ? { type: 'OpenLibraryId', value: openLibraryId, isPrimary: true, source: 'Manual' }
+      : null
+  if (!chosen) {
+    useToast().error('No identifier', 'That result carries nothing to match against.')
+    return
+  }
+
+  try {
+    const others = (audiobook.value.identifiers || [])
+      .filter((identifier) => identifier.type !== chosen.type)
+      .map((identifier) => ({
+        type: identifier.type,
+        value: identifier.value,
+        region: identifier.region,
+        isPrimary: false,
+        source: identifier.source,
+      }))
+    await apiService.updateAudiobookIdentifiers(audiobook.value.id, [chosen, ...others])
+  } catch (err) {
+    useToast().error('Could not change the match', err instanceof Error ? err.message : String(err))
+    return
+  }
+
+  if (chosen.type !== 'Asin') {
+    // The rescan follows ASINs and ISBNs; an OpenLibrary work is recorded but cannot
+    // refresh the metadata on its own.
+    await loadAudiobook()
+    useToast().info(
+      'Identifier saved',
+      'Metadata is refreshed from Audible or an ISBN; search by ASIN or ISBN to re-match fully.',
+    )
+    return
+  }
+
+  await rescanMetadata()
+}
 
 async function rescanMetadata() {
   if (!audiobook.value || rescanningMetadata.value) return

@@ -18,7 +18,7 @@
 <template>
   <Modal :visible="true" size="md" @close="emit('close')">
     <template #header>
-      <ModalHeader :title="`Find Match — ${item.folderName}`" @close="emit('close')" />
+      <ModalHeader :title="`Find Match — ${heading}`" @close="emit('close')" />
     </template>
     <ModalBody>
       <div class="search-wrap">
@@ -108,7 +108,14 @@ import {
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import type { SearchResult } from '@/types'
 
-const props = defineProps<{ item: LibraryImportItem }>()
+// Either an import item, or a name plus the query to start from - the detail page
+// uses the latter to re-match a book already in the library.
+const props = defineProps<{
+  item?: LibraryImportItem
+  heading?: string
+  initialQuery?: string
+  initialAuthor?: string
+}>()
 const emit = defineEmits<{
   close: []
   select: [result: SearchResult]
@@ -119,11 +126,15 @@ const inputEl = ref<HTMLInputElement | null>(null)
 const placeholderUrl = getPlaceholderUrl()
 // Build the initial query: ASIN → filename stem (when more specific than folder) → folderName
 // detectedTitle comes from the audio file's "album" tag which is often the series name — skip it
-function initialQuery(): string {
-  return buildLibraryImportInitialQuery(props.item)
+function startingQuery(): string {
+  if (props.item) return buildLibraryImportInitialQuery(props.item)
+  return props.initialQuery ?? ''
 }
-const searchQuery = ref(initialQuery())
-const authorQuery = ref(buildLibraryImportInitialAuthor(props.item))
+const heading = computed(() => props.heading ?? props.item?.folderName ?? '')
+const searchQuery = ref(startingQuery())
+const authorQuery = ref(
+  props.item ? buildLibraryImportInitialAuthor(props.item) : (props.initialAuthor ?? ''),
+)
 const configStore = useConfigurationStore()
 const anyLanguage = ref(false)
 const libraryLanguageLabel = computed(() => {
