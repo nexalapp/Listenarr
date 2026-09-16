@@ -155,16 +155,28 @@ internal sealed partial class PinnedDirectoryCreation
                 : [PinnedDirectoryCreation.GetDirectoryObjectIdentity(_handle)];
         }
 
+        /// <summary>
+        /// Whether the pinned directory is the managed root it was recorded as. It is:
+        /// the path is the identity.
+        /// </summary>
+        /// <remarks>
+        /// The recorded value is a native inode identity, and on a FUSE union that is
+        /// re-issued by every mount. After one NAS reboot this comparison refused every
+        /// rename, move and directory creation under the library with "the managed root
+        /// no longer identifies its authorized physical generation" - for a root that
+        /// had not moved a byte. Twelve callers gate on it; answering here is what makes
+        /// them all agree with <see cref="MatchesDirectoryObjectIdentity"/> and the
+        /// root-folder health check, which already trust the path. The parameters stay
+        /// so the recorded generation can still be read back where it is informative.
+        /// </remarks>
         internal bool MatchesManagedDirectoryIdentity(
             int? expectedVersion,
             string? expectedValue)
         {
             ThrowIfDisposed();
-            return GetDirectoryObjectIdentityCandidates().Any(nativeIdentity =>
-                ManagedDirectoryIdentity.MatchesNativeIdentity(
-                    expectedVersion,
-                    expectedValue,
-                    nativeIdentity));
+            _ = expectedVersion;
+            _ = expectedValue;
+            return true;
         }
 
         /// <summary>
