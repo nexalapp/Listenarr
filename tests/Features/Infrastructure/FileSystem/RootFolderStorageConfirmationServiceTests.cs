@@ -8,13 +8,15 @@ namespace Listenarr.Tests.Features.Infrastructure.FileSystem;
 public sealed class RootFolderStorageConfirmationServiceTests : BaseTests
 {
     [Fact]
-    public async Task ConfirmCurrentFolderAsync_UnconfirmedVisibleGeneration_CommitsAuthorization()
+    public async Task ConfirmCurrentFolderAsync_HealthyUnenrolledRoot_CommitsAuthorizationAndMarker()
     {
         var fixture = await CreateFixtureAsync("confirm-current-folder");
         await using var cleanup = fixture;
         var root = await fixture.LoadRootAsync();
         var observation = await fixture.HealthResolver.ResolveAsync(root);
-        Assert.Equal(RootFolderStorageState.Unconfirmed, observation.State);
+        // Healthy from the start - the path is the identity - and confirming enrols
+        // the marker and records the generation.
+        Assert.Equal(RootFolderStorageState.Healthy, observation.State);
         Assert.NotNull(observation.ConfirmationToken);
 
         var confirmed = await fixture.Service.ConfirmCurrentFolderAsync(
@@ -73,7 +75,9 @@ public sealed class RootFolderStorageConfirmationServiceTests : BaseTests
         });
         var root = await fixture.LoadRootAsync();
         var observation = await fixture.HealthResolver.ResolveAsync(root);
-        Assert.Equal(RootFolderStorageState.Unconfirmed, observation.State);
+        // Healthy from the start - the path is the identity - and confirming enrols
+        // the marker and records the generation.
+        Assert.Equal(RootFolderStorageState.Healthy, observation.State);
         Assert.NotNull(observation.ConfirmationToken);
 
         var confirmed = await fixture.Service.ConfirmCurrentFolderAsync(

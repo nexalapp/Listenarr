@@ -69,17 +69,24 @@ internal sealed partial class RootFolderStorageHealthResolver(
             cancellationToken);
 
         // An enrolled root whose marker is gone is very likely storage that never
-        // mounted rather than a folder someone swapped. That does not change what
-        // Listenarr will allow - it is the same fail-closed outcome either way - but
-        // it is the difference between a diagnosable message and a baffling one.
-        return marker?.State == LibraryRootMarkerState.Missing
-                ? observation with
-                {
-                    Detail = string.IsNullOrWhiteSpace(observation.Detail)
-                        ? LibraryMarkerAbsentDetail
-                        : $"{observation.Detail} {LibraryMarkerAbsentDetail}"
-                }
-                : observation;
+        // mounted, and writing into an empty mount point is the one thing worth
+        // refusing. Unlike a re-issued native identity, a missing marker is evidence:
+        // the file this app put on the media is not there. Confirming re-enrols it.
+        if (marker?.State != LibraryRootMarkerState.Missing)
+        {
+            return observation;
+        }
+
+        return observation with
+        {
+            State = RootFolderStorageState.Changed,
+            Reason = RootFolderStorageReason.IdentityMismatch,
+            CanMutateFilesystem = false,
+            CanConfirmCurrentFolder = true,
+            Detail = string.IsNullOrWhiteSpace(observation.Detail)
+                ? LibraryMarkerAbsentDetail
+                : $"{observation.Detail} {LibraryMarkerAbsentDetail}"
+        };
     }
 
     private const string LibraryMarkerAbsentDetail =
@@ -109,16 +116,19 @@ internal sealed partial class RootFolderStorageHealthResolver(
                 return FromFailure(current);
             }
 
+            // The path is the identity. A directory that is where the root says it is
+            // is the library; confirming it merely enrols the marker that makes later
+            // remounts quieter, and is offered rather than required.
             return await ValidateFilesystemSemanticsAsync(
                 root,
                 canonicalPath,
                 new RootFolderStorageObservation(
-                    RootFolderStorageState.Unconfirmed,
-                    RootFolderStorageReason.NoAuthorizedIdentity,
-                    "Listenarr has not yet confirmed the physical directory currently at this path.",
+                    RootFolderStorageState.Healthy,
+                    RootFolderStorageReason.None,
+                    null,
                     CanConfirmCurrentFolder: true,
                     CanChangePath: true,
-                    CanMutateFilesystem: false,
+                    CanMutateFilesystem: true,
                     ConfirmationToken: CreateConfirmationToken(root, canonicalPath, current)),
                 cancellationToken);
         }
@@ -210,16 +220,20 @@ internal sealed partial class RootFolderStorageHealthResolver(
             return FromFailure(currentGeneration);
         }
 
+        // A native identity that no longer matches is what every reboot of a FUSE
+        // union filesystem produces, not evidence of a swapped folder. The path is
+        // the identity; nothing is blocked. Confirming re-enrols the marker and
+        // records the new generation, and stays available for anyone who wants it.
         return await ValidateFilesystemSemanticsAsync(
             root,
             canonicalPath,
             new RootFolderStorageObservation(
-                RootFolderStorageState.Changed,
-                RootFolderStorageReason.IdentityMismatch,
-                "The folder currently at this path is different from the folder Listenarr previously confirmed.",
+                RootFolderStorageState.Healthy,
+                RootFolderStorageReason.None,
+                null,
                 CanConfirmCurrentFolder: true,
                 CanChangePath: true,
-                CanMutateFilesystem: false,
+                CanMutateFilesystem: true,
                 ConfirmationToken: CreateConfirmationToken(root, canonicalPath, currentGeneration)),
             cancellationToken);
     }
@@ -246,15 +260,9 @@ internal sealed partial class RootFolderStorageHealthResolver(
         if (persistedSemantics == null
             || persistedSemantics.Value.DetectAmbiguousCaseMatches)
         {
-            // A legacy or deliberately unconfirmed root has no prior filesystem
-            // semantics authority to preserve. Explicit folder confirmation may
-            // establish both its current semantics and physical generation.
-            return observation.State == RootFolderStorageState.Unconfirmed
-                ? observation
-                : SemanticsUnavailable(
-                    observation,
-                    RootFolderStorageReason.FilesystemSemanticsUnavailable,
-                    "The root folder has no persisted filesystem case-sensitivity authority.");
+            // A legacy root has no prior filesystem semantics to compare against.
+            // That is not a reason to block it; confirming the folder records them.
+            return observation;
         }
 
         if (persistedSemantics.Value.Semantics.CaseSensitivity
