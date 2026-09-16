@@ -1722,9 +1722,10 @@ describe('CollectionView', () => {
 describe('CollectionView series grouping', () => {
   beforeEach(() => {
     localStorage.clear()
+    mockGetAuthorCatalog.mockResolvedValue(null)
   })
 
-  async function mountAuthorCollection(groupBySeries: boolean) {
+  async function mountAuthorCollection(groupBySeries: boolean, withCatalog = false) {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -1732,6 +1733,23 @@ describe('CollectionView series grouping', () => {
       defaultSearchRegion: 'us',
       defaultSearchLanguage: 'english',
     })
+    if (withCatalog) {
+      mockGetAuthorCatalog.mockResolvedValue({
+        author: { asin: 'AUTHOR1', name: 'Christopher Ruocchio' },
+        totalBooks: 1,
+        books: [
+          {
+            asin: 'BOOK3',
+            title: 'Demon in White',
+            authors: ['Christopher Ruocchio'],
+            language: 'english',
+            metadataSource: 'Audible',
+            series: 'Sun Eater',
+            seriesNumber: '3',
+          },
+        ],
+      })
+    }
 
     const router = createRouter({
       history: createMemoryHistory(),
@@ -1791,6 +1809,24 @@ describe('CollectionView series grouping', () => {
 
     const titles = wrapper.findAll('.collection-card .collection-title').map((t) => t.text())
     expect(titles).toEqual(['Empire of Silence', 'Howling Dark', 'The Dregs of Empire'])
+  })
+
+  it('keeps a not-added book inside its series, in position, rather than in a pile at the end', async () => {
+    // The series heading exists to show which entries are here and which are not;
+    // a separate "Not Added" section hides exactly that.
+    const wrapper = await mountAuthorCollection(true, true)
+
+    const headings = wrapper.findAll('.collection-section-header').map((h) => h.text())
+    expect(headings.some((h) => h.includes('Not Added'))).toBe(false)
+
+    const titles = wrapper.findAll('.collection-card .collection-title').map((t) => t.text())
+    expect(titles).toEqual([
+      'Empire of Silence',
+      'Howling Dark',
+      'Demon in White',
+      'The Dregs of Empire',
+    ])
+    expect(wrapper.findAll('.collection-card.not-in-library')).toHaveLength(1)
   })
 
   it('opens the series from its heading, and leaves the catch-all headings plain', async () => {

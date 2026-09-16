@@ -17,6 +17,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { apiService } from '@/services/api'
 import type { SearchResult } from '@/types'
 import LibraryImportSearchModal from '@/components/domain/audiobook/LibraryImportSearchModal.vue'
@@ -47,6 +48,7 @@ describe('LibraryImportSearchModal', () => {
   })
 
   it('routes result thumbnails through the protected image helper', async () => {
+    setActivePinia(createPinia())
     const wrapper = mount(LibraryImportSearchModal, {
       props: {
         item: {

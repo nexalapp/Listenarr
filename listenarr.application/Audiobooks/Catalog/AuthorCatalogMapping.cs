@@ -251,16 +251,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
             string? preferredLanguage)
         {
             var materialized = books.ToList();
-            if (string.IsNullOrWhiteSpace(preferredLanguage))
+            if (LanguageFilter.IsUnfiltered(preferredLanguage))
             {
                 return materialized;
             }
 
             return materialized
-                .Where(book => string.Equals(
-                    NormalizeLanguage(book.Language),
-                    preferredLanguage,
-                    StringComparison.OrdinalIgnoreCase))
+                .Where(book => LanguageFilter.Matches(preferredLanguage, book.Language, acceptUnknown: false))
                 .ToList();
         }
 
@@ -297,6 +294,12 @@ namespace Listenarr.Application.Audiobooks.Catalog
             if (normalized == "all")
             {
                 return null;
+            }
+
+            if (normalized.Contains(','))
+            {
+                // A list of languages: each part is normalised where it is applied.
+                return normalized;
             }
 
             return LanguageAliases.TryGetValue(normalized, out var alias)

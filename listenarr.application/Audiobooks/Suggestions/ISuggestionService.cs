@@ -21,6 +21,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
     {
         /// <summary>Compute suggestions from cached catalogs; never touches the network.</summary>
         Task<SuggestionSnapshot> GetAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>Stop offering a book. Returns the key it was recorded under.</summary>
+        Task<string> IgnoreAsync(IgnoreSuggestionRequest request, CancellationToken cancellationToken = default);
+
+        /// <summary>Offer a book again. False when nothing was ignored under that key.</summary>
+        Task<bool> RestoreAsync(string key, CancellationToken cancellationToken = default);
     }
 
     /// <summary>

@@ -111,6 +111,8 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // read straight back into the books page, and "" is not something it can parse.
             builder.Property(e => e.LibraryCustomFiltersJson)
                 .HasDefaultValue("[]");
+            builder.Property(e => e.LibraryLanguagesJson)
+                .HasDefaultValue("[]");
         }
     }
 }

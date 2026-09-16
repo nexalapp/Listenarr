@@ -190,6 +190,26 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         public Task<List<SeriesCacheEntry>> GetAllCachedSeriesAsync(CancellationToken ct = default) =>
             _db.SeriesCacheEntries.AsNoTracking().ToListAsync(ct);
 
+        public Task<List<SuggestionDismissal>> GetSuggestionDismissalsAsync(CancellationToken ct = default) =>
+            _db.SuggestionDismissals.AsNoTracking().OrderByDescending(d => d.DismissedAt).ToListAsync(ct);
+
+        public async Task AddSuggestionDismissalAsync(SuggestionDismissal dismissal, CancellationToken ct = default)
+        {
+            if (await _db.SuggestionDismissals.AnyAsync(d => d.Key == dismissal.Key, ct))
+            {
+                return;
+            }
+
+            _db.SuggestionDismissals.Add(dismissal);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task<bool> RemoveSuggestionDismissalAsync(string key, CancellationToken ct = default)
+        {
+            var removed = await _db.SuggestionDismissals.Where(d => d.Key == key).ExecuteDeleteAsync(ct);
+            return removed > 0;
+        }
+
         public async Task<AuthorCacheEntry?> GetCachedAuthorByNameAsync(string name, string region)
         {
             var normalizedName = NormalizeAuthorName(name);

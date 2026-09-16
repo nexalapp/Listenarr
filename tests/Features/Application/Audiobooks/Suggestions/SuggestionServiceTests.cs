@@ -33,6 +33,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         private readonly Mock<IAuthorMonitoringService> _authorMonitoring = new();
         private readonly Mock<ISeriesMonitoringService> _seriesMonitoring = new();
         private readonly List<MonitoredAuthor> _monitoredAuthors = [];
+        private readonly List<SuggestionDismissal> _dismissals = [];
+        private readonly Mock<IConfigurationService> _configuration = new();
+        private readonly ApplicationSettings _settings = new();
         private readonly List<Audiobook> _library = [];
         private readonly List<AuthorCacheEntry> _authors = [];
         private readonly List<SeriesCacheEntry> _series = [];
@@ -51,13 +54,25 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             _repository
                 .Setup(r => r.GetAllCachedSeriesAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_series);
+            _repository
+                .Setup(r => r.GetSuggestionDismissalsAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(_dismissals);
+            _repository
+                .Setup(r => r.AddSuggestionDismissalAsync(It.IsAny<SuggestionDismissal>(), It.IsAny<CancellationToken>()))
+                .Callback<SuggestionDismissal, CancellationToken>((d, _) => _dismissals.Add(d))
+                .Returns(Task.CompletedTask);
             _authorMonitoring
                 .Setup(m => m.GetAllMonitoredAuthorsAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync(_monitoredAuthors);
             _seriesMonitoring
                 .Setup(m => m.GetAllMonitoredSeriesAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
-            return new SuggestionService(_repository.Object, _authorMonitoring.Object, _seriesMonitoring.Object);
+            _configuration.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(_settings);
+            return new SuggestionService(
+                _repository.Object,
+                _authorMonitoring.Object,
+                _seriesMonitoring.Object,
+                _configuration.Object);
         }
 
         private int _nextId = 1;
@@ -224,6 +239,37 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         }
 
         [Fact]
+        public async Task Get_UsesTheConfiguredLibraryLanguages_NotWhatTheLibraryHappensToContain()
+        {
+            // One German title in the library is not a reason to offer German
+            // translations; the languages are whatever the user set.
+            Held("Der Schwarm", "Frank Schätzing", asin: "G1").Language = "german";
+            CachedAuthor("Frank Schätzing",
+                new() { Title = "Limit", Authors = ["Frank Schätzing"], Asin = "G2", Language = "german" },
+                new() { Title = "The Swarm", Authors = ["Frank Schätzing"], Asin = "G3", Language = "english" });
+            _settings.LibraryLanguagesJson = """["English"]""";
+
+            var snapshot = await BuildService().GetAsync();
+
+            Assert.Equal("The Swarm", Assert.Single(Assert.Single(snapshot.Authors).Missing).Title);
+        }
+
+        [Fact]
+        public async Task Get_FallsBackToTheDefaultSearchLanguage_AndAllMeansNoFilter()
+        {
+            Held("Der Schwarm", "Frank Schätzing", asin: "G1");
+            CachedAuthor("Frank Schätzing",
+                new() { Title = "Limit", Authors = ["Frank Schätzing"], Asin = "G2", Language = "german" },
+                new() { Title = "The Swarm", Authors = ["Frank Schätzing"], Asin = "G3", Language = "english" });
+
+            _settings.DefaultSearchLanguage = "german";
+            Assert.Equal("Limit", Assert.Single(Assert.Single((await BuildService().GetAsync()).Authors).Missing).Title);
+
+            _settings.DefaultSearchLanguage = "all";
+            Assert.Equal(2, Assert.Single((await BuildService().GetAsync()).Authors).Missing.Count);
+        }
+
+        [Fact]
         public async Task Get_SkipsAnthologiesTheAuthorOnlyContributedTo()
         {
             Held("Rendezvous with Rama", "Arthur C. Clarke", asin: "C1");
@@ -262,6 +308,27 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             var snapshot = await BuildService().GetAsync();
 
             Assert.True(Assert.Single(snapshot.Authors).Monitored);
+        }
+
+        [Fact]
+        public async Task Get_LeavesOutWhatWasIgnored_ByAsinOrByTitleAndAuthor()
+        {
+            // Translations and regional retitles are the usual reasons; both kinds of
+            // identity must hold so a re-fetched catalog does not bring them back.
+            Held("Dune", "Frank Herbert", asin: "D1");
+            CachedAuthor("Frank Herbert",
+                Catalog("Dune Messiah", "Frank Herbert", asin: "D2"),
+                Catalog("Der Wüstenplanet", "Frank Herbert", asin: "D3"),
+                Catalog("Children of Dune", "Frank Herbert"));
+            var service = BuildService();
+
+            await service.IgnoreAsync(new IgnoreSuggestionRequest("D3", "Der Wüstenplanet", ["Frank Herbert"]));
+            await service.IgnoreAsync(new IgnoreSuggestionRequest(null, "Children of Dune: A Novel", ["Frank Herbert"]));
+            var snapshot = await service.GetAsync();
+
+            Assert.Equal("Dune Messiah", Assert.Single(Assert.Single(snapshot.Authors).Missing).Title);
+            Assert.Equal(2, snapshot.Ignored.Count);
+            Assert.Equal("asin:D3", snapshot.Ignored[0].Key);
         }
 
         [Fact]

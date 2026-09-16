@@ -94,7 +94,7 @@
                   aria-label="Filter results by language"
                 >
                   <option
-                    v-for="option in preferredSearchLanguageOptions"
+                    v-for="option in searchLanguageOptions"
                     :key="option.value"
                     :value="option.value"
                   >
@@ -1072,8 +1072,9 @@ import {
 import { useProtectedImages, isLikelyBackendImageUrl } from '@/composables/useProtectedImages'
 import {
   getPrimaryPreferredSearchLanguageForRegion,
+  describeLanguageFilter,
+  getLibraryLanguageFilter,
   getPreferredSearchLanguageFilter,
-  normalizePreferredSearchLanguage,
   normalizeSearchResultLanguage,
   normalizeSearchRegion,
   preferredSearchLanguageOptions,
@@ -1598,6 +1599,17 @@ const selectedLanguageFilter = computed(() =>
   getPreferredSearchLanguageFilter(preferredSearchLanguage.value),
 )
 
+// The dropdown lists every language plus, when the reader set more than one, a
+// "My languages" entry for the whole set - the value the page opens on.
+const searchLanguageOptions = computed(() => {
+  const library = getLibraryLanguageFilter(configStore.applicationSettings)
+  if (!library || !library.includes(',')) return preferredSearchLanguageOptions
+  return [
+    { value: library, label: `My languages (${describeLanguageFilter(library)})` },
+    ...preferredSearchLanguageOptions,
+  ]
+})
+
 // Compute converted ISBN-13 for display when user enters an ISBN-10
 const convertedIsbn = computed(() => {
   try {
@@ -1820,7 +1832,11 @@ const filterResultsBySelectedLanguage = <T extends Partial<SearchResult> | Loose
 ): T[] => {
   const filter = selectedLanguageFilter.value
   if (!filter) return results
-  return results.filter((result) => getResultLanguageKey(result) === filter)
+  const admitted = new Set(filter.split(','))
+  return results.filter((result) => {
+    const key = getResultLanguageKey(result)
+    return key != null && admitted.has(key)
+  })
 }
 
 const getDateRecordValue = (
@@ -2327,11 +2343,11 @@ const clearAdvancedSearch = () => {
   resetAdvancedSearch()
   // Mirror onMounted: respect the user's saved defaultSearchLanguage; only fall back
   // to the region's primary language when no default language is configured.
-  const savedLanguage = configStore.applicationSettings?.defaultSearchLanguage
   preferredSearchLanguage.value =
-    typeof savedLanguage === 'string' && savedLanguage.trim()
-      ? normalizePreferredSearchLanguage(savedLanguage)
-      : getPrimaryPreferredSearchLanguageForRegion(searchLanguage.value)
+    getLibraryLanguageFilter(configStore.applicationSettings) ??
+    (configStore.applicationSettings?.defaultSearchLanguage
+      ? 'all'
+      : getPrimaryPreferredSearchLanguageForRegion(searchLanguage.value))
   advancedSearchError.value = ''
   // Reset audible paging state
   audiblePage.value = 1
@@ -3628,12 +3644,13 @@ onMounted(async () => {
   await configStore.loadApiConfigurations()
 
   const defaultRegion = normalizeSearchRegion(configStore.applicationSettings?.defaultSearchRegion)
-  const defaultLanguage = configStore.applicationSettings?.defaultSearchLanguage
   searchLanguage.value = defaultRegion
+  // The library languages, then the single default, then the region's own language.
   preferredSearchLanguage.value =
-    typeof defaultLanguage === 'string' && defaultLanguage.trim()
-      ? normalizePreferredSearchLanguage(defaultLanguage)
-      : getPrimaryPreferredSearchLanguageForRegion(defaultRegion)
+    getLibraryLanguageFilter(configStore.applicationSettings) ??
+    (configStore.applicationSettings?.defaultSearchLanguage
+      ? 'all'
+      : getPrimaryPreferredSearchLanguageForRegion(defaultRegion))
 
   // Audible integration removed: no auth status to check
 

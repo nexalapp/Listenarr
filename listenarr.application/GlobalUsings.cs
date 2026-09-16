@@ -29,6 +29,7 @@ global using Listenarr.Application.SystemDiagnostics.Contracts;
 global using Listenarr.Application.Metadata.Audible;
 global using Listenarr.Application.Metadata.Audnexus;
 global using Listenarr.Application.Metadata.Core;
+global using Listenarr.Application.Metadata.Languages;
 global using Listenarr.Application.Metadata.Contracts;
 global using Listenarr.Application.Notifications.Progress;
 global using Listenarr.Application.Search.Audible;

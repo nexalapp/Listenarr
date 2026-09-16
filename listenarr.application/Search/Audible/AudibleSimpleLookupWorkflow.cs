@@ -60,7 +60,7 @@ namespace Listenarr.Application.Search.Audible
             var filtered = response.Results.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(language))
             {
-                filtered = filtered.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
+                filtered = filtered.Where(b => LanguageFilter.Matches(language, b.Language, acceptUnknown: false));
             }
 
             foreach (var book in filtered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
@@ -103,7 +103,7 @@ namespace Listenarr.Application.Search.Audible
             var filtered = response.Results.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(language))
             {
-                filtered = filtered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
+                filtered = filtered.Where(b => LanguageFilter.Matches(language, b.Language, acceptUnknown: true));
             }
 
             var converted = await AudibleSearchResultMapper.ConvertToSearchResultsAsync(filtered, _metadataConverters, region);
@@ -121,7 +121,7 @@ namespace Listenarr.Application.Search.Audible
             var filtered = response.Results.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(language))
             {
-                filtered = filtered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
+                filtered = filtered.Where(b => LanguageFilter.Matches(language, b.Language, acceptUnknown: true));
             }
 
             var converted = await AudibleSearchResultMapper.ConvertToSearchResultsAsync(filtered, _metadataConverters, region);

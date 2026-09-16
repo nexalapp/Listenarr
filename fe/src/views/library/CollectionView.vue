@@ -836,11 +836,11 @@ import { safeText, stripHtmlAndNormalize, truncateAtWord } from '@/utils/textUti
 import { buildLibrarySections } from '@/utils/libraryGrouping'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
-  getPreferredSearchLanguageFilter,
+  describeLanguageFilter,
+  getLibraryLanguageFilter,
+  languageFilterAdmits,
   normalizePreferredSearchLanguage,
   normalizeSearchRegion,
-  normalizeSearchResultLanguage,
-  preferredSearchLanguageOptions,
   searchRegionOptions,
 } from '@/utils/languageMapping'
 
@@ -936,20 +936,13 @@ const preferredAuthorMonitoringLanguage = computed(() =>
     configStore.applicationSettings?.defaultSearchLanguage ?? 'english',
   ),
 )
+// The languages the reader set, so an author page shows the editions they can use.
 const preferredAuthorCatalogLanguageFilter = computed(() =>
-  getPreferredSearchLanguageFilter(configStore.applicationSettings?.defaultSearchLanguage),
+  getLibraryLanguageFilter(configStore.applicationSettings),
 )
-const authorLanguageLabel = computed(() => {
-  if (preferredAuthorMonitoringLanguage.value === 'all') {
-    return 'All Languages'
-  }
-
-  return (
-    preferredSearchLanguageOptions.find(
-      (option) => option.value === preferredAuthorMonitoringLanguage.value,
-    )?.label ?? preferredAuthorMonitoringLanguage.value
-  )
-})
+const authorLanguageLabel = computed(() =>
+  describeLanguageFilter(preferredAuthorCatalogLanguageFilter.value),
+)
 const isCurrentAuthorMonitored = computed(() => Boolean(authorMonitoringStatus.value))
 const authorMonitoringContextLabel = computed(() => {
   return `${authorRegionLabel.value} / ${authorLanguageLabel.value}`
@@ -1128,12 +1121,7 @@ function shouldIncludeRemoteCatalogBook(
   book: RemoteCatalogBook,
   languageFilter: string | null | undefined,
 ): boolean {
-  if (!languageFilter) return true
-  const normalizedBookLanguage = normalizeSearchResultLanguage(book.language)
-
-  if (!normalizedBookLanguage) return false
-
-  return normalizedBookLanguage === languageFilter
+  return languageFilterAdmits(languageFilter, book.language)
 }
 
 function getSortValue(book: CollectionDisplayItem): string {
@@ -1351,16 +1339,13 @@ function inSeriesOrder(books: CollectionDisplayItem[]): CollectionDisplayItem[] 
 
 // Grouping reorders the whole collection before it is paged, so a series stays
 // contiguous rather than reappearing on every page. Books the catalog offers but the
-// library does not hold keep their own trailing section: which books are actually here
-// is not something a series heading should hide.
+// library does not hold sit inside their series in position order: the point of a
+// series heading is to show which entries are here and which are not, and a
+// separate "Not Added" pile at the bottom hides exactly that. Each card still says
+// which it is.
 const orderedAudiobooks = computed(() => {
   if (!groupSeriesInCollection.value) return audiobooks.value
-  if (!shouldShowAvailabilitySections.value) return inSeriesOrder(audiobooks.value)
-
-  return [
-    ...inSeriesOrder(audiobooks.value.filter((book) => book.inLibrary)),
-    ...audiobooks.value.filter((book) => !book.inLibrary),
-  ]
+  return inSeriesOrder(audiobooks.value)
 })
 
 const paginatedAudiobooks = computed(() => {
@@ -1526,19 +1511,7 @@ const paginatedAudiobookSections = computed<DisplaySection[]>(() => {
         ...(section.headers[0]?.value ? { seriesName: section.headers[0].value } : {}),
       }))
 
-    if (!shouldShowAvailabilitySections.value) return grouped(page)
-
-    const sections = grouped(page.filter((book) => book.inLibrary))
-    const notAdded = page.filter((book) => !book.inLibrary)
-    if (notAdded.length > 0) {
-      sections.push({
-        key: 'not-added',
-        title: 'Not Added',
-        count: totalNotAddedAudiobooks.value.length,
-        items: notAdded,
-      })
-    }
-    return sections
+    return grouped(page)
   }
 
   if (!shouldShowAvailabilitySections.value) {

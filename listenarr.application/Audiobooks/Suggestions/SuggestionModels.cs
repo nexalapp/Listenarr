@@ -29,7 +29,14 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         IReadOnlyList<AuthorSuggestionGroup> Authors,
         IReadOnlyList<SeriesSuggestionGroup> Series,
         IReadOnlyList<RelatedAuthorSuggestion> RelatedAuthors,
-        SuggestionCoverage Coverage);
+        SuggestionCoverage Coverage,
+        IReadOnlyList<IgnoredSuggestion> Ignored);
+
+    /// <summary>A book the user said no to, listed so the decision can be undone.</summary>
+    public sealed record IgnoredSuggestion(string Key, string Title, string? Author, DateTime DismissedAt);
+
+    /// <summary>What the page sends to ignore a book: enough to build its key and label it.</summary>
+    public sealed record IgnoreSuggestionRequest(string? Asin, string Title, IReadOnlyList<string>? Authors);
 
     /// <summary>Books an author in the library has that the library does not.</summary>
     public sealed record AuthorSuggestionGroup(

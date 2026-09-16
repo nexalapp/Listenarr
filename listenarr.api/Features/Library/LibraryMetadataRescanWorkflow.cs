@@ -297,6 +297,22 @@ namespace Listenarr.Api.Features.Library
                 resolvedAsin,
                 string.IsNullOrWhiteSpace(providerSource) ? "Audible" : providerSource!);
 
+            // A rescan follows identifiers, and an identifier can name a translation:
+            // a German-edition ASIN stored by an earlier mismatch resolves to German
+            // metadata every time. Refuse a match in a language the library is not read
+            // in unless the book already is that language - then it is what it is.
+            var languageFilter = LanguageFilter.FromSettings(
+                await preflightScope.ServiceProvider.GetRequiredService<IConfigurationService>().GetApplicationSettingsAsync());
+            if (!LanguageFilter.Matches(languageFilter, convertedMetadata.Language, acceptUnknown: true)
+                && LanguageFilter.Matches(languageFilter, audiobook.Language, acceptUnknown: true))
+            {
+                return new ConflictObjectResult(new
+                {
+                    message = $"The only metadata found is the {convertedMetadata.Language} edition ({resolvedAsin}), but the library languages are {languageFilter}. Edit the book's identifiers to point at an edition in one of those languages, or add {convertedMetadata.Language} to Library Languages in Settings.",
+                    code = "metadata_language_mismatch"
+                });
+            }
+
             MetadataRescanApplyResult applyResult;
             try
             {
