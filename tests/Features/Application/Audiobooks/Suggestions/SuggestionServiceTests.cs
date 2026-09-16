@@ -34,6 +34,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         private readonly Mock<ISeriesMonitoringService> _seriesMonitoring = new();
         private readonly List<MonitoredAuthor> _monitoredAuthors = [];
         private readonly List<SuggestionDismissal> _dismissals = [];
+        private readonly Mock<IConfigurationService> _configuration = new();
+        private readonly ApplicationSettings _settings = new();
         private readonly List<Audiobook> _library = [];
         private readonly List<AuthorCacheEntry> _authors = [];
         private readonly List<SeriesCacheEntry> _series = [];
@@ -65,7 +67,12 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             _seriesMonitoring
                 .Setup(m => m.GetAllMonitoredSeriesAsync(It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
-            return new SuggestionService(_repository.Object, _authorMonitoring.Object, _seriesMonitoring.Object);
+            _configuration.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(_settings);
+            return new SuggestionService(
+                _repository.Object,
+                _authorMonitoring.Object,
+                _seriesMonitoring.Object,
+                _configuration.Object);
         }
 
         private int _nextId = 1;
@@ -232,22 +239,34 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         }
 
         [Fact]
-        public async Task Get_DoesNotLetOneStrayTitleMakeItsLanguageALibraryLanguage()
+        public async Task Get_UsesTheConfiguredLibraryLanguages_NotWhatTheLibraryHappensToContain()
         {
-            // 970 English books and one German one is an English library.
-            for (var i = 0; i < 30; i++)
-            {
-                Held($"Book {i}", "Someone", asin: $"E{i}").Language = "english";
-            }
-
+            // One German title in the library is not a reason to offer German
+            // translations; the languages are whatever the user set.
             Held("Der Schwarm", "Frank Schätzing", asin: "G1").Language = "german";
             CachedAuthor("Frank Schätzing",
                 new() { Title = "Limit", Authors = ["Frank Schätzing"], Asin = "G2", Language = "german" },
                 new() { Title = "The Swarm", Authors = ["Frank Schätzing"], Asin = "G3", Language = "english" });
+            _settings.LibraryLanguagesJson = """["English"]""";
 
             var snapshot = await BuildService().GetAsync();
 
             Assert.Equal("The Swarm", Assert.Single(Assert.Single(snapshot.Authors).Missing).Title);
+        }
+
+        [Fact]
+        public async Task Get_FallsBackToTheDefaultSearchLanguage_AndAllMeansNoFilter()
+        {
+            Held("Der Schwarm", "Frank Schätzing", asin: "G1");
+            CachedAuthor("Frank Schätzing",
+                new() { Title = "Limit", Authors = ["Frank Schätzing"], Asin = "G2", Language = "german" },
+                new() { Title = "The Swarm", Authors = ["Frank Schätzing"], Asin = "G3", Language = "english" });
+
+            _settings.DefaultSearchLanguage = "german";
+            Assert.Equal("Limit", Assert.Single(Assert.Single((await BuildService().GetAsync()).Authors).Missing).Title);
+
+            _settings.DefaultSearchLanguage = "all";
+            Assert.Equal(2, Assert.Single((await BuildService().GetAsync()).Authors).Missing.Count);
         }
 
         [Fact]

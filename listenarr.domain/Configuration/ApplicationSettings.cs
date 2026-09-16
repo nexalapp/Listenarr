@@ -277,5 +277,13 @@ namespace Listenarr.Domain.Configuration
         /// Preferred default language filter for Add New searches.
         /// </summary>
         public string DefaultSearchLanguage { get; set; } = "english";
+
+        /// <summary>
+        /// The languages the library is read in, as a JSON array of Audible language
+        /// names ("english", "german", …). Suggestions only offer books in these. Empty
+        /// means "just <see cref="DefaultSearchLanguage"/>"; that set to "all" means no
+        /// language filter at all.
+        /// </summary>
+        public string LibraryLanguagesJson { get; set; } = "[]";
     }
 }

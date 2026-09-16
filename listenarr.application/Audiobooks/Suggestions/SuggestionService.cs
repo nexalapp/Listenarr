@@ -31,10 +31,14 @@ namespace Listenarr.Application.Audiobooks.Suggestions
     public sealed class SuggestionService(
         IAudiobookRepository repository,
         IAuthorMonitoringService authorMonitoring,
-        ISeriesMonitoringService seriesMonitoring) : ISuggestionService
+        ISeriesMonitoringService seriesMonitoring,
+        IConfigurationService configuration) : ISuggestionService
     {
         public async Task<SuggestionSnapshot> GetAsync(CancellationToken cancellationToken = default)
         {
+            var settings = await configuration.GetApplicationSettingsAsync();
+            var languages = LibraryLanguages.Resolve(settings);
+
             var monitoredAuthors = (await authorMonitoring.GetAllMonitoredAuthorsAsync(cancellationToken))
                 .Select(author => SuggestionNames.Normalize(author.AuthorName))
                 .ToHashSet(StringComparer.Ordinal);
@@ -46,7 +50,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             cancellationToken.ThrowIfCancellationRequested();
             var memberships = await repository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync(cancellationToken);
             var dismissals = await repository.GetSuggestionDismissalsAsync(cancellationToken);
-            var held = new HeldBooks(library, memberships, dismissals.Select(d => d.Key));
+            var held = new HeldBooks(library, memberships, dismissals.Select(d => d.Key), languages);
 
             var cachedAuthors = await repository.GetAllCachedAuthorsAsync(cancellationToken);
             var cachedSeries = await repository.GetAllCachedSeriesAsync(cancellationToken);
@@ -225,9 +229,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             private readonly HashSet<string> _isbns = new(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _titleAuthorKeys = new(StringComparer.Ordinal);
 
-            private readonly Dictionary<string, int> _languageCounts = new(StringComparer.OrdinalIgnoreCase);
-            private readonly HashSet<string> _languages = new(StringComparer.OrdinalIgnoreCase);
-            private int _booksWithLanguage;
+            private readonly IReadOnlySet<string>? _languages;
             private readonly HashSet<string> _ignored;
 
             public Dictionary<string, int> AuthorCounts { get; } = new(StringComparer.Ordinal);
@@ -236,9 +238,11 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             public HeldBooks(
                 IEnumerable<Audiobook> library,
                 IReadOnlyDictionary<int, List<AudiobookSeriesMembership>> memberships,
-                IEnumerable<string> ignoredKeys)
+                IEnumerable<string> ignoredKeys,
+                IReadOnlySet<string>? languages)
             {
                 _ignored = new HashSet<string>(ignoredKeys, StringComparer.Ordinal);
+                _languages = languages;
                 foreach (var book in library)
                 {
                     if (!string.IsNullOrWhiteSpace(book.Asin))
@@ -261,13 +265,6 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                         _titleAuthorKeys.Add(key);
                     }
 
-                    var language = AuthorCatalogMapping.NormalizeLanguage(book.Language);
-                    if (language != null && language != "und")
-                    {
-                        _languageCounts[language] = _languageCounts.GetValueOrDefault(language) + 1;
-                        _booksWithLanguage++;
-                    }
-
                     foreach (var author in book.Authors ?? [])
                     {
                         Count(AuthorCounts, author);
@@ -288,30 +285,18 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                         CountKey(SeriesCounts, series);
                     }
                 }
-
-                // A language the library reads, not one it happens to contain: one
-                // German title in a thousand English ones must not open the door to
-                // every German translation in every catalog.
-                foreach (var (language, count) in _languageCounts)
-                {
-                    if (count >= 10 || count * 20 >= _booksWithLanguage)
-                    {
-                        _languages.Add(language);
-                    }
-                }
             }
 
             /// <summary>
-            /// Whether a catalog book is in a language the library reads - one that is a
-            /// real share of it, not a stray title. A catalog lists every translation,
-            /// and a library with nothing but English does not want the Italian one. A
-            /// book with no language recorded passes, as does everything when the library
-            /// has no languages recorded.
+            /// Whether a catalog book is in one of the configured library languages. A
+            /// catalog lists every translation, and an English library does not want the
+            /// Italian one. A book with no language recorded passes; a null set means
+            /// the user chose no filter.
             /// </summary>
             public bool SpeaksLanguage(string? language)
             {
                 var normalized = AuthorCatalogMapping.NormalizeLanguage(language);
-                return normalized == null || _languages.Count == 0 || _languages.Contains(normalized);
+                return normalized == null || _languages == null || _languages.Contains(normalized);
             }
 
             /// <summary>Dismissed by either identity: the ASIN, or the title and author.</summary>
@@ -359,6 +344,48 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
             private static void CountKey(Dictionary<string, int> counts, string key) =>
                 counts[key] = counts.TryGetValue(key, out var count) ? count + 1 : 1;
+        }
+    }
+
+    /// <summary>
+    /// The languages suggestions are limited to, from settings: the explicit list when
+    /// one is set, else the single default search language, else nothing ("all").
+    /// </summary>
+    public static class LibraryLanguages
+    {
+        public static IReadOnlySet<string>? Resolve(ApplicationSettings settings)
+        {
+            ArgumentNullException.ThrowIfNull(settings);
+
+            var explicitList = Parse(settings.LibraryLanguagesJson)
+                .Select(AuthorCatalogMapping.NormalizeLanguage)
+                .Where(language => language != null)
+                .Select(language => language!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (explicitList.Count > 0)
+            {
+                return explicitList;
+            }
+
+            var single = AuthorCatalogMapping.NormalizeLanguage(settings.DefaultSearchLanguage);
+            return single == null ? null : new HashSet<string>([single], StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static IEnumerable<string> Parse(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return [];
+            }
+
+            try
+            {
+                return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? [];
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return [];
+            }
         }
     }
 
