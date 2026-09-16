@@ -161,10 +161,6 @@ function updateDefaultSearchLanguage(event: Event) {
 </script>
 
 <style scoped>
-.library-languages {
-  height: auto;
-}
-
 h3 {
   margin: 0 0 1.5rem 0;
   padding: 0;
@@ -210,6 +206,10 @@ h3 {
 .form-group select,
 .form-group input[type='number'] {
   width: 100%;
+  /* The global .form-select fixes a height sized for its own padding; with this
+     section's larger padding that clipped the text. Let the padding set the height. */
+  height: auto;
+  line-height: 1.3;
   padding: 0.9rem 0.85rem;
   border: 1px solid #444;
   border-radius: 6px;
