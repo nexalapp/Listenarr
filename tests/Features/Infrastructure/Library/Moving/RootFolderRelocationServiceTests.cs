@@ -2930,7 +2930,7 @@ public sealed class RootFolderRelocationServiceTests : BaseTests
     }
 
     [Fact]
-    public async Task MetadataOnlyPathChange_MissingTarget_RemainsMissingThenBecomesUnconfirmedWhenItAppears()
+    public async Task MetadataOnlyPathChange_MissingTarget_RemainsMissingThenBecomesHealthyWhenItAppears()
     {
         var source = Path.Join(TempRoot, $"metadata-missing-source-{Guid.NewGuid():N}");
         var target = Path.Join(TempRoot, $"metadata-missing-target-{Guid.NewGuid():N}");
@@ -2974,7 +2974,7 @@ public sealed class RootFolderRelocationServiceTests : BaseTests
 
         Directory.CreateDirectory(target);
         var appeared = await healthResolver.ResolveAsync(rootAfter);
-        Assert.Equal(RootFolderStorageState.Unconfirmed, appeared.State);
+        Assert.Equal(RootFolderStorageState.Healthy, appeared.State);
         Assert.True(appeared.CanConfirmCurrentFolder);
         Assert.False(string.IsNullOrWhiteSpace(appeared.ConfirmationToken));
     }
@@ -3976,7 +3976,7 @@ public sealed class RootFolderRelocationServiceTests : BaseTests
             recoveredRoot.DirectoryObjectIdentityUnavailableReason));
         var health = await new RootFolderStorageHealthResolver(
             new DirectoryObjectIdentityResolver()).ResolveAsync(recoveredRoot);
-        Assert.Equal(RootFolderStorageState.Unconfirmed, health.State);
+        Assert.Equal(RootFolderStorageState.Healthy, health.State);
         Assert.True(health.CanConfirmCurrentFolder);
         Assert.Equal(
             "replacement generation",
