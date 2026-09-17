@@ -530,6 +530,8 @@ const WIDTHS_KEY = 'listenarr.tagsView.widths'
 const SHOW_PATH_KEY = 'listenarr.tagsView.showPath'
 const PROPOSALS_KEY = 'listenarr.tagsView.proposals'
 const APPLY_SCOPE_KEY = 'listenarr.tagsView.applyScope'
+const NEEDS_WORK_KEY = 'listenarr.tagsView.needsWork'
+const SORT_KEY = 'listenarr.tagsView.sort'
 
 const router = useRouter()
 
@@ -1540,6 +1542,15 @@ function restorePreferences() {
     }
 
     showProposals.value = localStorage.getItem(PROPOSALS_KEY) === 'true'
+    onlyMismatched.value = localStorage.getItem(NEEDS_WORK_KEY) === 'true'
+
+    const storedSort = localStorage.getItem(SORT_KEY)
+    if (storedSort) {
+      const parsed = JSON.parse(storedSort)
+      if (parsed && typeof parsed.key === 'string') {
+        sort.value = { key: parsed.key, ascending: parsed.ascending !== false }
+      }
+    }
 
     const storedScope = localStorage.getItem(APPLY_SCOPE_KEY)
     if (storedScope) {
@@ -1576,6 +1587,25 @@ watch([applyTags, applyPaths], ([tags, paths]) => {
     localStorage.setItem(APPLY_SCOPE_KEY, JSON.stringify({ tags, paths }))
   } catch {}
 })
+
+// The filter and the sort are how the page is being worked - a session on "needs work"
+// sorted by path is the same session after a reload. The search box is not remembered:
+// a stale query on open hides rows for no visible reason.
+watch(onlyMismatched, (value) => {
+  try {
+    localStorage.setItem(NEEDS_WORK_KEY, String(value))
+  } catch {}
+})
+
+watch(
+  sort,
+  (value) => {
+    try {
+      localStorage.setItem(SORT_KEY, JSON.stringify(value))
+    } catch {}
+  },
+  { deep: true },
+)
 
 watch(showPath, (value) => {
   try {
