@@ -14,10 +14,22 @@ this file only adds what is specific to the fork.
 |---|---|
 | `run.sh` | Task runner for the Docker dev environment (`./run.sh dev`, `logs`, `tests`, `sync_upstream`, …) |
 | `deploy/unraid/` | Compose project + docs for the NAS deployment |
+| `.github/workflows/deploy-image.yml` | Fast amd64-only image for the NAS, built from a PR head in parallel with its tests (`deploy-<ver>-<sha7>`) |
 | `CLAUDE.md` | This file |
 
 Everything else should stay mergeable with upstream. When a fix is general, open
 a PR against `Listenarrs/Listenarr` rather than only landing it here.
+
+## Fast deploys
+
+`deploy-image.yml` builds `ghcr.io/nexalapp/listenarr:deploy-<version>-<sha7>` for
+amd64 only, with a layer cache, from every PR to canary *while its tests run*
+and from every push to beta. It computes the version canary will assign from the
+PR's label and passes it to `dotnet publish`, so the image reports the merged
+version. Deploy flow: open the PR → wait for tests and the image → merge → pin
+`deploy-<version>-<sha7>` in `deploy/unraid/docker-compose.yml` → `docker compose
+up -d`. Upstream's `beta-<version>-<sha>` images still publish and remain valid
+pins; they just take ten minutes longer.
 
 ## Branches and release channels
 
