@@ -36,16 +36,31 @@ namespace Listenarr.Application.Common
         private readonly IConfigurationService _configService;
         private readonly ILogger<FileNamingService> _logger;
         private readonly IFileSystemSemanticsResolver? _semanticsResolver;
+        private readonly IApplicationSettingsSnapshot? _settingsSnapshot;
 
         public FileNamingService(
             IConfigurationService configService,
             ILogger<FileNamingService> logger,
-            IFileSystemSemanticsResolver? semanticsResolver = null)
+            IFileSystemSemanticsResolver? semanticsResolver = null,
+            IApplicationSettingsSnapshot? settingsSnapshot = null)
         {
             _configService = configService;
             _logger = logger;
             _semanticsResolver = semanticsResolver;
+            _settingsSnapshot = settingsSnapshot;
         }
+
+        /// <summary>
+        /// The series name as it is written: with the configured trailing words dropped.
+        /// Read from the settings snapshot because the renderers are synchronous; with no
+        /// snapshot (tests, or before the first settings load) the defaults apply.
+        /// </summary>
+        public string RenderSeriesName(string? name) =>
+            SeriesNameStyle.Render(
+                name,
+                _settingsSnapshot?.Current == null
+                    ? SeriesNameStyle.DefaultDropWords
+                    : SeriesNameStyle.ParseDropWords(_settingsSnapshot.Current.SeriesNameDropWordsJson));
 
         /// <summary>
         /// Apply the configured file naming pattern to generate the output path from settings

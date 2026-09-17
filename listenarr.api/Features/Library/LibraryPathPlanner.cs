@@ -83,7 +83,7 @@ namespace Listenarr.Api.Features.Library
             var variables = new Dictionary<string, object>
             {
                 { "Author", SanitizeDirectoryName(audiobook.Authors?.FirstOrDefault() ?? "Unknown Author") },
-                { "Series", SanitizeDirectoryName(!string.IsNullOrWhiteSpace(audiobook.Series) ? audiobook.Series! : string.Empty) },
+                { "Series", SanitizeDirectoryName(fileNamingService.RenderSeriesName(audiobook.Series)) },
                 { "Title", SanitizeDirectoryName(audiobook.Title ?? "Unknown Title") },
                 { "Subtitle", SanitizeDirectoryName(audiobook.Subtitle ?? string.Empty) },
                 { "Edition", SanitizeDirectoryName(audiobook.Edition ?? string.Empty) },
