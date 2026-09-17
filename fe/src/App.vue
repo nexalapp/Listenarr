@@ -1616,6 +1616,16 @@ onMounted(async () => {
   logger.info('✅ Real-time updates enabled - Activity badge updates automatically via SignalR!')
   await refreshAuthPresentationFromStartupConfig(true)
 
+  // With authentication switched off there is no signed-in user, yet every endpoint is
+  // open, so the job stores the Activity badge counts must start here too. Without this
+  // the badge stayed empty until the Activity page loaded the jobs itself.
+  if (!auth.user.authenticated && !authEnabled.value) {
+    moveJobsStore.start()
+    conversionJobsStore.start()
+    tagJobsStore.start()
+    void moveJobsStore.loadActiveJobs()
+  }
+
   // If the initial health check did not provide a version, fall back to one
   // late fetch instead of making the sidebar wait on the entire bootstrap path.
   if (!version.value) {
