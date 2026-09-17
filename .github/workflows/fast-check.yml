@@ -24,12 +24,19 @@ concurrency:
 jobs:
   fast-backend:
     runs-on: ubuntu-24.04
-    env:
-      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
-      DOTNET_NOLOGO: "1"
-      LISTENARR_REQUIRED_NATIVE_TEST_CAPABILITIES: 'DirectorySymbolicLinks,FileSymbolicLinks'
     steps:
       - uses: actions/checkout@v4
+
+      # The native-capability contract is owned by run-tests.yml
+      # (NativeTestWorkflowContractTests forbids a second declaration), so this job
+      # inherits that job's env block rather than restating it.
+      - name: Inherit the native test environment from run-tests.yml
+        run: |
+          python3 - >> "$GITHUB_ENV" <<'PY'
+          import yaml
+          env = yaml.safe_load(open('.github/workflows/run-tests.yml'))['jobs']['unit-tests']['env']
+          print('\n'.join(f'{k}={v}' for k, v in env.items()))
+          PY
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
