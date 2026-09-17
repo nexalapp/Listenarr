@@ -621,6 +621,8 @@ export interface ApplicationSettings {
   libraryCustomFiltersJson?: string
   /** JSON array of Audible language names the library is read in; empty = the default language. */
   libraryLanguagesJson?: string
+  /** JSON array of words dropped from the end of a series name in paths and tags ("Series", "Trilogy", …). */
+  seriesNameDropWordsJson?: string
   folderNamingPattern: string
   fileNamingPattern: string
   multiFileNamingPattern: string

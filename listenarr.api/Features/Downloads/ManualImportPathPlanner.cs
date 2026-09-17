@@ -249,7 +249,7 @@ public sealed class ManualImportPathPlanner
         }
     }
 
-    private static Dictionary<string, object> BuildNamingVariables(
+    private Dictionary<string, object> BuildNamingVariables(
         Audiobook audiobook,
         AudioMetadata metadata,
         ManualImportItemDto item,
@@ -280,7 +280,7 @@ public sealed class ManualImportPathPlanner
             ? audiobook.Title
             : "Unknown Title";
 
-        if (!string.IsNullOrWhiteSpace(audiobook.Series)) variables["Series"] = audiobook.Series;
+        if (!string.IsNullOrWhiteSpace(audiobook.Series)) variables["Series"] = _fileNamingService.RenderSeriesName(audiobook.Series);
 
         // Without this the token resolved to nothing and a manually imported book landed
         // in a folder with no position in it at all, whatever the pattern asked for.

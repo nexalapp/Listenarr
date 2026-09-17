@@ -94,7 +94,7 @@ namespace Listenarr.Application.Common
                 { "Author", Clean(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
                 // For Series we must not fallback to Album or Title - when Series is blank we want
                 // the variable to be empty so ApplyNamingPattern can remove any adjacent separators
-                { "Series", Clean(metadata.Series) },
+                { "Series", Clean(RenderSeriesName(metadata.Series)) },
                 { "Title", Clean(FirstNonEmpty(metadata.Title, "Unknown Title")) },
                 { "Subtitle", Clean(metadata.Subtitle) },
                 { "Edition", Clean(metadata.Edition) },
@@ -188,9 +188,10 @@ namespace Listenarr.Application.Common
                     continue;
                 }
 
+                var rendered = RenderSeriesName(entry.Name);
                 var name = StripBrackets(sanitizeForPath
-                    ? SanitizePathComponent(entry.Name)
-                    : StripControlCharacters(entry.Name));
+                    ? SanitizePathComponent(rendered)
+                    : StripControlCharacters(rendered));
                 if (string.IsNullOrWhiteSpace(name))
                 {
                     continue;
@@ -271,7 +272,7 @@ namespace Listenarr.Application.Common
             return new Dictionary<string, object>
             {
                 { "Author", SanitizePathComponent(author) },
-                { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(metadata.Series) },
+                { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(RenderSeriesName(metadata.Series)) },
                 { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
                 { "Subtitle", string.IsNullOrWhiteSpace(metadata.Subtitle) ? string.Empty : SanitizePathComponent(metadata.Subtitle) },
                 { "Edition", string.IsNullOrWhiteSpace(metadata.Edition) ? string.Empty : SanitizePathComponent(metadata.Edition) },

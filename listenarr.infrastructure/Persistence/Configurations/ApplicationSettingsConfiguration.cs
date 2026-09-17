@@ -113,6 +113,8 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .HasDefaultValue("[]");
             builder.Property(e => e.LibraryLanguagesJson)
                 .HasDefaultValue("[]");
+            builder.Property(e => e.SeriesNameDropWordsJson)
+                .HasDefaultValue(SeriesNameStyle.DefaultDropWordsJson);
         }
     }
 }

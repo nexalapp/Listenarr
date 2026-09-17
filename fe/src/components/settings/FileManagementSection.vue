@@ -83,6 +83,28 @@
         </div>
       </FormRow>
 
+      <FormRow
+        label="Series Words to Drop"
+        help="Words removed from the end of a series name wherever it is written into a folder, file or tag. Audible calls most series 'X Series' or 'X Trilogy'; a library rarely wants a folder that says so. The stored series name is never changed. Comma-separated; leave empty to keep names as they are."
+      >
+        <div class="input-group">
+          <input
+            v-model="seriesDropWords"
+            type="text"
+            placeholder="Series, Trilogy, Saga, Cycle, Sequence"
+            @change="updateSeriesDropWords"
+          />
+        </div>
+        <div class="pattern-preview series-preview">
+          <span class="preview-label">Preview:</span>
+          <code
+            v-for="sample in ['Space Odyssey Series', 'Sprawl Trilogy Series', 'Wizarding World']"
+            :key="sample"
+            >{{ sample }} → {{ renderSeriesPreview(sample) }}</code
+          >
+        </div>
+      </FormRow>
+
       <!-- Path length warning -->
       <div v-if="pathLengthWarning" class="path-length-warning">
         <PhWarning :size="18" />
@@ -300,6 +322,48 @@ const folderPattern = ref(props.settings.folderNamingPattern || '')
 const filePatternSingleFile = ref(props.settings.fileNamingPattern || '')
 const filePatternMultiFile = ref(props.settings.multiFileNamingPattern || '{Title}-{DiskNumber:00}')
 
+// The drop-word list is stored as JSON but edited as a comma-separated line.
+function parseDropWords(json: string | undefined): string[] {
+  try {
+    const parsed = JSON.parse(json || '[]')
+    return Array.isArray(parsed) ? parsed.filter((w): w is string => typeof w === 'string') : []
+  } catch {
+    return []
+  }
+}
+const seriesDropWords = ref(parseDropWords(props.settings.seriesNameDropWordsJson).join(', '))
+watch(
+  () => props.settings.seriesNameDropWordsJson,
+  (value) => {
+    seriesDropWords.value = parseDropWords(value).join(', ')
+  },
+)
+
+function updateSeriesDropWords() {
+  const words = seriesDropWords.value
+    .split(',')
+    .map((w) => w.trim())
+    .filter(Boolean)
+  updateField('seriesNameDropWordsJson', JSON.stringify(words))
+}
+
+// Mirrors SeriesNameStyle.Render on the server: trailing drop words, repeatedly,
+// case-insensitively, never leaving the name empty.
+function renderSeriesPreview(name: string): string {
+  const words = seriesDropWords.value
+    .split(',')
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean)
+  let current = name.trim()
+  for (;;) {
+    const at = current.lastIndexOf(' ')
+    if (at <= 0) break
+    if (!words.includes(current.slice(at + 1).toLowerCase())) break
+    current = current.slice(0, at).trimEnd()
+  }
+  return current || name
+}
+
 // Sample values for testing patterns
 const sampleVariables = {
   Author: 'Stephen King',
@@ -440,6 +504,10 @@ function closeModal() {
 </script>
 
 <style scoped>
+.series-preview code {
+  display: block;
+}
+
 h3 {
   margin: 0 0 1.5rem 0;
   padding: 0.5rem 0;

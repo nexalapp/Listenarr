@@ -18,6 +18,8 @@ namespace Listenarr.Application.Audiobooks.Renaming
             var folderPattern = settings.FolderNamingPattern;
             var filePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
             var variables = BuildNamingVariables(audiobook, folderPattern, filePattern, file.SequenceNumber, isMultiFile, seriesPositionWidth);
+            // The same rendering the tag planner applies, so folder and album agree.
+            variables["Series"] = _fileNamingService.RenderSeriesName(audiobook.Series);
             var patternHasNumberTokens = !string.IsNullOrWhiteSpace(filePattern)
                 && (filePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0 || filePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0);
 
