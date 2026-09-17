@@ -49,12 +49,14 @@ wait_green() {
 image_tag_for() {
   local sha=$1 run
   while true; do
-    run=$(gh run list --workflow deploy-image.yml --commit "$sha" --limit 1 --json databaseId,status,conclusion -q '.[0] | "\(.databaseId) \(.status) \(.conclusion)"')
-    case "$run" in
-      *" completed success") break ;;
-      *" completed "*)        echo "deploy-image for $sha failed ($run)" >&2; return 1 ;;
-      *)                      sleep "$POLL" ;;
-    esac
+    # The label event starts a second run and concurrency cancels one of them, so look
+    # at every run for the commit: a success wins, a cancel is ignored while another is
+    # still going, and only a real failure with nothing else pending gives up.
+    runs=$(gh run list --workflow deploy-image.yml --commit "$sha" --limit 10 --json databaseId,status,conclusion -q '.[] | "\(.databaseId) \(.status) \(.conclusion)"')
+    run=$(echo "$runs" | grep " completed success" | head -1)
+    if [ -n "$run" ]; then break; fi
+    if echo "$runs" | grep -q " completed failure"; then echo "deploy-image for $sha failed" >&2; echo "$runs" >&2; return 1; fi
+    sleep "$POLL"
   done
   # The tag is printed by the run's version step.
   gh run view "${run%% *}" --log 2>/dev/null | grep -oE "deploy-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}" | head -1
