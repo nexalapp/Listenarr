@@ -57,6 +57,25 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             Assert.Equal("Orson Scott Card", authors["laddertop"]);
         }
 
+        /// <summary>
+        /// An anthology has no originator. A blank override leaves the series out of the
+        /// snapshot so every book files under its own author.
+        /// </summary>
+        [Fact]
+        public void Compute_ABlankOverrideExemptsTheSeries()
+        {
+            var authors = SeriesAuthorRule.Compute(
+            [
+                new("Forward Collection", null, 2019, "Andy Weir"),
+                new("Forward Collection", null, 2019, "Blake Crouch"),
+                new("Dune", "1", 2008, "Frank Herbert"),
+            ],
+            [new(" Forward Collection ", "  "), new("", "Nobody")]);
+
+            Assert.False(authors.ContainsKey("forward collection"));
+            Assert.Equal("Frank Herbert", authors["dune"]);
+        }
+
         [Fact]
         public void Compute_KeysCaseAndWhitespaceInsensitively_AndSkipsBlanks()
         {
