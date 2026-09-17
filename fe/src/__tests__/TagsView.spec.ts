@@ -475,6 +475,71 @@ describe('TagsView', () => {
     expect(wrapper.text()).toContain('Queued 1 file')
   })
 
+  it('clears the ticks once Apply has queued them', async () => {
+    writeTags.mockResolvedValue({ queued: true, jobId: 'job-1' })
+
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'Drive.m4b' }),
+        row({ audiobookId: 9, fileId: 2, fileName: 'Other.m4b' }),
+      ]),
+    )
+
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('1 file selected')
+
+    await wrapper.find('.apply-btn').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    // The next Apply must start from nothing, or the last batch rides along with it.
+    expect(wrapper.text()).not.toContain('file selected')
+    expect((wrapper.findAll('.tags-row .row-select')[0].element as HTMLInputElement).checked).toBe(
+      false,
+    )
+  })
+
+  it('drops the tick from a row that leaves the table', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'Wrong.m4b', mismatched: ['album'] }),
+        row({ fileId: 2, fileName: 'Right.m4b', mismatched: [] }),
+      ]),
+    )
+
+    // Sorted by filename, Right.m4b is the first row.
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('1 file selected')
+
+    // Narrowing to "Needs work" hides Right.m4b. A tick nobody can see cannot be
+    // reviewed or cleared, so it goes with the row.
+    await wrapper.find('.toolbar-toggle input').setValue(true)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.tags-row')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('file selected')
+  })
+
+  it('shows the outcome on its own line under the toolbar', async () => {
+    writeTags.mockResolvedValue({ queued: true, jobId: 'job-1' })
+    const wrapper = await mountView(table([row({ audiobookId: 7, fileId: 1 })]))
+
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click')
+    await wrapper.find('.apply-btn').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    const message = wrapper.find('.toolbar-message')
+    expect(message.exists()).toBe(true)
+    expect(message.text()).toContain('Queued 1 file')
+    // Inline with the badges it pushed the right-hand buttons onto a second row.
+    expect(wrapper.find('.toolbar-left .toolbar-message').exists()).toBe(false)
+    expect(message.element.parentElement?.classList.contains('toolbar')).toBe(true)
+  })
+
   it('says what Apply covers, and covers only that', async () => {
     // A tick column sitting left of every other column reads as "this whole row", so
     // the button rather than the tick is what has to name the parts it reaches.
