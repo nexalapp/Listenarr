@@ -135,5 +135,50 @@ namespace Listenarr.Tests.Features.Api.Services
             var result = _service.EnsurePathWithinLimits(path);
             Assert.Equal(path, result);
         }
+
+        /// <summary>
+        /// The production failure: a full-cast narrator list rendered a filename over
+        /// Linux's 255-byte NAME_MAX, which FileMover could not resolve. The pattern render
+        /// itself now keeps every component under the limit, with room for the extension
+        /// the caller appends, on every platform.
+        /// </summary>
+        [Fact]
+        public void ApplyNamingPattern_FilenameWithFullCast_FitsNameMaxWithRoomForExtension()
+        {
+            var cast = string.Join(", ", Enumerable.Range(1, 15).Select(i => $"Narrator Number {i:00}"));
+            var metadata = new AudioMetadata
+            {
+                Artist = "J.K. Rowling",
+                Title = "Harry Potter and the Sorcerer's Stone (Full-Cast Edition)",
+                Narrator = cast,
+                Year = 2025,
+            };
+
+            var name = _service.ApplyNamingPattern("{Author} - {Title} {{Narrator}} ({Year})", metadata, treatAsFilename: true);
+
+            Assert.True(System.Text.Encoding.UTF8.GetByteCount(name + ".m4b") <= 255, name);
+            Assert.EndsWith(" et al.} (2025)", name);
+            Assert.Contains("Narrator Number 01", name);
+        }
+
+        [Fact]
+        public void ApplyNamingPattern_FolderWithFullCast_FitsNameMax()
+        {
+            var cast = string.Join(", ", Enumerable.Range(1, 15).Select(i => $"Narrator Number {i:00}"));
+            var metadata = new AudioMetadata
+            {
+                Artist = "Stephen King",
+                Title = "The Bazaar of Bad Dreams",
+                Narrator = cast,
+                Year = 2015,
+            };
+
+            var path = _service.ApplyNamingPattern("{Author}/{Title} {{Narrator}} ({Year})", metadata, treatAsFilename: false);
+
+            foreach (var part in path.Split(Path.DirectorySeparatorChar))
+            {
+                Assert.True(System.Text.Encoding.UTF8.GetByteCount(part) <= 255, part);
+            }
+        }
     }
 }

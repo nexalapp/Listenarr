@@ -52,14 +52,20 @@ namespace Listenarr.Domain.Audiobooks
             return string.Join(Separator, names.Take(maxNarrators)) + Overflow;
         }
 
+        /// <summary>Room left for an extension a caller appends after rendering.</summary>
+        public const int ExtensionReserveBytes = 8;
+
         /// <summary>
         /// Shorten a path component that is over the byte limit by dropping narrators from
         /// the end of a brace-delimited list inside it, then, if that is not enough, by
         /// cutting the text. Returns the component unchanged when it already fits.
+        /// <paramref name="reserveBytes"/> holds back room for an extension the caller
+        /// will append.
         /// </summary>
-        public static string FitComponent(string component, string extension = "")
+        public static string FitComponent(string component, string extension = "", int reserveBytes = 0)
         {
-            if (Encoding.UTF8.GetByteCount(component) <= MaxComponentBytes)
+            var limit = MaxComponentBytes - reserveBytes;
+            if (Encoding.UTF8.GetByteCount(component) <= limit)
             {
                 return component;
             }
@@ -76,7 +82,7 @@ namespace Listenarr.Domain.Audiobooks
                 {
                     var list = string.Join(Separator, names.Take(keep)) + Overflow;
                     var candidate = component[..(open + 1)] + list + component[close..];
-                    if (Encoding.UTF8.GetByteCount(candidate) <= MaxComponentBytes)
+                    if (Encoding.UTF8.GetByteCount(candidate) <= limit)
                     {
                         return candidate;
                     }
@@ -87,7 +93,7 @@ namespace Listenarr.Domain.Audiobooks
             var stem = extension.Length > 0 && component.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
                 ? component[..^extension.Length]
                 : component;
-            var budget = MaxComponentBytes - Encoding.UTF8.GetByteCount(extension);
+            var budget = limit - Encoding.UTF8.GetByteCount(extension);
             while (stem.Length > 1 && Encoding.UTF8.GetByteCount(stem) > budget)
             {
                 stem = stem[..^1];

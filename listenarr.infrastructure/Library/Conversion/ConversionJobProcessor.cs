@@ -262,7 +262,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     // nobody retries would otherwise keep its output forever.
                     if (job != null
                         && !string.IsNullOrWhiteSpace(job.VerifiedOutputPath)
-                        && IsWithinKeptOutputRetention(job, now))
+                        && IsWithinKeptOutputRetention(job, now)
+                        && !await IsKeptOutputSupersededAsync(job, services))
                     {
                         continue;
                     }
@@ -272,7 +273,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     {
                         await queue.ClearVerifiedOutputAsync(jobId, cancellationToken);
                         logger.LogInformation(
-                            "Dropped the kept encode for conversion {JobId} after {Days} day(s) unretried",
+                            "Dropped the kept encode for conversion {JobId}: superseded, or {Days} day(s) unretried",
                             jobId,
                             KeptOutputRetention.TotalDays);
                     }
@@ -300,6 +301,28 @@ namespace Listenarr.Infrastructure.Library.Conversion
         /// enough that an abandoned book does not keep a book-sized file indefinitely.
         /// </summary>
         internal static readonly TimeSpan KeptOutputRetention = TimeSpan.FromDays(7);
+
+        /// <summary>
+        /// A kept encode is worth keeping only while the book still has something to
+        /// convert. Once a later conversion has published and retired the sources, the
+        /// book's files are all M4B and the held output from the failed attempt is dead
+        /// weight - several hundred megabytes per book, for a retry that has nothing to do.
+        /// </summary>
+        private static async Task<bool> IsKeptOutputSupersededAsync(ConversionJob job, IServiceProvider services)
+        {
+            var audiobook = await services.GetRequiredService<IAudiobookRepository>().GetByIdAsync(job.AudiobookId);
+            if (audiobook == null)
+            {
+                return true;
+            }
+
+            var files = audiobook.Files ?? [];
+            return files.Count > 0
+                && files.All(file => string.Equals(
+                    Path.GetExtension(file.Path ?? string.Empty),
+                    ".m4b",
+                    StringComparison.OrdinalIgnoreCase));
+        }
 
         internal static bool IsWithinKeptOutputRetention(ConversionJob job, DateTime now) =>
             now - (job.CompletedAt ?? job.UpdatedAt ?? job.EnqueuedAt) < KeptOutputRetention;
