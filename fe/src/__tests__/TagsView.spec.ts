@@ -17,6 +17,7 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import type { LibraryTagRow, LibraryTagTable } from '@/types'
 
 const getLibraryTags = vi.fn()
@@ -34,7 +35,14 @@ vi.mock('@/services/api', () => ({
     buildLibraryFileAudioUrl: (...args: unknown[]) =>
       buildLibraryFileAudioUrl(...(args as [number])),
     writeTags: (...args: unknown[]) => writeTags(...args),
+    getTagJobs: () => Promise.resolve([]),
   },
+}))
+
+// The view reads the tag-job store to dim rows with work in flight; the store itself is
+// fed by SignalR, which is not part of this view's contract.
+vi.mock('@/services/signalr', () => ({
+  signalRService: { onTagJobUpdate: () => () => {} },
 }))
 
 // The organize modal reaches for pinia the moment it is mounted, and this view's job is
@@ -103,6 +111,7 @@ async function mountView(result: LibraryTagTable = table([row()])) {
 
 describe('TagsView', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     getLibraryTags.mockReset()
     setTagLocks.mockReset()
     setPathLocks.mockReset()
