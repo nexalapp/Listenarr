@@ -1,0 +1,80 @@
+# Fork-only (nexalapp/Listenarr): the checks a deploy waits for.
+#
+# Upstream's run-tests.yml still runs on every PR and stays the authority; it is
+# one serial eight-minute job plus a Windows job. A deploy to the NAS only needs
+# the two suites that can catch a runtime defect - backend (including the
+# filesystem-probe tests the dev container cannot run) and frontend - so they run
+# here as two parallel jobs and deploy.sh gates on these plus the deploy image.
+# Formatting, lint and Windows are reviewed after the fact from run-tests.yml.
+
+name: Fast Check
+
+on:
+  pull_request:
+    branches: [ canary ]
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-check-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The native-capability contract is owned by run-tests.yml
+      # (NativeTestWorkflowContractTests forbids a second declaration), so this job
+      # inherits that job's env block rather than restating it.
+      - name: Inherit the native test environment from run-tests.yml
+        run: |
+          python3 - >> "$GITHUB_ENV" <<'PY'
+          import yaml
+          env = yaml.safe_load(open('.github/workflows/run-tests.yml'))['jobs']['unit-tests']['env']
+          print('\n'.join(f'{k}={v}' for k, v in env.items()))
+          PY
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore listenarr.slnx
+
+      - name: Build solution
+        run: dotnet build listenarr.slnx --no-restore --configuration Release
+
+      - name: Run native backend tests
+        env:
+          ASPNETCORE_ENVIRONMENT: Test
+          Playwright__Enabled: 'false'
+        run: pwsh -NoProfile -File scripts/run-native-backend-tests.ps1
+
+  fast-frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: fe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: fe/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Frontend type check
+        run: npm run type-check --silent
+
+      - name: Frontend tests
+        run: npx vitest run

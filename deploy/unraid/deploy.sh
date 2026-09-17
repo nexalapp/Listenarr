@@ -3,10 +3,15 @@
 #
 #   deploy/unraid/deploy.sh <pr-number> [<pr-number> ...]
 #
-# For each PR, in order: wait for its tests and its deploy image (both run on the
-# PR head, in parallel), merge it, wait for canary's version bump. Then pin the
-# last PR's image - deploy-<version>-<sha7>, built by .github/workflows/deploy-image.yml
-# - in docker-compose.yml, push it to the NAS, restart, and open the pin PR.
+# For each PR, in order: wait for its fast checks and its deploy image (both run
+# on the PR head, in parallel - .github/workflows/fast-check.yml and
+# deploy-image.yml), merge it. Then pin the last PR's image
+# - deploy-<version>-<sha7> - in docker-compose.yml, push it to the NAS and
+# restart. Only then wait for canary's version bump and open the pin PR: the
+# bump is off the critical path because the image already carries the version.
+#
+# Upstream's run-tests.yml (format, lint, Windows) still runs on every PR but is
+# not waited for; review it after the deploy and fix forward.
 #
 # Requires: gh (logged in), ssh access to the NAS, a clean checkout on any branch.
 set -euo pipefail
@@ -23,16 +28,19 @@ version() {
   git show origin/canary:listenarr.api/Listenarr.Api.csproj | grep -o "<Version>[^<]*" | cut -d'>' -f2
 }
 
-# Every check on the PR head, including the deploy image, must be green.
+# The gate: the fast checks and the deploy image on the PR head must be green.
+GATE='^(fast-backend|fast-frontend|image)$'
 wait_green() {
   local pr=$1
   while true; do
     local buckets
-    buckets=$(gh pr checks "$pr" --json bucket -q '.[].bucket' 2>/dev/null | sort -u | tr '\n' ' ')
+    buckets=$(gh pr checks "$pr" --json name,bucket 2>/dev/null \
+      | jq -r --arg g "$GATE" '[.[] | select(.name | test($g))] | if length < 3 then "pending" else .[].bucket end' \
+      | sort -u | tr '\n' ' ')
     case "$buckets" in
-      *fail*|*cancel*) echo "PR $pr: a check failed ($buckets)" >&2; gh pr checks "$pr" | grep -vE "pass|skipping" >&2; return 1 ;;
+      *fail*|*cancel*) echo "PR $pr: a gate check failed ($buckets)" >&2; gh pr checks "$pr" | grep -E "$GATE" | grep -v pass >&2; return 1 ;;
       *pending*|"")   sleep "$POLL" ;;
-      *)              echo "PR $pr: checks green"; return 0 ;;
+      *)              echo "PR $pr: gate green"; return 0 ;;
     esac
   done
 }
@@ -49,16 +57,12 @@ image_tag() {
 }
 
 last_tag=""
+before=$(version)
 for pr in "$@"; do
   wait_green "$pr"
   tag=$(image_tag "$pr")
-  before=$(version)
   gh pr merge "$pr" --merge --delete-branch >/dev/null
-  echo "PR $pr: merged (canary was $before); image $tag"
-  # canary.yml bumps the version in a follow-up PR; wait for it so the next
-  # PR's image computes from the right base and the pin PR lands on it.
-  while [ "$(version)" = "$before" ]; do sleep "$POLL"; done
-  echo "canary now $(version)"
+  echo "PR $pr: merged; image $tag"
   last_tag=$tag
 done
 
@@ -66,15 +70,31 @@ done
 image="ghcr.io/nexalapp/listenarr:$last_tag"
 docker manifest inspect "$image" >/dev/null 2>&1 || { echo "image $image not found" >&2; exit 1; }
 
-ver=$(version)
-git fetch -q origin canary
-git checkout -q -b "chore/deploy-$ver" origin/canary
+# Restart the NAS first; the version bump and the pin PR can follow.
+git checkout -q -- "$COMPOSE"
 sed -i.bak "s|ghcr.io/nexalapp/listenarr:[^ ]*|$image|" "$COMPOSE" && rm -f "$COMPOSE.bak"
 scp -q "$COMPOSE" "$NAS:$NAS_PROJECT/docker-compose.yml"
 ssh "$NAS" "cd $NAS_PROJECT && docker compose up -d 2>&1 | tail -1; for i in \$(seq 1 60); do s=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4545/api/v1/system/ready); [ \"\$s\" = 200 ] && break; sleep 5; done; echo ready=\$s; docker ps --filter name=listenarr --format '{{.Image}} {{.Status}}'"
+echo "LIVE $image"
+
+# canary.yml bumps the version once per merged PR; wait for the last one so the
+# pin PR lands on the bumped canary.
+bumps=$#
+while :; do
+  cur=$(version)
+  IFS=. read -r a b c <<< "$cur"; IFS=. read -r x y z <<< "$before"
+  [ $(( (a-x)*1000000 + (b-y)*1000 + (c-z) )) -ge "$bumps" ] && break
+  sleep "$POLL"
+done
+ver=$cur
+echo "canary now $ver"
+pinned=$(mktemp); cp "$COMPOSE" "$pinned"
+git checkout -q -- "$COMPOSE"
+git checkout -q -b "chore/deploy-$ver" origin/canary
+cp "$pinned" "$COMPOSE"; rm -f "$pinned"
 
 git commit -q --no-verify -am "chore(deploy): pin $last_tag"
 git push -q -u origin "chore/deploy-$ver" --no-verify
 gh pr create --base canary --title "chore(deploy): pin $last_tag" --body "Deployed to the NAS." >/dev/null
 gh pr edit "chore/deploy-$ver" --add-label patch >/dev/null
-echo "DEPLOYED $image"
+echo "PINNED $image"
