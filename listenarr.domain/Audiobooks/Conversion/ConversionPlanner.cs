@@ -255,6 +255,17 @@ namespace Listenarr.Domain.Audiobooks.Conversion
                 return [];
             }
 
+            // The audio does not stop where the last mark does. Marks are often written
+            // short of the end - credits, a closing note, silence - and the whole file is
+            // encoded regardless, so the last chapter must own the tail or the plan says
+            // the book is shorter than it is and the finished file is refused for running
+            // "too long". Measured: 18:20:51 of audio against 18:15:41 of marks.
+            if (results.Count > 0 && results[^1].End < duration)
+            {
+                var last = results[^1];
+                results[^1] = new EmbeddedChapter(last.Title, last.Start, duration);
+            }
+
             return results;
         }
 
