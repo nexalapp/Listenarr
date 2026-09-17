@@ -318,41 +318,6 @@ namespace Listenarr.Application.Common
 
         // Heuristic: sometimes metadata.Artist can contain the title/series (noisy tags).
         // Prefer an AlbumArtist or alternate artist value if the primary artist looks like the title/series.
-        /// <summary>
-        /// The author a book files under: its series' first author when the setting says
-        /// so and the series is known, otherwise its own primary author.
-        /// </summary>
-        private string FilingAuthor(AudioMetadata metadata) =>
-            FilingAuthor(metadata.Series, PrimaryAuthor(metadata));
-
-        private string FilingAuthor(string? series, string primaryAuthor)
-        {
-            var bySeries = _settingsSnapshot?.Current?.FileSeriesUnderFirstAuthor ?? true;
-            if (bySeries && _seriesAuthors != null && !string.IsNullOrWhiteSpace(series))
-            {
-                var seriesAuthor = _seriesAuthors.AuthorFor(series);
-                if (!string.IsNullOrWhiteSpace(seriesAuthor))
-                {
-                    return seriesAuthor;
-                }
-            }
-
-            return primaryAuthor;
-        }
-
-        private static string PrimaryAuthor(AudioMetadata metadata)
-        {
-            if (metadata.Authors is { Count: > 0 })
-            {
-                return metadata.PrimaryAuthor;
-            }
-
-            // No list, only a joined string: the first name in it.
-            var chosen = ChooseAuthor(metadata);
-            var comma = chosen.IndexOf(", ", StringComparison.Ordinal);
-            return comma > 0 ? chosen[..comma] : chosen;
-        }
-
         private static string ChooseAuthor(AudioMetadata metadata)
         {
             var primary = NonNarratorAuthorCandidate(metadata.Artist, metadata.Narrator);

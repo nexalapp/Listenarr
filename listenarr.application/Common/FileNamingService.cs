@@ -55,30 +55,6 @@ namespace Listenarr.Application.Common
         }
 
         /// <summary>
-        /// The series name as it is written: with the configured trailing words dropped.
-        /// Read from the settings snapshot because the renderers are synchronous; with no
-        /// snapshot (tests, or before the first settings load) the defaults apply.
-        /// </summary>
-        public string RenderAuthor(string? series, IEnumerable<string>? authors)
-        {
-            var primary = authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))?.Trim()
-                ?? "Unknown Author";
-            return FilingAuthor(series, primary);
-        }
-
-        public string RenderNarrators(string? narrators) =>
-            NarratorNameStyle.Render(
-                narrators,
-                _settingsSnapshot?.Current?.MaxNarratorsInNames ?? 0);
-
-        public string RenderSeriesName(string? name) =>
-            SeriesNameStyle.Render(
-                name,
-                _settingsSnapshot?.Current == null
-                    ? SeriesNameStyle.DefaultDropWords
-                    : SeriesNameStyle.ParseDropWords(_settingsSnapshot.Current.SeriesNameDropWordsJson));
-
-        /// <summary>
         /// Apply the configured file naming pattern to generate the output path from settings
         /// </summary>
         public async Task<string> GenerateFilePathAsync(
