@@ -298,5 +298,11 @@ namespace Listenarr.Domain.Configuration
         /// <c>{"variant","canonical"}</c>. See <see cref="AuthorAliases"/>.
         /// </summary>
         public string AuthorAliasesJson { get; set; } = AuthorAliases.EmptyJson;
+
+        /// <summary>
+        /// How many narrators a folder, file or tag names before the list is cut and ends
+        /// in "et al."; 0 names every narrator. See <see cref="NarratorNameStyle"/>.
+        /// </summary>
+        public int MaxNarratorsInNames { get; set; }
     }
 }

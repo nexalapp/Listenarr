@@ -98,7 +98,7 @@ namespace Listenarr.Application.Common
                 { "Title", Clean(FirstNonEmpty(metadata.Title, "Unknown Title")) },
                 { "Subtitle", Clean(metadata.Subtitle) },
                 { "Edition", Clean(metadata.Edition) },
-                { "Narrator", Clean(metadata.Narrator) },
+                { "Narrator", Clean(RenderNarrators(metadata.Narrator)) },
                 { "Publisher", Clean(metadata.Publisher) },
                 { "Language", Clean(metadata.Language) },
                 { "Asin", Clean(metadata.Asin) },
@@ -276,7 +276,7 @@ namespace Listenarr.Application.Common
                 { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
                 { "Subtitle", string.IsNullOrWhiteSpace(metadata.Subtitle) ? string.Empty : SanitizePathComponent(metadata.Subtitle) },
                 { "Edition", string.IsNullOrWhiteSpace(metadata.Edition) ? string.Empty : SanitizePathComponent(metadata.Edition) },
-                { "Narrator", string.IsNullOrWhiteSpace(metadata.Narrator) ? string.Empty : SanitizePathComponent(metadata.Narrator) },
+                { "Narrator", string.IsNullOrWhiteSpace(metadata.Narrator) ? string.Empty : SanitizePathComponent(RenderNarrators(metadata.Narrator)) },
                 { "Publisher", string.IsNullOrWhiteSpace(metadata.Publisher) ? string.Empty : SanitizePathComponent(metadata.Publisher) },
                 { "Language", string.IsNullOrWhiteSpace(metadata.Language) ? string.Empty : SanitizePathComponent(metadata.Language) },
                 { "Asin", string.IsNullOrWhiteSpace(metadata.Asin) ? string.Empty : SanitizePathComponent(metadata.Asin) },
@@ -388,7 +388,11 @@ namespace Listenarr.Application.Common
             if (string.IsNullOrWhiteSpace(fullPath))
                 return fullPath;
 
-            // Only enforce strict limits on Windows; other platforms support much longer paths
+            // Every platform caps a single name at 255 bytes; a component over that cannot be
+            // created at all, and a full-cast narrator list is exactly what overflows it.
+            fullPath = FitComponentsToNameMax(fullPath);
+
+            // Only enforce total-path limits on Windows; other platforms support much longer paths
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return fullPath;
 
@@ -472,6 +476,30 @@ namespace Listenarr.Application.Common
             }
 
             return result;
+        }
+
+        private string FitComponentsToNameMax(string fullPath)
+        {
+            var separator = fullPath.Contains('/') && !fullPath.Contains('\\') ? '/' : Path.DirectorySeparatorChar;
+            var parts = fullPath.Split(separator);
+            var changed = false;
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var isLast = i == parts.Length - 1;
+                var fitted = NarratorNameStyle.FitComponent(parts[i], isLast ? Path.GetExtension(parts[i]) : string.Empty);
+                if (!ReferenceEquals(fitted, parts[i]) && fitted != parts[i])
+                {
+                    _logger.LogWarning(
+                        "Path component over {Limit} bytes was shortened: {Before} -> {After}",
+                        NarratorNameStyle.MaxComponentBytes,
+                        parts[i],
+                        fitted);
+                    parts[i] = fitted;
+                    changed = true;
+                }
+            }
+
+            return changed ? string.Join(separator, parts) : fullPath;
         }
 
         private static string CombineWithOptionalBase(string? basePath, string candidatePath)

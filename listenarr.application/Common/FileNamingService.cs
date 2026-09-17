@@ -55,6 +55,11 @@ namespace Listenarr.Application.Common
         /// Read from the settings snapshot because the renderers are synchronous; with no
         /// snapshot (tests, or before the first settings load) the defaults apply.
         /// </summary>
+        public string RenderNarrators(string? narrators) =>
+            NarratorNameStyle.Render(
+                narrators,
+                _settingsSnapshot?.Current?.MaxNarratorsInNames ?? 0);
+
         public string RenderSeriesName(string? name) =>
             SeriesNameStyle.Render(
                 name,

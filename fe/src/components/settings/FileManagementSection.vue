@@ -105,6 +105,35 @@
         </div>
       </FormRow>
 
+      <FormRow
+        label="Narrators in Names"
+        help="How many narrators a folder, file or tag names before the list is cut and ends in 'et al.'. 0 names every narrator. A full-cast production can credit fifteen readers, and a name that long cannot exist on disk — whatever this says, a name is always cut to what the filesystem allows."
+      >
+        <div class="input-group">
+          <input
+            type="number"
+            min="0"
+            max="50"
+            :value="settings.maxNarratorsInNames ?? 0"
+            @change="
+              (e) =>
+                updateField(
+                  'maxNarratorsInNames',
+                  Math.max(0, Number((e.target as HTMLInputElement).value) || 0),
+                )
+            "
+          />
+        </div>
+        <div class="pattern-preview series-preview">
+          <span class="preview-label">Preview:</span>
+          <code>{{
+            renderNarratorPreview(
+              'Hugh Laurie, Matthew Macfadyen, Riz Ahmed, Michelle Gomez, Cush Jumbo',
+            )
+          }}</code>
+        </div>
+      </FormRow>
+
       <!-- Path length warning -->
       <div v-if="pathLengthWarning" class="path-length-warning">
         <PhWarning :size="18" />
@@ -364,6 +393,14 @@ function renderSeriesPreview(name: string): string {
   return current || name
 }
 
+// Mirrors NarratorNameStyle.Render on the server.
+function renderNarratorPreview(names: string): string {
+  const max = props.settings.maxNarratorsInNames ?? 0
+  const list = names.split(',').map((n) => n.trim())
+  if (max <= 0 || list.length <= max) return list.join(', ')
+  return list.slice(0, max).join(', ') + ' et al.'
+}
+
 // Sample values for testing patterns
 const sampleVariables = {
   Author: 'Stephen King',
@@ -571,7 +608,8 @@ h3 svg {
   align-items: center;
 }
 
-.input-group input[type='text'] {
+.input-group input[type='text'],
+.input-group input[type='number'] {
   flex: 1;
   padding: 0.9rem 0.85rem;
   border: 1px solid #444;
