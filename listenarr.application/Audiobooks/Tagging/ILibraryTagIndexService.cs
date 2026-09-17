@@ -94,9 +94,15 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// something outside Listenarr rewrote tags in place without disturbing either.
         /// </param>
         /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="audiobookIds">
+        /// Only these books, when given. The table refreshes one book's rows in place
+        /// after a write, and rebuilding the whole library for that would probe nothing
+        /// yet still plan every row.
+        /// </param>
         Task<LibraryTagIndex> BuildAsync(
             bool refresh = false,
-            CancellationToken cancellationToken = default);
+            CancellationToken cancellationToken = default,
+            IReadOnlyCollection<int>? audiobookIds = null);
 
         /// <summary>
         /// Probe one file now and cache the result, for the moment a write has just

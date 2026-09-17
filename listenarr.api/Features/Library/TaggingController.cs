@@ -63,13 +63,15 @@ namespace Listenarr.Api.Features.Library
         /// </para>
         /// </remarks>
         /// <param name="refresh">Re-probe every file instead of trusting the cache.</param>
+        /// <param name="audiobookIds">Only these books' rows, for refreshing rows in place.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         [HttpGet("library")]
         public async Task<IActionResult> GetLibraryTags(
             [FromQuery] bool refresh = false,
+            [FromQuery] int[]? audiobookIds = null,
             CancellationToken cancellationToken = default)
         {
-            var index = await tagIndex.BuildAsync(refresh, cancellationToken);
+            var index = await tagIndex.BuildAsync(refresh, cancellationToken, audiobookIds);
 
             return Ok(new
             {
