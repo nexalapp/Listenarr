@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Audiobooks.Tagging;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -73,7 +74,34 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                         tags.ToDictionary(tag => tag.Key, tag => tag.Value, StringComparer.OrdinalIgnoreCase),
                         12,
                         TimeSpan.FromHours(9),
+                        HasCoverArt: true,
+                        Chapters: Chapters(12)))]);
+
+        /// <summary>A record persisted before chapters were kept: no list, no atoms.</summary>
+        private void GivenStoredTagsWithoutChapters(string fileName) =>
+            _store
+                .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new LibraryTagCacheRecord(
+                    Path.Combine(_directory, fileName),
+                    1024,
+                    new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    new AudiobookFileTags(
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                        12,
+                        TimeSpan.FromHours(9),
                         HasCoverArt: true))]);
+
+        private static List<EmbeddedChapter> Chapters(int count, TimeSpan? each = null, Func<int, string>? title = null)
+        {
+            var length = each ?? TimeSpan.FromMinutes(45);
+            var chapters = new List<EmbeddedChapter>(count);
+            for (var i = 0; i < count; i++)
+            {
+                chapters.Add(new EmbeddedChapter(title?.Invoke(i + 1) ?? $"The {i + 1}th thing", length * i, length * (i + 1)));
+            }
+
+            return chapters;
+        }
 
         private Audiobook GivenLibrary(params string[] fileNames)
         {
@@ -140,7 +168,20 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                     tags.ToDictionary(tag => tag.Key, tag => tag.Value, StringComparer.OrdinalIgnoreCase),
                     12,
                     TimeSpan.FromHours(9),
-                    HasCoverArt: true));
+                    HasCoverArt: true,
+                    Chapters: Chapters(12),
+                    Atoms: new ChapterAtomState(true, null, 12, true)));
+
+        private void GivenCurrentChapters(IReadOnlyList<EmbeddedChapter> chapters, ChapterAtomState? atoms) =>
+            _writer
+                .Setup(writer => writer.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudiobookFileTags(
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                    chapters.Count,
+                    TimeSpan.FromHours(9),
+                    HasCoverArt: true,
+                    Chapters: chapters,
+                    Atoms: atoms));
 
         [Fact]
         public async Task BuildAsync_ReportsWhatTheFileCarriesAndWhatListenarrWouldWrite()
@@ -549,6 +590,71 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             var row = Assert.Single((await BuildService().BuildAsync()).Rows);
 
             Assert.True(row.PathLocked);
+        }
+
+        // ---- chapter health -----------------------------------------------------------
+
+        [Fact]
+        public async Task BuildAsync_JudgesTheChaptersOfEveryTaggableFile()
+        {
+            GivenLibrary("Drive.m4b");
+            GivenCurrentTags(("album", "Drive"));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            Assert.Equal(ChapterHealth.Healthy, row.ChapterHealth);
+            Assert.Equal(12, row.ChapterCount);
+        }
+
+        [Fact]
+        public async Task BuildAsync_FlagsABrokenChapterAtom()
+        {
+            GivenLibrary("Drive.m4b");
+            GivenCurrentChapters(Chapters(12), new ChapterAtomState(true, "version byte is 67", 0, true));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            Assert.Equal(ChapterHealth.Corrupt, row.ChapterHealth);
+            Assert.Contains("version byte is 67", row.ChapterReason);
+        }
+
+        [Fact]
+        public async Task BuildAsync_FlagsCdTracksAsOversegmented()
+        {
+            GivenLibrary("Drive.m4b");
+            GivenCurrentChapters(Chapters(90, TimeSpan.FromMinutes(3), i => $"Track {i}"), new ChapterAtomState(true, null, 90, true));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            Assert.Equal(ChapterHealth.Oversegmented, row.ChapterHealth);
+        }
+
+        [Fact]
+        public async Task BuildAsync_DoesNotJudgeAnMp3()
+        {
+            GivenLibrary("Drive.mp3");
+            GivenCurrentTags(("album", "Drive"));
+
+            var row = Assert.Single((await BuildService().BuildAsync()).Rows);
+
+            Assert.Equal(ChapterHealth.Unknown, row.ChapterHealth);
+        }
+
+        /// <summary>
+        /// A record persisted before chapters were kept would otherwise show the file as
+        /// unknown until someone pressed Re-read; it is treated as a miss instead.
+        /// </summary>
+        [Fact]
+        public async Task BuildAsync_ReReadsAStoredRecordThatHasNoChapters()
+        {
+            GivenLibrary("Drive.m4b");
+            GivenStoredTagsWithoutChapters("Drive.m4b");
+            GivenCurrentTags(("album", "Probed"));
+
+            var index = await BuildService(withStore: true).BuildAsync();
+
+            Assert.Equal(1, index.FilesRead);
+            Assert.Equal(ChapterHealth.Healthy, index.Rows.Single().ChapterHealth);
         }
 
         public void Dispose()

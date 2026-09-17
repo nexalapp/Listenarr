@@ -84,6 +84,9 @@ const row = (overrides: Partial<LibraryTagRow> = {}): LibraryTagRow => ({
   pathLocked: false,
   expectedFileName: 'Corey - Drive.m4b',
   fileNameMismatched: false,
+  chapterHealth: 'healthy',
+  chapterReason: '12 chapter(s).',
+  chapterCount: 12,
   ...overrides,
 })
 
@@ -153,7 +156,7 @@ describe('TagsView', () => {
     const wrapper = await mountView()
 
     const headers = wrapper.findAll('.tags-th-label').map((header) => header.text())
-    expect(headers).toEqual(['Filename', 'Path', 'Description', 'Title', 'Album'])
+    expect(headers).toEqual(['Filename', 'Path', 'Chapters', 'Description', 'Title', 'Album'])
   })
 
   it('remembers a narrowed set of columns instead of reopening on all of them', async () => {
@@ -164,6 +167,7 @@ describe('TagsView', () => {
     expect(wrapper.findAll('.tags-th-label').map((header) => header.text())).toEqual([
       'Filename',
       'Path',
+      'Chapters',
       'Title',
     ])
   })
@@ -284,7 +288,7 @@ describe('TagsView', () => {
     const wrapper = await mountView()
 
     const headers = wrapper.findAll('.tags-th-label').map((header) => header.text())
-    expect(headers).toEqual(['Filename', 'Path', 'Album'])
+    expect(headers).toEqual(['Filename', 'Path', 'Chapters', 'Album'])
   })
 
   it('ticks one file, not its siblings', async () => {
@@ -907,6 +911,55 @@ describe('TagsView', () => {
     const listed = wrapper.findAll('.tags-row').map((r) => r.text())
     expect(listed).toHaveLength(1)
     expect(listed[0]).toContain('Misfiled.m4b')
+  })
+
+  it('shows each file’s chapter verdict, with the reason on hover', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          fileId: 1,
+          fileName: 'Broken.m4b',
+          chapterHealth: 'corrupt',
+          chapterReason: 'The chapter atom does not parse: version byte is 67',
+          chapterCount: 0,
+        }),
+      ]),
+    )
+
+    const cell = wrapper.find('.tags-td--chapters-issue')
+    expect(cell.text()).toContain('Corrupt · 0')
+    expect(cell.attributes('title')).toContain('version byte is 67')
+    expect(wrapper.text()).toContain('1 bad chapters')
+  })
+
+  it('narrows to the files whose chapters need repair', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'Broken.m4b', chapterHealth: 'corrupt' }),
+        row({ fileId: 2, fileName: 'Tracks.m4b', chapterHealth: 'oversegmented' }),
+        row({ fileId: 3, fileName: 'Bland.m4b', chapterHealth: 'generic-titles' }),
+        row({ fileId: 4, fileName: 'Fine.m4b', chapterHealth: 'healthy' }),
+      ]),
+    )
+
+    await wrapper.find('.toolbar-select').setValue('issues')
+    await wrapper.vm.$nextTick()
+
+    // Placeholder titles are a note, not an issue: the marks may well be right.
+    const listed = wrapper.findAll('.tags-row').map((r) => r.text())
+    expect(listed).toHaveLength(2)
+    expect(listed.join(' ')).toContain('Broken.m4b')
+    expect(listed.join(' ')).toContain('Tracks.m4b')
+
+    await wrapper.find('.toolbar-select').setValue('generic-titles')
+    await wrapper.vm.$nextTick()
+    expect(
+      wrapper
+        .findAll('.tags-row')
+        .map((r) => r.text())
+        .join(' '),
+    ).toContain('Bland.m4b')
+    expect(wrapper.findAll('.tags-row')).toHaveLength(1)
   })
 
   it('reports the failure instead of an empty table', async () => {

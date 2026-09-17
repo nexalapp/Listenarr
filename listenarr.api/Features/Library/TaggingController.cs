@@ -17,6 +17,7 @@
  */
 using System.Globalization;
 using Listenarr.Application.Audiobooks;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
@@ -111,10 +112,25 @@ namespace Listenarr.Api.Features.Library
                     // The filename is its own column, so its disagreement is its own
                     // fact: organizing can rename a file without moving it.
                     expectedFileName = row.ExpectedFileName,
-                    fileNameMismatched = row.FileNameMismatched
+                    fileNameMismatched = row.FileNameMismatched,
+                    // The chapter verdict is a lowercase word the table filters on, and
+                    // the reason is the sentence behind it.
+                    chapterHealth = ChapterHealthName(row.ChapterHealth),
+                    chapterReason = row.ChapterReason,
+                    chapterCount = row.ChapterCount
                 })
             });
         }
+
+        private static string ChapterHealthName(ChapterHealth health) => health switch
+        {
+            ChapterHealth.Healthy => "healthy",
+            ChapterHealth.Corrupt => "corrupt",
+            ChapterHealth.Oversegmented => "oversegmented",
+            ChapterHealth.GenericTitles => "generic-titles",
+            ChapterHealth.None => "none",
+            _ => "unknown"
+        };
 
         /// <summary>
         /// The tags Listenarr can write, with their current mapping.

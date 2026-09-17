@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -270,8 +271,10 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 return (null, $"This file could not be inspected: {ex.Message}", false);
             }
 
+            // A record cached before chapters were kept is a miss for a taggable file:
+            // the row would show its chapters as unknown forever otherwise.
             var cached = cache.TryGet(fullPath, length, lastWrite);
-            if (cached != null)
+            if (cached != null && (cached.Chapters != null || !TaggableFile.IsTaggable(fullPath)))
             {
                 return (cached, null, false);
             }
@@ -378,6 +381,14 @@ namespace Listenarr.Application.Audiobooks.Tagging
             var (expectedFolder, expectedFileName, folderChanged, fileNameChanged) =
                 SplitExpectation(currentPath, pathExpectation, libraryRoots);
 
+            var chapters = tags == null || !TaggableFile.IsTaggable(currentPath)
+                ? ChapterHealthReport.Unknown
+                : ChapterHealthAnalyzer.Analyze(
+                    tags.Chapters,
+                    tags.Atoms,
+                    tags.Duration,
+                    Path.GetFileNameWithoutExtension(fileName));
+
             return new LibraryTagRow(
                 audiobook.Id,
                 file.Id,
@@ -396,7 +407,10 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 folderChanged,
                 file.PathLocked,
                 expectedFileName,
-                fileNameChanged);
+                fileNameChanged,
+                chapters.Health,
+                chapters.Reason,
+                chapters.ChapterCount);
         }
     }
 }

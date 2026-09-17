@@ -571,6 +571,18 @@ export interface LibraryTagColumn {
  * organizing would put it — null when organizing could not answer, which the table has
  * to show as unknown rather than as agreement.
  */
+/**
+ * What a file's chapter marks are worth, as the server judged them. `unknown` is an MP3
+ * or a file not yet re-read since chapters were recorded; the rest are verdicts.
+ */
+export type ChapterHealth =
+  | 'unknown'
+  | 'healthy'
+  | 'corrupt'
+  | 'oversegmented'
+  | 'generic-titles'
+  | 'none'
+
 export interface LibraryTagRow {
   audiobookId: number
   fileId: number
@@ -592,6 +604,10 @@ export interface LibraryTagRow {
   pathLocked: boolean
   expectedFileName?: string | null
   fileNameMismatched: boolean
+  chapterHealth: ChapterHealth
+  /** Why the verdict, in a sentence. */
+  chapterReason?: string | null
+  chapterCount: number
 }
 
 /** The whole library's tags, with the columns to show them under. */

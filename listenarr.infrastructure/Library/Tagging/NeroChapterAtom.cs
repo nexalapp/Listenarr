@@ -15,9 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Buffers.Binary;
-using System.Text;
-
 namespace Listenarr.Infrastructure.Library.Tagging
 {
     /// <summary>
@@ -49,8 +46,6 @@ namespace Listenarr.Infrastructure.Library.Tagging
     /// </summary>
     internal static class NeroChapterAtom
     {
-        private const int HeaderLength = 8;
-
         /// <summary>The atom exactly as it was, and where it sat.</summary>
         internal sealed record Snapshot(byte[] Bytes);
 
@@ -110,112 +105,34 @@ namespace Listenarr.Infrastructure.Library.Tagging
 
             foreach (var ancestor in ancestors)
             {
-                WriteSize(stream, ancestor, ancestor.Size + delta);
+                Mp4Atoms.WriteSize(stream, ancestor, ancestor.Size + delta);
             }
         }
-
-        private readonly record struct Atom(long Position, long Size, int HeaderSize, string Type);
 
         /// <summary>
         /// Find <c>moov/udta/chpl</c>, returning it and its ancestors nearest first.
         /// </summary>
-        private static (Atom Chpl, IReadOnlyList<Atom> Ancestors)? Locate(Stream stream)
+        private static (Mp4Atoms.Atom Chpl, IReadOnlyList<Mp4Atoms.Atom> Ancestors)? Locate(Stream stream)
         {
-            var moov = Find(stream, 0, stream.Length, "moov");
+            var moov = Mp4Atoms.Find(stream, 0, stream.Length, "moov");
             if (moov == null)
             {
                 return null;
             }
 
-            var udta = Find(stream, moov.Value.Position + moov.Value.HeaderSize, End(moov.Value), "udta");
+            var udta = Mp4Atoms.Find(stream, moov.Value.Position + moov.Value.HeaderSize, Mp4Atoms.End(moov.Value), "udta");
             if (udta == null)
             {
                 return null;
             }
 
-            var chpl = Find(stream, udta.Value.Position + udta.Value.HeaderSize, End(udta.Value), "chpl");
+            var chpl = Mp4Atoms.Find(stream, udta.Value.Position + udta.Value.HeaderSize, Mp4Atoms.End(udta.Value), "chpl");
             if (chpl == null)
             {
                 return null;
             }
 
             return (chpl.Value, [udta.Value, moov.Value]);
-        }
-
-        private static long End(Atom atom) => atom.Position + atom.Size;
-
-        private static Atom? Find(Stream stream, long start, long end, string type)
-        {
-            var position = start;
-            while (position + HeaderLength <= end)
-            {
-                var atom = ReadHeader(stream, position, end);
-                if (atom == null)
-                {
-                    return null;
-                }
-
-                if (atom.Value.Type == type)
-                {
-                    return atom;
-                }
-
-                position = End(atom.Value);
-            }
-
-            return null;
-        }
-
-        private static Atom? ReadHeader(Stream stream, long position, long end)
-        {
-            Span<byte> header = stackalloc byte[16];
-            stream.Seek(position, SeekOrigin.Begin);
-            stream.ReadExactly(header[..HeaderLength]);
-
-            long size = BinaryPrimitives.ReadUInt32BigEndian(header);
-            var type = Encoding.Latin1.GetString(header[4..8]);
-            var headerSize = HeaderLength;
-
-            if (size == 1)
-            {
-                stream.ReadExactly(header[8..16]);
-                size = (long)BinaryPrimitives.ReadUInt64BigEndian(header[8..16]);
-                headerSize = 16;
-            }
-            else if (size == 0)
-            {
-                // Runs to the end of its container.
-                size = end - position;
-            }
-
-            if (size < headerSize || position + size > end)
-            {
-                return null;
-            }
-
-            return new Atom(position, size, headerSize, type);
-        }
-
-        private static void WriteSize(Stream stream, Atom atom, long size)
-        {
-            Span<byte> field = stackalloc byte[8];
-            if (atom.HeaderSize == 16)
-            {
-                BinaryPrimitives.WriteUInt64BigEndian(field, (ulong)size);
-                stream.Seek(atom.Position + 8, SeekOrigin.Begin);
-                stream.Write(field);
-                return;
-            }
-
-            if (size > uint.MaxValue)
-            {
-                throw new InvalidOperationException(
-                    "A box grew past what its 32-bit size field can hold, so the file cannot be repaired.");
-            }
-
-            BinaryPrimitives.WriteUInt32BigEndian(field[..4], (uint)size);
-            stream.Seek(atom.Position, SeekOrigin.Begin);
-            stream.Write(field[..4]);
         }
     }
 }

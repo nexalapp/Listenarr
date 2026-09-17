@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Globalization;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Tagging
@@ -109,9 +110,36 @@ namespace Listenarr.Infrastructure.Library.Tagging
             ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
 
             var probe = await reader.ProbeAsync(filePath, cancellationToken);
-            return probe.Tags
+            var tags = probe.Tags
                 ?? throw new FfmpegException(
                     $"Could not read the tags of {LogRedaction.SanitizeFilePath(filePath)}: {probe.Error}");
+
+            return tags with { Atoms = InspectAtoms(filePath) };
+        }
+
+        /// <summary>
+        /// What the chapter atoms say, beside what ffprobe played. Inspection failing is
+        /// not a reason to lose the tags: the row simply cannot judge its chapters.
+        /// </summary>
+        private ChapterAtomState? InspectAtoms(string filePath)
+        {
+            if (!TaggableFile.IsTaggable(filePath))
+            {
+                return null;
+            }
+
+            try
+            {
+                return ChapterAtomInspector.Inspect(filePath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or EndOfStreamException)
+            {
+                logger.LogDebug(
+                    ex,
+                    "Could not inspect the chapter atoms of {File}",
+                    LogRedaction.SanitizeFilePath(filePath));
+                return null;
+            }
         }
 
         public async Task<TagWriteResult> WriteAsync(

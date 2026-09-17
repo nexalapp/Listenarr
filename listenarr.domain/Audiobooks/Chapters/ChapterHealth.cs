@@ -1,0 +1,78 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+namespace Listenarr.Domain.Audiobooks.Chapters
+{
+    /// <summary>
+    /// What a file's chapter marks are worth, as far as it can be told without listening.
+    /// </summary>
+    public enum ChapterHealth
+    {
+        /// <summary>Not inspected: an MP3, or a row read before chapters were recorded.</summary>
+        Unknown,
+
+        Healthy,
+
+        /// <summary>
+        /// The container carries a chapter atom that does not parse, or that ffprobe reads
+        /// differently from what the bytes say. The TagLib# shift documented on
+        /// <c>NeroChapterAtom</c> is the known cause.
+        /// </summary>
+        Corrupt,
+
+        /// <summary>
+        /// Many short, evenly-sized chapters: CD tracks that were never merged into the
+        /// author's chapters.
+        /// </summary>
+        Oversegmented,
+
+        /// <summary>The marks may be right but every title is a placeholder.</summary>
+        GenericTitles,
+
+        /// <summary>A long book with no chapter marks at all.</summary>
+        None
+    }
+
+    /// <summary>
+    /// What the container's own bytes say about chapters, read without ffprobe. Produced by
+    /// the infrastructure atom inspector and judged here, so the judgement can be tested
+    /// without a file.
+    /// </summary>
+    /// <param name="HasNeroAtom">A <c>moov/udta/chpl</c> atom exists.</param>
+    /// <param name="NeroAtomError">Why the atom does not parse; null when it does or when there is none.</param>
+    /// <param name="NeroChapterCount">Chapters the atom declares, when it parses.</param>
+    /// <param name="HasChapterTrack">A track is referenced through <c>tref/chap</c>: the QuickTime chapter track.</param>
+    public sealed record ChapterAtomState(
+        bool HasNeroAtom,
+        string? NeroAtomError,
+        int NeroChapterCount,
+        bool HasChapterTrack)
+    {
+        public bool NeroAtomValid => HasNeroAtom && NeroAtomError == null;
+    }
+
+    /// <summary>The verdict and the evidence it rests on.</summary>
+    public sealed record ChapterHealthReport(
+        ChapterHealth Health,
+        string Reason,
+        int ChapterCount,
+        TimeSpan MedianLength)
+    {
+        public static ChapterHealthReport Unknown { get; } =
+            new(ChapterHealth.Unknown, "Chapters have not been inspected.", 0, TimeSpan.Zero);
+    }
+}
