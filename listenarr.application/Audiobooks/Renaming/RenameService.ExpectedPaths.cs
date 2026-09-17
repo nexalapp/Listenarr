@@ -50,14 +50,20 @@ namespace Listenarr.Application.Audiobooks.Renaming
             return string.IsNullOrWhiteSpace(basePath) ? NormalizePath(relativePath) : NormalizePath(CombineWithOptionalBase(basePath, relativePath));
         }
 
-        private static Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile, int seriesPositionWidth)
+        private Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile, int seriesPositionWidth)
         {
             var combinedTitle = audiobook.Title;
-            var narrator = audiobook.Narrators != null ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n))) : string.Empty;
+            var authors = audiobook.Authors?.Where(n => !string.IsNullOrWhiteSpace(n)).ToList() ?? [];
+            // Author and narrator go through the naming service's renderers so a rename
+            // agrees with a tag write and a conversion about who a book files under and
+            // how many narrators a name carries.
+            var narrator = _fileNamingService.RenderNarrators(
+                audiobook.Narrators != null ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n))) : string.Empty);
 
             return new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
             {
-                { "Author", audiobook.Authors?.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? "Unknown Author" },
+                { "Author", _fileNamingService.RenderAuthor(audiobook.Series, authors) },
+                { "Authors", authors.Count > 0 ? string.Join(", ", authors) : "Unknown Author" },
                 { "Series", audiobook.Series ?? string.Empty },
                 { "Title", string.IsNullOrWhiteSpace(combinedTitle) ? "Unknown Title" : combinedTitle },
                 { "Subtitle", audiobook.Subtitle ?? string.Empty },

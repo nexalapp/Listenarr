@@ -59,6 +59,13 @@ namespace Listenarr.Application.Common
         /// Read from the settings snapshot because the renderers are synchronous; with no
         /// snapshot (tests, or before the first settings load) the defaults apply.
         /// </summary>
+        public string RenderAuthor(string? series, IEnumerable<string>? authors)
+        {
+            var primary = authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))?.Trim()
+                ?? "Unknown Author";
+            return FilingAuthor(series, primary);
+        }
+
         public string RenderNarrators(string? narrators) =>
             NarratorNameStyle.Render(
                 narrators,
