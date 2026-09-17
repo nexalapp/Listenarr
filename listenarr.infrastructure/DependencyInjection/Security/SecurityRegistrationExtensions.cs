@@ -10,6 +10,7 @@
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Web;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Security;
 
@@ -17,7 +18,7 @@ internal static class SecurityRegistrationExtensions
 {
     public static IServiceCollection AddConfigurationAndSecurityServices(this IServiceCollection services)
     {
-        services.AddSingleton<IApplicationSettingsSnapshot, ApplicationSettingsSnapshot>();
+        services.TryAddSingleton<IApplicationSettingsSnapshot, ApplicationSettingsSnapshot>();
         services.AddScoped<IConfigurationService, ConfigurationService>();
         services.AddDataProtection();
         services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();

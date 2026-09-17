@@ -21,6 +21,10 @@ internal static class PersistenceRegistrationExtensions
         this IServiceCollection services,
         Action<DbContextOptionsBuilder>? configureDb)
     {
+        // The interceptor reads the settings snapshot; registered here too so the
+        // persistence graph resolves on its own (the security module registers the same
+        // singleton for the configuration service).
+        services.TryAddSingleton<IApplicationSettingsSnapshot, ApplicationSettingsSnapshot>();
         services.AddSingleton<AuthorAliasSaveInterceptor>();
         if (configureDb != null)
         {
