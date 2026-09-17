@@ -531,7 +531,8 @@ const router = useRouter()
 // The last table this session loaded, kept across navigations so the page opens on it
 // at once and refreshes underneath. A module-level cache rather than a store: nothing
 // else reads it, and it is meant to be replaced whole, never patched.
-let lastTable: { columns: LibraryTagColumn[]; rows: LibraryTagRow[] } | null = null
+type CachedTable = { columns: LibraryTagColumn[]; rows: LibraryTagRow[] }
+let lastTable = null as CachedTable | null
 
 const rows = ref<LibraryTagRow[]>(lastTable?.rows ?? [])
 const columns = ref<LibraryTagColumn[]>(lastTable?.columns ?? [])
