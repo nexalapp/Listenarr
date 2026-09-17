@@ -35,7 +35,7 @@ wait_green() {
   while true; do
     local buckets
     buckets=$(gh pr checks "$pr" --json name,bucket 2>/dev/null \
-      | jq -r --arg g "$GATE" '[.[] | select(.name | test($g))] | if length < 3 then "pending" else .[].bucket end' \
+      | jq -r --arg g "$GATE" '[.[] | select(.name | test($g))] | (.[].bucket), (if length < 3 then "pending" else empty end)' \
       | sort -u | tr '\n' ' ')
     case "$buckets" in
       *fail*|*cancel*) echo "PR $pr: a gate check failed ($buckets)" >&2; gh pr checks "$pr" | grep -E "$GATE" | grep -v pass >&2; return 1 ;;
