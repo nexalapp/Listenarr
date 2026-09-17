@@ -52,5 +52,14 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <c>{Series}</c> token goes through this so folders and album tags agree.
         /// </summary>
         string RenderSeriesName(string? name);
+
+        /// <summary>
+        /// The author a book files under, for <c>{Author}</c>: its series' first author
+        /// when that setting is on and the series is known, otherwise the first of its own.
+        /// </summary>
+        string RenderAuthor(string? series, IEnumerable<string>? authors);
+
+        /// <summary>The narrator list as written into a name, capped per the setting.</summary>
+        string RenderNarrators(string? narrators);
     }
 }
