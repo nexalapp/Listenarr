@@ -27,7 +27,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
     /// the file's tags are whatever the release happened to ship with. Where the record
     /// is silent the file's own value stands in rather than being overwritten by nothing
     /// — a book Listenarr never matched still has a blurb, and losing it to a rewrite
-    /// would be a worse outcome than leaving the file alone.
+    /// would be a worse outcome than leaving the file alone. Series is the exception:
+    /// an empty series on the record means standalone, and the file does not get a vote.
     /// </para>
     /// <para>
     /// Shared by conversion and by tag writing so both resolve the same values. A
@@ -46,11 +47,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
         public static AudioMetadata Create(
             Audiobook audiobook,
             AudioMetadata? fromFile,
-            IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
+            IReadOnlyDictionary<string, int>? seriesPositionWidths = null,
+            IReadOnlyList<AudiobookSeriesMembership>? seriesMemberships = null)
         {
             ArgumentNullException.ThrowIfNull(audiobook);
 
             var metadata = audiobook.CreateBasicAudioMetadata(
+                seriesMemberships: seriesMemberships,
                 seriesPositionWidths: seriesPositionWidths);
 
             metadata.Description = FirstNonEmpty(audiobook.Description, fromFile?.Description);
@@ -68,22 +71,11 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 metadata.AlbumArtist = FirstNonEmpty(fromFile.AlbumArtist, fromFile.Artist) ?? string.Empty;
             }
 
-            if (metadata.AllSeries == null && !string.IsNullOrWhiteSpace(fromFile?.Series))
-            {
-                metadata.Series = fromFile.Series;
-                metadata.AllSeries =
-                [
-                    new SeriesReference(
-                        fromFile.Series!,
-                        FirstNonEmpty(
-                            fromFile.SeriesPositionRaw,
-                            fromFile.SeriesPosition?.ToString(CultureInfo.InvariantCulture)))
-                ];
-                metadata.SeriesPosition ??= fromFile.SeriesPosition;
-                metadata.SeriesPositionRaw = FirstNonEmpty(
-                    metadata.SeriesPositionRaw,
-                    fromFile.SeriesPositionRaw);
-            }
+            // Series is deliberately not taken from the file. A record with no series is a
+            // statement - the book is a standalone - not a blank to fill, and a file whose
+            // tags still carry a series the record dropped would otherwise keep it forever:
+            // the write would see nothing to change while the tag table showed a mismatch.
+            // The record decides; the table shows the disagreement until it is written.
 
             return metadata;
         }
@@ -95,11 +87,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
         public static AudioMetadata Create(
             Audiobook audiobook,
             IReadOnlyDictionary<string, string>? fileTags,
-            IReadOnlyDictionary<string, int>? seriesPositionWidths = null) =>
+            IReadOnlyDictionary<string, int>? seriesPositionWidths = null,
+            IReadOnlyList<AudiobookSeriesMembership>? seriesMemberships = null) =>
             Create(
                 audiobook,
                 fileTags == null ? null : FromTags(fileTags),
-                seriesPositionWidths);
+                seriesPositionWidths,
+                seriesMemberships);
 
         /// <summary>
         /// Read the handful of fields a fallback needs out of a file's tags, using the

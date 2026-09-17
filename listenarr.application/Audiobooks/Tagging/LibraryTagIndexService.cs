@@ -95,22 +95,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
             var probeAvailable = await tagWriter.IsAvailableAsync(cancellationToken);
             var filesRead = 0;
 
-            // The library query loads files but not memberships, and the album tag's
-            // bracketed form is built from every series a book belongs to — without them a
-            // cross-series book's expected album loses a bracket and every one of them
-            // reads as a mismatch. The metadata is built once per book rather than once per
-            // file: it does not vary between a book's parts, and rendering it again for
-            // each would re-run every pattern for nothing.
             var seriesPositionWidths =
                 await audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
-
-            var metadataByAudiobookId = audiobooks.ToDictionary(
-                audiobook => audiobook.Id,
-                audiobook => audiobook.CreateBasicAudioMetadata(
-                    memberships.TryGetValue(audiobook.Id, out var bookMemberships)
-                        ? bookMemberships
-                        : null,
-                    seriesPositionWidths));
 
             // Both resolved before the probes start, so the parallel row-building below
             // reads them without a lock.
@@ -148,9 +134,19 @@ namespace Listenarr.Application.Audiobooks.Tagging
                         Interlocked.Increment(ref filesRead);
                     }
 
+                    // Each row's metadata comes from the same builder a tag write uses -
+                    // the file's own tags standing in where the record is silent - so the
+                    // table never shows a mismatch the write would not fix, or hides one it
+                    // would.
                     rows[index] = BuildRow(
                         item.Book,
-                        metadataByAudiobookId[item.Book.Id],
+                        AudiobookTagMetadata.Create(
+                            item.Book,
+                            tags?.Tags,
+                            seriesPositionWidths,
+                            memberships.TryGetValue(item.Book.Id, out var bookMemberships)
+                                ? bookMemberships
+                                : null),
                         item.File,
                         item.FullPath,
                         mappings,
