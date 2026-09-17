@@ -346,8 +346,19 @@
                 proposal lines up under the value it would replace.
               -->
               <div v-else class="cell">
+                <!--
+                  While the row is busy the filename's padlock becomes a spinner: same
+                  16px slot, so nothing else moves. The lock cannot be toggled mid-write
+                  anyway.
+                -->
+                <span
+                  v-if="column.key === FILENAME_KEY && isBusy(row)"
+                  class="cell-lock cell-busy"
+                  :title="busyHint(row)"
+                  aria-hidden="true"
+                ></span>
                 <button
-                  v-if="isLockableColumn(column.key)"
+                  v-else-if="isLockableColumn(column.key)"
                   type="button"
                   class="cell-lock"
                   :class="{ 'cell-lock--on': isLocked(row, column.key) }"
@@ -1972,16 +1983,19 @@ onBeforeUnmount(() => {
   font-style: italic;
 }
 
-.tags-row--busy .tags-td--sticky::before {
+.cell-busy {
+  opacity: 1;
+  cursor: progress;
+}
+
+.cell-busy::before {
   content: '';
-  display: inline-block;
-  width: 0.55rem;
-  height: 0.55rem;
-  margin-right: 0.4rem;
+  display: block;
+  width: 10px;
+  height: 10px;
   border: 2px solid var(--brand-500, #4dabf7);
   border-right-color: transparent;
   border-radius: 50%;
-  vertical-align: middle;
   animation: tags-busy-spin 0.9s linear infinite;
 }
 
