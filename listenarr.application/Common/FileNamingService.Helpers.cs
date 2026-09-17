@@ -89,7 +89,12 @@ namespace Listenarr.Application.Common
             return new Dictionary<string, object>
             {
                 // Keep multi-word author names as a single folder name (e.g. "Jane Austen")
-                { "Author", Clean(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
+                // {Author} is the primary author alone: the folder a book is filed under and
+                // the album artist a player groups by. A list there gives every co-written
+                // book its own author folder and, in Plex, an author page nobody looks for.
+                // {Authors} is the whole credit, for tags that can carry a list.
+                { "Author", Clean(FirstNonEmpty(PrimaryAuthor(metadata), "Unknown Author")) },
+                { "Authors", Clean(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
                 // For Series we must not fallback to Album or Title - when Series is blank we want
                 // the variable to be empty so ApplyNamingPattern can remove any adjacent separators
                 { "Series", Clean(RenderSeriesName(metadata.Series)) },
@@ -312,6 +317,19 @@ namespace Listenarr.Application.Common
 
         // Heuristic: sometimes metadata.Artist can contain the title/series (noisy tags).
         // Prefer an AlbumArtist or alternate artist value if the primary artist looks like the title/series.
+        private static string PrimaryAuthor(AudioMetadata metadata)
+        {
+            if (metadata.Authors is { Count: > 0 })
+            {
+                return metadata.PrimaryAuthor;
+            }
+
+            // No list, only a joined string: the first name in it.
+            var chosen = ChooseAuthor(metadata);
+            var comma = chosen.IndexOf(", ", StringComparison.Ordinal);
+            return comma > 0 ? chosen[..comma] : chosen;
+        }
+
         private static string ChooseAuthor(AudioMetadata metadata)
         {
             var primary = NonNarratorAuthorCandidate(metadata.Artist, metadata.Narrator);

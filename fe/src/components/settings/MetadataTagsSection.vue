@@ -133,7 +133,8 @@ const error = ref<string | null>(null)
 const tokens = [
   { name: 'Title', description: "The book's title" },
   { name: 'Subtitle', description: "The book's subtitle" },
-  { name: 'Author', description: 'Author name' },
+  { name: 'Author', description: 'The primary (first) author alone' },
+  { name: 'Authors', description: 'Every credited author, comma-separated' },
   { name: 'Narrator', description: 'Narrator name' },
   { name: 'Series', description: 'Primary series name' },
   { name: 'SeriesNumber', description: 'Position in the primary series, exactly as given' },

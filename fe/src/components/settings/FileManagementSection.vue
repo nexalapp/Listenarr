@@ -259,7 +259,8 @@
           <div v-if="activePatternType === 'folder'" class="pattern-help">
             <p><strong>Available Variables:</strong></p>
             <ul>
-              <li><code>{Author}</code> - Author name</li>
+              <li><code>{Author}</code> - Primary (first) author</li>
+              <li><code>{Authors}</code> - Every credited author</li>
               <li><code>{Narrator}</code> - Narrator name(s)</li>
               <li><code>{Series}</code> - Series name</li>
               <li><code>{Title}</code> - Book title</li>
@@ -282,7 +283,8 @@
           <div v-else-if="activePatternType === 'file'" class="pattern-help">
             <p><strong>Available Variables:</strong></p>
             <ul>
-              <li><code>{Author}</code> - Author name</li>
+              <li><code>{Author}</code> - Primary (first) author</li>
+              <li><code>{Authors}</code> - Every credited author</li>
               <li><code>{Narrator}</code> - Narrator name(s)</li>
               <li><code>{Series}</code> - Series name</li>
               <li><code>{Title}</code> - Book title</li>
