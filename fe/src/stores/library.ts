@@ -298,8 +298,13 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  function selectAll() {
-    audiobooks.value.forEach((book) => selectedIds.value.add(book.id))
+  /**
+   * Select every book, or only the given ones. The books view passes what its filter
+   * shows: "select all" over a filtered list means all of *those*, and a bulk edit that
+   * quietly reached the hidden ones is exactly what the filter was there to prevent.
+   */
+  function selectAll(ids?: Iterable<number>) {
+    for (const id of ids ?? audiobooks.value.map((book) => book.id)) selectedIds.value.add(id)
   }
 
   function clearSelection() {

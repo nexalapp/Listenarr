@@ -72,7 +72,7 @@
         <button
           v-if="audiobooks.length > 0 && selectedCount === 0"
           class="toolbar-btn"
-          @click="libraryStore.selectAll()"
+          @click="libraryStore.selectAll(filteredAndSortedAudiobooks.map((book) => book.id))"
         >
           <PhCheckSquare />
           Select All
