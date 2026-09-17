@@ -64,6 +64,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260916002933_AddSuggestionDismissals";
     private const string LibraryLanguagesMigrationId =
         "20260916010741_AddLibraryLanguages";
+    private const string SeriesNameDropWordsMigrationId =
+        "20260917005435_AddSeriesNameDropWords";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -200,7 +202,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 TagJobSelectedFileIdsMigrationId,
                 LibraryCustomFiltersMigrationId,
                 SuggestionDismissalsMigrationId,
-                LibraryLanguagesMigrationId
+                LibraryLanguagesMigrationId,
+                SeriesNameDropWordsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

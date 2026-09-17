@@ -89,7 +89,38 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
 
             var value = CreateService().RenderTagValue("{SeriesBrackets} {Title}", book);
 
-            Assert.Equal("[Enderverse 07.5][Ender's Saga 1.1] A War Of Gifts", value);
+            // "Saga" is one of the default drop words, so the second bracket loses it.
+            Assert.Equal("[Enderverse 07.5][Ender's 1.1] A War Of Gifts", value);
+        }
+
+        [Fact]
+        public void SeriesName_DropsTheConfiguredTrailingWords_InEveryTokenThatCarriesIt()
+        {
+            // Audible calls it "Space Odyssey Series"; the library does not want a
+            // folder or an album that says "Series". Both tokens agree.
+            var service = CreateService();
+            var book = Book("2010: Odyssey Two", "Space Odyssey Series", "2");
+
+            Assert.Equal("[Space Odyssey 2] 2010: Odyssey Two", service.RenderTagValue("{SeriesBrackets} {Title}", book));
+            Assert.Equal("Space Odyssey 2 - 2010: Odyssey Two", service.RenderTagValue("{Series} {SeriesNumber} - {Title}", book));
+        }
+
+        [Fact]
+        public void SeriesName_FollowsTheListInTheSettingsSnapshot()
+        {
+            // The words are a setting, not a rule baked in: an operator who wants
+            // "Saga" kept takes it off the list, and the renderer follows.
+            var snapshot = new ApplicationSettingsSnapshot();
+            snapshot.Update(new ApplicationSettings { SeriesNameDropWordsJson = """["Trilogy"]""" });
+            var service = new FileNamingService(
+                new Mock<IConfigurationService>().Object,
+                new Mock<ILogger<FileNamingService>>().Object,
+                settingsSnapshot: snapshot);
+
+            Assert.Equal("[Commonwealth Saga 1] Pandora's Star",
+                service.RenderTagValue("{SeriesBrackets} {Title}", Book("Pandora's Star", "Commonwealth Saga", "1")));
+            Assert.Equal("[Bridge 1] Virtual Light",
+                service.RenderTagValue("{SeriesBrackets} {Title}", Book("Virtual Light", "Bridge Trilogy", "1")));
         }
 
         [Fact]

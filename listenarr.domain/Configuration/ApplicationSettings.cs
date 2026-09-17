@@ -285,5 +285,12 @@ namespace Listenarr.Domain.Configuration
         /// language filter at all.
         /// </summary>
         public string LibraryLanguagesJson { get; set; } = "[]";
+
+        /// <summary>
+        /// Words dropped from the end of a series name when it is written into a path
+        /// or a tag ("Series", "Trilogy", …), as a JSON array. See
+        /// <see cref="SeriesNameStyle"/>. The stored series name is never changed.
+        /// </summary>
+        public string SeriesNameDropWordsJson { get; set; } = SeriesNameStyle.DefaultDropWordsJson;
     }
 }

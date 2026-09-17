@@ -17,6 +17,7 @@ internal static class SecurityRegistrationExtensions
 {
     public static IServiceCollection AddConfigurationAndSecurityServices(this IServiceCollection services)
     {
+        services.AddSingleton<IApplicationSettingsSnapshot, ApplicationSettingsSnapshot>();
         services.AddScoped<IConfigurationService, ConfigurationService>();
         services.AddDataProtection();
         services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();

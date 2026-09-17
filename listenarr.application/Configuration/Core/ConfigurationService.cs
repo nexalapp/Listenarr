@@ -31,7 +31,8 @@ namespace Listenarr.Application.Configuration.Core
         IUserService userService,
         IStartupConfigService startupConfigService,
         IRootFolderRepository rootFolderRepository,
-        ISecretProtector secretProtector) : IConfigurationService
+        ISecretProtector secretProtector,
+        IApplicationSettingsSnapshot? settingsSnapshot = null) : IConfigurationService
     {
         private static readonly SemaphoreSlim ApplicationSettingsInitializationLock = new(1, 1);
 
@@ -52,7 +53,9 @@ namespace Listenarr.Application.Configuration.Core
                     }
 
                     ApplyRuntimeDefaults(settings);
-                    return await EnsureOutputPathAsync(settings);
+                    var loaded = await EnsureOutputPathAsync(settings);
+                    settingsSnapshot?.Update(loaded);
+                    return loaded;
                 }
                 finally
                 {
@@ -209,6 +212,7 @@ namespace Listenarr.Application.Configuration.Core
                 }
 
                 await settingsRepository.SaveAsync(settings);
+                settingsSnapshot?.Update(settings);
 
                 try
                 {
@@ -311,6 +315,7 @@ namespace Listenarr.Application.Configuration.Core
                 }
 
                 await settingsRepository.SaveAsync(existing);
+                settingsSnapshot?.Update(existing);
                 return await GetProwlarrImportSettingsAsync();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

@@ -45,5 +45,12 @@ namespace Listenarr.Application.Downloads.Contracts
         /// string when the pattern holds tokens and every one of them resolved empty.
         /// </remarks>
         string RenderTagValue(string pattern, AudioMetadata metadata);
+
+        /// <summary>
+        /// A series name as it is written into a path or a tag: with the configured
+        /// trailing words ("Series", "Trilogy", …) dropped. Every builder of a
+        /// <c>{Series}</c> token goes through this so folders and album tags agree.
+        /// </summary>
+        string RenderSeriesName(string? name);
     }
 }
