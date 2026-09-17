@@ -154,11 +154,11 @@
         <button
           type="button"
           class="toolbar-btn"
-          :disabled="loading"
+          :disabled="loading || refreshing"
           title="Re-read every file's tags from disk"
           @click="load(true)"
         >
-          <PhArrowsClockwise :size="16" :class="{ 'ph-spin': loading }" />
+          <PhArrowsClockwise :size="16" :class="{ 'ph-spin': refreshing }" />
           Re-read
         </button>
       </div>
@@ -173,7 +173,7 @@
       </p>
     </div>
 
-    <div v-else-if="error" class="tags-state tags-state--error">
+    <div v-else-if="error && rows.length === 0" class="tags-state tags-state--error">
       <PhWarningCircle class="state-icon" />
       <p>{{ error }}</p>
       <button type="button" class="btn btn-primary" @click="load(false)">Try again</button>
@@ -528,9 +528,17 @@ const APPLY_SCOPE_KEY = 'listenarr.tagsView.applyScope'
 
 const router = useRouter()
 
-const rows = ref<LibraryTagRow[]>([])
-const columns = ref<LibraryTagColumn[]>([])
-const loading = ref(true)
+// The last table this session loaded, kept across navigations so the page opens on it
+// at once and refreshes underneath. A module-level cache rather than a store: nothing
+// else reads it, and it is meant to be replaced whole, never patched.
+let lastTable: { columns: LibraryTagColumn[]; rows: LibraryTagRow[] } | null = null
+
+const rows = ref<LibraryTagRow[]>(lastTable?.rows ?? [])
+const columns = ref<LibraryTagColumn[]>(lastTable?.columns ?? [])
+// `loading` blanks the page and only applies when there is nothing to show yet;
+// `refreshing` spins the Re-read icon over a table that stays put.
+const loading = ref(lastTable === null)
+const refreshing = ref(false)
 const error = ref<string | null>(null)
 
 const search = ref('')
@@ -1305,7 +1313,8 @@ function endResize() {
 /* -- Loading ---------------------------------------------------------------- */
 
 async function load(refresh: boolean) {
-  loading.value = true
+  loading.value = rows.value.length === 0
+  refreshing.value = true
   error.value = null
 
   try {
@@ -1329,11 +1338,15 @@ async function load(refresh: boolean) {
     const known = new Set(table.columns.map((column) => column.tag))
     const kept = visibleTags.value.filter((tag) => known.has(tag))
     visibleTags.value = kept.length > 0 || columnsChosen.value ? kept : allColumns()
+    lastTable = { columns: columns.value, rows: rows.value }
   } catch (err) {
     logger.error('Failed to load the library tag table', err)
     error.value = err instanceof Error ? err.message : String(err)
+    // A refresh that fails over a table already on screen is a notice, not a blank page.
+    if (rows.value.length > 0) actionMessage.value = `Could not re-read the library: ${error.value}`
   } finally {
     loading.value = false
+    refreshing.value = false
     await nextTick()
     measureViewport()
   }
@@ -1439,6 +1452,11 @@ watch(showProposals, (next, previous) => {
     scrollTop.value = target
     if (scrollEl.value) scrollEl.value.scrollTop = target
   })
+})
+
+// Lock toggles and the like replace the row array; the cross-navigation copy follows it.
+watch(rows, (current) => {
+  if (lastTable) lastTable = { columns: columns.value, rows: current }
 })
 
 // Scrolling back to the top on a re-filter: the window is an index range, and leaving it
