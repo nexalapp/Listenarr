@@ -12,6 +12,8 @@
 # the version canary is about to write.
 #
 # Tag: deploy-<version>-<sha7>, where sha7 is the PR head (or the pushed commit).
+# A push to canary is a merge; its image is what deploy.sh uses when the merged
+# PR's head was behind canary, because then the PR image is not the merge result.
 # Never overwritten: a rebuild of the same commit at the same version is the same
 # image.
 
@@ -22,7 +24,7 @@ on:
     branches: [ canary ]
     types: [ opened, synchronize, reopened, labeled ]
   push:
-    branches: [ beta ]
+    branches: [ canary, beta ]
   workflow_dispatch:
 
 permissions:
@@ -51,17 +53,23 @@ jobs:
       - name: Resolve version and tag
         id: version
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           current=$(grep -o "<Version>[^<]*" "$API_PROJECT" | cut -d'>' -f2)
           IFS=. read -r major minor patch <<< "$current"
           bump=none
+          labels='[]'
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
-            if echo "$labels" | grep -q '"major"'; then bump=major
-            elif echo "$labels" | grep -q '"minor"'; then bump=minor
-            elif echo "$labels" | grep -q '"patch"'; then bump=patch
-            fi
+          elif [ "${{ github.ref }}" = "refs/heads/canary" ]; then
+            # A push to canary is a merged PR; canary.yml bumps by that PR's label.
+            labels=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" -q '[.[0].labels[].name]' 2>/dev/null || echo '[]')
+          fi
+          if echo "$labels" | grep -q '"major"'; then bump=major
+          elif echo "$labels" | grep -q '"minor"'; then bump=minor
+          elif echo "$labels" | grep -q '"patch"'; then bump=patch
           fi
           case "$bump" in
             major) version="$((major + 1)).0.0" ;;

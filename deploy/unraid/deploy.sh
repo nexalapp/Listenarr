@@ -45,26 +45,52 @@ wait_green() {
   done
 }
 
-image_tag() {
-  # The deploy-image run for this PR head names its tag in the step summary.
-  local pr=$1 sha
-  sha=$(gh pr view "$pr" --json headRefOid -q .headRefOid)
-  local run
-  run=$(gh run list --workflow deploy-image.yml --commit "$sha" --status success --limit 1 --json databaseId -q '.[0].databaseId')
-  [ -n "$run" ] || { echo "PR $pr: no successful deploy-image run for $sha" >&2; return 1; }
+# The tag of the deploy-image run for a commit, once that run has succeeded.
+image_tag_for() {
+  local sha=$1 run
+  while true; do
+    run=$(gh run list --workflow deploy-image.yml --commit "$sha" --limit 1 --json databaseId,status,conclusion -q '.[0] | "\(.databaseId) \(.status) \(.conclusion)"')
+    case "$run" in
+      *" completed success") break ;;
+      *" completed "*)        echo "deploy-image for $sha failed ($run)" >&2; return 1 ;;
+      *)                      sleep "$POLL" ;;
+    esac
+  done
   # The tag is printed by the run's version step.
-  gh run view "$run" --log 2>/dev/null | grep -oE "deploy-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}" | head -1
+  gh run view "${run%% *}" --log 2>/dev/null | grep -oE "deploy-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}" | head -1
 }
 
-last_tag=""
+# A PR's image is the merge result only when its head already contains canary's tip.
+# Otherwise the merge commit is what runs, and its own image (built on the push to
+# canary) is the one to deploy.
+head_is_current() {
+  local pr=$1 head
+  head=$(gh pr view "$pr" --json headRefOid -q .headRefOid)
+  git fetch -q origin canary "$head"
+  git merge-base --is-ancestor origin/canary "$head"
+}
+
 before=$(version)
+last_tag=""
 for pr in "$@"; do
   wait_green "$pr"
-  tag=$(image_tag "$pr")
+  head=$(gh pr view "$pr" --json headRefOid -q .headRefOid)
+  current=false; head_is_current "$pr" && current=true
   gh pr merge "$pr" --merge --delete-branch >/dev/null
-  echo "PR $pr: merged; image $tag"
-  last_tag=$tag
+  merge_sha=$(gh pr view "$pr" --json mergeCommit -q .mergeCommit.oid)
+  echo "PR $pr: merged as ${merge_sha:0:7} ($([ $current = true ] && echo "head was current" || echo "head was behind canary"))"
+  last_head=$head; last_current=$current; last_merge=$merge_sha
 done
+
+# Only the last merge's result needs an image. A PR whose head was already on
+# canary's tip has one from its PR run; otherwise the push to canary builds one.
+if [ "$last_current" = true ]; then
+  last_tag=$(image_tag_for "$last_head")
+else
+  echo "waiting for the merge commit's image"
+  last_tag=$(image_tag_for "$last_merge")
+fi
+echo "image $last_tag"
 
 [ -n "$last_tag" ] || exit 1
 image="ghcr.io/nexalapp/listenarr:$last_tag"
