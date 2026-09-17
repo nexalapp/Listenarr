@@ -79,10 +79,18 @@ namespace Listenarr.Infrastructure.Persistence.Interceptors
                     continue;
                 }
 
-                var applied = AuthorAliases.Apply(entry.Entity.Authors, aliases);
-                if (!ReferenceEquals(applied, entry.Entity.Authors))
+                var authors = AuthorAliases.Apply(entry.Entity.Authors, aliases);
+                if (!ReferenceEquals(authors, entry.Entity.Authors))
                 {
-                    entry.Entity.Authors = applied;
+                    entry.Entity.Authors = authors;
+                }
+
+                // The same list covers narrators: a reader credited two ways splits a
+                // series across two narrator names just as an author would.
+                var narrators = AuthorAliases.Apply(entry.Entity.Narrators, aliases);
+                if (!ReferenceEquals(narrators, entry.Entity.Narrators))
+                {
+                    entry.Entity.Narrators = narrators;
                 }
             }
         }

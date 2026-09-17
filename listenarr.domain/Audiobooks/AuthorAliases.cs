@@ -26,8 +26,8 @@ namespace Listenarr.Domain.Audiobooks
         [property: JsonPropertyName("canonical")] string Canonical);
 
     /// <summary>
-    /// The author-name aliases setting: spellings a provider may send, and the one the
-    /// library keeps.
+    /// The name aliases setting: spellings a provider may send for a person, and the
+    /// one the library keeps. Applied to authors and narrators alike.
     ///
     /// Audible itself is inconsistent - "B. V. Larson" on one title and "B.V. Larson" on
     /// the next - and a library groups by the exact string, so one author becomes two

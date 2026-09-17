@@ -42,13 +42,15 @@ namespace Listenarr.Application.Audiobooks.Authors
             foreach (var audiobook in audiobooks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var applied = AuthorAliases.Apply(audiobook.Authors, aliases);
-                if (ReferenceEquals(applied, audiobook.Authors))
+                var authors = AuthorAliases.Apply(audiobook.Authors, aliases);
+                var narrators = AuthorAliases.Apply(audiobook.Narrators, aliases);
+                if (ReferenceEquals(authors, audiobook.Authors) && ReferenceEquals(narrators, audiobook.Narrators))
                 {
                     continue;
                 }
 
-                audiobook.Authors = applied;
+                audiobook.Authors = authors;
+                audiobook.Narrators = narrators;
                 await audiobookRepository.UpdateAsync(audiobook);
                 changed++;
             }
