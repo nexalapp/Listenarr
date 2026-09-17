@@ -48,6 +48,67 @@ namespace Listenarr.Application.Audiobooks.Tagging
         private readonly ConcurrentDictionary<string, Entry> _entries =
             new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Entries set since the last <see cref="TakePending"/>, waiting to be persisted.
+        /// Kept apart from the entries themselves so a load can write back only what it
+        /// probed rather than the whole table.
+        /// </summary>
+        private readonly ConcurrentDictionary<string, Entry> _pending =
+            new(StringComparer.Ordinal);
+
+        private readonly SemaphoreSlim _loadGate = new(1, 1);
+        private volatile bool _loaded;
+
+        /// <summary>
+        /// Fill the cache from its durable store once per process. Later calls return at
+        /// once; a store that throws leaves the cache empty and the table probing, which
+        /// is slower but never wrong.
+        /// </summary>
+        public async Task EnsureLoadedAsync(
+            ILibraryTagCacheStore store,
+            CancellationToken cancellationToken = default)
+        {
+            if (_loaded)
+            {
+                return;
+            }
+
+            await _loadGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (_loaded)
+                {
+                    return;
+                }
+
+                foreach (var record in await store.LoadAsync(cancellationToken))
+                {
+                    _entries.TryAdd(record.Path, new Entry(record.Length, record.LastWriteUtc, record.Tags));
+                }
+
+                _loaded = true;
+            }
+            finally
+            {
+                _loadGate.Release();
+            }
+        }
+
+        /// <summary>Everything set since the last call, for the store; empties the pending set.</summary>
+        public IReadOnlyList<LibraryTagCacheRecord> TakePending()
+        {
+            var records = new List<LibraryTagCacheRecord>();
+            foreach (var path in _pending.Keys.ToArray())
+            {
+                if (_pending.TryRemove(path, out var entry))
+                {
+                    records.Add(new LibraryTagCacheRecord(path, entry.Length, entry.LastWriteUtc, entry.Tags));
+                }
+            }
+
+            return records;
+        }
+
         /// <summary>The cached tags for a file at exactly this size and modification time.</summary>
         public AudiobookFileTags? TryGet(string path, long length, DateTime lastWriteUtc) =>
             _entries.TryGetValue(path, out var entry)
@@ -66,9 +127,15 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 _entries.Clear();
             }
 
-            _entries[path] = new Entry(length, lastWriteUtc, tags);
+            var entry = new Entry(length, lastWriteUtc, tags);
+            _entries[path] = entry;
+            _pending[path] = entry;
         }
 
-        public void Clear() => _entries.Clear();
+        public void Clear()
+        {
+            _entries.Clear();
+            _pending.Clear();
+        }
     }
 }
