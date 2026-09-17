@@ -289,7 +289,10 @@
               'tags-row--striped': (firstVisibleIndex + offset) % 2 === 1,
               'tags-row--unwritable': !row.writable,
               'tags-row--error': !!row.error,
+              'tags-row--busy': isBusy(row),
             }"
+            :aria-busy="isBusy(row) || undefined"
+            :title="isBusy(row) ? busyHint(row) : undefined"
             tabindex="0"
             @click="openBook(row)"
             @keydown.enter="openBook(row)"
@@ -312,6 +315,7 @@
                 type="checkbox"
                 class="row-select"
                 :checked="selectedFiles.has(row.fileId)"
+                :disabled="isBusy(row)"
                 :aria-label="`Select ${row.fileName}`"
                 @click.stop="tickFrom($event, row)"
                 @keydown.stop
@@ -473,6 +477,7 @@ import {
 } from '@phosphor-icons/vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import { apiService } from '@/services/api'
+import { useTagJobsStore } from '@/stores/tagJobs'
 import { logger } from '@/utils/logger'
 import type { LibraryTagColumn, LibraryTagRow, RenameOperation } from '@/types'
 
@@ -541,6 +546,82 @@ const columns = ref<LibraryTagColumn[]>(lastTable?.columns ?? [])
 const loading = ref(lastTable === null)
 const refreshing = ref(false)
 const error = ref<string | null>(null)
+
+/* -- Rows with work in flight ------------------------------------------------- */
+
+const tagJobsStore = useTagJobsStore()
+
+// Books being organized by this page, held while the request runs. Tag writes are
+// tracked by the store instead: they are queued jobs whose progress arrives over
+// SignalR, so a row stays busy until the job ends whichever page queued it.
+const organizingBookIds = ref<Set<number>>(new Set())
+
+const busyBookIds = computed(() => {
+  const ids = new Set(organizingBookIds.value)
+  for (const job of tagJobsStore.activeJobs) ids.add(job.audiobookId)
+  return ids
+})
+
+const isBusy = (row: LibraryTagRow) => busyBookIds.value.has(row.audiobookId)
+
+function busyHint(row: LibraryTagRow) {
+  if (organizingBookIds.value.has(row.audiobookId)) return 'Organizing…'
+  const job = tagJobsStore.getJobForAudiobook(row.audiobookId)
+  return job?.status === 'Running' ? 'Writing tags…' : 'Queued for tag writing…'
+}
+
+/**
+ * Replace one book's rows with what the server says now, leaving every other row —
+ * and the operator's scroll, selection and sort — exactly where they were. Rows keep
+ * their positions; a book whose files changed count is trimmed or grown in place.
+ */
+async function refreshBooks(audiobookIds: number[]) {
+  if (audiobookIds.length === 0) return
+  try {
+    const table = await apiService.getLibraryTags(false, audiobookIds)
+    const fresh = new Map<number, LibraryTagRow[]>()
+    for (const row of table.rows.map(normalizeRow)) {
+      const list = fresh.get(row.audiobookId)
+      if (list) list.push(row)
+      else fresh.set(row.audiobookId, [row])
+    }
+
+    const next: LibraryTagRow[] = []
+    const placed = new Set<number>()
+    for (const row of rows.value) {
+      const replacement = fresh.get(row.audiobookId)
+      if (!replacement) {
+        next.push(row)
+      } else if (!placed.has(row.audiobookId)) {
+        placed.add(row.audiobookId)
+        next.push(...replacement)
+      }
+    }
+    rows.value = next
+
+    // A file the write replaced has a new row; the tick was on the old one.
+    const known = new Set(rows.value.map((row) => row.fileId))
+    if ([...selectedFiles.value].some((fileId) => !known.has(fileId))) {
+      selectedFiles.value = new Set([...selectedFiles.value].filter((fileId) => known.has(fileId)))
+    }
+  } catch (err) {
+    logger.warn('Could not refresh rows after a job finished', err)
+  }
+}
+
+// When a tag job leaves the active set, its book's rows are re-read. Tracked by id
+// rather than by status so a job that is dismissed, not just completed, counts too.
+let previouslyActive = new Set<number>()
+watch(
+  () => tagJobsStore.activeJobs.map((job) => job.audiobookId),
+  (activeIds) => {
+    const current = new Set(activeIds)
+    const finished = [...previouslyActive].filter((id) => !current.has(id))
+    previouslyActive = current
+    if (finished.length > 0 && rows.value.length > 0) void refreshBooks(finished)
+  },
+  { immediate: true },
+)
 
 const search = ref('')
 const onlyMismatched = ref(false)
@@ -986,6 +1067,8 @@ async function applySelection() {
 async function organizeSelected(): Promise<boolean> {
   working.value = true
   actionMessage.value = 'Organizing…'
+  const bookIds = [...selectedBookIds.value]
+  organizingBookIds.value = new Set(bookIds)
 
   try {
     const previews = await apiService.previewRename([...selectedBookIds.value])
@@ -1013,7 +1096,7 @@ async function organizeSelected(): Promise<boolean> {
 
     const results = await apiService.executeRename(operations)
     const failed = results.filter((result) => !result.success)
-    await load(false)
+    await refreshBooks(bookIds)
 
     if (failed.length > 0) {
       actionMessage.value = `Organized ${results.length - failed.length} of ${results.length} book(s). ${failed.length} failed: ${failed[0].error ?? 'unknown error'}`
@@ -1029,6 +1112,7 @@ async function organizeSelected(): Promise<boolean> {
     organizeOpen.value = true
     return false
   } finally {
+    organizingBookIds.value = new Set()
     working.value = false
   }
 }
@@ -1168,6 +1252,8 @@ function selectRange(fromFileId: number, toFileId: number, selecting: boolean) {
 }
 
 function toggleFile(fileId: number) {
+  const row = rows.value.find((candidate) => candidate.fileId === fileId)
+  if (row && isBusy(row)) return
   const next = new Set(selectedFiles.value)
   if (!next.delete(fileId)) {
     next.add(fileId)
@@ -1297,6 +1383,10 @@ async function writeSelected() {
     }
   }
 
+  // The rows go busy from the store's job list; pull it now rather than waiting for the
+  // first SignalR update, so the tick and the dimming land together.
+  await tagJobsStore.refresh()
+
   working.value = false
   actionMessage.value = refusals.length
     ? `Queued ${queuedFiles} of ${selectedFiles.value.size} file(s). ${refusals.length} refused: ${refusals[0]}`
@@ -1367,6 +1457,16 @@ function endResize() {
 
 /* -- Loading ---------------------------------------------------------------- */
 
+// A server that predates locks — a rolled-back image, say — answers without these
+// fields, and every lock check in the table runs per cell.
+const normalizeRow = (row: LibraryTagRow): LibraryTagRow => ({
+  ...row,
+  lockedTags: row.lockedTags ?? [],
+  pathMismatched: row.pathMismatched ?? false,
+  pathLocked: row.pathLocked ?? false,
+  fileNameMismatched: row.fileNameMismatched ?? false,
+})
+
 async function load(refresh: boolean) {
   loading.value = rows.value.length === 0
   refreshing.value = true
@@ -1379,13 +1479,7 @@ async function load(refresh: boolean) {
     // Normalised once here rather than guarded at every use: a server that predates
     // locks — a rolled-back image, say — answers without the field, and every lock check
     // in the table runs per cell.
-    rows.value = table.rows.map((row) => ({
-      ...row,
-      lockedTags: row.lockedTags ?? [],
-      pathMismatched: row.pathMismatched ?? false,
-      pathLocked: row.pathLocked ?? false,
-      fileNameMismatched: row.fileNameMismatched ?? false,
-    }))
+    rows.value = table.rows.map(normalizeRow)
 
     // A stored column list can name a tag the catalog no longer has. Dropping it here
     // beats rendering a column of permanent blanks. With nothing remembered — or nothing
@@ -1408,6 +1502,7 @@ async function load(refresh: boolean) {
 }
 
 function openBook(row: LibraryTagRow) {
+  if (isBusy(row)) return
   router.push({ name: 'audiobook-detail', params: { id: row.audiobookId }, query: { tab: 'tags' } })
 }
 
@@ -1835,6 +1930,35 @@ onBeforeUnmount(() => {
 
 .tags-row--striped .tags-td {
   background: var(--bg-secondary);
+}
+
+/* Work in flight: the row reads as pending and takes no clicks until the job ends. */
+.tags-row--busy {
+  cursor: progress;
+}
+
+.tags-row--busy .tags-td {
+  color: var(--text-muted, #6c757d);
+  font-style: italic;
+}
+
+.tags-row--busy .tags-td--sticky::before {
+  content: '';
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.4rem;
+  border: 2px solid var(--brand-500, #4dabf7);
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: middle;
+  animation: tags-busy-spin 0.9s linear infinite;
+}
+
+@keyframes tags-busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tags-row:hover .tags-td {

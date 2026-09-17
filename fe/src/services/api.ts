@@ -1648,8 +1648,12 @@ class ApiService {
    * `refresh` re-probes regardless, for the case where something outside Listenarr
    * rewrote tags in place without disturbing either.
    */
-  async getLibraryTags(refresh = false): Promise<LibraryTagTable> {
-    return this.request<LibraryTagTable>(`/tagging/library${refresh ? '?refresh=true' : ''}`)
+  async getLibraryTags(refresh = false, audiobookIds?: number[]): Promise<LibraryTagTable> {
+    const params = new URLSearchParams()
+    if (refresh) params.set('refresh', 'true')
+    for (const id of audiobookIds ?? []) params.append('audiobookIds', String(id))
+    const query = params.toString()
+    return this.request<LibraryTagTable>(`/tagging/library${query ? `?${query}` : ''}`)
   }
 
   /**

@@ -69,7 +69,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
 
         public async Task<LibraryTagIndex> BuildAsync(
             bool refresh = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            IReadOnlyCollection<int>? audiobookIds = null)
         {
             if (refresh)
             {
@@ -85,6 +86,11 @@ namespace Listenarr.Application.Audiobooks.Tagging
             }
 
             var audiobooks = await audiobookRepository.GetLibraryAsync();
+            if (audiobookIds is { Count: > 0 })
+            {
+                var wanted = audiobookIds.ToHashSet();
+                audiobooks = [.. audiobooks.Where(audiobook => wanted.Contains(audiobook.Id))];
+            }
             var memberships =
                 await audiobookRepository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync(
                     cancellationToken);
