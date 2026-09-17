@@ -625,6 +625,8 @@ export interface ApplicationSettings {
   seriesNameDropWordsJson?: string
   authorAliasesJson?: string
   maxNarratorsInNames?: number
+  fileSeriesUnderFirstAuthor?: boolean
+  seriesAuthorOverridesJson?: string
   folderNamingPattern: string
   fileNamingPattern: string
   multiFileNamingPattern: string

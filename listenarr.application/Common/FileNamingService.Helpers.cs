@@ -93,7 +93,7 @@ namespace Listenarr.Application.Common
                 // the album artist a player groups by. A list there gives every co-written
                 // book its own author folder and, in Plex, an author page nobody looks for.
                 // {Authors} is the whole credit, for tags that can carry a list.
-                { "Author", Clean(FirstNonEmpty(PrimaryAuthor(metadata), "Unknown Author")) },
+                { "Author", Clean(FirstNonEmpty(FilingAuthor(metadata), "Unknown Author")) },
                 { "Authors", Clean(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
                 // For Series we must not fallback to Album or Title - when Series is blank we want
                 // the variable to be empty so ApplyNamingPattern can remove any adjacent separators
@@ -317,6 +317,25 @@ namespace Listenarr.Application.Common
 
         // Heuristic: sometimes metadata.Artist can contain the title/series (noisy tags).
         // Prefer an AlbumArtist or alternate artist value if the primary artist looks like the title/series.
+        /// <summary>
+        /// The author a book files under: its series' first author when the setting says
+        /// so and the series is known, otherwise its own primary author.
+        /// </summary>
+        private string FilingAuthor(AudioMetadata metadata)
+        {
+            var bySeries = _settingsSnapshot?.Current?.FileSeriesUnderFirstAuthor ?? true;
+            if (bySeries && _seriesAuthors != null && !string.IsNullOrWhiteSpace(metadata.Series))
+            {
+                var seriesAuthor = _seriesAuthors.AuthorFor(metadata.Series);
+                if (!string.IsNullOrWhiteSpace(seriesAuthor))
+                {
+                    return seriesAuthor;
+                }
+            }
+
+            return PrimaryAuthor(metadata);
+        }
+
         private static string PrimaryAuthor(AudioMetadata metadata)
         {
             if (metadata.Authors is { Count: > 0 })

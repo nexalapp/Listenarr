@@ -304,5 +304,18 @@ namespace Listenarr.Domain.Configuration
         /// in "et al."; 0 names every narrator. See <see cref="NarratorNameStyle"/>.
         /// </summary>
         public int MaxNarratorsInNames { get; set; }
+
+        /// <summary>
+        /// File every book of a series under the author of its first book, so a series
+        /// that changed hands stays in one folder and on one author page. The book's own
+        /// credit still goes into <c>{Authors}</c>. See <see cref="SeriesAuthorRule"/>.
+        /// </summary>
+        public bool FileSeriesUnderFirstAuthor { get; set; } = true;
+
+        /// <summary>
+        /// Series whose filing author the operator has set by hand, as a JSON list of
+        /// <c>{"series","author"}</c>, for the cases the rule gets wrong.
+        /// </summary>
+        public string SeriesAuthorOverridesJson { get; set; } = SeriesAuthorRule.EmptyOverridesJson;
     }
 }

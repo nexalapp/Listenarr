@@ -106,6 +106,57 @@
       </FormRow>
 
       <FormRow
+        label="Series Author"
+        help="File every book of a series under the author of its first book — the earliest published one in your library — so a series that changed hands stays in one folder and on one author page, and the next book is where a reader looks for it. {Author} follows this; the book's own credit still goes wherever {Authors} is written. Off, {Author} is each book's own first author."
+      >
+        <label class="tags-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.fileSeriesUnderFirstAuthor ?? true"
+            @change="
+              (e) =>
+                updateField('fileSeriesUnderFirstAuthor', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span>File a series under its first book's author</span>
+        </label>
+        <div class="alias-list">
+          <div v-for="(item, index) in seriesAuthorOverrides" :key="index" class="alias-row">
+            <input
+              v-model="item.series"
+              type="text"
+              placeholder="Series (e.g. Jack Daniels)"
+              @change="commitSeriesAuthorOverrides"
+            />
+            <span class="alias-arrow">→</span>
+            <input
+              v-model="item.author"
+              type="text"
+              placeholder="Author to file under (e.g. J. A. Konrath)"
+              @change="commitSeriesAuthorOverrides"
+            />
+            <button
+              type="button"
+              class="alias-remove"
+              title="Remove this override"
+              @click="removeSeriesAuthorOverride(index)"
+            >
+              <PhX :size="14" />
+            </button>
+          </div>
+          <div class="alias-actions">
+            <button type="button" class="btn btn-secondary btn-sm" @click="addSeriesAuthorOverride">
+              <PhPlus :size="14" /> Add series override
+            </button>
+            <span class="alias-note"
+              >For a series the rule gets wrong — an anthology, or a first book credited to a
+              co-writer.</span
+            >
+          </div>
+        </div>
+      </FormRow>
+
+      <FormRow
         label="Narrators in Names"
         help="How many narrators a folder, file or tag names before the list is cut and ends in 'et al.'. 0 names every narrator. A full-cast production can credit fifteen readers, and a name that long cannot exist on disk — whatever this says, a name is always cut to what the filesystem allows."
       >
@@ -325,7 +376,7 @@
 <script setup lang="ts">
 import type { ApplicationSettings } from '@/types'
 import { ref, computed, watch } from 'vue'
-import { PhFolder, PhQuestion, PhX, PhWarning } from '@phosphor-icons/vue'
+import { PhFolder, PhQuestion, PhX, PhWarning, PhPlus } from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import FolderBrowserModal from '@/components/feedback/FolderBrowserModal.vue'
 
@@ -393,6 +444,61 @@ function renderSeriesPreview(name: string): string {
     current = current.slice(0, at).trimEnd()
   }
   return current || name
+}
+
+interface SeriesAuthorOverrideRow {
+  series: string
+  author: string
+}
+
+function parseSeriesAuthorOverrides(json: string | undefined): SeriesAuthorOverrideRow[] {
+  if (!json) return []
+  try {
+    const parsed = JSON.parse(json)
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((entry) => entry && typeof entry.series === 'string')
+          .map((entry) => ({ series: entry.series ?? '', author: entry.author ?? '' }))
+      : []
+  } catch {
+    return []
+  }
+}
+
+function serializeSeriesAuthorOverrides(rows: SeriesAuthorOverrideRow[]): string {
+  return JSON.stringify(
+    rows
+      .map((row) => ({ series: row.series.trim(), author: row.author.trim() }))
+      .filter((row) => row.series && row.author),
+  )
+}
+
+const seriesAuthorOverrides = ref<SeriesAuthorOverrideRow[]>(
+  parseSeriesAuthorOverrides(props.settings.seriesAuthorOverridesJson),
+)
+watch(
+  () => props.settings.seriesAuthorOverridesJson,
+  (value) => {
+    if (value !== serializeSeriesAuthorOverrides(seriesAuthorOverrides.value)) {
+      seriesAuthorOverrides.value = parseSeriesAuthorOverrides(value)
+    }
+  },
+)
+
+function commitSeriesAuthorOverrides() {
+  updateField(
+    'seriesAuthorOverridesJson',
+    serializeSeriesAuthorOverrides(seriesAuthorOverrides.value),
+  )
+}
+
+function addSeriesAuthorOverride() {
+  seriesAuthorOverrides.value.push({ series: '', author: '' })
+}
+
+function removeSeriesAuthorOverride(index: number) {
+  seriesAuthorOverrides.value.splice(index, 1)
+  commitSeriesAuthorOverrides()
 }
 
 // Mirrors NarratorNameStyle.Render on the server.
@@ -543,6 +649,71 @@ function closeModal() {
 </script>
 
 <style scoped>
+.alias-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.alias-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alias-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.alias-arrow {
+  color: var(--text-secondary, #adb5bd);
+}
+
+.alias-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border-color, #343a40);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #adb5bd);
+  cursor: pointer;
+}
+
+.alias-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.alias-note {
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #adb5bd);
+}
+
+.tags-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.tags-toggle input {
+  width: 1rem;
+  height: 1rem;
+}
+
 .series-preview code {
   display: block;
 }

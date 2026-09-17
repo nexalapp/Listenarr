@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Series;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
@@ -29,7 +30,9 @@ namespace Listenarr.Infrastructure.Persistence.Interceptors
     /// snapshot because a save is synchronous with respect to configuration and this
     /// must not open a second context to read it.
     /// </summary>
-    public sealed class AuthorAliasSaveInterceptor(IApplicationSettingsSnapshot settings) : SaveChangesInterceptor
+    public sealed class AuthorAliasSaveInterceptor(
+        IApplicationSettingsSnapshot settings,
+        ISeriesAuthorSnapshot? seriesAuthors = null) : SaveChangesInterceptor
     {
         public override InterceptionResult<int> SavingChanges(
             DbContextEventData eventData,
@@ -53,6 +56,14 @@ namespace Listenarr.Infrastructure.Persistence.Interceptors
             if (context == null)
             {
                 return;
+            }
+
+            // Any audiobook write can change who a series files under.
+            if (seriesAuthors != null
+                && context.ChangeTracker.Entries<Audiobook>().Any(entry =>
+                    entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                seriesAuthors.MarkStale();
             }
 
             var aliases = AuthorAliases.Parse(settings.Current?.AuthorAliasesJson);
