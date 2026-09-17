@@ -16,6 +16,7 @@ using System.Text.RegularExpressions;
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Search.Audible;
@@ -127,7 +128,9 @@ public class AsinCandidateCollector
                         {
                             Asin = null,
                             Source = "OpenLibrary",
-                            Title = book.Title,
+                            // Open Library sentence-cases its titles; raise them so the book
+                            // is not shelved as "Fortress of owls".
+                            Title = TitleCasing.ToTitleCase(book.Title),
                             Authors = book.AuthorName?.Where(a => !string.IsNullOrWhiteSpace(a)).ToList(),
                             Publisher = (book.Publisher?.Count > 1) ? "Multiple" : book.Publisher?.FirstOrDefault(),
                             PublishYear = book.FirstPublishYear?.ToString(),
