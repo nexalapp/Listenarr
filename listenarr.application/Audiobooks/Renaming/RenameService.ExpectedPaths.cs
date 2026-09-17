@@ -13,11 +13,11 @@ namespace Listenarr.Application.Audiobooks.Renaming
     /// </summary>
     public partial class RenameService
     {
-        private string BuildExpectedPath(Audiobook audiobook, PreviewFileEntry file, ApplicationSettings settings, string basePath, bool isCustomBasePath, bool isMultiFile, int seriesPositionWidth)
+        private string BuildExpectedPath(Audiobook audiobook, PreviewFileEntry file, ApplicationSettings settings, string basePath, bool isCustomBasePath, bool isMultiFile, SeriesPositionStyle seriesPositionStyle)
         {
             var folderPattern = settings.FolderNamingPattern;
             var filePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
-            var variables = BuildNamingVariables(audiobook, folderPattern, filePattern, file.SequenceNumber, isMultiFile, seriesPositionWidth);
+            var variables = BuildNamingVariables(audiobook, folderPattern, filePattern, file.SequenceNumber, isMultiFile, seriesPositionStyle);
             // The same rendering the tag planner applies, so folder and album agree.
             variables["Series"] = _fileNamingService.RenderSeriesName(audiobook.Series);
             var patternHasNumberTokens = !string.IsNullOrWhiteSpace(filePattern)
@@ -50,7 +50,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
             return string.IsNullOrWhiteSpace(basePath) ? NormalizePath(relativePath) : NormalizePath(CombineWithOptionalBase(basePath, relativePath));
         }
 
-        private Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile, int seriesPositionWidth)
+        private Dictionary<string, object> BuildNamingVariables(Audiobook audiobook, string? folderPattern, string? filePattern, int sequenceNumber, bool isMultiFile, SeriesPositionStyle seriesPositionStyle)
         {
             var combinedTitle = audiobook.Title;
             var authors = audiobook.Authors?.Where(n => !string.IsNullOrWhiteSpace(n)).ToList() ?? [];
@@ -76,7 +76,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
                 // book 2 before book 10. A series that never reaches ten is unchanged.
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
                     audiobook.SeriesNumber,
-                    seriesPositionWidth) ?? string.Empty },
+                    seriesPositionStyle) ?? string.Empty },
                 { "Year", audiobook.PublishYear ?? string.Empty },
                 { "Quality", audiobook.Quality ?? string.Empty },
                 { "DiskNumber", isMultiFile ? sequenceNumber : string.Empty },

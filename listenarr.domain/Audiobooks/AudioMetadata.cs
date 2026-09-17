@@ -65,7 +65,7 @@ namespace Listenarr.Domain.Audiobooks
         public decimal? SeriesPosition { get; set; }
 
         /// <summary>
-        /// How many digits each series needs to write its highest position, keyed by
+        /// How each series writes its positions - width and decimals - keyed by
         /// <see cref="SeriesNumberFormatting.SeriesKey"/>.
         /// </summary>
         /// <remarks>
@@ -79,16 +79,16 @@ namespace Listenarr.Domain.Audiobooks
         /// whichever one happens to be primary.
         /// </para>
         /// </remarks>
-        public IReadOnlyDictionary<string, int>? SeriesPositionWidths { get; set; }
+        public IReadOnlyDictionary<string, SeriesPositionStyle>? SeriesPositionStyles { get; set; }
 
-        /// <summary>The width for one series, or one when nothing is known about it.</summary>
-        public int SeriesPositionWidthFor(string? series) =>
-            SeriesPositionWidths != null
-            && SeriesPositionWidths.TryGetValue(
+        /// <summary>The style for one series, or plain when nothing is known about it.</summary>
+        public SeriesPositionStyle SeriesPositionStyleFor(string? series) =>
+            SeriesPositionStyles != null
+            && SeriesPositionStyles.TryGetValue(
                 SeriesNumberFormatting.SeriesKey(series),
-                out var width)
-                ? width
-                : 1;
+                out var style)
+                ? style
+                : SeriesPositionStyle.Plain;
 
         /// <summary>
         /// Every series the book belongs to, in order, primary first.

@@ -76,7 +76,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
 
             _audiobooks.Setup(repository => repository.GetByIdAsync(7)).ReturnsAsync(audiobook);
             _audiobooks
-                .Setup(repository => repository.GetSeriesPositionWidthsAsync(
+                .Setup(repository => repository.GetSeriesPositionStylesAsync(
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
             _fileSystem.Setup(fs => fs.FileExists(It.IsAny<string>())).Returns(true);

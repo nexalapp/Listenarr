@@ -84,7 +84,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 // produce identical tags; that only holds if it also knows how wide each
                 // series writes its positions.
                 await services.GetRequiredService<IAudiobookRepository>()
-                    .GetSeriesPositionWidthsAsync(cancellationToken),
+                    .GetSeriesPositionStylesAsync(cancellationToken),
                 pathComparer,
                 cancellationToken);
 

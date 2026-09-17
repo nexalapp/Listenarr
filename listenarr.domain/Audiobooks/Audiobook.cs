@@ -145,18 +145,18 @@ namespace Listenarr.Domain.Audiobooks
         /// tracker on the way past would be a strange thing to have to debug later.
         /// </param>
         /// <returns>AudioMetada based on the audiobook retrieved metadata</returns>
-        /// <param name="seriesPositionWidths">
+        /// <param name="seriesPositionStyles">
         /// How many digits each series needs for its highest position, so a rendered
         /// position sorts beside its siblings. A book can be in more than one series and
         /// each is widened to its own.
         /// </param>
         public AudioMetadata CreateBasicAudioMetadata(
             IReadOnlyList<AudiobookSeriesMembership>? seriesMemberships = null,
-            IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
+            IReadOnlyDictionary<string, SeriesPositionStyle>? seriesPositionStyles = null)
         {
             return new AudioMetadata
             {
-                SeriesPositionWidths = seriesPositionWidths,
+                SeriesPositionStyles = seriesPositionStyles,
                 Title = Title ?? string.Empty,
                 Subtitle = Subtitle,
                 Edition = Edition,

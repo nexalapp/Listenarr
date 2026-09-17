@@ -96,8 +96,8 @@ namespace Listenarr.Infrastructure.Library.Tagging
             var selection = TagQueueService.DeserializeSelection(job.SelectedTagsJson);
             var overrides = TagQueueService.DeserializeValues(job.OverriddenValuesJson);
 
-            var seriesPositionWidths =
-                await audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
+            var seriesPositionStyles =
+                await audiobookRepository.GetSeriesPositionStylesAsync(cancellationToken);
 
             var planner = services.GetRequiredService<AudiobookTagPlanner>();
             var writer = services.GetRequiredService<IAudiobookTagWriter>();
@@ -149,7 +149,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 var metadata = AudiobookTagMetadata.Create(
                     audiobook,
                     existing.Tags,
-                    seriesPositionWidths);
+                    seriesPositionStyles);
                 var plan = planner.Plan(
                     metadata,
                     mappings,

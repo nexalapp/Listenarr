@@ -48,7 +48,7 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// writing 01. Read from the membership rows and the books' own primary series
         /// together, since a book can carry one without the other.
         /// </remarks>
-        Task<Dictionary<string, int>> GetSeriesPositionWidthsAsync(CancellationToken ct = default);
+        Task<Dictionary<string, SeriesPositionStyle>> GetSeriesPositionStylesAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
         Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, CancellationToken ct = default);
         Task NormalizeJsonColumnsAsync(CancellationToken ct = default);

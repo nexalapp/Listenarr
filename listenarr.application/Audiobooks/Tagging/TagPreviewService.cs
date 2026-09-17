@@ -77,8 +77,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
 
             var settings = await configurationService.GetApplicationSettingsAsync();
             var mappings = TagCatalog.Reconcile(settings.TagMappings);
-            var seriesPositionWidths =
-                await audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
+            var seriesPositionStyles =
+                await audiobookRepository.GetSeriesPositionStylesAsync(cancellationToken);
             var selection = selectedTags == null
                 ? null
                 : new HashSet<string>(selectedTags, StringComparer.OrdinalIgnoreCase);
@@ -128,7 +128,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 var metadata = AudiobookTagMetadata.Create(
                     audiobook,
                     existing.Tags,
-                    seriesPositionWidths);
+                    seriesPositionStyles);
                 var plan = planner.Plan(
                     metadata,
                     mappings,

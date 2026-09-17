@@ -101,8 +101,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
             var probeAvailable = await tagWriter.IsAvailableAsync(cancellationToken);
             var filesRead = 0;
 
-            var seriesPositionWidths =
-                await audiobookRepository.GetSeriesPositionWidthsAsync(cancellationToken);
+            var seriesPositionStyles =
+                await audiobookRepository.GetSeriesPositionStylesAsync(cancellationToken);
 
             // Both resolved before the probes start, so the parallel row-building below
             // reads them without a lock.
@@ -149,7 +149,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                         AudiobookTagMetadata.Create(
                             item.Book,
                             tags?.Tags,
-                            seriesPositionWidths,
+                            seriesPositionStyles,
                             memberships.TryGetValue(item.Book.Id, out var bookMemberships)
                                 ? bookMemberships
                                 : null),

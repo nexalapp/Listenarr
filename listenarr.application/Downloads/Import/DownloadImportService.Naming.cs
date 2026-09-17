@@ -8,7 +8,7 @@ public partial class DownloadImportService
         Audiobook? audiobook,
         AudioMetadata? extractedMetadata,
         string fallbackTitle,
-        IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
+        IReadOnlyDictionary<string, SeriesPositionStyle>? seriesPositionStyles = null)
     {
         if (audiobook != null)
         {
@@ -20,7 +20,7 @@ public partial class DownloadImportService
 
             return new AudioMetadata
             {
-                SeriesPositionWidths = seriesPositionWidths,
+                SeriesPositionStyles = seriesPositionStyles,
                 Title = FirstNonEmpty(
                     audiobook.Title,
                     extractedMetadata?.Title,
@@ -99,7 +99,7 @@ public partial class DownloadImportService
 
         return new AudioMetadata
         {
-            SeriesPositionWidths = seriesPositionWidths,
+            SeriesPositionStyles = seriesPositionStyles,
             Title = fallbackTitle,
             Artist = "Unknown Author",
             AlbumArtist = "Unknown Author"
@@ -158,7 +158,7 @@ public partial class DownloadImportService
                 metadata.SeriesPositionRaw,
                 metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture),
                 fallbackChapterNumber?.ToString()),
-            metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty;
+            metadata.SeriesPositionStyleFor(metadata.Series)) ?? string.Empty;
 
     private static string ChooseAuthorFromMetadata(AudioMetadata? metadata)
     {

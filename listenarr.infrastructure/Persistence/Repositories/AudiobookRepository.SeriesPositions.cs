@@ -22,11 +22,11 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
     /// <summary>
     /// What a series needs to know about itself before one of its books can be named:
     /// how wide its positions have to be written so a plain string sort keeps them in
-    /// reading order.
+    /// reading order, and whether its whole numbers carry a decimal.
     /// </summary>
     public partial class AudiobookRepository
     {
-        public async Task<Dictionary<string, int>> GetSeriesPositionWidthsAsync(CancellationToken ct = default)
+        public async Task<Dictionary<string, SeriesPositionStyle>> GetSeriesPositionStylesAsync(CancellationToken ct = default)
         {
             var membershipPositions = await _db.AudiobookSeriesMemberships
                 .AsNoTracking()
@@ -51,7 +51,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 })
                 .ToListAsync(ct);
 
-            var widths = new Dictionary<string, int>(StringComparer.Ordinal);
+            var styles = new Dictionary<string, SeriesPositionStyle>(StringComparer.Ordinal);
             foreach (var entry in membershipPositions.Concat(primaryPositions))
             {
                 var key = SeriesNumberFormatting.SeriesKey(entry.Series);
@@ -60,14 +60,11 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     continue;
                 }
 
-                var width = SeriesNumberFormatting.WidthFor([entry.Position]);
-                if (!widths.TryGetValue(key, out var existing) || width > existing)
-                {
-                    widths[key] = width;
-                }
+                styles[key] = (styles.TryGetValue(key, out var existing) ? existing : SeriesPositionStyle.Plain)
+                    .Widen(entry.Position);
             }
 
-            return widths;
+            return styles;
         }
     }
 }
