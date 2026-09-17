@@ -13,7 +13,7 @@ public partial class ManualImportController
         ManualImportDestinationTracker destinationTracker,
         IDictionary<int, string> planningBasePaths,
         IDictionary<int, FileSystemSemanticsResolution> planningDestinationResolutions,
-        IReadOnlyDictionary<string, int> seriesPositionWidths,
+        IReadOnlyDictionary<string, SeriesPositionStyle> seriesPositionStyles,
         List<RootFolder> rootFolders,
         ApplicationSettings settings,
         bool hasMultipleFile,
@@ -167,7 +167,7 @@ public partial class ManualImportController
             // moved straight back out of. Resolved once for the request, beside the other
             // per-request planning state: it is one answer for the whole library and a
             // query per file would be a query per file for nothing.
-            metadata.SeriesPositionWidths = seriesPositionWidths;
+            metadata.SeriesPositionStyles = seriesPositionStyles;
 
             if (!planningDestinationResolutions.TryGetValue(
                     audiobook.Id,

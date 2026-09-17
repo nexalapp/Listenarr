@@ -105,4 +105,40 @@ public sealed class SeriesNumberFormattingTests : BaseTests
             SeriesNumberFormatting.SeriesKey("Shadows of the Apt"),
             SeriesNumberFormatting.SeriesKey("  shadows of the APT  "));
     }
+
+    /// <summary>
+    /// A novella at 2.6 makes the whole numbers around it read 1.0, 2.0, 3.0, so the
+    /// positions line up. A series with no novella stays plain, and a range is never
+    /// given a decimal because "1-3.0" would say something else.
+    /// </summary>
+    [Fact]
+    public void Style_GivesWholeNumbersADecimal_OnlyWhenTheSeriesHasOne()
+    {
+        var mixed = SeriesPositionStyle.For(["1", "1.5", "2", "2.6", "3", "1-3"]);
+        Assert.Equal(new SeriesPositionStyle(1, true), mixed);
+        Assert.Equal("1.0", SeriesNumberFormatting.Pad("1", mixed));
+        Assert.Equal("2.6", SeriesNumberFormatting.Pad("2.6", mixed));
+        Assert.Equal("1-3", SeriesNumberFormatting.Pad("1-3", mixed));
+
+        var plain = SeriesPositionStyle.For(["1", "2", "3"]);
+        Assert.Equal(SeriesPositionStyle.Plain, plain);
+        Assert.Equal("2", SeriesNumberFormatting.Pad("2", plain));
+    }
+
+    [Fact]
+    public void Style_WidensAndDecimalisesTogether()
+    {
+        var style = SeriesPositionStyle.For(["1", "7.5", "12"]);
+        Assert.Equal(new SeriesPositionStyle(2, true), style);
+        Assert.Equal("01.0", SeriesNumberFormatting.Pad("1", style));
+        Assert.Equal("07.5", SeriesNumberFormatting.Pad("7.5", style));
+        Assert.Equal("12.0", SeriesNumberFormatting.Pad("12", style));
+    }
+
+    [Fact]
+    public void Style_GrowsOnePositionAtATime()
+    {
+        var style = SeriesPositionStyle.Plain.Widen("10").Widen("2.5");
+        Assert.Equal(new SeriesPositionStyle(2, true), style);
+    }
 }

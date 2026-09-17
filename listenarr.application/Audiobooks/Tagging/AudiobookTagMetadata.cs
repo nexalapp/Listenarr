@@ -47,14 +47,14 @@ namespace Listenarr.Application.Audiobooks.Tagging
         public static AudioMetadata Create(
             Audiobook audiobook,
             AudioMetadata? fromFile,
-            IReadOnlyDictionary<string, int>? seriesPositionWidths = null,
+            IReadOnlyDictionary<string, SeriesPositionStyle>? seriesPositionStyles = null,
             IReadOnlyList<AudiobookSeriesMembership>? seriesMemberships = null)
         {
             ArgumentNullException.ThrowIfNull(audiobook);
 
             var metadata = audiobook.CreateBasicAudioMetadata(
                 seriesMemberships: seriesMemberships,
-                seriesPositionWidths: seriesPositionWidths);
+                seriesPositionStyles: seriesPositionStyles);
 
             metadata.Description = FirstNonEmpty(audiobook.Description, fromFile?.Description);
             metadata.Genre = FirstNonEmpty(metadata.Genre, fromFile?.Genre, DefaultGenre)!;
@@ -87,12 +87,12 @@ namespace Listenarr.Application.Audiobooks.Tagging
         public static AudioMetadata Create(
             Audiobook audiobook,
             IReadOnlyDictionary<string, string>? fileTags,
-            IReadOnlyDictionary<string, int>? seriesPositionWidths = null,
+            IReadOnlyDictionary<string, SeriesPositionStyle>? seriesPositionStyles = null,
             IReadOnlyList<AudiobookSeriesMembership>? seriesMemberships = null) =>
             Create(
                 audiobook,
                 fileTags == null ? null : FromTags(fileTags),
-                seriesPositionWidths,
+                seriesPositionStyles,
                 seriesMemberships);
 
         /// <summary>

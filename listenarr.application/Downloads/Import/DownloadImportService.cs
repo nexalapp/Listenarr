@@ -68,7 +68,7 @@ namespace Listenarr.Application.Downloads.Import
 
             // Loaded once for the import: a position is widened to its series' longest,
             // and the series is rarely the book being imported.
-            var seriesPositionWidths = await audiobookRepository.GetSeriesPositionWidthsAsync();
+            var seriesPositionStyles = await audiobookRepository.GetSeriesPositionStylesAsync();
             var expectedBasePath = audiobook.BasePath;
             var destinationResolution = await ResolveDestinationResolutionAsync(
                 expectedBasePath,
@@ -299,7 +299,7 @@ namespace Listenarr.Application.Downloads.Import
                                 audiobook,
                                 candidateMetadata,
                                 Path.GetFileNameWithoutExtension(file),
-                                seriesPositionWidths);
+                                seriesPositionStyles);
                             var effectiveDiskNumber = namingDiskNumber > 0 ? namingDiskNumber : (namingMetadata.DiscNumber ?? plan?.DiskNumberHint);
                             var effectiveChapterNumber = namingChapterNumber > 0 ? namingChapterNumber : (namingMetadata.TrackNumber ?? plan?.ChapterNumberHint);
                             if (isMultiFileBatch)

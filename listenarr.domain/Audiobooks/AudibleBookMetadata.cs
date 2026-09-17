@@ -34,7 +34,7 @@ namespace Listenarr.Domain.Audiobooks
         public List<AudiobookSeriesMembership>? SeriesMemberships { get; set; }
 
         /// <summary>
-        /// How many digits each series needs to write its highest position, keyed by
+        /// How each series writes its positions - width and decimals - keyed by
         /// <see cref="SeriesNumberFormatting.SeriesKey"/>.
         /// </summary>
         /// <remarks>
@@ -42,16 +42,16 @@ namespace Listenarr.Domain.Audiobooks
         /// is widened to its series' longest, and the book being named cannot see its own
         /// siblings.
         /// </remarks>
-        public IReadOnlyDictionary<string, int>? SeriesPositionWidths { get; set; }
+        public IReadOnlyDictionary<string, SeriesPositionStyle>? SeriesPositionStyles { get; set; }
 
-        /// <summary>The width for one series, or one when nothing is known about it.</summary>
-        public int SeriesPositionWidthFor(string? series) =>
-            SeriesPositionWidths != null
-            && SeriesPositionWidths.TryGetValue(
+        /// <summary>The style for one series, or plain when nothing is known about it.</summary>
+        public SeriesPositionStyle SeriesPositionStyleFor(string? series) =>
+            SeriesPositionStyles != null
+            && SeriesPositionStyles.TryGetValue(
                 SeriesNumberFormatting.SeriesKey(series),
-                out var width)
-                ? width
-                : 1;
+                out var style)
+                ? style
+                : SeriesPositionStyle.Plain;
         public string? Description { get; set; }
         public List<string>? Genres { get; set; }
         public List<string>? Tags { get; set; }

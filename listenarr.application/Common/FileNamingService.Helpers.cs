@@ -126,7 +126,7 @@ namespace Listenarr.Application.Common
                 // book 2. A series that never reaches ten is unchanged.
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
                     FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()),
-                    metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty },
+                    metadata.SeriesPositionStyleFor(metadata.Series)) ?? string.Empty },
                 // The position with no widening at all, for the places that want the
                 // value rather than something that sorts: a tag a player parses as a
                 // number should say what the source said, not "01".
@@ -206,7 +206,7 @@ namespace Listenarr.Application.Common
                 var number = StripBrackets(StripControlCharacters(
                     SeriesNumberFormatting.Pad(
                         entry.Number,
-                        widths?.SeriesPositionWidthFor(entry.Name) ?? 1)));
+                        widths?.SeriesPositionStyleFor(entry.Name) ?? SeriesPositionStyle.Plain)));
 
                 builder.Append('[').Append(name);
                 if (!string.IsNullOrWhiteSpace(number))
@@ -295,12 +295,12 @@ namespace Listenarr.Application.Common
                             m.SeriesName!,
                             SeriesNumberFormatting.Pad(
                                 m.SeriesNumber,
-                                metadata.SeriesPositionWidthFor(m.SeriesName))))
+                                metadata.SeriesPositionStyleFor(m.SeriesName))))
                         .ToList(),
                     sanitizeForPath: true) },
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
                     metadata.SeriesNumber?.ToString(),
-                    metadata.SeriesPositionWidthFor(metadata.Series)) ?? string.Empty },
+                    metadata.SeriesPositionStyleFor(metadata.Series)) ?? string.Empty },
                 { "Year", metadata.PublishYear?.ToString() ?? string.Empty },
                 { "Quality", string.Empty },
                 { "DiskNumber", string.Empty },

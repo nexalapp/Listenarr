@@ -114,7 +114,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                 .ReturnsAsync(true);
 
             _audiobooks
-                .Setup(repository => repository.GetSeriesPositionWidthsAsync(
+                .Setup(repository => repository.GetSeriesPositionStylesAsync(
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
 

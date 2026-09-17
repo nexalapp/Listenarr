@@ -287,7 +287,7 @@ public sealed class ManualImportPathPlanner
         // Widened to its series like every other path that writes one.
         var seriesPosition = SeriesNumberFormatting.Pad(
             audiobook.SeriesNumber,
-            metadata.SeriesPositionWidthFor(audiobook.Series));
+            metadata.SeriesPositionStyleFor(audiobook.Series));
         if (!string.IsNullOrWhiteSpace(seriesPosition))
         {
             variables["SeriesNumber"] = seriesPosition;

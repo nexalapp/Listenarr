@@ -28,13 +28,13 @@ namespace Listenarr.Api.Features.Library
             string rootPath,
             string fileNamingPattern,
             IFileNamingService fileNamingService,
-            IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
+            IReadOnlyDictionary<string, SeriesPositionStyle>? seriesPositionStyles = null)
         {
             var relative = ComputeAudiobookRelativeDirectoryFromPattern(
                 audiobook,
                 fileNamingPattern,
                 fileNamingService,
-                seriesPositionWidths);
+                seriesPositionStyles);
             return ResolvePathWithOptionalBase(rootPath, relative);
         }
 
@@ -42,7 +42,7 @@ namespace Listenarr.Api.Features.Library
             Audiobook audiobook,
             string fileNamingPattern,
             IFileNamingService fileNamingService,
-            IReadOnlyDictionary<string, int>? seriesPositionWidths = null)
+            IReadOnlyDictionary<string, SeriesPositionStyle>? seriesPositionStyles = null)
         {
             string directoryPattern;
             if (!string.IsNullOrWhiteSpace(fileNamingPattern))
@@ -96,12 +96,12 @@ namespace Listenarr.Api.Features.Library
                 // straight back out of.
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
                     audiobook.SeriesNumber,
-                    seriesPositionWidths != null
-                    && seriesPositionWidths.TryGetValue(
+                    seriesPositionStyles != null
+                    && seriesPositionStyles.TryGetValue(
                         SeriesNumberFormatting.SeriesKey(audiobook.Series),
-                        out var seriesWidth)
-                        ? seriesWidth
-                        : 1) ?? string.Empty },
+                        out var seriesStyle)
+                        ? seriesStyle
+                        : SeriesPositionStyle.Plain) ?? string.Empty },
                 { "Year", audiobook.PublishYear ?? string.Empty },
                 { "Quality", string.Empty },
                 { "DiskNumber", string.Empty },

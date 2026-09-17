@@ -34,7 +34,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             IFfmpegService ffmpegService,
             AudiobookTagPlanner tagPlanner,
             IReadOnlyList<TagMapping> tagMappings,
-            IReadOnlyDictionary<string, int> seriesPositionWidths,
+            IReadOnlyDictionary<string, SeriesPositionStyle> seriesPositionStyles,
             StringComparer pathComparer,
             CancellationToken cancellationToken)
         {
@@ -103,7 +103,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             var bookMetadata = AudiobookTagMetadata.Create(
                 audiobook,
                 bookTags,
-                seriesPositionWidths);
+                seriesPositionStyles);
             var tags = tagPlanner.Plan(bookMetadata, tagMappings, existingTags: null).FinalTags;
 
             logger.LogInformation(

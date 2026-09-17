@@ -245,8 +245,8 @@ public partial class ManualImportController : ControllerBase
                     var consumedRecoveryOperationIds = new HashSet<Guid>();
                     var planningDestinationResolutions =
                         new Dictionary<int, FileSystemSemanticsResolution>();
-                    var seriesPositionWidths =
-                        await _audiobookRepository.GetSeriesPositionWidthsAsync(operationToken);
+                    var seriesPositionStyles =
+                        await _audiobookRepository.GetSeriesPositionStylesAsync(operationToken);
                     try
                     {
                         foreach (var item in orderedItems)
@@ -288,7 +288,7 @@ public partial class ManualImportController : ControllerBase
                                 destinationTracker,
                                 planningBasePaths,
                                 planningDestinationResolutions,
-                                seriesPositionWidths,
+                                seriesPositionStyles,
                                 rootFolders,
                                 appSettings,
                                 fileCount > 1,

@@ -204,9 +204,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             metadata.Series = "Shadows of the Apt";
             metadata.SeriesPositionRaw = "1";
             metadata.AllSeries = [new SeriesReference("Shadows of the Apt", "1")];
-            metadata.SeriesPositionWidths = new Dictionary<string, int>(StringComparer.Ordinal)
+            metadata.SeriesPositionStyles = new Dictionary<string, SeriesPositionStyle>(StringComparer.Ordinal)
             {
-                [SeriesNumberFormatting.SeriesKey("Shadows of the Apt")] = 2
+                [SeriesNumberFormatting.SeriesKey("Shadows of the Apt")] = new(2, false)
             };
 
             var plan = CreatePlanner().Plan(
@@ -234,10 +234,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                 new SeriesReference("Shadows of the Apt", "1"),
                 new SeriesReference("Children of Time", "2")
             ];
-            metadata.SeriesPositionWidths = new Dictionary<string, int>(StringComparer.Ordinal)
+            metadata.SeriesPositionStyles = new Dictionary<string, SeriesPositionStyle>(StringComparer.Ordinal)
             {
-                [SeriesNumberFormatting.SeriesKey("Shadows of the Apt")] = 2,
-                [SeriesNumberFormatting.SeriesKey("Children of Time")] = 1
+                [SeriesNumberFormatting.SeriesKey("Shadows of the Apt")] = new(2, false),
+                [SeriesNumberFormatting.SeriesKey("Children of Time")] = new(1, false)
             };
 
             var plan = CreatePlanner().Plan(
