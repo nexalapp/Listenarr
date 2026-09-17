@@ -3,11 +3,9 @@
  * Copyright (C) 2024-2026 Listenarr Contributors
  */
 using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Common;
-using Microsoft.Extensions.Logging;
 namespace Listenarr.Application.Common
 {
     public partial class FileNamingService

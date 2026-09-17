@@ -381,6 +381,11 @@ namespace Listenarr.Application.Common
                 // Remove any stray separators and sanitize the filename component
                 result = result.Replace("/", string.Empty).Replace("\\", string.Empty);
                 result = SanitizePathComponent(result);
+                // A name over the filesystem's 255 bytes cannot be created; every caller
+                // appends an extension afterwards, so room is held back for it.
+                result = NarratorNameStyle.FitComponent(
+                    result,
+                    reserveBytes: NarratorNameStyle.ExtensionReserveBytes);
             }
             else
             {
@@ -400,8 +405,11 @@ namespace Listenarr.Application.Common
                     }
                 }
 
-                // Sanitize each path component to remove invalid characters
-                var sanitizedParts = parts.Select(p => SanitizePathComponent(p)).ToList();
+                // Sanitize each path component to remove invalid characters, and keep each
+                // under the filesystem's 255-byte name limit.
+                var sanitizedParts = parts
+                    .Select(p => NarratorNameStyle.FitComponent(SanitizePathComponent(p)))
+                    .ToList();
                 result = string.Join(Path.DirectorySeparatorChar.ToString(), sanitizedParts);
             }
 
