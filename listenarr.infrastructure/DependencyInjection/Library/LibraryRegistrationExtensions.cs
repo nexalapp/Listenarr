@@ -8,6 +8,7 @@
  * (at your option) any later version.
  */
 using Listenarr.Application.Audiobooks.Authors;
+using Listenarr.Application.Audiobooks.Chapters;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Infrastructure.Library.Suggestions;
 using Listenarr.Application.Audiobooks.Deletion;
@@ -111,6 +112,10 @@ internal static class LibraryRegistrationExtensions
         services.AddSingleton<LibraryTagCache>();
         services.AddScoped<ILibraryTagCacheStore, EfLibraryTagCacheStore>();
         services.AddScoped<ILibraryTagIndexService, LibraryTagIndexService>();
+        // Chapter repair rides the tag queue: same job table, same publication path.
+        services.AddScoped<IChapterAtomRecovery, ChapterAtomRecovery>();
+        services.AddScoped<IChapterRewriter, FfmpegChapterRewriter>();
+        services.AddScoped<IChapterRepairService, ChapterRepairService>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
         services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();

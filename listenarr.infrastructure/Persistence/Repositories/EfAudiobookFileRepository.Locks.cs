@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
@@ -112,6 +113,65 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             }
 
             return resulting;
+        }
+        public async Task SetChapterHealthAsync(
+            IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
+            CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(verdicts);
+            if (verdicts.Count == 0)
+            {
+                return;
+            }
+
+            var byId = verdicts.ToDictionary(verdict => verdict.FileId);
+            var ids = byId.Keys.ToList();
+            var files = await _db.AudiobookFiles
+                .Where(file => ids.Contains(file.Id))
+                .ToListAsync(ct);
+
+            var changed = false;
+            foreach (var file in files)
+            {
+                var verdict = byId[file.Id];
+                if (file.ChapterHealth == verdict.Health
+                    && file.ChapterReason == verdict.Reason
+                    && file.ChapterCount == verdict.ChapterCount)
+                {
+                    continue;
+                }
+
+                file.ChapterHealth = verdict.Health;
+                file.ChapterReason = verdict.Reason;
+                file.ChapterCount = verdict.ChapterCount;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        public async Task<Dictionary<int, ChapterHealth>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default)
+        {
+            var rows = await _db.AudiobookFiles
+                .AsNoTracking()
+                .Where(file => file.ChapterHealth != ChapterHealth.Unknown)
+                .Select(file => new { file.AudiobookId, file.ChapterHealth })
+                .ToListAsync(ct);
+
+            var worst = new Dictionary<int, ChapterHealth>();
+            foreach (var row in rows)
+            {
+                if (!worst.TryGetValue(row.AudiobookId, out var current)
+                    || ChapterHealthSeverity.Rank(row.ChapterHealth) > ChapterHealthSeverity.Rank(current))
+                {
+                    worst[row.AudiobookId] = row.ChapterHealth;
+                }
+            }
+
+            return worst;
         }
     }
 }

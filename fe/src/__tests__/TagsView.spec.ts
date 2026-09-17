@@ -25,6 +25,8 @@ const setTagLocks = vi.fn()
 const setPathLocks = vi.fn()
 const buildLibraryFileAudioUrl = vi.fn((id: number) => `/api/v1/tagging/files/${id}/audio`)
 const writeTags = vi.fn()
+const repairChapters = vi.fn()
+const previewChapterRepair = vi.fn()
 const push = vi.fn()
 
 vi.mock('@/services/api', () => ({
@@ -35,6 +37,8 @@ vi.mock('@/services/api', () => ({
     buildLibraryFileAudioUrl: (...args: unknown[]) =>
       buildLibraryFileAudioUrl(...(args as [number])),
     writeTags: (...args: unknown[]) => writeTags(...args),
+    repairChapters: (...args: unknown[]) => repairChapters(...args),
+    previewChapterRepair: (...args: unknown[]) => previewChapterRepair(...args),
     getTagJobs: () => Promise.resolve([]),
   },
 }))
@@ -960,6 +964,62 @@ describe('TagsView', () => {
         .join(' '),
     ).toContain('Bland.m4b')
     expect(wrapper.findAll('.tags-row')).toHaveLength(1)
+  })
+
+  it('offers a chapter repair only for ticked rows whose atom is corrupt', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ fileId: 1, fileName: 'Broken.m4b', chapterHealth: 'corrupt' }),
+        row({ fileId: 2, fileName: 'Fine.m4b', chapterHealth: 'healthy' }),
+      ]),
+    )
+
+    expect(wrapper.text()).not.toContain('Repair chapters')
+
+    await wrapper.findAll('.tags-row .row-select')[1].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).not.toContain('Repair chapters')
+
+    await wrapper.findAll('.tags-row .row-select')[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Repair chapters (1)')
+  })
+
+  it('queues one repair per book once the preview is confirmed', async () => {
+    previewChapterRepair.mockResolvedValue({
+      audiobookId: 7,
+      repairable: true,
+      files: [
+        {
+          fileId: 1,
+          name: 'Broken.m4b',
+          chapterHealth: 'corrupt',
+          repairable: true,
+          source: 'Played',
+          partial: false,
+          chapters: [{ title: 'One', startSeconds: 0, endSeconds: 60 }],
+        },
+      ],
+    })
+    repairChapters.mockResolvedValue({ queued: true, jobId: 'j1' })
+
+    const wrapper = await mountView(
+      table([row({ fileId: 1, fileName: 'Broken.m4b', chapterHealth: 'corrupt' })]),
+    )
+
+    await wrapper.find('.tags-row .row-select').trigger('click')
+    await wrapper.vm.$nextTick()
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Repair chapters'))
+    await button!.trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.btn-primary').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(repairChapters).toHaveBeenCalledWith(7, [1])
+    expect(wrapper.text()).toContain('Queued 1 file for chapter repair')
   })
 
   it('reports the failure instead of an empty table', async () => {

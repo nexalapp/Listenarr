@@ -519,6 +519,28 @@
                 >
               </div>
               <div class="file-actions">
+                <span
+                  v-if="f.chapterHealth === 'corrupt' || f.chapterHealth === 'oversegmented'"
+                  class="file-chapter-badge"
+                  :title="f.chapterReason ?? undefined"
+                >
+                  <PhListNumbers />
+                  {{ f.chapterHealth === 'corrupt' ? 'Corrupt chapters' : 'CD-track chapters' }}
+                </span>
+                <button
+                  v-if="f.chapterHealth === 'corrupt'"
+                  type="button"
+                  class="file-repair-btn"
+                  :disabled="tagWriteInFlight"
+                  :title="
+                    tagWriteInFlight
+                      ? writeTagsTitle
+                      : 'Rebuild this file’s chapter atom from its chapter track'
+                  "
+                  @click.stop="openChapterRepair(f.id)"
+                >
+                  Repair
+                </button>
                 <span class="file-size" v-if="f.size">{{ formatFileSize(f.size) }}</span>
                 <span class="file-size" v-else>Unknown size</span>
                 <PhCaretDown
@@ -772,6 +794,14 @@
     @close="showTagPreviewModal = false"
     @confirm="writeTags"
   />
+
+  <ChapterRepairModal
+    v-if="chapterRepairScopes.length > 0"
+    :visible="showChapterRepairModal"
+    :scopes="chapterRepairScopes"
+    @close="showChapterRepairModal = false"
+    @confirm="repairChapters"
+  />
 </template>
 
 <script setup lang="ts">
@@ -810,6 +840,8 @@ import { buildAudibleProductUrl } from '@/utils/marketDomains'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import LibraryImportSearchModal from '@/components/domain/audiobook/LibraryImportSearchModal.vue'
 import TagPreviewModal from '@/components/domain/tagging/TagPreviewModal.vue'
+import ChapterRepairModal from '@/components/domain/tagging/ChapterRepairModal.vue'
+import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepairModal.vue'
 import AudiobookTagsPanel from '@/components/domain/tagging/AudiobookTagsPanel.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
@@ -840,6 +872,7 @@ import {
   PhFile,
   PhClockCounterClockwise,
   PhFileAudio,
+  PhListNumbers,
   PhCaretDown,
   PhFileDashed,
   PhWarningCircle,
@@ -1850,9 +1883,53 @@ watch(
   (status, previous) => {
     if (status === 'Completed' && previous && previous !== 'Completed') {
       void tagsPanel.value?.load()
+      // A chapter repair replaced a file and re-judged it; the badge on the row is
+      // whatever the server now says.
+      if (activeTagWrite.value?.kind === 'Chapters') {
+        void loadAudiobook()
+      }
     }
   },
 )
+
+const showChapterRepairModal = ref(false)
+const chapterRepairScopes = ref<ChapterRepairScope[]>([])
+
+function openChapterRepair(fileId: number) {
+  if (!audiobook.value) return
+  chapterRepairScopes.value = [
+    { audiobookId: audiobook.value.id, title: audiobook.value.title ?? '', fileIds: [fileId] },
+  ]
+  showChapterRepairModal.value = true
+}
+
+async function repairChapters(books: { audiobookId: number; fileIds: number[] }[]) {
+  showChapterRepairModal.value = false
+  const toast = useToast()
+  for (const book of books) {
+    try {
+      const response = await tagJobsStore.repairChapters(book.audiobookId, book.fileIds)
+      if (response.queued) {
+        toast.success(
+          'Chapter repair queued',
+          'Progress is shown in Activity. The file is remuxed, re-tagged and checked before it replaces the original.',
+        )
+      } else {
+        toast.error('Not queued', response.reason ?? 'This file could not be queued for repair.')
+      }
+    } catch (err) {
+      errorTracking.captureException(err as Error, {
+        component: 'AudiobookDetailView',
+        operation: 'repairChapters',
+        metadata: { audiobookId: book.audiobookId },
+      })
+      toast.error(
+        'Chapter repair failed to queue',
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  }
+}
 
 const showFixMatchModal = ref(false)
 
@@ -3418,6 +3495,35 @@ a.identifier-link:hover {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.file-chapter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background-color: rgba(231, 76, 60, 0.12);
+  border: 1px solid rgba(231, 76, 60, 0.18);
+  color: #e74c3c;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.file-repair-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--brand-500);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand-500);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.file-repair-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .accordion-toggle {

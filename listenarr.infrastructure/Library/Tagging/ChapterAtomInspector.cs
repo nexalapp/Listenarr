@@ -86,6 +86,129 @@ namespace Listenarr.Infrastructure.Library.Tagging
         }
 
         /// <summary>
+        /// What can still be read out of a shifted atom.
+        ///
+        /// <para>
+        /// The shift compounds — 24 bytes per TagLib# save, so a file saved three times
+        /// is 72 bytes along — and the header and the first entry or two are gone with
+        /// it, as are the same number of bytes off the end. What survives is a run of
+        /// intact entries starting somewhere inside the payload. This scans for the
+        /// first offset from which entries parse cleanly and keeps going until the
+        /// payload runs out, dropping the cut entry at the end. The result is partial by
+        /// construction: it never starts at zero.
+        /// </para>
+        /// </summary>
+        public static IReadOnlyList<EmbeddedChapter>? TryRecoverShifted(string path)
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var moov = Mp4Atoms.Find(stream, 0, stream.Length, "moov");
+            if (moov == null)
+            {
+                return null;
+            }
+
+            var duration = ReadDuration(stream, moov.Value);
+            var udta = Mp4Atoms.Find(stream, moov.Value.Position + moov.Value.HeaderSize, Mp4Atoms.End(moov.Value), "udta");
+            var chpl = udta == null
+                ? null
+                : Mp4Atoms.Find(stream, udta.Value.Position + udta.Value.HeaderSize, Mp4Atoms.End(udta.Value), "chpl");
+            if (chpl == null)
+            {
+                return null;
+            }
+
+            var payload = new byte[chpl.Value.Size - chpl.Value.HeaderSize];
+            stream.Seek(chpl.Value.Position + chpl.Value.HeaderSize, SeekOrigin.Begin);
+            stream.ReadExactly(payload);
+            return RecoverShifted(payload, duration);
+        }
+
+        internal static IReadOnlyList<EmbeddedChapter>? RecoverShifted(ReadOnlySpan<byte> payload, TimeSpan duration)
+        {
+            // The earliest offset that yields the longest clean run wins. A run has to be
+            // at least two entries long: one entry can parse by accident out of anything.
+            List<(long Start, string Title)>? best = null;
+            for (var offset = 0; offset + 9 <= payload.Length; offset++)
+            {
+                var run = ParseRun(payload, offset, duration);
+                if (run.Count >= 2 && (best == null || run.Count > best.Count))
+                {
+                    best = run;
+                }
+            }
+
+            if (best == null)
+            {
+                return null;
+            }
+
+            var chapters = new List<EmbeddedChapter>(best.Count);
+            for (var index = 0; index < best.Count; index++)
+            {
+                var start = TimeSpan.FromTicks(best[index].Start);
+                var end = index + 1 < best.Count ? TimeSpan.FromTicks(best[index + 1].Start) : duration;
+                chapters.Add(new EmbeddedChapter(best[index].Title, start, end));
+            }
+
+            return chapters;
+        }
+
+        private static List<(long Start, string Title)> ParseRun(ReadOnlySpan<byte> payload, int offset, TimeSpan duration)
+        {
+            var run = new List<(long, string)>();
+            var previous = -1L;
+            var limit = duration > TimeSpan.Zero ? (duration + TimeSpan.FromSeconds(1)).Ticks : long.MaxValue;
+            while (offset + 9 <= payload.Length)
+            {
+                var start = BinaryPrimitives.ReadInt64BigEndian(payload.Slice(offset, 8));
+                var titleLength = payload[offset + 8];
+                if (start < 0 || start <= previous || start > limit || offset + 9 + titleLength > payload.Length)
+                {
+                    break;
+                }
+
+                var title = payload.Slice(offset + 9, titleLength);
+                if (!IsPlausibleTitle(title))
+                {
+                    break;
+                }
+
+                run.Add((start, System.Text.Encoding.UTF8.GetString(title)));
+                previous = start;
+                offset += 9 + titleLength;
+            }
+
+            return run;
+        }
+
+        /// <summary>Text, not the middle of a timestamp: no control bytes, valid UTF-8.</summary>
+        private static bool IsPlausibleTitle(ReadOnlySpan<byte> title)
+        {
+            if (title.Length == 0)
+            {
+                return true;
+            }
+
+            foreach (var b in title)
+            {
+                if (b < 0x20 && b != (byte)'\t')
+                {
+                    return false;
+                }
+            }
+
+            try
+            {
+                new System.Text.UTF8Encoding(false, throwOnInvalidBytes: true).GetString(title);
+                return true;
+            }
+            catch (System.Text.DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Parse a Nero payload. Returns the reason it is unreadable, or null with the
         /// chapter count when it is sound.
         /// </summary>

@@ -139,6 +139,23 @@
           </div>
         </div>
 
+        <!--
+          Its own button rather than a third Apply scope: a repair is not a write of
+          Listenarr's values into the file, it is a rebuild of the file's own structure,
+          and it only applies to the rows whose Chapters cell is red.
+        -->
+        <button
+          v-if="repairableSelection.length > 0"
+          type="button"
+          class="toolbar-btn"
+          :disabled="working"
+          :title="`Repair the chapter atom of ${repairableSelection.length} selected file(s)`"
+          @click="repairOpen = true"
+        >
+          <PhListNumbers :size="16" />
+          Repair chapters ({{ repairableSelection.length }})
+        </button>
+
         <div class="columns-menu" ref="columnsMenuEl">
           <button
             type="button"
@@ -455,6 +472,14 @@
       @done="onOrganized"
     />
 
+    <ChapterRepairModal
+      v-if="repairOpen"
+      :visible="repairOpen"
+      :scopes="repairScopes"
+      @close="repairOpen = false"
+      @confirm="repairSelected"
+    />
+
     <!--
       One sprite for the whole table rather than an icon component per cell: a padlock on
       every cell of a windowed table is several hundred of them, and several hundred
@@ -509,12 +534,15 @@ import {
   PhCaretUp,
   PhCheck,
   PhColumns,
+  PhListNumbers,
   PhMagnifyingGlass,
   PhSpinner,
   PhTag,
   PhWarningCircle,
 } from '@phosphor-icons/vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
+import ChapterRepairModal from '@/components/domain/tagging/ChapterRepairModal.vue'
+import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepairModal.vue'
 import { apiService } from '@/services/api'
 import { useTagJobsStore } from '@/stores/tagJobs'
 import { logger } from '@/utils/logger'
@@ -1291,6 +1319,56 @@ const allVisibleSelected = computed(
 const someVisibleSelected = computed(() =>
   [...visibleFileIds.value].some((id) => selectedFiles.value.has(id)),
 )
+
+/** The ticked rows whose chapter atom a repair could rebuild. */
+const repairableSelection = computed(() =>
+  rows.value.filter(
+    (row) => selectedFiles.value.has(row.fileId) && row.chapterHealth === 'corrupt',
+  ),
+)
+
+const repairOpen = ref(false)
+
+const repairScopes = computed<ChapterRepairScope[]>(() => {
+  const byBook = new Map<number, ChapterRepairScope>()
+  for (const row of repairableSelection.value) {
+    const scope = byBook.get(row.audiobookId)
+    if (scope) scope.fileIds.push(row.fileId)
+    else
+      byBook.set(row.audiobookId, {
+        audiobookId: row.audiobookId,
+        title: row.bookTitle,
+        fileIds: [row.fileId],
+      })
+  }
+  return [...byBook.values()]
+})
+
+async function repairSelected(books: { audiobookId: number; fileIds: number[] }[]) {
+  repairOpen.value = false
+  working.value = true
+  actionMessage.value = null
+
+  let queuedFiles = 0
+  const refusals: string[] = []
+  for (const book of books) {
+    try {
+      const response = await tagJobsStore.repairChapters(book.audiobookId, book.fileIds)
+      if (response.queued) queuedFiles += book.fileIds.length
+      else if (response.reason) refusals.push(response.reason)
+    } catch (err) {
+      logger.warn(`Failed to queue a chapter repair for audiobook ${book.audiobookId}`, err)
+      refusals.push(describe(err))
+    }
+  }
+
+  await tagJobsStore.refresh()
+  working.value = false
+  selectedFiles.value = new Set()
+  actionMessage.value = refusals.length
+    ? `Queued ${queuedFiles} file(s) for chapter repair. ${refusals.length} refused: ${refusals[0]}`
+    : `Queued ${queuedFiles} file${queuedFiles === 1 ? '' : 's'} for chapter repair.`
+}
 
 /** The books the ticked files belong to, which is what organizing takes. */
 const selectedBookIds = computed(

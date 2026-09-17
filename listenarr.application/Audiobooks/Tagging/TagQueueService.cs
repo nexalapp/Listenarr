@@ -463,7 +463,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     error = job.Error,
                     failureKind = job.FailureKind,
                     canRetry = job.CanRetry,
-                    trigger = job.Trigger.ToString()
+                    trigger = job.Trigger.ToString(),
+                    kind = job.Kind.ToString()
                 }, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

@@ -101,6 +101,32 @@ public partial class ScanJobProcessor
         if (!converting)
         {
             await QueueTagWriteIfWantedAsync(audiobook, cancellationToken);
+            await JudgeChaptersAsync(audiobook, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Probe the book's files once so its chapter verdict is on the row before anyone
+    /// opens the tag table. The probe is cached, so the table's own load is then free
+    /// for these files; a tag write that follows re-judges them after it publishes.
+    /// </summary>
+    private async Task JudgeChaptersAsync(Audiobook audiobook, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var index = scope.ServiceProvider.GetService<ILibraryTagIndexService>();
+            if (index != null)
+            {
+                await index.BuildAsync(refresh: false, cancellationToken, audiobookIds: [audiobook.Id]);
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            _logger.LogDebug(
+                exception,
+                "Could not judge the chapters of audiobook {AudiobookId} after its scan",
+                audiobook.Id);
         }
     }
 

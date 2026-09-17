@@ -41,6 +41,12 @@ namespace Listenarr.Domain.Audiobooks.Tagging
     }
 
     /// <summary>How the job came to exist. A manual request ignores the automatic setting.</summary>
+    public enum TagJobKind
+    {
+        Tags,
+        Chapters
+    }
+
     public enum TagTrigger
     {
         Automatic,
@@ -75,6 +81,20 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         public TagJobStatus Status { get; set; } = TagJobStatus.Queued;
         public TagJobPhase Phase { get; set; } = TagJobPhase.None;
         public TagTrigger Trigger { get; set; } = TagTrigger.Automatic;
+
+        /// <summary>
+        /// Whether this job writes tags or rewrites chapters. One queue for both because
+        /// they replace the same files through the same publication path, and one active
+        /// job per book is exactly the guarantee that path needs.
+        /// </summary>
+        public TagJobKind Kind { get; set; } = TagJobKind.Tags;
+
+        /// <summary>
+        /// For a chapter job: the chapter list to write for each file, as JSON keyed by
+        /// file id. Decided at enqueue time so what the operator previewed is what gets
+        /// written, whatever the file reads as by the time the worker gets to it.
+        /// </summary>
+        public string? ChapterPlanJson { get; set; }
 
         /// <summary>
         /// Set while the job is active and cleared when it reaches a terminal state. A

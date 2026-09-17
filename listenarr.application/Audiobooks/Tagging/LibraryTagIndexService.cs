@@ -47,7 +47,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
         IRootFolderService rootFolderService,
         ILogger<LibraryTagIndexService> logger,
         IRenameService? renameService = null,
-        ILibraryTagCacheStore? cacheStore = null) : ILibraryTagIndexService
+        ILibraryTagCacheStore? cacheStore = null,
+        IAudiobookFileRepository? fileRepository = null) : ILibraryTagIndexService
     {
         /// <summary>
         /// How many files are probed at once on a cold load.
@@ -196,10 +197,15 @@ namespace Listenarr.Application.Audiobooks.Tagging
             }
 
             await PersistPendingAsync(cancellationToken);
+            await PersistChapterHealthAsync(
+                rows.Where(row => row.ChapterHealth != ChapterHealth.Unknown)
+                    .Select(row => new AudiobookFileChapterHealth(row.FileId, row.ChapterHealth, row.ChapterReason, row.ChapterCount))
+                    .ToList(),
+                cancellationToken);
             return new LibraryTagIndex(rows, filesRead, DateTime.UtcNow);
         }
 
-        public async Task RecordFileAsync(string fullPath, CancellationToken cancellationToken = default)
+        public async Task RecordFileAsync(string fullPath, int? fileId = null, CancellationToken cancellationToken = default)
         {
             if (!fileSystem.FileExists(fullPath)
                 || !await tagWriter.IsAvailableAsync(cancellationToken))
@@ -212,6 +218,41 @@ namespace Listenarr.Application.Audiobooks.Tagging
             var tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
             cache.Set(fullPath, length, lastWrite, tags);
             await PersistPendingAsync(cancellationToken);
+
+            if (fileId is { } id && TaggableFile.IsTaggable(fullPath))
+            {
+                var report = ChapterHealthAnalyzer.Analyze(
+                    tags.Chapters,
+                    tags.Atoms,
+                    tags.Duration,
+                    Path.GetFileNameWithoutExtension(fullPath));
+                await PersistChapterHealthAsync(
+                    [new AudiobookFileChapterHealth(id, report.Health, report.Reason, report.ChapterCount)],
+                    cancellationToken);
+            }
+        }
+
+        /// <summary>
+        /// Record the verdicts on the files themselves, so the books list and the book
+        /// page can show them without this table. Failing costs nothing but the badge.
+        /// </summary>
+        private async Task PersistChapterHealthAsync(
+            IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
+            CancellationToken cancellationToken)
+        {
+            if (fileRepository == null || verdicts.Count == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                await fileRepository.SetChapterHealthAsync(verdicts, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not record chapter verdicts for {Count} file(s)", verdicts.Count);
+            }
         }
 
         /// <summary>

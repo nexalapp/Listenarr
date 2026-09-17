@@ -106,6 +106,39 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
             Assert.Contains("trailing", ChapterAtomInspector.Validate(payload, TimeSpan.FromHours(1), out _));
         }
 
+        [Fact]
+        public void RecoverShifted_FindsTheIntactRunInsideAShiftedPayload()
+        {
+            // Three saves: 72 bytes gone off the front and the atom padded to its old
+            // size. What is left starts inside the second title.
+            var payload = NeroPayload(
+                (TimeSpan.Zero, "Chapter 001  - 00:00:38"),
+                (TimeSpan.FromMinutes(1), "Chapter 002  - 00:07:48"),
+                (TimeSpan.FromMinutes(9), "Chapter 003  - 00:06:20"),
+                (TimeSpan.FromMinutes(15), "Chapter 004  - 00:04:54"),
+                (TimeSpan.FromMinutes(20), "Chapter 005  - 00:05:00"),
+                (TimeSpan.FromMinutes(25), "Chapter 006  - 00:05:00"));
+            var shifted = new byte[payload.Length];
+            Array.Copy(payload, 72, shifted, 0, payload.Length - 72);
+
+            var recovered = ChapterAtomInspector.RecoverShifted(shifted, TimeSpan.FromMinutes(30));
+
+            Assert.NotNull(recovered);
+            Assert.Equal(
+                ["Chapter 003  - 00:06:20", "Chapter 004  - 00:04:54", "Chapter 005  - 00:05:00", "Chapter 006  - 00:05:00"],
+                recovered.Select(c => c.Title));
+            Assert.Equal(TimeSpan.FromMinutes(9), recovered[0].Start);
+            Assert.Equal(TimeSpan.FromMinutes(30), recovered[^1].End);
+        }
+
+        [Fact]
+        public void RecoverShifted_GivesUpOnNoise()
+        {
+            var noise = new byte[200];
+            new Random(7).NextBytes(noise);
+            Assert.Null(ChapterAtomInspector.RecoverShifted(noise, TimeSpan.FromMinutes(30)));
+        }
+
         [EncoderFact]
         public async Task Inspect_ReadsWhatFfmpegWrote()
         {

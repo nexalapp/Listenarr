@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.Json;
+using Listenarr.Domain.Audiobooks.Chapters;
 
 namespace Listenarr.Application.Audiobooks.Tagging
 {
@@ -166,5 +167,47 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
         }
+        /// <summary>
+        /// Persist the chapter lists a repair will write, keyed by file id. The plan is
+        /// what the operator previewed; the worker writes it as is.
+        /// </summary>
+        internal static string SerializeChapterPlans(IReadOnlyDictionary<int, ChapterPlan> plans) =>
+            JsonSerializer.Serialize(
+                plans.ToDictionary(pair => pair.Key.ToString(System.Globalization.CultureInfo.InvariantCulture), pair => pair.Value),
+                ChapterPlanJson);
+
+        public static IReadOnlyDictionary<int, ChapterPlan> DeserializeChapterPlans(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new Dictionary<int, ChapterPlan>();
+            }
+
+            try
+            {
+                var raw = JsonSerializer.Deserialize<Dictionary<string, ChapterPlan>>(json, ChapterPlanJson)
+                    ?? new Dictionary<string, ChapterPlan>();
+                var result = new Dictionary<int, ChapterPlan>(raw.Count);
+                foreach (var (key, plan) in raw)
+                {
+                    if (int.TryParse(key, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var fileId)
+                        && plan.Chapters.Count > 0)
+                    {
+                        result[fileId] = plan;
+                    }
+                }
+
+                return result;
+            }
+            catch (JsonException)
+            {
+                return new Dictionary<int, ChapterPlan>();
+            }
+        }
+
+        private static readonly JsonSerializerOptions ChapterPlanJson = new(JsonSerializerDefaults.Web)
+        {
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
     }
 }

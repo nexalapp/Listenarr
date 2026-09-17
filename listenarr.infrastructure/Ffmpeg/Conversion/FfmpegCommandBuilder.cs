@@ -70,6 +70,70 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
         }
 
         /// <summary>
+        /// A metadata document carrying chapters only. The output's tags come from the
+        /// source through <c>-map_metadata</c>, not from here.
+        /// </summary>
+        public static string BuildChapterDocument(IReadOnlyList<EmbeddedChapter> chapters)
+        {
+            ArgumentNullException.ThrowIfNull(chapters);
+
+            var builder = new StringBuilder();
+            builder.Append(";FFMETADATA1\n");
+            foreach (var chapter in chapters)
+            {
+                builder.Append("[CHAPTER]\n");
+                builder.Append("TIMEBASE=1/1000\n");
+                builder.Append(CultureInfo.InvariantCulture, $"START={(long)chapter.Start.TotalMilliseconds}\n");
+                builder.Append(CultureInfo.InvariantCulture, $"END={(long)chapter.End.TotalMilliseconds}\n");
+                AppendTag(builder, "title", chapter.Title ?? string.Empty);
+            }
+
+            return builder.ToString();
+        }
+
+        /// <summary>
+        /// Rewrite a container's chapters without touching its audio.
+        ///
+        /// <para>
+        /// The audio and the cover are stream-copied; the old chapter structures are
+        /// ignored on the way in (<c>-ignore_chapters</c>, which also stops a damaged
+        /// atom from aborting the read) and the plan's are written on the way out, in
+        /// both forms the mov muxer produces. Only audio and video are mapped, so the
+        /// source's own chapter text track is not carried across beside the new one.
+        /// Global tags come from the source; the freeform ones ffmpeg drops are put back
+        /// by the tag writer afterwards.
+        /// </para>
+        /// </summary>
+        public static IReadOnlyList<string> BuildChapterRemuxArguments(
+            string sourcePath,
+            string chapterDocumentPath,
+            string outputPath)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+            ArgumentException.ThrowIfNullOrWhiteSpace(chapterDocumentPath);
+            ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
+
+            return
+            [
+                "-hide_banner",
+                "-nostdin",
+                "-loglevel", "error",
+                "-y",
+                "-ignore_chapters", "1",
+                "-i", sourcePath,
+                "-i", chapterDocumentPath,
+                "-map", "0:a",
+                "-map", "0:v?",
+                "-c", "copy",
+                "-disposition:v", "attached_pic",
+                "-map_metadata", "0",
+                "-map_chapters", "1",
+                "-f", "ipod",
+                outputPath
+            ];
+        }
+
+        /// <summary>
         /// Build the argument list.
         ///
         /// Every source is a separate <c>-i</c> joined by the concat <i>filter</i>, not the

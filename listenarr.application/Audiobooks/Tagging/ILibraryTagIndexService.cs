@@ -120,6 +120,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// published it: the next table load then answers for it from the cache
         /// instead of noticing the changed file and probing it during the request.
         /// </summary>
-        Task RecordFileAsync(string fullPath, CancellationToken cancellationToken = default);
+        /// <param name="fullPath">The file as published.</param>
+        /// <param name="fileId">The file's row, so its chapter verdict can be recorded beside the cache.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        Task RecordFileAsync(string fullPath, int? fileId = null, CancellationToken cancellationToken = default);
     }
 }

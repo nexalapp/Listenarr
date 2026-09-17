@@ -17,6 +17,7 @@
  */
 using Listenarr.Domain.Common;
 
+using Listenarr.Domain.Audiobooks.Chapters;
 namespace Listenarr.Application.Audiobooks.Contracts.Repositories
 {
     public sealed record AudiobookBasePathMutation(
@@ -118,5 +119,24 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             CancellationToken ct = default);
         Task<List<AudiobookFormatSummary>> GetFormatSummariesAsync(CancellationToken ct = default);
         Task<Dictionary<int, int>> GetCountsByAudiobookIdAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// Record what each file's chapters were judged to be, so the books list and the
+        /// book page can show it without a probe. A dedicated write for the same reason
+        /// as the locks: three columns, not a whole entity round-trip.
+        /// </summary>
+        Task SetChapterHealthAsync(
+            IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
+            CancellationToken ct = default);
+
+        /// <summary>The worst chapter verdict among each book's files, for books that have one.</summary>
+        Task<Dictionary<int, ChapterHealth>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default);
     }
+
+    /// <summary>One file's chapter verdict, as the tag index decided it.</summary>
+    public sealed record AudiobookFileChapterHealth(
+        int FileId,
+        ChapterHealth Health,
+        string? Reason,
+        int ChapterCount);
 }

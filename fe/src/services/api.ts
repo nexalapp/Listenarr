@@ -20,6 +20,7 @@ import type {
   ConversionJobUpdate,
   BulkConversionResponse,
   LibraryTagTable,
+  ChapterRepairPreview,
   TagDefinition,
   TagJobUpdate,
   TagPreview,
@@ -1743,6 +1744,28 @@ class ApiService {
         // Null means every file of the book, which is what a book page asks for.
         fileIds: fileIds?.length ? fileIds : null,
       }),
+    })
+  }
+
+  /** What a chapter repair would write into each of a book's files. */
+  async previewChapterRepair(
+    audiobookId: number,
+    fileIds?: number[],
+  ): Promise<ChapterRepairPreview> {
+    const query = fileIds?.length ? `?${fileIds.map((id) => `fileIds=${id}`).join('&')}` : ''
+    return this.request<ChapterRepairPreview>(
+      `/tagging/audiobooks/${audiobookId}/chapters/preview${query}`,
+    )
+  }
+
+  /** Queue a chapter repair. Omit `fileIds` for every corrupt file of the book. */
+  async repairChapters(
+    audiobookId: number,
+    fileIds?: number[],
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/chapters`, {
+      method: 'POST',
+      body: JSON.stringify({ fileIds: fileIds?.length ? fileIds : null }),
     })
   }
 

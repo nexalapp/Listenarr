@@ -90,6 +90,19 @@ namespace Listenarr.Infrastructure.Library.Tagging
                             : "None of the files this run was queued for is still an M4B here.");
             }
 
+            if (job.Kind == TagJobKind.Chapters)
+            {
+                return await ExecuteChapterRepairAsync(
+                    job,
+                    audiobook,
+                    files,
+                    resumed != null,
+                    filesWritten,
+                    services,
+                    queue,
+                    cancellationToken);
+            }
+
             var settings = await services.GetRequiredService<IConfigurationService>()
                 .GetApplicationSettingsAsync();
             var mappings = TagCatalog.Reconcile(settings.TagMappings);

@@ -137,5 +137,28 @@ namespace Listenarr.Tests.Common
 
         public static int IndexOf(byte[] haystack, ReadOnlySpan<byte> needle) =>
             haystack.AsSpan().IndexOf(needle);
+
+        /// <summary>An <see cref="IFfmpegService"/> that answers with the binaries on PATH and nothing else.</summary>
+        public static IFfmpegService PathResolvedFfmpeg() => new PathResolvedFfmpegService(Ffmpeg, Ffprobe);
+
+        private sealed class PathResolvedFfmpegService(string? ffmpegPath, string? ffprobePath) : IFfmpegService
+        {
+            public Task<string?> GetFfmpegPathAsync() => Task.FromResult(ffmpegPath);
+            public Task<string?> EnsureFfmpegInstalledAsync() => Task.FromResult(ffmpegPath);
+            public Task<string?> GetFfprobePathAsync() => Task.FromResult(ffprobePath);
+            public Task<string?> EnsureFfprobeInstalledAsync() => Task.FromResult(ffprobePath);
+            public Task<string> GetLicenseAsync() => Task.FromResult(string.Empty);
+
+            public Task<IReadOnlyList<EmbeddedChapter>> ReadChaptersAsync(
+                string filePath,
+                CancellationToken cancellationToken = default) =>
+                Task.FromResult<IReadOnlyList<EmbeddedChapter>>([]);
+
+            public Task<AudioMetadata> RunFfprobeAsync(string filePath) =>
+                throw new NotSupportedException();
+
+            public Task<AudioMetadata> RunFfprobeAsync(MetadataFileSource fileSource) =>
+                throw new NotSupportedException();
+        }
     }
 }

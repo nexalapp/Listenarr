@@ -603,6 +603,14 @@
                         <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
                         {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
                       </div>
+                      <div
+                        v-if="chapterIssueLabel(audiobook)"
+                        class="chapter-badge"
+                        :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
+                      >
+                        <PhListNumbers />
+                        {{ chapterIssueLabel(audiobook) }}
+                      </div>
                     </div>
                     <div class="action-buttons">
                       <button
@@ -785,6 +793,14 @@
                     <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
                     {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
                   </div>
+                  <div
+                    v-if="chapterIssueLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
+                  >
+                    <PhListNumbers />
+                    {{ chapterIssueLabel(audiobook) }}
+                  </div>
                 </div>
                 <div class="list-actions">
                   <button
@@ -949,6 +965,7 @@ import {
   PhStar,
   PhEye,
   PhEyeSlash,
+  PhListNumbers,
   PhSpinner,
   PhWarningCircle,
   PhInfo,
@@ -1269,6 +1286,22 @@ watch(selectedFilterId, (v) => {
 
 // sortOrder toggled via sortKeyProxy when selecting same key; explicit toggle removed
 
+/**
+ * The badge text for a book whose worst file needs a chapter repair, or null. Only the
+ * two verdicts a repair exists for: placeholder titles and missing marks are notes on
+ * the tag table, not something to flag beside every cover.
+ */
+const chapterIssueLabel = (book: Audiobook): string | null => {
+  switch (book.chapterHealth) {
+    case 'corrupt':
+      return 'Corrupt chapters'
+    case 'oversegmented':
+      return 'CD-track chapters'
+    default:
+      return null
+  }
+}
+
 const filteredAndSortedAudiobooks = computed(() => {
   const list = (libraryStore.audiobooks || []).slice()
 
@@ -1300,6 +1333,8 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => !b.monitored)
     } else if (sid === 'missing') {
       filtered = filtered.filter((b) => getAudiobookStatus(b) === 'no-file')
+    } else if (sid === 'chapter-issues') {
+      filtered = filtered.filter((b) => !!chapterIssueLabel(b))
     } else if (sid === 'recent') {
       // For now: approximate by publishYear being this year or last year
       const thisYear = new Date().getFullYear()
@@ -4185,6 +4220,22 @@ defineExpose({
 .monitored-badge i {
   font-size: 12px;
   flex-shrink: 0;
+}
+
+.chapter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  margin-left: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background-color: rgba(231, 76, 60, 0.12);
+  border: 1px solid rgba(231, 76, 60, 0.18);
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #e74c3c;
+  white-space: nowrap;
 }
 
 .action-buttons {

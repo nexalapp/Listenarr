@@ -490,6 +490,8 @@ export interface TagJobUpdate {
    * what puts it back, so this is not an ordinary failure and must not read like one.
    */
   holdingUnpublishedFile?: boolean
+  /** `Tags` or `Chapters`: what the job writes. */
+  kind?: string
   attemptCount?: number
   enqueuedAt?: string
   completedAt?: string | null
@@ -608,6 +610,35 @@ export interface LibraryTagRow {
   /** Why the verdict, in a sentence. */
   chapterReason?: string | null
   chapterCount: number
+}
+
+/** One chapter as a repair would write it. */
+export interface ChapterRepairChapter {
+  title: string | null
+  startSeconds: number
+  endSeconds: number
+}
+
+/** One file in a chapter-repair preview: the list a repair would write, or why there is none. */
+export interface ChapterRepairFile {
+  fileId: number
+  name: string
+  chapterHealth: ChapterHealth
+  chapterReason?: string | null
+  repairable: boolean
+  rejection?: string | null
+  /** `Played`, `Audnexus` or `RecoveredAtom`. */
+  source?: string | null
+  /** The list is missing its opening chapters and one was synthesised. */
+  partial: boolean
+  note?: string | null
+  chapters?: ChapterRepairChapter[] | null
+}
+
+export interface ChapterRepairPreview {
+  audiobookId: number
+  repairable: boolean
+  files: ChapterRepairFile[]
 }
 
 /** The whole library's tags, with the columns to show them under. */
@@ -1112,6 +1143,9 @@ export interface Audiobook {
     channels?: number
     createdAt?: string
     source?: string
+    chapterHealth?: ChapterHealth
+    chapterReason?: string | null
+    chapterCount?: number
   }[]
   quality?: string
   qualityProfileId?: number
@@ -1122,6 +1156,8 @@ export interface Audiobook {
   wanted?: boolean
   // Server-computed list status used by slim /library responses.
   status?: AudiobookStatus
+  /** The worst chapter verdict among the book's files; absent until a file has been judged. */
+  chapterHealth?: ChapterHealth | null
 }
 
 /**

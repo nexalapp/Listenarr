@@ -17,6 +17,7 @@
  */
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Common;
 
 namespace Listenarr.Domain.Audiobooks
@@ -224,5 +225,24 @@ namespace Listenarr.Domain.Audiobooks
         /// </para>
         /// </summary>
         public bool PathLocked { get; set; }
+
+        /// <summary>
+        /// What this file's chapter marks were last judged to be worth, so the books
+        /// list and the book page can say "corrupt" without building the tag table.
+        ///
+        /// <para>
+        /// Written whenever the tag index probes the file — on a table load, after a tag
+        /// write, after a repair — and never by the scanner, which does not open files
+        /// with ffprobe. <c>Unknown</c> therefore means "not looked at yet" rather than
+        /// "fine", and is shown as nothing rather than as green.
+        /// </para>
+        /// </summary>
+        public ChapterHealth ChapterHealth { get; set; } = ChapterHealth.Unknown;
+
+        /// <summary>Why, in the analyzer's sentence.</summary>
+        [MaxLength(512)]
+        public string? ChapterReason { get; set; }
+
+        public int ChapterCount { get; set; }
     }
 }

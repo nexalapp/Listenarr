@@ -103,6 +103,7 @@ const builtInOptions = [
   { value: 'unmonitored', label: 'Unmonitored Only' },
   { value: 'missing', label: 'Missing' },
   { value: 'recent', label: 'Recently Added' },
+  { value: 'chapter-issues', label: 'Chapter Issues' },
 ]
 
 const customFilters = computed(() => props.customFilters || [])

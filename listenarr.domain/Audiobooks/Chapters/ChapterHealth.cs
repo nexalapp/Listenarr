@@ -47,6 +47,41 @@ namespace Listenarr.Domain.Audiobooks.Chapters
         None
     }
 
+    /// <summary>The verdict as the API spells it, one word the client can filter on.</summary>
+    public static class ChapterHealthNames
+    {
+        public static string Of(ChapterHealth health) => health switch
+        {
+            ChapterHealth.Healthy => "healthy",
+            ChapterHealth.Corrupt => "corrupt",
+            ChapterHealth.Oversegmented => "oversegmented",
+            ChapterHealth.GenericTitles => "generic-titles",
+            ChapterHealth.None => "none",
+            _ => "unknown"
+        };
+    }
+
+    /// <summary>
+    /// Orders verdicts by how much they matter, so a book's files can be summed up by
+    /// their worst one. A broken atom outranks CD tracks, which outrank a shrug.
+    /// </summary>
+    public static class ChapterHealthSeverity
+    {
+        public static int Rank(ChapterHealth health) => health switch
+        {
+            ChapterHealth.Corrupt => 5,
+            ChapterHealth.Oversegmented => 4,
+            ChapterHealth.GenericTitles => 3,
+            ChapterHealth.None => 2,
+            ChapterHealth.Healthy => 1,
+            _ => 0
+        };
+
+        /// <summary>The verdicts a repair exists for.</summary>
+        public static bool IsIssue(ChapterHealth health) =>
+            health is ChapterHealth.Corrupt or ChapterHealth.Oversegmented;
+    }
+
     /// <summary>
     /// What the container's own bytes say about chapters, read without ffprobe. Produced by
     /// the infrastructure atom inspector and judged here, so the judgement can be tested

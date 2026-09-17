@@ -1,3 +1,4 @@
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
@@ -41,6 +42,13 @@ public sealed class AudiobookFileConfiguration : IEntityTypeConfiguration<Audiob
         lockedTagsProperty.Metadata.SetValueComparer(JsonValueComparer.Create<List<string>?>());
 
         builder.Property(file => file.PathLocked).HasDefaultValue(false);
+
+        builder.Property(file => file.ChapterHealth)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .HasDefaultValue(ChapterHealth.Unknown);
+        builder.Property(file => file.ChapterReason).HasMaxLength(512);
+        builder.Property(file => file.ChapterCount).HasDefaultValue(0);
 
         builder.HasIndex(file => file.PathIdentityLookupKey);
         builder.HasIndex(file => file.PathOwnershipKey)

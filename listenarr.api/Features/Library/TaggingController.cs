@@ -115,22 +115,12 @@ namespace Listenarr.Api.Features.Library
                     fileNameMismatched = row.FileNameMismatched,
                     // The chapter verdict is a lowercase word the table filters on, and
                     // the reason is the sentence behind it.
-                    chapterHealth = ChapterHealthName(row.ChapterHealth),
+                    chapterHealth = ChapterHealthNames.Of(row.ChapterHealth),
                     chapterReason = row.ChapterReason,
                     chapterCount = row.ChapterCount
                 })
             });
         }
-
-        private static string ChapterHealthName(ChapterHealth health) => health switch
-        {
-            ChapterHealth.Healthy => "healthy",
-            ChapterHealth.Corrupt => "corrupt",
-            ChapterHealth.Oversegmented => "oversegmented",
-            ChapterHealth.GenericTitles => "generic-titles",
-            ChapterHealth.None => "none",
-            _ => "unknown"
-        };
 
         /// <summary>
         /// The tags Listenarr can write, with their current mapping.
@@ -469,6 +459,7 @@ namespace Listenarr.Api.Features.Library
             phase = job.Phase.ToString(),
             progress = job.Progress,
             trigger = job.Trigger.ToString(),
+            kind = job.Kind.ToString(),
             fileCount = job.FileCount,
             tagsWritten = job.TagsWritten,
             error = job.Error,
