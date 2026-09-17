@@ -12,6 +12,7 @@ using Listenarr.Infrastructure.Persistence.Interceptors;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Persistence;
 
