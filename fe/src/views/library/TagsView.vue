@@ -474,7 +474,7 @@ import {
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
-import type { LibraryTagColumn, LibraryTagRow } from '@/types'
+import type { LibraryTagColumn, LibraryTagRow, RenameOperation } from '@/types'
 
 /**
  * The columns that are not tags: which books an action is for, the file, and where it
@@ -966,11 +966,71 @@ async function applySelection() {
   applyOpen.value = false
 
   if (applyPaths.value) {
-    organizeOpen.value = true
-    return
+    if (!(await organizeSelected())) return
   }
 
-  await writeSelected()
+  if (applyTags.value) {
+    await writeSelected()
+  }
+}
+
+/**
+ * Organize the selected books straight from the table.
+ *
+ * No preview step: the table already shows every path an organize would change, cell by
+ * cell, and the operator has just read it. The preview call still runs, because the
+ * server's rename needs the operations it produces — it is not shown. Only when the
+ * organize is refused does the modal open, since that is where an interrupted organize
+ * can be repaired.
+ */
+async function organizeSelected(): Promise<boolean> {
+  working.value = true
+  actionMessage.value = 'Organizing…'
+
+  try {
+    const previews = await apiService.previewRename([...selectedBookIds.value])
+    const operations: RenameOperation[] = previews
+      .filter((preview) => preview.hasChanges)
+      .map((preview) => ({
+        audiobookId: preview.audiobookId,
+        currentFolderPath: preview.currentFolderPath,
+        currentFolderSemantics: preview.currentFolderSemantics,
+        newFolderPath: preview.folderChanged ? preview.newFolderPath : undefined,
+        fileRenames: preview.fileRenames
+          .filter((entry) => entry.changed)
+          .map((entry) => ({
+            fileId: entry.fileId,
+            currentPath: entry.currentPath || '',
+            newPath: entry.newPath || '',
+          })),
+      }))
+
+    if (operations.length === 0) {
+      actionMessage.value =
+        'Nothing to organize: the selected files are already where the pattern puts them.'
+      return true
+    }
+
+    const results = await apiService.executeRename(operations)
+    const failed = results.filter((result) => !result.success)
+    await load(false)
+
+    if (failed.length > 0) {
+      actionMessage.value = `Organized ${results.length - failed.length} of ${results.length} book(s). ${failed.length} failed: ${failed[0].error ?? 'unknown error'}`
+      organizeOpen.value = true
+      return false
+    }
+
+    actionMessage.value = `Organized ${results.length} book${results.length === 1 ? '' : 's'}.`
+    return true
+  } catch (err) {
+    logger.warn('Organize from the tag table failed', err)
+    actionMessage.value = `Organize failed: ${describe(err)}`
+    organizeOpen.value = true
+    return false
+  } finally {
+    working.value = false
+  }
 }
 
 /* -- Playing a file ---------------------------------------------------------- */
@@ -1251,12 +1311,6 @@ async function onOrganized() {
   organizeOpen.value = false
   actionMessage.value = 'Organized. Re-reading the library…'
   await load(false)
-
-  if (applyTags.value) {
-    await writeSelected()
-    return
-  }
-
   actionMessage.value = null
 }
 
