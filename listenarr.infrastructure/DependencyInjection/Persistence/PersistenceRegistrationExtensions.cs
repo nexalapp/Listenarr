@@ -8,9 +8,11 @@
  * (at your option) any later version.
  */
 using Listenarr.Infrastructure.Persistence;
+using Listenarr.Infrastructure.Persistence.Interceptors;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.Persistence;
 
@@ -20,10 +22,20 @@ internal static class PersistenceRegistrationExtensions
         this IServiceCollection services,
         Action<DbContextOptionsBuilder>? configureDb)
     {
+        // The interceptor reads the settings snapshot; registered here too so the
+        // persistence graph resolves on its own (the security module registers the same
+        // singleton for the configuration service).
+        services.TryAddSingleton<IApplicationSettingsSnapshot, ApplicationSettingsSnapshot>();
+        services.AddSingleton<AuthorAliasSaveInterceptor>();
         if (configureDb != null)
         {
             services.AddDbContextFactory<ListenArrDbContext>(
-                configureDb,
+                (provider, options) =>
+                {
+                    configureDb(options);
+                    // The alias setting is applied at save time, whichever path saves.
+                    options.AddInterceptors(provider.GetRequiredService<AuthorAliasSaveInterceptor>());
+                },
                 ServiceLifetime.Singleton);
         }
 

@@ -292,5 +292,11 @@ namespace Listenarr.Domain.Configuration
         /// <see cref="SeriesNameStyle"/>. The stored series name is never changed.
         /// </summary>
         public string SeriesNameDropWordsJson { get; set; } = SeriesNameStyle.DefaultDropWordsJson;
+
+        /// <summary>
+        /// Author spellings to store as another, as a JSON list of
+        /// <c>{"variant","canonical"}</c>. See <see cref="AuthorAliases"/>.
+        /// </summary>
+        public string AuthorAliasesJson { get; set; } = AuthorAliases.EmptyJson;
     }
 }

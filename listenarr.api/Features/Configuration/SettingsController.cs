@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Audiobooks.Authors;
 using Listenarr.Api.Attributes;
 using Listenarr.Application.Common.Exceptions;
 using Microsoft.AspNetCore.Mvc;
@@ -133,6 +134,19 @@ namespace Listenarr.Api.Features.Configuration
         /// <response code="200">The filters were saved.</response>
         /// <response code="400">The body was not a JSON array.</response>
         [Tags("Settings")]
+        /// <summary>
+        /// Rewrite every stored author name through the author-alias setting. Saves
+        /// apply the aliases on their own; this catches up the books already in the library.
+        /// </summary>
+        [HttpPost("author-aliases/apply")]
+        public async Task<IActionResult> ApplyAuthorAliases(
+            [FromServices] AuthorAliasApplyService applyService,
+            CancellationToken cancellationToken)
+        {
+            var result = await applyService.ApplyAsync(cancellationToken);
+            return Ok(new { booksChanged = result.BooksChanged, booksScanned = result.BooksScanned });
+        }
+
         [HttpPost("library-filters")]
         public async Task<IActionResult> SaveLibraryCustomFilters(
             [FromBody] JsonElement filters)

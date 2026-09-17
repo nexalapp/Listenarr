@@ -364,10 +364,25 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var cleaned = new string(value
                 .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
                 .ToArray());
-            return string.Join(
-                ' ',
-                cleaned.Split([' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries))
-                .ToLowerInvariant();
+            // Initials are joined so "B. V. Larson", "B.V. Larson" and "BV Larson" compare
+            // equal: Audible credits the same author all three ways. This is a comparison
+            // key only; the stored name is whatever the alias setting says.
+            var parts = cleaned.Split([' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+            var joined = new List<string>(parts.Length);
+            foreach (var part in parts)
+            {
+                // A one-letter token after a run of one-letter tokens is another initial.
+                if (part.Length == 1 && joined.Count > 0 && joined[^1].Length <= 2)
+                {
+                    joined[^1] += part;
+                }
+                else
+                {
+                    joined.Add(part);
+                }
+            }
+
+            return string.Join(' ', joined).ToLowerInvariant();
         }
 
         /// <summary>The key a dismissal is stored under: the ASIN when there is one.</summary>

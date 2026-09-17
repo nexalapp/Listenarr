@@ -344,5 +344,15 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             Assert.Equal(["Major Author", "Minor Author"], snapshot.Authors.Select(group => group.Author));
         }
+
+        [Theory]
+        [InlineData("B. V. Larson", "bv larson")]
+        [InlineData("B.V. Larson", "bv larson")]
+        [InlineData("J. R. R. Tolkien", "jrr tolkien")]
+        [InlineData("Iain M. Banks", "iain m banks")]
+        public void Normalize_JoinsInitialsSoSpellingsCompareEqual(string name, string expected)
+        {
+            Assert.Equal(expected, SuggestionNames.Normalize(name));
+        }
     }
 }
