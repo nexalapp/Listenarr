@@ -93,14 +93,14 @@ namespace Listenarr.Domain.Audiobooks.Tagging
             new(
                 Artist,
                 "Artist",
-                "The author. Audiobook players treat artist as the author, not the narrator.",
-                "{Author}",
+                "Every credited author. Audiobook players treat artist as the author, not the narrator, and this tag can carry a list.",
+                "{Authors}",
                 TagWriteMode.Always),
 
             new(
                 AlbumArtist,
                 "Album Artist",
-                "The author again. Plex groups a library by album artist, so leaving it empty scatters an author's books.",
+                "The primary author alone. Plex groups a library by album artist, and a list here makes an author page nobody looks for.",
                 "{Author}",
                 TagWriteMode.Always),
 

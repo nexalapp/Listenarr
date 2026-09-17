@@ -180,5 +180,32 @@ namespace Listenarr.Tests.Features.Api.Services
                 Assert.True(System.Text.Encoding.UTF8.GetByteCount(part) <= 255, part);
             }
         }
+
+        /// <summary>
+        /// A co-written book is filed under its primary author. A list in the folder name
+        /// gave every pair its own author folder, and in Plex an album artist that is a
+        /// list is an author page nobody looks for; the full credit goes in {Authors}.
+        /// </summary>
+        [Fact]
+        public void ApplyNamingPattern_AuthorIsThePrimaryAuthor_AuthorsIsTheWholeCredit()
+        {
+            var metadata = new AudioMetadata
+            {
+                Artist = "Larry Niven, Gregory Benford",
+                Authors = ["Larry Niven", "Gregory Benford"],
+                Title = "Bowl of Heaven",
+            };
+
+            Assert.Equal("Larry Niven", _service.ApplyNamingPattern("{Author}", metadata, treatAsFilename: true));
+            Assert.Equal("Larry Niven, Gregory Benford", _service.ApplyNamingPattern("{Authors}", metadata, treatAsFilename: true));
+        }
+
+        [Fact]
+        public void ApplyNamingPattern_AuthorFallsBackToTheFirstNameInAJoinedArtist()
+        {
+            var metadata = new AudioMetadata { Artist = "Larry Niven, Gregory Benford", Title = "Bowl of Heaven" };
+
+            Assert.Equal("Larry Niven", _service.ApplyNamingPattern("{Author}", metadata, treatAsFilename: true));
+        }
     }
 }

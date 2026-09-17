@@ -22,6 +22,19 @@ namespace Listenarr.Domain.Audiobooks
     {
         public string Title { get; set; } = string.Empty;
         public string Artist { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Every credited author, in the record's order. The first is the primary author
+        /// - the one a folder is filed under and an album artist names - and the order
+        /// is the operator's to change. <see cref="Artist"/> holds the same list joined.
+        /// </summary>
+        public List<string>? Authors { get; set; }
+
+        /// <summary>The first credited author, or the artist string when no list is known.</summary>
+        public string PrimaryAuthor =>
+            Authors?.FirstOrDefault(author => !string.IsNullOrWhiteSpace(author))?.Trim()
+            ?? Artist;
+
         public string Album { get; set; } = string.Empty;
         public string AlbumArtist { get; set; } = string.Empty;
         public string Genre { get; set; } = string.Empty;

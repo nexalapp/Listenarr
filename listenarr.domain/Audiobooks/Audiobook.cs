@@ -162,6 +162,7 @@ namespace Listenarr.Domain.Audiobooks
                 Edition = Edition,
                 Artist = (Authors != null && Authors.Any()) ? string.Join(", ", Authors) : string.Empty,
                 AlbumArtist = (Authors != null && Authors.Any()) ? string.Join(", ", Authors) : string.Empty,
+                Authors = Authors?.Where(author => !string.IsNullOrWhiteSpace(author)).ToList(),
                 Narrator = (Narrators != null && Narrators.Any())
                     ? string.Join(", ", Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
                     : null,
