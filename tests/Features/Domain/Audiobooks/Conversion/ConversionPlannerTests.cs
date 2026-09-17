@@ -242,6 +242,30 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Conversion
         }
 
         [Fact]
+        public void BuildPlan_LastEmbeddedChapterRunsToTheEndOfItsFile()
+        {
+            // Marks are often written short of the audio - a closing credit, a note,
+            // silence. The whole file is encoded regardless, so the plan's total has
+            // to be the audio's length or the finished file is refused for running
+            // longer than "the source files total". One real book: 18:20:51 of audio
+            // against marks ending at 18:15:41.
+            var merged = Source("Whole Book.mp3", seconds: 400) with
+            {
+                EmbeddedChapters =
+                [
+                    new EmbeddedChapter("One", TimeSpan.Zero, TimeSpan.FromSeconds(100)),
+                    new EmbeddedChapter("Two", TimeSpan.FromSeconds(100), TimeSpan.FromSeconds(300)),
+                ]
+            };
+
+            var plan = ConversionPlanner.BuildPlan([merged], StringComparer.Ordinal);
+
+            Assert.Equal(2, plan.Chapters.Count);
+            Assert.Equal(TimeSpan.FromSeconds(400), plan.Chapters[^1].End);
+            Assert.Equal(TimeSpan.FromSeconds(400), plan.TotalDuration);
+        }
+
+        [Fact]
         public void BuildPlan_OffsetsEmbeddedChaptersByThePrecedingFiles()
         {
             var first = Source("01.mp3", seconds: 20);
