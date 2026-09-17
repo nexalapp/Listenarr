@@ -39,7 +39,6 @@
         <span v-if="selectedFiles.size > 0" class="count-badge count-badge--selected">
           {{ selectedFiles.size }} file{{ selectedFiles.size === 1 ? '' : 's' }} selected
         </span>
-        <span v-if="actionMessage" class="toolbar-message">{{ actionMessage }}</span>
       </div>
 
       <div class="toolbar-right">
@@ -162,6 +161,12 @@
           Re-read
         </button>
       </div>
+
+      <!--
+        Its own row, under everything. Inline with the badges it grew into the buttons'
+        space, and a long refusal pushed the right-hand group onto a second line.
+      -->
+      <p v-if="actionMessage" class="toolbar-message" role="status">{{ actionMessage }}</p>
     </div>
 
     <div v-if="loading" class="tags-state">
@@ -1066,6 +1071,11 @@ async function applySelection() {
   if (applyTags.value) {
     await writeSelected()
   }
+
+  // The ticks were the request; it has been made. Left in place they would ride along
+  // into the next apply, and once the rows drop out of "Needs work" there would be no
+  // way to see them, let alone clear them.
+  selectedFiles.value = new Set()
 }
 
 /**
@@ -1178,6 +1188,14 @@ function onPlaybackError() {
 /* -- Selection, which is by file --------------------------------------------- */
 
 const visibleFileIds = computed(() => new Set(visibleRows.value.map((row) => row.fileId)))
+
+// A tick on a row the operator cannot see is a request they cannot review. When a row
+// leaves the table - written and no longer needing work, or filtered out - its tick
+// goes with it; the selected count only ever describes rows on screen.
+watch(visibleFileIds, (visible) => {
+  if (![...selectedFiles.value].some((fileId) => !visible.has(fileId))) return
+  selectedFiles.value = new Set([...selectedFiles.value].filter((fileId) => visible.has(fileId)))
+})
 
 const allVisibleSelected = computed(
   () =>
@@ -2269,6 +2287,8 @@ onBeforeUnmount(() => {
 }
 
 .toolbar-message {
+  flex-basis: 100%;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 0.78rem;
 }
