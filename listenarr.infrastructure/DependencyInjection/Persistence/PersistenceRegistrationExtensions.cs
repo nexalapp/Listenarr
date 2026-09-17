@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Audiobooks.Series;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Interceptors;
 using Listenarr.Infrastructure.Persistence.Repositories;
@@ -26,6 +27,7 @@ internal static class PersistenceRegistrationExtensions
         // persistence graph resolves on its own (the security module registers the same
         // singleton for the configuration service).
         services.TryAddSingleton<IApplicationSettingsSnapshot, ApplicationSettingsSnapshot>();
+        services.TryAddSingleton<ISeriesAuthorSnapshot, SeriesAuthorSnapshot>();
         services.AddSingleton<AuthorAliasSaveInterceptor>();
         if (configureDb != null)
         {

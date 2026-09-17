@@ -72,6 +72,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260917040925_AddAuthorAliases";
     private const string MaxNarratorsInNamesMigrationId =
         "20260917122653_AddMaxNarratorsInNames";
+    private const string FileSeriesUnderFirstAuthorMigrationId =
+        "20260917154313_AddSeriesAuthorSettings";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -212,7 +214,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 SeriesNameDropWordsMigrationId,
                 LibraryTagCacheEntriesMigrationId,
                 AuthorAliasesMigrationId,
-                MaxNarratorsInNamesMigrationId
+                MaxNarratorsInNamesMigrationId,
+                FileSeriesUnderFirstAuthorMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

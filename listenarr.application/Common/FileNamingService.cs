@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Series;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
@@ -37,16 +38,19 @@ namespace Listenarr.Application.Common
         private readonly ILogger<FileNamingService> _logger;
         private readonly IFileSystemSemanticsResolver? _semanticsResolver;
         private readonly IApplicationSettingsSnapshot? _settingsSnapshot;
+        private readonly ISeriesAuthorSnapshot? _seriesAuthors;
 
         public FileNamingService(
             IConfigurationService configService,
             ILogger<FileNamingService> logger,
             IFileSystemSemanticsResolver? semanticsResolver = null,
-            IApplicationSettingsSnapshot? settingsSnapshot = null)
+            IApplicationSettingsSnapshot? settingsSnapshot = null,
+            ISeriesAuthorSnapshot? seriesAuthors = null)
         {
             _configService = configService;
             _logger = logger;
             _semanticsResolver = semanticsResolver;
+            _seriesAuthors = seriesAuthors;
             _settingsSnapshot = settingsSnapshot;
         }
 

@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Infrastructure.Library.Series;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Infrastructure.Search.NzbKing;
 using Microsoft.Extensions.Configuration;
@@ -26,6 +27,7 @@ internal static class WorkerRegistrationExtensions
         services.AddSingleton<MoveScanHandoffRecoveryService>();
         AddProcessor<ScanJobProcessor, IScanJobProcessor>(services);
         services.AddHostedService<ScanBackgroundService>();
+        services.AddHostedService<SeriesAuthorRefreshService>();
 
         services.AddSingleton<AudiobookContentMoveService>();
         AddProcessor<MoveJobProcessor, IMoveJobProcessor>(services);

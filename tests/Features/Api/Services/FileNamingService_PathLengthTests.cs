@@ -207,5 +207,37 @@ namespace Listenarr.Tests.Features.Api.Services
 
             Assert.Equal("Larry Niven", _service.ApplyNamingPattern("{Author}", metadata, treatAsFilename: true));
         }
+
+        /// <summary>
+        /// A series files under its first book's author, so a Dune sequel by Brian
+        /// Herbert lands in Frank Herbert's folder; the book's own credit stays in
+        /// {Authors}. Switching the setting off returns {Author} to the book's own.
+        /// </summary>
+        [Fact]
+        public void ApplyNamingPattern_AuthorIsTheSeriesAuthorWhenTheSettingIsOn()
+        {
+            var settings = new Listenarr.Application.Configuration.Contracts.ApplicationSettingsSnapshot();
+            var series = new Listenarr.Application.Audiobooks.Series.SeriesAuthorSnapshot();
+            series.Update(new Dictionary<string, string> { ["dune"] = "Frank Herbert" });
+            var service = new FileNamingService(
+                new Mock<IConfigurationService>().Object,
+                new Mock<ILogger<FileNamingService>>().Object,
+                settingsSnapshot: settings,
+                seriesAuthors: series);
+            var metadata = new AudioMetadata
+            {
+                Artist = "Brian Herbert, Kevin J. Anderson",
+                Authors = ["Brian Herbert", "Kevin J. Anderson"],
+                Series = "Dune",
+                Title = "Hunters of Dune",
+            };
+
+            settings.Update(new ApplicationSettings { FileSeriesUnderFirstAuthor = true });
+            Assert.Equal("Frank Herbert", service.ApplyNamingPattern("{Author}", metadata, treatAsFilename: true));
+            Assert.Equal("Brian Herbert, Kevin J. Anderson", service.ApplyNamingPattern("{Authors}", metadata, treatAsFilename: true));
+
+            settings.Update(new ApplicationSettings { FileSeriesUnderFirstAuthor = false });
+            Assert.Equal("Brian Herbert", service.ApplyNamingPattern("{Author}", metadata, treatAsFilename: true));
+        }
     }
 }
