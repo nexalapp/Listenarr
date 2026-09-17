@@ -107,6 +107,7 @@ internal static class LibraryRegistrationExtensions
         // not spawn a probe per file. The service that fills it stays scoped, because it
         // reads through the repository.
         services.AddSingleton<LibraryTagCache>();
+        services.AddScoped<ILibraryTagCacheStore, EfLibraryTagCacheStore>();
         services.AddScoped<ILibraryTagIndexService, LibraryTagIndexService>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();

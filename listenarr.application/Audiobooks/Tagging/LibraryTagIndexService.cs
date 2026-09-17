@@ -45,7 +45,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
         LibraryTagCache cache,
         IRootFolderService rootFolderService,
         ILogger<LibraryTagIndexService> logger,
-        IRenameService? renameService = null) : ILibraryTagIndexService
+        IRenameService? renameService = null,
+        ILibraryTagCacheStore? cacheStore = null) : ILibraryTagIndexService
     {
         /// <summary>
         /// How many files are probed at once on a cold load.
@@ -73,6 +74,14 @@ namespace Listenarr.Application.Audiobooks.Tagging
             if (refresh)
             {
                 cache.Clear();
+                if (cacheStore != null)
+                {
+                    await cacheStore.ClearAsync(cancellationToken);
+                }
+            }
+            else if (cacheStore != null)
+            {
+                await cache.EnsureLoadedAsync(cacheStore, cancellationToken);
             }
 
             var audiobooks = await audiobookRepository.GetLibraryAsync();
@@ -183,7 +192,50 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 throw;
             }
 
+            await PersistPendingAsync(cancellationToken);
             return new LibraryTagIndex(rows, filesRead, DateTime.UtcNow);
+        }
+
+        public async Task RecordFileAsync(string fullPath, CancellationToken cancellationToken = default)
+        {
+            if (!fileSystem.FileExists(fullPath)
+                || !await tagWriter.IsAvailableAsync(cancellationToken))
+            {
+                return;
+            }
+
+            var length = fileSystem.GetFileLength(fullPath);
+            var lastWrite = fileSystem.GetLastWriteTimeUtc(fullPath);
+            var tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
+            cache.Set(fullPath, length, lastWrite, tags);
+            await PersistPendingAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// Write what this call probed back to the durable store. A store that fails
+        /// costs the next process a probe per file, not the table.
+        /// </summary>
+        private async Task PersistPendingAsync(CancellationToken cancellationToken)
+        {
+            if (cacheStore == null)
+            {
+                return;
+            }
+
+            var pending = cache.TakePending();
+            if (pending.Count == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                await cacheStore.SaveAsync(pending, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not persist {Count} tag cache entries", pending.Count);
+            }
         }
 
         /// <summary>

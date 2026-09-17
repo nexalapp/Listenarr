@@ -192,6 +192,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 }
 
                 await queue.ClearPendingPublicationAsync(job.Id, CancellationToken.None);
+                await RecordPublishedTagsAsync(destinationPath, services);
                 return PublicationOutcome.Published();
             }
             catch (OperationCanceledException)
@@ -210,6 +211,27 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 return await HoldOrRestoreAsync(
                     job, scratchPath, destinationPath, services, queue,
                     $"The rewritten file could not be published into the library: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Put the published file's tags into the tag cache now, so the tag table's next
+        /// load shows the write without probing the file mid-request. Best effort: the
+        /// cache notices the changed file on its own if this fails.
+        /// </summary>
+        private async Task RecordPublishedTagsAsync(string destinationPath, IServiceProvider services)
+        {
+            try
+            {
+                var index = services.GetService<ILibraryTagIndexService>();
+                if (index != null)
+                {
+                    await index.RecordFileAsync(destinationPath, CancellationToken.None);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogDebug(ex, "Could not refresh the tag cache for {Path}", LogRedaction.SanitizeFilePath(destinationPath));
             }
         }
 

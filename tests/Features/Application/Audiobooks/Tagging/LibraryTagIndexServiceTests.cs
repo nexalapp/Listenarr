@@ -42,12 +42,13 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
         private readonly Mock<IRootFolderService> _rootFolders = new();
         private readonly Mock<IRenameService> _rename = new();
         private readonly LibraryTagCache _cache = new();
+        private readonly Mock<ILibraryTagCacheStore> _store = new();
 
         private readonly string _directory = Path.Combine(
             Path.GetTempPath(),
             "listenarr-tagindex-" + Guid.NewGuid().ToString("N"));
 
-        private LibraryTagIndexService BuildService() => new(
+        private LibraryTagIndexService BuildService(bool withStore = false) => new(
             _audiobooks.Object,
             _configuration.Object,
             _writer.Object,
@@ -58,7 +59,21 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             _cache,
             _rootFolders.Object,
             NullLogger<LibraryTagIndexService>.Instance,
-            _rename.Object);
+            _rename.Object,
+            withStore ? _store.Object : null);
+
+        private void GivenStoredTags(string fileName, params (string Key, string Value)[] tags) =>
+            _store
+                .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new LibraryTagCacheRecord(
+                    Path.Combine(_directory, fileName),
+                    1024,
+                    new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    new AudiobookFileTags(
+                        tags.ToDictionary(tag => tag.Key, tag => tag.Value, StringComparer.OrdinalIgnoreCase),
+                        12,
+                        TimeSpan.FromHours(9),
+                        HasCoverArt: true))]);
 
         private Audiobook GivenLibrary(params string[] fileNames)
         {
@@ -237,6 +252,82 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
 
             _writer.Verify(
                 writer => writer.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        /// <summary>
+        /// The store is what makes the cache outlive a restart: a fresh process with a
+        /// stored entry for an unchanged file opens the table without a single probe.
+        /// </summary>
+        [Fact]
+        public async Task BuildAsync_AnswersFromTheStoreWithoutProbing()
+        {
+            GivenLibrary("Drive.m4b");
+            GivenStoredTags("Drive.m4b", ("album", "Stored"));
+            GivenCurrentTags(("album", "Probed"));
+
+            var index = await BuildService(withStore: true).BuildAsync();
+
+            Assert.Equal(0, index.FilesRead);
+            Assert.Equal("Stored", index.Rows.Single().Tags["album"]);
+            _writer.Verify(
+                writer => writer.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task BuildAsync_PersistsWhatItProbed()
+        {
+            GivenLibrary("Drive.m4b");
+            _store.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+            GivenCurrentTags(("album", "Drive"));
+
+            await BuildService(withStore: true).BuildAsync();
+
+            _store.Verify(
+                store => store.SaveAsync(
+                    It.Is<IReadOnlyList<LibraryTagCacheRecord>>(records =>
+                        records.Count == 1
+                        && records[0].Path == Path.Combine(_directory, "Drive.m4b")
+                        && records[0].Tags.Tags["album"] == "Drive"),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task BuildAsync_RefreshClearsTheStoreToo()
+        {
+            GivenLibrary("Drive.m4b");
+            GivenStoredTags("Drive.m4b", ("album", "Stored"));
+            GivenCurrentTags(("album", "Probed"));
+
+            var index = await BuildService(withStore: true).BuildAsync(refresh: true);
+
+            Assert.Equal(1, index.FilesRead);
+            Assert.Equal("Probed", index.Rows.Single().Tags["album"]);
+            _store.Verify(store => store.ClearAsync(It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        /// <summary>
+        /// A write that has just published a file records it, so the next load already
+        /// knows the file and does not probe it during the request.
+        /// </summary>
+        [Fact]
+        public async Task RecordFileAsync_CachesAndPersistsTheFile()
+        {
+            GivenLibrary("Drive.m4b");
+            _store.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+            GivenCurrentTags(("album", "Written"));
+            var path = Path.Combine(_directory, "Drive.m4b");
+
+            var service = BuildService(withStore: true);
+            await service.RecordFileAsync(path);
+            var index = await service.BuildAsync();
+
+            Assert.Equal(0, index.FilesRead);
+            Assert.Equal("Written", index.Rows.Single().Tags["album"]);
+            _store.Verify(
+                store => store.SaveAsync(It.IsAny<IReadOnlyList<LibraryTagCacheRecord>>(), It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 

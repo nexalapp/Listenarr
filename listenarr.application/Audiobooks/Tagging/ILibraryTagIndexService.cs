@@ -97,5 +97,12 @@ namespace Listenarr.Application.Audiobooks.Tagging
         Task<LibraryTagIndex> BuildAsync(
             bool refresh = false,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Probe one file now and cache the result, for the moment a write has just
+        /// published it: the next table load then answers for it from the cache
+        /// instead of noticing the changed file and probing it during the request.
+        /// </summary>
+        Task RecordFileAsync(string fullPath, CancellationToken cancellationToken = default);
     }
 }
