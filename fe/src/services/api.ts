@@ -984,6 +984,14 @@ class ApiService {
     })
   }
 
+  /** Rewrite the library's stored author names through the saved alias setting. */
+  async applyAuthorAliases(): Promise<{ booksChanged: number; booksScanned: number }> {
+    return this.request<{ booksChanged: number; booksScanned: number }>(
+      '/configuration/author-aliases/apply',
+      { method: 'POST' },
+    )
+  }
+
   async getProwlarrImportSettings(): Promise<ProwlarrImportConnectionSettings> {
     return this.request<ProwlarrImportConnectionSettings>('/configuration/prowlarr-import')
   }
