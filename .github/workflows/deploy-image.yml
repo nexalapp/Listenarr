@@ -1,0 +1,131 @@
+# Fork-only (nexalapp/Listenarr): a fast image for the NAS.
+#
+# Upstream's build-and-publish is a release pipeline: three standalone zips, an
+# amd64+arm64 image through QEMU, three registries - ten minutes, of which the
+# NAS uses the amd64 layer of one image. This builds exactly that, with a layer
+# cache, in parallel with the pull request's tests, so a deploy is bounded by the
+# tests rather than by tests plus a build that starts only after they pass.
+#
+# Version: canary assigns the version when a PR merges, bumping by its label, so
+# an image built from a PR head would report the old number. The bump is
+# computed here the same way and passed to dotnet publish, so the image reports
+# the version canary is about to write.
+#
+# Tag: deploy-<version>-<sha7>, where sha7 is the PR head (or the pushed commit).
+# Never overwritten: a rebuild of the same commit at the same version is the same
+# image.
+
+name: Deploy Image
+
+on:
+  pull_request:
+    branches: [ canary ]
+    types: [ opened, synchronize, reopened, labeled ]
+  push:
+    branches: [ beta ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    env:
+      API_PROJECT: listenarr.api/Listenarr.Api.csproj
+      DOCKER_OUTPUT: listenarr.api/docker-publish
+    outputs:
+      tag: ${{ steps.version.outputs.TAG }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Resolve version and tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$(grep -o "<Version>[^<]*" "$API_PROJECT" | cut -d'>' -f2)
+          IFS=. read -r major minor patch <<< "$current"
+          bump=none
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            if echo "$labels" | grep -q '"major"'; then bump=major
+            elif echo "$labels" | grep -q '"minor"'; then bump=minor
+            elif echo "$labels" | grep -q '"patch"'; then bump=patch
+            fi
+          fi
+          case "$bump" in
+            major) version="$((major + 1)).0.0" ;;
+            minor) version="$major.$((minor + 1)).0" ;;
+            patch) version="$major.$minor.$((patch + 1))" ;;
+            *)     version="$current" ;;
+          esac
+          sha7=$(git rev-parse --short=7 "${{ github.event.pull_request.head.sha || github.sha }}")
+          echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+          echo "TAG=deploy-$version-$sha7" >> "$GITHUB_OUTPUT"
+          echo "Building $version from $sha7 (bump: $bump from $current)"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: fe/package-lock.json
+
+      - name: Restore
+        run: dotnet restore "$API_PROJECT"
+
+      # The csproj builds the frontend (npm ci, npm run build) during publish.
+      - name: Publish for the runtime image (amd64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$DOCKER_OUTPUT"
+          dotnet publish "$API_PROJECT" -c Release -r linux-x64 --no-restore \
+            --self-contained false /p:UseAppHost=false \
+            /p:Version=${{ steps.version.outputs.VERSION }} \
+            -o "$DOCKER_OUTPUT/amd64"
+          if [ ! -d "$DOCKER_OUTPUT/amd64/tools/discord-bot" ]; then
+            mkdir -p "$DOCKER_OUTPUT/amd64/tools"
+            cp -r tools/discord-bot "$DOCKER_OUTPUT/amd64/tools/"
+          fi
+          rm -rf "$DOCKER_OUTPUT/amd64/tools/discord-bot/node_modules"
+          test -f "$DOCKER_OUTPUT/amd64/tools/discord-bot/package-lock.json"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (amd64, cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: listenarr.api/Dockerfile.runtime
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/listenarr:${{ steps.version.outputs.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: echo "Pushed ghcr.io/${{ github.repository_owner }}/listenarr:${{ steps.version.outputs.TAG }}" >> "$GITHUB_STEP_SUMMARY"
