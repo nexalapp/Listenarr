@@ -239,5 +239,28 @@ namespace Listenarr.Tests.Features.Api.Services
             settings.Update(new ApplicationSettings { FileSeriesUnderFirstAuthor = false });
             Assert.Equal("Brian Herbert", service.ApplyNamingPattern("{Author}", metadata, treatAsFilename: true));
         }
+
+        [Fact]
+        public void ApplyNamingPattern_AudibleMetadata_AlsoFilesUnderTheSeriesAuthor()
+        {
+            var settings = new Listenarr.Application.Configuration.Contracts.ApplicationSettingsSnapshot();
+            settings.Update(new ApplicationSettings { FileSeriesUnderFirstAuthor = true });
+            var series = new Listenarr.Application.Audiobooks.Series.SeriesAuthorSnapshot();
+            series.Update(new Dictionary<string, string> { ["harry potter"] = "J.K. Rowling" });
+            var service = new FileNamingService(
+                new Mock<IConfigurationService>().Object,
+                new Mock<ILogger<FileNamingService>>().Object,
+                settingsSnapshot: settings,
+                seriesAuthors: series);
+            var metadata = new AudibleBookMetadata
+            {
+                Authors = ["Jack Thorne", "J.K. Rowling"],
+                Series = "Harry Potter",
+                Title = "Harry Potter and the Cursed Child",
+            };
+
+            Assert.Equal("J.K. Rowling", service.ApplyNamingPattern("{Author}", metadata, treatAsFilename: true));
+            Assert.Equal("Jack Thorne, J.K. Rowling", service.ApplyNamingPattern("{Authors}", metadata, treatAsFilename: true));
+        }
     }
 }

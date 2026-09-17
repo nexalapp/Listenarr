@@ -265,16 +265,17 @@ namespace Listenarr.Application.Common
 
         private Dictionary<string, object> BuildVariables(AudibleBookMetadata metadata)
         {
-            var author = metadata.Author ?? "Unknown Author";
-            if (metadata.Authors != null && metadata.Authors.Count > 0)
-            {
-                // Assume first one is the main author
-                author = metadata.Authors.First();
-            }
+            var authors = metadata.Authors?.Where(name => !string.IsNullOrWhiteSpace(name)).ToList();
+            var primary = authors is { Count: > 0 } ? authors[0] : metadata.Author ?? "Unknown Author";
+            // The same filing rule as the AudioMetadata builder: the series' first author
+            // when the setting is on, else the book's own primary author.
+            var author = FilingAuthor(metadata.Series, primary);
+            var allAuthors = authors is { Count: > 0 } ? string.Join(", ", authors) : primary;
 
             return new Dictionary<string, object>
             {
                 { "Author", SanitizePathComponent(author) },
+                { "Authors", SanitizePathComponent(allAuthors) },
                 { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(RenderSeriesName(metadata.Series)) },
                 { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
                 { "Subtitle", string.IsNullOrWhiteSpace(metadata.Subtitle) ? string.Empty : SanitizePathComponent(metadata.Subtitle) },
@@ -321,19 +322,22 @@ namespace Listenarr.Application.Common
         /// The author a book files under: its series' first author when the setting says
         /// so and the series is known, otherwise its own primary author.
         /// </summary>
-        private string FilingAuthor(AudioMetadata metadata)
+        private string FilingAuthor(AudioMetadata metadata) =>
+            FilingAuthor(metadata.Series, PrimaryAuthor(metadata));
+
+        private string FilingAuthor(string? series, string primaryAuthor)
         {
             var bySeries = _settingsSnapshot?.Current?.FileSeriesUnderFirstAuthor ?? true;
-            if (bySeries && _seriesAuthors != null && !string.IsNullOrWhiteSpace(metadata.Series))
+            if (bySeries && _seriesAuthors != null && !string.IsNullOrWhiteSpace(series))
             {
-                var seriesAuthor = _seriesAuthors.AuthorFor(metadata.Series);
+                var seriesAuthor = _seriesAuthors.AuthorFor(series);
                 if (!string.IsNullOrWhiteSpace(seriesAuthor))
                 {
                     return seriesAuthor;
                 }
             }
 
-            return PrimaryAuthor(metadata);
+            return primaryAuthor;
         }
 
         private static string PrimaryAuthor(AudioMetadata metadata)
