@@ -17,11 +17,11 @@
 -->
 <template>
   <div class="form-section">
-    <h3><PhUsers /> Author Names</h3>
+    <h3><PhUsers /> People's Names</h3>
     <div class="form-body">
       <FormRow
-        label="Author Aliases"
-        help="Spellings a provider may send, and the one the library keeps. Audible credits the same author as 'B. V. Larson' on one title and 'B.V. Larson' on the next, and the library groups by the exact string. Each alias is applied whenever a book is saved — a match, a refresh, an import or an edit — so the variant never reaches the shelf. Nothing is inferred; only the spellings listed here are changed."
+        label="Name Aliases"
+        help="Spellings a provider may send for an author or narrator, and the one the library keeps. Audible credits the same person as 'B. V. Larson' on one title and 'B.V. Larson' on the next, or 'Daniel May' and 'Daniel Thomas May', and the library groups by the exact string. Each alias is applied to authors and narrators whenever a book is saved — a match, a refresh, an import or an edit — so the variant never reaches the shelf. Nothing is inferred; only the spellings listed here are changed."
       >
         <div class="alias-list">
           <div v-for="(alias, index) in aliases" :key="index" class="alias-row">

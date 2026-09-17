@@ -36,7 +36,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence
             var snapshot = new ApplicationSettingsSnapshot();
             snapshot.Update(new ApplicationSettings
             {
-                AuthorAliasesJson = """[{"variant":"B.V. Larson","canonical":"B. V. Larson"}]"""
+                AuthorAliasesJson = """[{"variant":"B.V. Larson","canonical":"B. V. Larson"},{"variant":"Daniel May","canonical":"Daniel Thomas May"}]"""
             });
 
             await using var connection = new SqliteConnection("DataSource=:memory:");
@@ -49,10 +49,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence
             await using var db = new ListenArrDbContext(options);
             await db.Database.EnsureCreatedAsync();
 
-            var book = new Audiobook { Title = "Starship Pandora", Authors = ["B.V. Larson"] };
+            var book = new Audiobook { Title = "Starship Pandora", Authors = ["B.V. Larson"], Narrators = ["Daniel May"] };
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
             Assert.Equal(["B. V. Larson"], book.Authors);
+            Assert.Equal(["Daniel Thomas May"], book.Narrators);
 
             book.Authors = ["b.v. larson", "Gentry Lee"];
             await db.SaveChangesAsync();
