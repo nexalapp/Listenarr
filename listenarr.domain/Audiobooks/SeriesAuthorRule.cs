@@ -42,7 +42,10 @@ namespace Listenarr.Domain.Audiobooks
     /// to the earliest year. Position rather than year because the year a record carries
     /// is usually the audio edition's, not the first printing's - by year, Harry Potter
     /// files under the playwright of the 2001-recorded Cursed Child. Books with no
-    /// position sort last. An operator-set override wins over all of it.
+    /// position sort last. An operator-set override wins over all of it, and an override
+    /// with no author exempts the series: an anthology has no originator, and filing the
+    /// Forward Collection under whichever contributor sorted first hides every other
+    /// author's book under the wrong name.
     /// </summary>
     public static class SeriesAuthorRule
     {
@@ -67,7 +70,17 @@ namespace Listenarr.Domain.Audiobooks
 
             foreach (var item in overrides ?? [])
             {
-                if (!string.IsNullOrWhiteSpace(item.Series) && !string.IsNullOrWhiteSpace(item.Author))
+                if (string.IsNullOrWhiteSpace(item.Series))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(item.Author))
+                {
+                    // Exempt: no entry means {Author} falls back to each book's own credit.
+                    result.Remove(Key(item.Series));
+                }
+                else
                 {
                     result[Key(item.Series)] = item.Author.Trim();
                 }

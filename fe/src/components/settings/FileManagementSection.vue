@@ -132,7 +132,7 @@
             <input
               v-model="item.author"
               type="text"
-              placeholder="Author to file under (e.g. J. A. Konrath)"
+              placeholder="Author to file under, or blank for each book's own author"
               @change="commitSeriesAuthorOverrides"
             />
             <button
@@ -149,8 +149,8 @@
               <PhPlus :size="14" /> Add series override
             </button>
             <span class="alias-note"
-              >For a series the rule gets wrong — an anthology, or a first book credited to a
-              co-writer.</span
+              >For a series the rule gets wrong: a first book credited to a co-writer, or an
+              anthology, where a blank author files each book under its own.</span
             >
           </div>
         </div>
@@ -469,7 +469,7 @@ function serializeSeriesAuthorOverrides(rows: SeriesAuthorOverrideRow[]): string
   return JSON.stringify(
     rows
       .map((row) => ({ series: row.series.trim(), author: row.author.trim() }))
-      .filter((row) => row.series && row.author),
+      .filter((row) => row.series),
   )
 }
 
