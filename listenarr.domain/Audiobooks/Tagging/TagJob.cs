@@ -44,7 +44,10 @@ namespace Listenarr.Domain.Audiobooks.Tagging
     public enum TagJobKind
     {
         Tags,
-        Chapters
+        Chapters,
+
+        /// <summary>Listen to the book and record whether it is what its record says. Writes nothing to the file.</summary>
+        Audit
     }
 
     public enum TagTrigger
@@ -209,5 +212,11 @@ namespace Listenarr.Domain.Audiobooks.Tagging
 
         /// <summary>One tagging run per audiobook: a second request while one is in flight is the same request.</summary>
         public static string BuildDeduplicationKey(int audiobookId) => $"tagging:{audiobookId}";
+
+        /// <summary>
+        /// An audit's key is its own: it writes nothing, so it may sit in the queue
+        /// beside a tag write for the same book without either being refused.
+        /// </summary>
+        public static string BuildAuditDeduplicationKey(int audiobookId) => $"audit:{audiobookId}";
     }
 }

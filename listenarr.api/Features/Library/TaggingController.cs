@@ -17,6 +17,7 @@
  */
 using System.Globalization;
 using Listenarr.Application.Audiobooks;
+using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.AspNetCore.Mvc;
 
@@ -117,7 +118,10 @@ namespace Listenarr.Api.Features.Library
                     // the reason is the sentence behind it.
                     chapterHealth = ChapterHealthNames.Of(row.ChapterHealth),
                     chapterReason = row.ChapterReason,
-                    chapterCount = row.ChapterCount
+                    chapterCount = row.ChapterCount,
+                    // The book's audio verdict, on every one of its rows.
+                    audioAudit = AudioAuditVerdictNames.Of(row.AudioAudit),
+                    audioAuditReason = row.AudioAuditReason
                 })
             });
         }

@@ -451,7 +451,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 fileNameChanged,
                 chapters.Health,
                 chapters.Reason,
-                chapters.ChapterCount);
+                chapters.ChapterCount,
+                audiobook.AudioAuditVerdict,
+                audiobook.AudioAuditReason);
         }
     }
 }

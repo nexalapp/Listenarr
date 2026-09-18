@@ -18,6 +18,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using Listenarr.Domain.Audiobooks.Audit;
 
 namespace Listenarr.Domain.Audiobooks
 {
@@ -55,6 +56,33 @@ namespace Listenarr.Domain.Audiobooks
         public List<string>? Narrators { get; set; }
         public List<string>? Isbn { get; set; }
         public string? Asin { get; set; }
+
+        /// <summary>
+        /// Whether the audio introduces itself as the book this record says it is.
+        /// Written by the audio audit, never by a scan; <see cref="AudioAuditVerdict.NotAudited"/>
+        /// until one has run.
+        /// </summary>
+        public AudioAuditVerdict AudioAuditVerdict { get; set; } = AudioAuditVerdict.NotAudited;
+
+        [MaxLength(512)]
+        public string? AudioAuditReason { get; set; }
+
+        /// <summary>What was heard, so a verdict can be checked without listening again.</summary>
+        [MaxLength(4000)]
+        public string? AudioAuditHeard { get; set; }
+
+        /// <summary>The credits as spoken, for a re-match to start from.</summary>
+        [MaxLength(256)]
+        public string? AudioAuditHeardTitle { get; set; }
+
+        [MaxLength(256)]
+        public string? AudioAuditHeardAuthor { get; set; }
+
+        [MaxLength(256)]
+        public string? AudioAuditHeardNarrator { get; set; }
+
+        public DateTime? AudioAuditedAt { get; set; }
+
         // OpenLibrary identifier (OLID) when the audiobook originates from OpenLibrary
         public string? OpenLibraryId { get; set; }
         // Typed external identifiers for robust metadata/image lookup and manual correction.

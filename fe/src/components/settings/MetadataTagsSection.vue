@@ -81,6 +81,17 @@
           <option value="base.en">base.en — hears chapter announcements well</option>
           <option value="small.en">small.en — better with names, about 3× slower</option>
         </select>
+        <label class="tags-toggle transcription-audit">
+          <input
+            type="checkbox"
+            :checked="settings.audioAuditOnImport ?? false"
+            :disabled="!(settings.transcriptionEnabled ?? false)"
+            @change="
+              (e) => updateField('audioAuditOnImport', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span>Audit every new import: hear its credits and check them against the record</span>
+        </label>
       </FormRow>
 
       <FormRow
@@ -365,5 +376,9 @@ onMounted(async () => {
 .transcription-model {
   margin-top: 0.5rem;
   display: block;
+}
+
+.transcription-audit {
+  margin-top: 0.5rem;
 }
 </style>

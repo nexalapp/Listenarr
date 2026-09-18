@@ -1,3 +1,4 @@
+using Listenarr.Application.Audiobooks.Audit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -102,6 +103,34 @@ public partial class ScanJobProcessor
         {
             await QueueTagWriteIfWantedAsync(audiobook, cancellationToken);
             await JudgeChaptersAsync(audiobook, cancellationToken);
+            await QueueAudioAuditIfWantedAsync(audiobook, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Offer the book to the audio audit. The service refuses on its own when the
+    /// setting is off, which is the common case and costs one settings read.
+    /// </summary>
+    private async Task QueueAudioAuditIfWantedAsync(Audiobook audiobook, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var auditor = scope.ServiceProvider.GetService<IAudioAuditService>();
+            if (auditor == null)
+            {
+                return;
+            }
+
+            var result = await auditor.EnqueueAsync(audiobook.Id, TagTrigger.Automatic, cancellationToken);
+            if (result.Queued)
+            {
+                _logger.LogInformation("Queued audio audit {JobId} for audiobook {AudiobookId} after scan", result.JobId, audiobook.Id);
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            _logger.LogDebug(exception, "Could not offer audiobook {AudiobookId} to the audio audit after its scan", audiobook.Id);
         }
     }
 

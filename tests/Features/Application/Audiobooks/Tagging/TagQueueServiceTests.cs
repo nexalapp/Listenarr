@@ -158,6 +158,37 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             Assert.Equal(TagEnqueueOutcome.AlreadyQueued, result.Outcome);
         }
 
+        [Fact]
+        public async Task EnqueueAudioAuditAsync_QueuesBesideATagWriteForTheSameBook()
+        {
+            var audiobook = GivenAudiobook("Book.m4b");
+            audiobook.Files![0].Id = 41;
+            // A tag write is active, but an audit has its own key.
+            _repository
+                .Setup(repository => repository.GetActiveForAudiobookAsync(7, TagJobKind.Audit, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob?)null);
+            TagJob? stored = null;
+            _repository
+                .Setup(repository => repository.AddAsync(It.IsAny<TagJob>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob job, CancellationToken _) => stored = job);
+
+            var result = await BuildService().EnqueueAudioAuditAsync(7, TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
+            Assert.Equal(TagJobKind.Audit, stored!.Kind);
+            Assert.Equal(TagJob.BuildAuditDeduplicationKey(7), stored.ActiveDeduplicationKey);
+        }
+
+        [Fact]
+        public async Task EnqueueAudioAuditAsync_RefusesABookWithNoAudio()
+        {
+            GivenAudiobook("cover.jpg");
+
+            var result = await BuildService().EnqueueAudioAuditAsync(7, TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
+        }
+
         // ---- what gets queued -------------------------------------------------------
 
         [Fact]

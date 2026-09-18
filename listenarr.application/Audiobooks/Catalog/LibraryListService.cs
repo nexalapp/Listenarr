@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
 
 namespace Listenarr.Application.Audiobooks.Catalog
@@ -153,6 +154,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     ChapterHealth = chapterHealthById.TryGetValue(a.Id, out var chapterHealth)
                         ? ChapterHealthNames.Of(chapterHealth)
                         : null,
+                    AudioAudit = AudioAuditVerdictNames.Of(a.AudioAuditVerdict),
                     Status = AudiobookStatusEvaluator.ComputeStatus(
                          activeDownloadAudiobookIdSet.Contains(a.Id),
                          hasAnyFile,

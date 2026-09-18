@@ -1769,6 +1769,13 @@ class ApiService {
     })
   }
 
+  /** Queue an audio audit: listen to the book and judge it against its record. */
+  async auditAudio(
+    audiobookId: number,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/audit`, { method: 'POST' })
+  }
+
   /** Re-run a tag write that failed. */
   async retryTagWrite(
     jobId: string,

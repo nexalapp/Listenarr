@@ -124,6 +124,10 @@ namespace Listenarr.Domain.Configuration
         // and about three times slower.
         public string TranscriptionModel { get; set; } = "base.en";
 
+        // Whether every newly scanned book is listened to for its spoken credits and
+        // judged against its record. Needs transcription; a minute of CPU per book.
+        public bool AudioAuditOnImport { get; set; } = false;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

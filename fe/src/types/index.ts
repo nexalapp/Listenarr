@@ -610,6 +610,9 @@ export interface LibraryTagRow {
   /** Why the verdict, in a sentence. */
   chapterReason?: string | null
   chapterCount: number
+  /** The book's audio-audit verdict, repeated on each of its rows; null until audited. */
+  audioAudit?: AudioAuditVerdict | null
+  audioAuditReason?: string | null
 }
 
 /** One chapter as a repair would write it. */
@@ -710,6 +713,8 @@ export interface ApplicationSettings {
   transcriptionEnabled?: boolean
   /** Which whisper model: `tiny.en`, `base.en` or `small.en`. */
   transcriptionModel?: string
+  /** Whether every newly scanned book is listened to and judged against its record. */
+  audioAuditOnImport?: boolean
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean
   // What goes into each tag and whether it may be overwritten. Absent means the
@@ -1164,7 +1169,19 @@ export interface Audiobook {
   status?: AudiobookStatus
   /** The worst chapter verdict among the book's files; absent until a file has been judged. */
   chapterHealth?: ChapterHealth | null
+  /** Whether the audio introduces itself as this book; absent until an audit has run. */
+  audioAudit?: AudioAuditVerdict | null
+  audioAuditReason?: string | null
+  /** What was heard, segments newline-separated. */
+  audioAuditHeard?: string | null
+  audioAuditHeardTitle?: string | null
+  audioAuditHeardAuthor?: string | null
+  audioAuditHeardNarrator?: string | null
+  audioAuditedAt?: string | null
 }
+
+/** The audio audit's verdict as the API spells it. */
+export type AudioAuditVerdict = 'match' | 'narrator-mismatch' | 'mismatch' | 'inconclusive'
 
 /**
  * A field that can be pinned against a metadata rescan.

@@ -78,6 +78,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260917222758_AddChapterHealthAndChapterJobs";
     private const string TranscriptionSettingsMigrationId =
         "20260918020743_AddTranscriptionSettings";
+    private const string AudioAuditMigrationId =
+        "20260918031633_AddAudioAudit";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -221,7 +223,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 MaxNarratorsInNamesMigrationId,
                 FileSeriesUnderFirstAuthorMigrationId,
                 ChapterHealthAndChapterJobsMigrationId,
-                TranscriptionSettingsMigrationId
+                TranscriptionSettingsMigrationId,
+                AudioAuditMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

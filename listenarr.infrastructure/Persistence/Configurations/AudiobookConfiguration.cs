@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Infrastructure.Persistence.Converters;
 
 namespace Listenarr.Infrastructure.Persistence.Configurations
@@ -91,6 +92,11 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             authorAsinsProp.Metadata.SetValueComparer(authorAsinsComparer);
 
             // One-to-many: Audiobook -> AudiobookFiles
+            builder.Property(e => e.AudioAuditVerdict)
+                .HasConversion<string>()
+                .HasMaxLength(24)
+                .HasDefaultValue(AudioAuditVerdict.NotAudited);
+
             builder.HasMany(a => a.Files)
                 .WithOne(f => f.Audiobook)
                 .HasForeignKey(f => f.AudiobookId)

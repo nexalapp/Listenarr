@@ -88,6 +88,15 @@ namespace Listenarr.Application.Audiobooks.Tagging
             TagTrigger trigger,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Queue an audio audit for a book. Its own deduplication key, because it writes
+        /// nothing and may wait beside a tag write for the same book.
+        /// </summary>
+        Task<TagEnqueueResult> EnqueueAudioAuditAsync(
+            int audiobookId,
+            TagTrigger trigger,
+            CancellationToken cancellationToken = default);
+
         /// <summary>Re-queue a terminal job that is allowed to retry.</summary>
         Task<TagEnqueueResult> RetryAsync(Guid jobId, CancellationToken cancellationToken = default);
 

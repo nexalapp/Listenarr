@@ -495,6 +495,78 @@
             </div>
           </div>
         </div>
+        <!--
+          What the audio says it is, beside the files that say it. A verdict of "match"
+          is a line, not a badge; a mismatch is the one thing on this page that says the
+          record may be the wrong book, so it is loud and it offers the way out.
+        -->
+        <div
+          v-if="audiobook.audioAudit"
+          class="audio-audit"
+          :class="`audio-audit--${audiobook.audioAudit}`"
+        >
+          <PhEar class="audio-audit-icon" />
+          <div class="audio-audit-body">
+            <div class="audio-audit-verdict">{{ audioAuditLabel }}</div>
+            <div class="audio-audit-reason">{{ audiobook.audioAuditReason }}</div>
+            <div
+              v-if="audiobook.audioAuditHeard"
+              class="audio-audit-heard"
+              :title="audiobook.audioAuditHeard"
+            >
+              “{{ heardExcerpt }}”
+            </div>
+          </div>
+          <div class="audio-audit-actions">
+            <button
+              v-if="
+                audiobook.audioAudit === 'mismatch' || audiobook.audioAudit === 'narrator-mismatch'
+              "
+              type="button"
+              class="file-repair-btn"
+              title="Search for the edition the audio says it is and re-match this book to it"
+              @click="openFixMatchFromAudit"
+            >
+              Fix match…
+            </button>
+            <button
+              type="button"
+              class="file-repair-btn file-repair-btn--quiet"
+              :disabled="audioAuditInFlight"
+              :title="audioAuditInFlight ? 'Listening…' : 'Listen again'"
+              @click="auditAudio"
+            >
+              {{ audioAuditInFlight ? 'Listening…' : 'Listen again' }}
+            </button>
+          </div>
+        </div>
+        <div
+          v-else-if="audiobook.files && audiobook.files.length"
+          class="audio-audit audio-audit--none"
+        >
+          <PhEar class="audio-audit-icon" />
+          <div class="audio-audit-body">
+            <div class="audio-audit-reason">
+              Not yet listened to. An audit hears the book's opening and closing credits and checks
+              them against this record.
+            </div>
+          </div>
+          <div class="audio-audit-actions">
+            <button
+              type="button"
+              class="file-repair-btn"
+              :disabled="audioAuditInFlight"
+              :title="
+                audioAuditInFlight
+                  ? 'Listening…'
+                  : 'Hear the credits and check them against the record'
+              "
+              @click="auditAudio"
+            >
+              {{ audioAuditInFlight ? 'Listening…' : 'Listen' }}
+            </button>
+          </div>
+        </div>
         <div v-if="audiobook.files && audiobook.files.length" class="file-list">
           <div
             v-for="f in audiobook.files"
@@ -758,9 +830,9 @@
   <LibraryImportSearchModal
     v-if="showFixMatchModal && audiobook"
     :heading="safeText(audiobook.title)"
-    :initial-query="audiobook.title || ''"
-    :initial-author="(audiobook.authors || [])[0] || ''"
-    @close="showFixMatchModal = false"
+    :initial-query="fixMatchQuery ?? audiobook.title ?? ''"
+    :initial-author="fixMatchAuthor ?? (audiobook.authors || [])[0] ?? ''"
+    @close="closeFixMatch"
     @select="applyMatch"
   />
 
@@ -872,6 +944,7 @@ import {
   PhClockCounterClockwise,
   PhFileAudio,
   PhListNumbers,
+  PhEar,
   PhCaretDown,
   PhFileDashed,
   PhWarningCircle,
@@ -1905,6 +1978,84 @@ function chapterBadge(health: ChapterHealth | undefined): string | null {
   }
 }
 
+// ---- audio audit -----------------------------------------------------------------
+
+const audioAuditLabel = computed(() => {
+  switch (audiobook.value?.audioAudit) {
+    case 'match':
+      return 'The audio introduces itself as this book.'
+    case 'narrator-mismatch':
+      return 'Right book, different narrator.'
+    case 'mismatch':
+      return 'The audio introduces itself as a different book.'
+    case 'inconclusive':
+      return 'Could not tell from the audio.'
+    default:
+      return ''
+  }
+})
+
+const heardExcerpt = computed(() => {
+  const heard = (audiobook.value?.audioAuditHeard ?? '').replace(/\s*\n\s*/g, ' · ').trim()
+  return heard.length > 220 ? `${heard.slice(0, 217)}…` : heard
+})
+
+const audioAuditInFlight = computed(() => {
+  const job = tagJobsStore.jobs.find(
+    (candidate) =>
+      candidate.audiobookId === audiobook.value?.id &&
+      candidate.kind === 'Audit' &&
+      (candidate.status === 'Queued' ||
+        candidate.status === 'Running' ||
+        candidate.status === 'RetryScheduled'),
+  )
+  return !!job
+})
+
+async function auditAudio() {
+  if (!audiobook.value) return
+  const toast = useToast()
+  try {
+    const response = await tagJobsStore.auditAudio(audiobook.value.id)
+    if (response.queued) {
+      toast.success('Listening', 'The verdict appears here once the credits have been heard.')
+    } else {
+      toast.error('Not queued', response.reason ?? 'This book could not be queued for an audit.')
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobookDetailView',
+      operation: 'auditAudio',
+      metadata: { audiobookId: audiobook.value?.id },
+    })
+    toast.error('Audit failed to queue', err instanceof Error ? err.message : String(err))
+  }
+}
+
+/** Start the re-match from what the narrator said the book is, not from the record that may be wrong. */
+const fixMatchQuery = ref<string | null>(null)
+const fixMatchAuthor = ref<string | null>(null)
+
+function openFixMatchFromAudit() {
+  fixMatchQuery.value = audiobook.value?.audioAuditHeardTitle ?? null
+  fixMatchAuthor.value = audiobook.value?.audioAuditHeardAuthor ?? null
+  showFixMatchModal.value = true
+}
+
+// An audit that finishes rewrites the verdict on the book; reload to show it.
+watch(
+  () =>
+    tagJobsStore.jobs
+      .filter((job) => job.audiobookId === audiobook.value?.id && job.kind === 'Audit')
+      .map((job) => job.status)
+      .join(','),
+  (statuses, previous) => {
+    if (previous && statuses.includes('Completed') && !previous.includes('Completed')) {
+      void loadAudiobook()
+    }
+  },
+)
+
 const showChapterRepairModal = ref(false)
 const chapterRepairScopes = ref<ChapterRepairScope[]>([])
 
@@ -1945,6 +2096,12 @@ async function repairChapters(books: { audiobookId: number; fileIds: number[] }[
 }
 
 const showFixMatchModal = ref(false)
+
+function closeFixMatch() {
+  showFixMatchModal.value = false
+  fixMatchQuery.value = null
+  fixMatchAuthor.value = null
+}
 
 // A wrong match is fixed by pointing the book at the right edition and letting the
 // ordinary rescan do the rest; locked fields survive it as they would any rescan.
@@ -3522,6 +3679,78 @@ a.identifier-link:hover {
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.audio-audit {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.audio-audit--mismatch,
+.audio-audit--narrator-mismatch {
+  border-color: rgba(231, 76, 60, 0.35);
+  background: rgba(231, 76, 60, 0.08);
+}
+
+.audio-audit--match {
+  border-color: rgba(46, 204, 113, 0.25);
+}
+
+.audio-audit-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+}
+
+.audio-audit--mismatch .audio-audit-icon,
+.audio-audit--narrator-mismatch .audio-audit-icon {
+  color: #e74c3c;
+}
+
+.audio-audit--match .audio-audit-icon {
+  color: #2ecc71;
+}
+
+.audio-audit-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.audio-audit-verdict {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.audio-audit-reason {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.audio-audit-heard {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.audio-audit-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.file-repair-btn--quiet {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
 }
 
 .file-chapter-badge--note {

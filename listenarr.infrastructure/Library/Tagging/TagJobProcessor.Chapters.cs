@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Audit;
 using Listenarr.Application.Audiobooks.Chapters;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -141,6 +142,38 @@ namespace Listenarr.Infrastructure.Library.Tagging
             }
 
             return ExecutionOutcome.Succeeded(chaptersWritten, filesWritten, audiobook.Title);
+        }
+        /// <summary>
+        /// The audit kind: listen and record. No scratch file, no publication — the
+        /// outcome is six columns on the book.
+        /// </summary>
+        private async Task<ExecutionOutcome> ExecuteAudioAuditAsync(
+            TagJob job,
+            Audiobook audiobook,
+            IServiceProvider services,
+            ITagQueueService queue,
+            CancellationToken cancellationToken)
+        {
+            await queue.ReportProgressAsync(job.Id, TagJobPhase.Reading, 5, cancellationToken);
+            var auditor = services.GetRequiredService<IAudioAuditService>();
+            try
+            {
+                var result = await auditor.AuditAsync(audiobook.Id, cancellationToken);
+                logger.LogInformation(
+                    "Audio audit {JobId}: {Verdict} — {Reason}",
+                    job.Id,
+                    result.Verdict,
+                    result.Reason);
+                return ExecutionOutcome.Succeeded(0, job.FileCount, audiobook.Title);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ExecutionOutcome.Failed(TagWriteFailureKind.WriterUnavailable, ex.Message);
+            }
+            catch (FfmpegException ex)
+            {
+                return ExecutionOutcome.Failed(TagWriteFailureKind.SourceUnreadable, ex.Message);
+            }
         }
     }
 }

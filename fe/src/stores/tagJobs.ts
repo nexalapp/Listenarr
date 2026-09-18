@@ -185,6 +185,15 @@ export const useTagJobsStore = defineStore('tagJobs', () => {
     return response
   }
 
+  async function auditAudio(audiobookId: number) {
+    const response = await apiService.auditAudio(audiobookId)
+    if (response.queued) {
+      await refresh()
+    }
+
+    return response
+  }
+
   async function retry(jobId: string) {
     const response = await apiService.retryTagWrite(jobId)
     if (response.queued) {
@@ -217,6 +226,7 @@ export const useTagJobsStore = defineStore('tagJobs', () => {
     refresh,
     write,
     repairChapters,
+    auditAudio,
     retry,
     start,
     stop,

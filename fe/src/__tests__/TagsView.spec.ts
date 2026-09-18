@@ -26,6 +26,7 @@ const setPathLocks = vi.fn()
 const buildLibraryFileAudioUrl = vi.fn((id: number) => `/api/v1/tagging/files/${id}/audio`)
 const writeTags = vi.fn()
 const repairChapters = vi.fn()
+const auditAudio = vi.fn()
 const previewChapterRepair = vi.fn()
 const push = vi.fn()
 
@@ -38,6 +39,7 @@ vi.mock('@/services/api', () => ({
       buildLibraryFileAudioUrl(...(args as [number])),
     writeTags: (...args: unknown[]) => writeTags(...args),
     repairChapters: (...args: unknown[]) => repairChapters(...args),
+    auditAudio: (...args: unknown[]) => auditAudio(...args),
     previewChapterRepair: (...args: unknown[]) => previewChapterRepair(...args),
     getTagJobs: () => Promise.resolve([]),
   },
@@ -91,6 +93,8 @@ const row = (overrides: Partial<LibraryTagRow> = {}): LibraryTagRow => ({
   chapterHealth: 'healthy',
   chapterReason: '12 chapter(s).',
   chapterCount: 12,
+  audioAudit: null,
+  audioAuditReason: null,
   ...overrides,
 })
 
@@ -160,7 +164,15 @@ describe('TagsView', () => {
     const wrapper = await mountView()
 
     const headers = wrapper.findAll('.tags-th-label').map((header) => header.text())
-    expect(headers).toEqual(['Filename', 'Path', 'Chapters', 'Description', 'Title', 'Album'])
+    expect(headers).toEqual([
+      'Filename',
+      'Path',
+      'Chapters',
+      'Audio',
+      'Description',
+      'Title',
+      'Album',
+    ])
   })
 
   it('remembers a narrowed set of columns instead of reopening on all of them', async () => {
@@ -172,6 +184,7 @@ describe('TagsView', () => {
       'Filename',
       'Path',
       'Chapters',
+      'Audio',
       'Title',
     ])
   })
@@ -292,7 +305,7 @@ describe('TagsView', () => {
     const wrapper = await mountView()
 
     const headers = wrapper.findAll('.tags-th-label').map((header) => header.text())
-    expect(headers).toEqual(['Filename', 'Path', 'Chapters', 'Album'])
+    expect(headers).toEqual(['Filename', 'Path', 'Chapters', 'Audio', 'Album'])
   })
 
   it('ticks one file, not its siblings', async () => {
@@ -1020,6 +1033,54 @@ describe('TagsView', () => {
 
     expect(repairChapters).toHaveBeenCalledWith(7, [1])
     expect(wrapper.text()).toContain('Queued 1 file for chapter repair')
+  })
+
+  it('shows the audio verdict and narrows to the books whose audio disagrees', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          fileId: 1,
+          fileName: 'Wrong.m4b',
+          audioAudit: 'mismatch',
+          audioAuditReason: 'The audio introduces itself as "The Forever War" by Joe Haldeman.',
+        }),
+        row({ fileId: 2, fileName: 'Right.m4b', audioAudit: 'match', audioAuditReason: 'Heard.' }),
+        row({ fileId: 3, fileName: 'Quiet.m4b' }),
+      ]),
+    )
+
+    expect(wrapper.text()).toContain('Different book')
+    await wrapper.find('.toolbar-select').setValue('audio-mismatch')
+    await wrapper.vm.$nextTick()
+    const listed = wrapper.findAll('.tags-row').map((r) => r.text())
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toContain('Wrong.m4b')
+    expect(wrapper.find('.tags-td--chapters-issue').attributes('title')).toContain('Forever War')
+  })
+
+  it('queues one audit per ticked book', async () => {
+    auditAudio.mockResolvedValue({ queued: true, jobId: 'a1' })
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'A - 1.m4b' }),
+        row({ audiobookId: 7, fileId: 2, fileName: 'A - 2.m4b' }),
+        row({ audiobookId: 9, fileId: 3, fileName: 'B.m4b' }),
+      ]),
+    )
+
+    for (const box of wrapper.findAll('.tags-row .row-select')) {
+      await box.trigger('click')
+    }
+    await wrapper.vm.$nextTick()
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Listen'))
+    await button!.trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(auditAudio).toHaveBeenCalledTimes(2)
+    expect(auditAudio).toHaveBeenCalledWith(7)
+    expect(auditAudio).toHaveBeenCalledWith(9)
+    expect(wrapper.text()).toContain('Listening to 2 books')
   })
 
   it('reports the failure instead of an empty table', async () => {

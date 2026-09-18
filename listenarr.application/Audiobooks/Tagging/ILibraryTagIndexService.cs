@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
 
 namespace Listenarr.Application.Audiobooks.Tagging
@@ -77,7 +78,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
         bool FileNameMismatched = false,
         ChapterHealth ChapterHealth = ChapterHealth.Unknown,
         string? ChapterReason = null,
-        int ChapterCount = 0);
+        int ChapterCount = 0,
+        AudioAuditVerdict AudioAudit = AudioAuditVerdict.NotAudited,
+        string? AudioAuditReason = null);
 
     /// <summary>
     /// The whole library's tag table, plus what it cost to build.

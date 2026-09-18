@@ -611,6 +611,14 @@
                         <PhListNumbers />
                         {{ chapterIssueLabel(audiobook) }}
                       </div>
+                      <div
+                        v-if="audioIssueLabel(audiobook)"
+                        class="chapter-badge"
+                        :title="audiobook.audioAuditReason ?? undefined"
+                      >
+                        <PhEar />
+                        {{ audioIssueLabel(audiobook) }}
+                      </div>
                     </div>
                     <div class="action-buttons">
                       <button
@@ -801,6 +809,14 @@
                     <PhListNumbers />
                     {{ chapterIssueLabel(audiobook) }}
                   </div>
+                  <div
+                    v-if="audioIssueLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="audiobook.audioAuditReason ?? undefined"
+                  >
+                    <PhEar />
+                    {{ audioIssueLabel(audiobook) }}
+                  </div>
                 </div>
                 <div class="list-actions">
                   <button
@@ -966,6 +982,7 @@ import {
   PhEye,
   PhEyeSlash,
   PhListNumbers,
+  PhEar,
   PhSpinner,
   PhWarningCircle,
   PhInfo,
@@ -1302,6 +1319,18 @@ const chapterIssueLabel = (book: Audiobook): string | null => {
   }
 }
 
+/** The badge for a book whose audio does not introduce itself as this book, or null. */
+const audioIssueLabel = (book: Audiobook): string | null => {
+  switch (book.audioAudit) {
+    case 'mismatch':
+      return 'Audio mismatch'
+    case 'narrator-mismatch':
+      return 'Narrator mismatch'
+    default:
+      return null
+  }
+}
+
 const filteredAndSortedAudiobooks = computed(() => {
   const list = (libraryStore.audiobooks || []).slice()
 
@@ -1335,6 +1364,8 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => getAudiobookStatus(b) === 'no-file')
     } else if (sid === 'chapter-issues') {
       filtered = filtered.filter((b) => !!chapterIssueLabel(b))
+    } else if (sid === 'audio-mismatch') {
+      filtered = filtered.filter((b) => !!audioIssueLabel(b))
     } else if (sid === 'recent') {
       // For now: approximate by publishYear being this year or last year
       const thisYear = new Date().getFullYear()

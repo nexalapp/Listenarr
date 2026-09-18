@@ -104,6 +104,7 @@ const builtInOptions = [
   { value: 'missing', label: 'Missing' },
   { value: 'recent', label: 'Recently Added' },
   { value: 'chapter-issues', label: 'Chapter Issues' },
+  { value: 'audio-mismatch', label: 'Audio Mismatch' },
 ]
 
 const customFilters = computed(() => props.customFilters || [])

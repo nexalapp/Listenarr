@@ -64,5 +64,12 @@ namespace Listenarr.Application.Audiobooks.Catalog
         /// <c>none</c>, <c>healthy</c>. Null when no file has been judged yet.
         /// </summary>
         public string? ChapterHealth { get; set; }
+
+        /// <summary>
+        /// Whether the audio introduces itself as this book, as a lowercase word:
+        /// <c>match</c>, <c>narrator-mismatch</c>, <c>mismatch</c>, <c>inconclusive</c>.
+        /// Null until an audit has run.
+        /// </summary>
+        public string? AudioAudit { get; set; }
     }
 }

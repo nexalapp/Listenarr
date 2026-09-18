@@ -90,6 +90,11 @@ namespace Listenarr.Infrastructure.Library.Tagging
                             : "None of the files this run was queued for is still an M4B here.");
             }
 
+            if (job.Kind == TagJobKind.Audit)
+            {
+                return await ExecuteAudioAuditAsync(job, audiobook, services, queue, cancellationToken);
+            }
+
             if (job.Kind == TagJobKind.Chapters)
             {
                 return await ExecuteChapterRepairAsync(

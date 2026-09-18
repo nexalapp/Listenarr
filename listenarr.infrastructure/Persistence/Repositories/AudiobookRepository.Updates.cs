@@ -102,6 +102,29 @@ public partial class AudiobookRepository
         return true;
     }
 
+    public async Task SetAudioAuditAsync(int audiobookId, AudioAuditRecord audit, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(audit);
+
+        var existing = await _db.Audiobooks.FirstOrDefaultAsync(candidate => candidate.Id == audiobookId, ct);
+        if (existing == null)
+        {
+            return;
+        }
+
+        existing.AudioAuditVerdict = audit.Verdict;
+        existing.AudioAuditReason = Truncate(audit.Reason, 512);
+        existing.AudioAuditHeard = Truncate(audit.Heard, 4000);
+        existing.AudioAuditHeardTitle = Truncate(audit.Credits.Title, 256);
+        existing.AudioAuditHeardAuthor = Truncate(audit.Credits.Author, 256);
+        existing.AudioAuditHeardNarrator = Truncate(audit.Credits.Narrator, 256);
+        existing.AudioAuditedAt = audit.AuditedAtUtc;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string? Truncate(string? value, int max) =>
+        value == null || value.Length <= max ? value : value[..max];
+
     public async Task<bool> UpdateAsync(Audiobook audiobook)
     {
         ArgumentNullException.ThrowIfNull(audiobook);
