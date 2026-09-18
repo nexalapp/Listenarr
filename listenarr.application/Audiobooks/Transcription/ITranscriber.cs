@@ -1,0 +1,66 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+namespace Listenarr.Application.Audiobooks.Transcription
+{
+    /// <summary>
+    /// What was heard in a stretch of audio. Empty text is a valid answer: music, silence,
+    /// or a narrator who said nothing.
+    /// </summary>
+    /// <remarks>
+    /// Whisper breaks speech into segments at pauses, and the pause is information: a
+    /// chapter heading is its own segment, the prose that follows is the next. The
+    /// segments are kept, one per line, so a parser can see the heading end where the
+    /// narrator's breath did.
+    /// </remarks>
+    public sealed record Transcript(string Text)
+    {
+        public const char SegmentSeparator = '\n';
+
+        public static Transcript Empty { get; } = new(string.Empty);
+
+        public bool IsEmpty => string.IsNullOrWhiteSpace(Text);
+
+        public static Transcript FromSegments(IEnumerable<string> segments) =>
+            new(string.Join(SegmentSeparator, segments.Select(segment => segment.Trim()).Where(segment => segment.Length > 0)));
+    }
+
+    /// <summary>
+    /// Turns a short stretch of an audio file into text.
+    ///
+    /// <para>
+    /// Deliberately narrow: a start and a length, never a whole book. Everything this app
+    /// wants to hear is a few seconds long — the words after a chapter mark, the credits
+    /// at the top of a file — and a contract that could transcribe nine hours would
+    /// invite a job that does.
+    /// </para>
+    /// </summary>
+    public interface ITranscriber
+    {
+        /// <summary>
+        /// Whether transcription is switched on and the model can be had. Downloading the
+        /// model on first use is part of "can be had", so this may take a while once.
+        /// </summary>
+        Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default);
+
+        Task<Transcript> TranscribeAsync(
+            string path,
+            TimeSpan start,
+            TimeSpan length,
+            CancellationToken cancellationToken = default);
+    }
+}

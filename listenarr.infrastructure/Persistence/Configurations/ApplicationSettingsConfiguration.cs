@@ -93,6 +93,8 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // ever fills a gap. Defaulted at the column so an install that predates the
             // setting gets the same answer as a fresh one rather than silently off.
             builder.Property(e => e.EmbedCoverArtInTags).HasDefaultValue(true);
+            builder.Property(e => e.TranscriptionEnabled).HasDefaultValue(false);
+            builder.Property(e => e.TranscriptionModel).HasMaxLength(32).HasDefaultValue("base.en");
 
             // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
             // written before this feature existed has no mapping, and that has to read

@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Audiobooks.Tagging;
+using Listenarr.Application.Audiobooks.Transcription;
 using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Audiobooks.Conversion;
 using Microsoft.Extensions.Logging;
@@ -32,9 +33,18 @@ namespace Listenarr.Application.Audiobooks.Chapters
         IChapterAtomRecovery atomRecovery,
         ITagQueueService tagQueue,
         IFileSystem fileSystem,
+        IConfigurationService configurationService,
         ILogger<ChapterRepairService> logger,
-        IAudnexusService? audnexus = null) : IChapterRepairService
+        IAudnexusService? audnexus = null,
+        ITranscriber? transcriber = null,
+        TranscriptCache? transcripts = null) : IChapterRepairService
     {
+        /// <summary>How much to listen to after each mark. Announcements come first, but not always in the first breath.</summary>
+        public static readonly TimeSpan ListenWindow = TimeSpan.FromSeconds(10);
+
+        /// <summary>More marks than this is not a book; it is a mistake, and an hour of CPU.</summary>
+        public const int MaxMarksToHear = 400;
+
         public async Task<ChapterRepairPreview?> PreviewAsync(
             int audiobookId,
             IReadOnlyCollection<int>? fileIds = null,
@@ -86,6 +96,18 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     tags.Duration,
                     Path.GetFileNameWithoutExtension(fileName));
 
+                if (health.Health is ChapterHealth.Oversegmented or ChapterHealth.GenericTitles)
+                {
+                    var (heardPlan, heardRejection) = await PlanFromAnnouncementsAsync(
+                        audiobook,
+                        fullPath,
+                        tags,
+                        health.Health,
+                        cancellationToken);
+                    previews.Add(new ChapterRepairFilePreview(file.Id, fileName, health.Health, health.Reason, heardPlan, heardRejection?.Reason));
+                    continue;
+                }
+
                 if (health.Health != ChapterHealth.Corrupt)
                 {
                     previews.Add(new ChapterRepairFilePreview(
@@ -94,9 +116,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                         health.Health,
                         health.Reason,
                         null,
-                        health.Health == ChapterHealth.Oversegmented
-                            ? "Merging CD tracks into chapters needs the audio audit, which is not available yet."
-                            : "This file's chapter atom is not corrupt, so there is nothing to repair."));
+                        "This file's chapters are not corrupt, so there is nothing to repair."));
                     continue;
                 }
 
@@ -151,6 +171,172 @@ namespace Listenarr.Application.Audiobooks.Chapters
             }
 
             return await tagQueue.EnqueueChapterRepairAsync(audiobookId, plans, TagTrigger.Manual, cancellationToken);
+        }
+
+        /// <summary>
+        /// Rebuild a CD rip's chapters, or name placeholder ones.
+        ///
+        /// <para>
+        /// The edition's own list is tried first: when Audnexus's runtime matches and its
+        /// marks land on the rip's marks, it is the author's chapters at no cost, and
+        /// listening then only adds names. Otherwise every mark is listened at and the
+        /// announcements decide which marks are chapters.
+        /// </para>
+        /// </summary>
+        private async Task<(ChapterPlan? Plan, ChapterPlanRejection? Rejection)> PlanFromAnnouncementsAsync(
+            Audiobook audiobook,
+            string fullPath,
+            AudiobookFileTags tags,
+            ChapterHealth health,
+            CancellationToken cancellationToken)
+        {
+            var marks = tags.Chapters ?? [];
+            if (marks.Count == 0)
+            {
+                return (null, new ChapterPlanRejection("The file has no marks to listen at."));
+            }
+
+            if (marks.Count > MaxMarksToHear)
+            {
+                return (null, new ChapterPlanRejection($"{marks.Count} marks is more than this will listen to ({MaxMarksToHear})."));
+            }
+
+            var settings = await configurationService.GetApplicationSettingsAsync();
+            var listening = settings.TranscriptionEnabled
+                && transcriber != null
+                && await transcriber.IsAvailableAsync(cancellationToken);
+
+            (IReadOnlyList<EmbeddedChapter> Chapters, TimeSpan Runtime)? edition = null;
+            if (!string.IsNullOrWhiteSpace(audiobook.Asin))
+            {
+                var fetched = await FetchAudnexusAsync(audiobook.Asin, cancellationToken);
+                if (fetched is { } source
+                    && Math.Abs((source.Runtime - tags.Duration).TotalSeconds) <= tags.Duration.TotalSeconds * ChapterPlanner.RuntimeTolerance)
+                {
+                    edition = source;
+                }
+            }
+
+            if (edition is { } matched)
+            {
+                // Listen only where the edition puts a chapter, for its name.
+                IReadOnlyList<string?>? heardAtMarks = null;
+                if (listening)
+                {
+                    var wanted = new HashSet<int>();
+                    foreach (var chapter in matched.Chapters)
+                    {
+                        var nearest = NearestMark(marks, chapter.Start);
+                        if (nearest >= 0 && (marks[nearest].Start - chapter.Start).Duration() <= ChapterRebuildPlanner.SnapTolerance)
+                        {
+                            wanted.Add(nearest);
+                        }
+                    }
+
+                    var partial = new string?[marks.Count];
+                    foreach (var index in wanted)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        partial[index] = await HearAsync(fullPath, marks[index].Start, cancellationToken);
+                    }
+
+                    heardAtMarks = partial;
+                }
+
+                var snapped = ChapterRebuildPlanner.SnapToMarks(matched.Chapters, marks, heardAtMarks, tags.Duration);
+                if (snapped != null)
+                {
+                    return (snapped, null);
+                }
+            }
+
+            if (!listening)
+            {
+                return (null, new ChapterPlanRejection(
+                    settings.TranscriptionEnabled && transcriber != null
+                        ? "Transcription is on but the whisper model is not available yet; check the log and try again."
+                        : health == ChapterHealth.Oversegmented
+                            ? "No matching edition was found for this file, so finding the author's chapters among its tracks means listening for the announcements. Turn on transcription in Settings → Metadata Tags."
+                            : "Naming placeholder chapters means listening for the announcements. Turn on transcription in Settings → Metadata Tags."));
+            }
+
+            var heard = new List<string?>(marks.Count);
+            foreach (var mark in marks)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                heard.Add(await HearAsync(fullPath, mark.Start, cancellationToken));
+            }
+
+            // Placeholder titles on marks that are mostly unannounced are a CD rip the
+            // threshold did not catch: the author's chapters begin at the announced
+            // few, and the rest are tracks. Merge those; retitle when the marks are
+            // themselves the chapters.
+            var announced = heard.Count(text => ChapterAnnouncementParser.Parse(text) != null);
+            if (health == ChapterHealth.GenericTitles
+                && (announced < ChapterRebuildPlanner.MinimumAnnouncements || announced * 2 >= marks.Count))
+            {
+                return ChapterRebuildPlanner.Retitle(marks, heard, tags.Duration);
+            }
+
+            return ChapterRebuildPlanner.Merge(marks, heard, tags.Duration, edition?.Chapters.Count);
+        }
+
+        private static int NearestMark(IReadOnlyList<EmbeddedChapter> marks, TimeSpan at)
+        {
+            var nearest = -1;
+            var distance = TimeSpan.MaxValue;
+            for (var index = 0; index < marks.Count; index++)
+            {
+                var gap = (marks[index].Start - at).Duration();
+                if (gap < distance)
+                {
+                    distance = gap;
+                    nearest = index;
+                }
+            }
+
+            return nearest;
+        }
+
+        private async Task<string?> HearAsync(string fullPath, TimeSpan start, CancellationToken cancellationToken)
+        {
+            long length = 0;
+            var lastWrite = DateTime.MinValue;
+            try
+            {
+                length = fileSystem.GetFileLength(fullPath);
+                lastWrite = fileSystem.GetLastWriteTimeUtc(fullPath);
+                var cached = transcripts?.TryGet(fullPath, length, lastWrite, start, ListenWindow);
+                if (cached != null)
+                {
+                    return cached.Text;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogDebug(ex, "Could not stat {Path} for the transcript cache", LogRedaction.SanitizeFilePath(fullPath));
+            }
+
+            try
+            {
+                var transcript = await transcriber!.TranscribeAsync(fullPath, start, ListenWindow, cancellationToken);
+                logger.LogDebug(
+                    "Heard at {Start} of {Path}: {Text}",
+                    start,
+                    LogRedaction.SanitizeFilePath(fullPath),
+                    transcript.Text);
+                if (length > 0)
+                {
+                    transcripts?.Set(fullPath, length, lastWrite, start, ListenWindow, transcript);
+                }
+
+                return transcript.Text;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogWarning(ex, "Could not transcribe {Path} at {Start}", LogRedaction.SanitizeFilePath(fullPath), start);
+                return null;
+            }
         }
 
         private IReadOnlyList<EmbeddedChapter>? TryRecover(string fullPath)

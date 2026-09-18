@@ -119,6 +119,28 @@ describe('ChapterRepairModal', () => {
     expect((wrapper.find('.btn-primary').element as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('shows what was heard beside a chapter the narrator announced', async () => {
+    const file = {
+      ...preview().files[0],
+      source: 'Announcements',
+      chapters: [
+        {
+          title: 'Chapter 1: Saint Nick',
+          startSeconds: 38,
+          endSeconds: 1482,
+          heard: '1. Saint Nick\nZach Morgan sat attentively.',
+        },
+        { title: 'Chapter 2', startSeconds: 1482, endSeconds: 2073, heard: null },
+      ],
+    }
+    const wrapper = await mountModal(preview({ files: [file] }))
+
+    expect(wrapper.text()).toContain('2 chapters from what the narrator announced')
+    const heard = wrapper.findAll('.chapter-heard')
+    expect(heard).toHaveLength(1)
+    expect(heard[0].text()).toContain('1. Saint Nick · Zach Morgan sat attentively.')
+  })
+
   it('warns when the list is partial', async () => {
     const file = {
       ...preview().files[0],

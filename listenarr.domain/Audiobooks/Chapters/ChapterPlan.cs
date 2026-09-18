@@ -36,18 +36,30 @@ namespace Listenarr.Domain.Audiobooks.Chapters
         /// Entries recovered from inside the shifted atom. Partial by construction: the
         /// header and the first entries are gone, so an opening chapter is synthesised.
         /// </summary>
-        RecoveredAtom
+        RecoveredAtom,
+
+        /// <summary>
+        /// The marks at which the narrator was heard to announce a chapter. For a CD rip
+        /// whose tracks outnumber its chapters, and for placeholder titles.
+        /// </summary>
+        Announcements
     }
 
     /// <summary>
     /// The chapter list a rewrite will produce and where it came from. Serialised onto
     /// the job so what was previewed is exactly what gets written.
     /// </summary>
+    /// <param name="Source">Where the list came from.</param>
+    /// <param name="Chapters">The list to write.</param>
+    /// <param name="Partial">Whether something is known to be missing or guessed.</param>
+    /// <param name="Note">One sentence for the preview.</param>
+    /// <param name="Heard">What was heard at each chapter's mark, aligned with <paramref name="Chapters"/>, when the source is the transcript.</param>
     public sealed record ChapterPlan(
         ChapterSource Source,
         IReadOnlyList<EmbeddedChapter> Chapters,
         bool Partial,
-        string Note);
+        string Note,
+        IReadOnlyList<string?>? Heard = null);
 
     /// <summary>A file the planner could not produce a list for, and why.</summary>
     public sealed record ChapterPlanRejection(string Reason);

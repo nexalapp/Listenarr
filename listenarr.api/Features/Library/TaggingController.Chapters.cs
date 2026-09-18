@@ -66,11 +66,13 @@ namespace Listenarr.Api.Features.Library
                     source = file.Plan?.Source.ToString(),
                     partial = file.Plan?.Partial ?? false,
                     note = file.Plan?.Note,
-                    chapters = file.Plan?.Chapters.Select(chapter => new
+                    chapters = file.Plan?.Chapters.Select((chapter, index) => new
                     {
                         title = chapter.Title,
                         startSeconds = chapter.Start.TotalSeconds,
-                        endSeconds = chapter.End.TotalSeconds
+                        endSeconds = chapter.End.TotalSeconds,
+                        // What the narrator said at this mark, when the plan came from listening.
+                        heard = file.Plan.Heard != null && index < file.Plan.Heard.Count ? file.Plan.Heard[index] : null
                     })
                 })
             });

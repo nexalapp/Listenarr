@@ -42,7 +42,13 @@ namespace Listenarr.Domain.Audiobooks.Chapters
         /// <summary>A book longer than this with no marks at all is worth flagging.</summary>
         public static readonly TimeSpan UnchapteredMinimumDuration = TimeSpan.FromMinutes(30);
 
-        [GeneratedRegex(@"^\s*(chapter|track|part)\s*\d+\s*(-\s*\d{1,2}:\d{2}:\d{2}\s*)?$", RegexOptions.IgnoreCase)]
+        /// <summary>
+        /// The shapes a ripping tool leaves: a zero-padded "Chapter 001", a "Track 3",
+        /// and either with the track's length stuck on the end. A plain "Chapter 4" is
+        /// not on the list — it is what a narrator says and what a publisher writes, and
+        /// it is what a retitle from the announcements produces.
+        /// </summary>
+        [GeneratedRegex(@"^\s*((chapter|track)\s*\d+\s*-\s*\d{1,2}:\d{2}:\d{2}|track\s*\d+|chapter\s*0\d+)\s*$", RegexOptions.IgnoreCase)]
         private static partial Regex PlaceholderTitle();
 
         /// <param name="chapters">What ffprobe read; null when the file was not probed for chapters.</param>

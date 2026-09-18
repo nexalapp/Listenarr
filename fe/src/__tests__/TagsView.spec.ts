@@ -966,10 +966,10 @@ describe('TagsView', () => {
     expect(wrapper.findAll('.tags-row')).toHaveLength(1)
   })
 
-  it('offers a chapter repair only for ticked rows whose atom is corrupt', async () => {
+  it('offers a chapter repair only for ticked rows a repair can act on', async () => {
     const wrapper = await mountView(
       table([
-        row({ fileId: 1, fileName: 'Broken.m4b', chapterHealth: 'corrupt' }),
+        row({ fileId: 1, fileName: 'Broken.m4b', chapterHealth: 'oversegmented' }),
         row({ fileId: 2, fileName: 'Fine.m4b', chapterHealth: 'healthy' }),
       ]),
     )

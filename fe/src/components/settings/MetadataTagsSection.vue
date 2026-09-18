@@ -57,6 +57,33 @@
       </FormRow>
 
       <FormRow
+        label="Transcription"
+        help="Lets a chapter repair listen to the audio. A CD rip's tracks outnumber its chapters; hearing the narrator announce “Chapter Four” at a track is how the author's chapters are found among them, and how placeholder titles get their names. Runs on the CPU and downloads a 150 MB model the first time it is needed."
+      >
+        <label class="tags-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.transcriptionEnabled ?? false"
+            @change="
+              (e) => updateField('transcriptionEnabled', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span>Listen to audio when repairing chapters</span>
+        </label>
+        <select
+          class="tag-mapping-mode transcription-model"
+          :value="settings.transcriptionModel ?? 'base.en'"
+          :disabled="!(settings.transcriptionEnabled ?? false)"
+          aria-label="Whisper model"
+          @change="(e) => updateField('transcriptionModel', (e.target as HTMLSelectElement).value)"
+        >
+          <option value="tiny.en">tiny.en — fastest, least accurate</option>
+          <option value="base.en">base.en — hears chapter announcements well</option>
+          <option value="small.en">small.en — better with names, about 3× slower</option>
+        </select>
+      </FormRow>
+
+      <FormRow
         label="Tag Mapping"
         help="What goes into each tag, written with the same pattern language as the naming patterns. An empty token takes its brackets and separators with it, so one pattern serves a series book and a standalone alike."
       >
@@ -333,5 +360,10 @@ onMounted(async () => {
     flex-direction: column;
     gap: 0.1rem;
   }
+}
+
+.transcription-model {
+  margin-top: 0.5rem;
+  display: block;
 }
 </style>

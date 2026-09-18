@@ -113,6 +113,17 @@ namespace Listenarr.Domain.Configuration
         // Replacing existing art is never automatic; this only fills a gap.
         public bool EmbedCoverArtInTags { get; set; } = true;
 
+        // Whether the app may listen to audio. Transcription is what lets a chapter
+        // repair find the author's chapters inside a CD-rip's tracks and put names on
+        // placeholder titles: it hears "Chapter Four" at a mark and keeps it. Off by
+        // default because it costs CPU minutes per book and downloads a 150MB model.
+        public bool TranscriptionEnabled { get; set; } = false;
+
+        // Which whisper model to transcribe with. "base.en" hears chapter announcements
+        // well and runs at many times real time on a CPU; "small.en" is more accurate
+        // and about three times slower.
+        public string TranscriptionModel { get; set; } = "base.en";
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

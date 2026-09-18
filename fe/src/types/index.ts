@@ -617,6 +617,8 @@ export interface ChapterRepairChapter {
   title: string | null
   startSeconds: number
   endSeconds: number
+  /** What the narrator said at this mark, when the plan came from listening. Segments are newline-separated. */
+  heard?: string | null
 }
 
 /** One file in a chapter-repair preview: the list a repair would write, or why there is none. */
@@ -627,7 +629,7 @@ export interface ChapterRepairFile {
   chapterReason?: string | null
   repairable: boolean
   rejection?: string | null
-  /** `Played`, `Audnexus` or `RecoveredAtom`. */
+  /** `Played`, `Audnexus`, `RecoveredAtom` or `Announcements`. */
   source?: string | null
   /** The list is missing its opening chapters and one was synthesised. */
   partial: boolean
@@ -704,6 +706,10 @@ export interface ApplicationSettings {
   conversionArchivePath?: string
   // Write the library's metadata into a book's M4B files once it lands
   writeMetadataTags?: boolean
+  /** Whether a chapter repair may listen to the audio (whisper). */
+  transcriptionEnabled?: boolean
+  /** Which whisper model: `tiny.en`, `base.en` or `small.en`. */
+  transcriptionModel?: string
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean
   // What goes into each tag and whether it may be overwritten. Absent means the

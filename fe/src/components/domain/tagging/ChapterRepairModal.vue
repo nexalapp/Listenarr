@@ -52,8 +52,10 @@
             <p>
               A repair replaces the file's chapter structures with the list below and leaves the
               audio, tags and cover exactly as they are. The list comes from the file's own chapter
-              track where the damaged atom left it intact, from Audnexus when the edition's runtime
-              matches, and from inside the damaged atom as a last resort.
+              track where the damaged atom left it intact, from Audnexus when the edition matches,
+              from what the narrator was heard to announce at each mark, or from inside the damaged
+              atom as a last resort. Where something was heard, it is shown beside the chapter so a
+              misheard name can be caught before it is written.
             </p>
           </div>
 
@@ -101,6 +103,13 @@
                   >
                     <span class="chapter-time">{{ formatTime(chapter.startSeconds) }}</span>
                     <span class="chapter-title">{{ chapter.title || `Chapter ${index + 1}` }}</span>
+                    <span
+                      v-if="chapter.heard"
+                      class="chapter-heard"
+                      :title="heardText(chapter.heard)"
+                    >
+                      “{{ heardText(chapter.heard) }}”
+                    </span>
                   </li>
                 </ol>
                 <button
@@ -204,6 +213,8 @@ const sourceLabel = (source?: string | null) => {
       return 'Audnexus'
     case 'RecoveredAtom':
       return 'the damaged atom'
+    case 'Announcements':
+      return 'what the narrator announced'
     default:
       return 'an unknown source'
   }
@@ -216,6 +227,12 @@ function visibleChapters(file: ChapterRepairFile): ChapterRepairChapter[] {
 
 function expand(fileId: number) {
   expanded.value = new Set([...expanded.value, fileId])
+}
+
+/** The heard segments on one line, trimmed to what fits a row. */
+function heardText(heard: string) {
+  const flat = heard.replace(/\s*\n\s*/g, ' · ').trim()
+  return flat.length > 90 ? `${flat.slice(0, 87)}…` : flat
 }
 
 function formatTime(seconds: number) {
@@ -442,12 +459,23 @@ watch(
 }
 
 .chapter-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary, #f8f9fa);
+}
+
+.chapter-heard {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.8rem;
 }
 
 .chapter-more {

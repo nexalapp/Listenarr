@@ -26,6 +26,8 @@
     <PackageReference Include="Polly" />
     <PackageReference Include="BencodeNET" />
     <PackageReference Include="TagLibSharp" />
+    <PackageReference Include="Whisper.net" />
+    <PackageReference Include="Whisper.net.Runtime" />
     <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
 

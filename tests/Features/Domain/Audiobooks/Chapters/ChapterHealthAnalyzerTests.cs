@@ -141,15 +141,18 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Chapters
         [Theory]
         [InlineData("Chapter 001")]
         [InlineData(" Chapter 001  - 00:00:38")]
-        [InlineData("chapter 12")]
+        [InlineData("Chapter 12 - 00:06:20")]
         [InlineData("Track 03")]
-        [InlineData("Part 3")]
+        [InlineData("track 3")]
         [InlineData("")]
         public void IsPlaceholderTitle_KnowsTheRipperForms(string title) =>
             Assert.True(ChapterHealthAnalyzer.IsPlaceholderTitle(title, "book"));
 
         [Theory]
         [InlineData("Chapter 4: The Long Night")]
+        [InlineData("Chapter 4")]     // what a narrator says, and what a retitle writes
+        [InlineData("chapter 12")]
+        [InlineData("Part 3")]
         [InlineData("Epilogue")]
         [InlineData("The Drop")]
         [InlineData("Part One: Departure")]

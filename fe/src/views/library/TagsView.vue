@@ -149,7 +149,7 @@
           type="button"
           class="toolbar-btn"
           :disabled="working"
-          :title="`Repair the chapter atom of ${repairableSelection.length} selected file(s)`"
+          :title="`Rebuild the chapters of ${repairableSelection.length} selected file(s)`"
           @click="repairOpen = true"
         >
           <PhListNumbers :size="16" />
@@ -1320,10 +1320,16 @@ const someVisibleSelected = computed(() =>
   [...visibleFileIds.value].some((id) => selectedFiles.value.has(id)),
 )
 
-/** The ticked rows whose chapter atom a repair could rebuild. */
+/** The ticked rows a chapter repair has something to say about: a broken atom, CD tracks, or placeholder titles. */
+const REPAIRABLE_HEALTH: ReadonlySet<ChapterHealth> = new Set([
+  'corrupt',
+  'oversegmented',
+  'generic-titles',
+])
+
 const repairableSelection = computed(() =>
   rows.value.filter(
-    (row) => selectedFiles.value.has(row.fileId) && row.chapterHealth === 'corrupt',
+    (row) => selectedFiles.value.has(row.fileId) && REPAIRABLE_HEALTH.has(row.chapterHealth),
   ),
 )
 

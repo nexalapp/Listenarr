@@ -520,22 +520,21 @@
               </div>
               <div class="file-actions">
                 <span
-                  v-if="f.chapterHealth === 'corrupt' || f.chapterHealth === 'oversegmented'"
+                  v-if="chapterBadge(f.chapterHealth)"
                   class="file-chapter-badge"
+                  :class="{ 'file-chapter-badge--note': f.chapterHealth === 'generic-titles' }"
                   :title="f.chapterReason ?? undefined"
                 >
                   <PhListNumbers />
-                  {{ f.chapterHealth === 'corrupt' ? 'Corrupt chapters' : 'CD-track chapters' }}
+                  {{ chapterBadge(f.chapterHealth) }}
                 </span>
                 <button
-                  v-if="f.chapterHealth === 'corrupt'"
+                  v-if="chapterBadge(f.chapterHealth)"
                   type="button"
                   class="file-repair-btn"
                   :disabled="tagWriteInFlight"
                   :title="
-                    tagWriteInFlight
-                      ? writeTagsTitle
-                      : 'Rebuild this file’s chapter atom from its chapter track'
+                    tagWriteInFlight ? writeTagsTitle : 'Preview and rebuild this file’s chapters'
                   "
                   @click.stop="openChapterRepair(f.id)"
                 >
@@ -807,7 +806,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed, type Component } from 'vue'
 import { useToast } from '@/services/toastService'
-import type { Audiobook as AudiobookType } from '@/types'
+import type { Audiobook as AudiobookType, ChapterHealth } from '@/types'
 import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -1891,6 +1890,20 @@ watch(
     }
   },
 )
+
+/** The badge text for a file whose chapters a repair can do something about, or null. */
+function chapterBadge(health: ChapterHealth | undefined): string | null {
+  switch (health) {
+    case 'corrupt':
+      return 'Corrupt chapters'
+    case 'oversegmented':
+      return 'CD-track chapters'
+    case 'generic-titles':
+      return 'Unnamed chapters'
+    default:
+      return null
+  }
+}
 
 const showChapterRepairModal = ref(false)
 const chapterRepairScopes = ref<ChapterRepairScope[]>([])
@@ -3509,6 +3522,12 @@ a.identifier-link:hover {
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.file-chapter-badge--note {
+  background-color: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text-muted);
 }
 
 .file-repair-btn {

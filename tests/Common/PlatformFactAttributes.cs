@@ -225,3 +225,27 @@ public sealed class EncoderFactAttribute : FactAttribute
         return null;
     }
 }
+
+/// <summary>
+/// Requires ffmpeg on PATH and a whisper model folder named by
+/// <c>LISTENARR_WHISPER_MODELS</c>. The model is 150MB and the download is not
+/// something a unit test run should do on its own; set the variable to a folder
+/// holding <c>ggml-base.en.bin</c> to prove the native path on this machine.
+/// </summary>
+public sealed class WhisperFactAttribute : FactAttribute
+{
+    public const string ModelsVariable = "LISTENARR_WHISPER_MODELS";
+
+    public WhisperFactAttribute()
+    {
+        var models = Environment.GetEnvironmentVariable(ModelsVariable);
+        if (EncoderFactAttribute.FindOnPath("ffmpeg") == null)
+        {
+            Skip = "This test requires ffmpeg on PATH.";
+        }
+        else if (string.IsNullOrWhiteSpace(models) || !File.Exists(Path.Combine(models, "ggml-base.en.bin")))
+        {
+            Skip = $"This test requires {ModelsVariable} to name a folder holding ggml-base.en.bin.";
+        }
+    }
+}
