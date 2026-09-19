@@ -72,6 +72,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             var fileSummaryRows = await _audiobookFileRepository.GetFormatSummariesAsync();
             var fileCountById = await _audiobookFileRepository.GetCountsByAudiobookIdAsync();
             var chapterHealthById = await _audiobookFileRepository.GetWorstChapterHealthByAudiobookIdAsync();
+            var notFoundById = await _audiobookFileRepository.GetNotFoundCountsByAudiobookIdAsync();
             var membershipsByAudiobookId = await _audiobookRepository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync();
             var filesByAudiobookId = fileSummaryRows
                 .GroupBy(f => f.AudiobookId)
@@ -155,6 +156,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                         ? ChapterHealthNames.Of(chapterSummary.Health)
                         : null,
                     ChapterRepairable = chapterSummary?.Repairable ?? false,
+                    NotFoundFiles = notFoundById.TryGetValue(a.Id, out var notFound) ? notFound : 0,
                     AudioAudit = AudioAuditVerdictNames.Of(a.AudioAuditVerdict),
                     Status = AudiobookStatusEvaluator.ComputeStatus(
                          activeDownloadAudiobookIdSet.Contains(a.Id),

@@ -270,25 +270,4 @@ public partial class ScanJobProcessor
                 audiobook.Id);
         }
     }
-
-    private async Task BroadcastFilesRemovedAsync(
-        int audiobookId,
-        IReadOnlyCollection<object> removed,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _hubContext.Clients.All.SendAsync(
-                "FilesRemoved",
-                new { audiobookId, removed },
-                cancellationToken);
-        }
-        catch (Exception broadcastException) when (WorkerExceptionClassifier.IsNonFatal(broadcastException))
-        {
-            _logger.LogDebug(
-                broadcastException,
-                "Failed to broadcast FilesRemoved event for audiobook {AudiobookId}",
-                audiobookId);
-        }
-    }
 }

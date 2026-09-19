@@ -102,6 +102,7 @@ const builtInOptions = [
   { value: 'monitored', label: 'Monitored Only' },
   { value: 'unmonitored', label: 'Unmonitored Only' },
   { value: 'missing', label: 'Missing' },
+  { value: 'not-found', label: 'Not Found' },
   { value: 'recent', label: 'Recently Added' },
   { value: 'chapter-issues', label: 'Broken Chapters' },
   { value: 'audio-mismatch', label: 'Metadata Mismatch' },

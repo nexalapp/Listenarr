@@ -1214,6 +1214,8 @@ export interface Audiobook {
     chapterCount?: number
     /** A repair has a source to fix this file from: amber when true, red when false. */
     chapterRepairable?: boolean
+    /** Set while a scan cannot find the file at its path; the row is kept until removed. */
+    notFoundSince?: string | null
   }[]
   quality?: string
   qualityProfileId?: number
@@ -1227,6 +1229,8 @@ export interface Audiobook {
   /** The worst chapter verdict among the book's files; absent until a file has been judged. */
   chapterHealth?: ChapterHealth | null
   chapterRepairable?: boolean
+  /** How many of the book's files a scan last failed to find at their paths. */
+  notFoundFiles?: number
   /** Whether the audio introduces itself as this book; absent until an audit has run. */
   audioAudit?: AudioAuditVerdict | null
   audioAuditReason?: string | null

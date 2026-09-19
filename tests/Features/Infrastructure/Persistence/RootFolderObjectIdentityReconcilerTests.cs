@@ -103,10 +103,12 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
     }
 
     [Fact]
-    public async Task ReconcileAsync_MarkerAbsent_LeavesTheStaleIdentityAlone()
+    public async Task ReconcileAsync_MarkerAbsent_AdoptsTheLiveGeneration()
     {
-        // Without a marker there is nothing proving the storage is the right one, so
-        // the pre-existing fail-closed behaviour has to survive untouched.
+        // No marker to vouch for the remount, but the path is the identity: a native
+        // identity that no longer matches is what every reboot of a FUSE union filesystem
+        // produces. The live generation is adopted rather than the root left half-trusted
+        // until someone clicks Confirm; nothing destructive rides on it any more.
         var rootPath = FileService.GetTempDirectory("startup-unmarked-root");
         var staleIdentity = ManagedDirectoryIdentity.CreateMarkerless(
             "linux-generation:00000000:0000002a:000000000000002a:gen:0000002a");
@@ -138,8 +140,9 @@ public sealed class RootFolderObjectIdentityReconcilerTests : BaseTests
 
         await using var verification = new ListenArrDbContext(options);
         var root = await verification.RootFolders.SingleAsync();
-        Assert.Equal(staleIdentity, root.DirectoryObjectIdentity);
-        Assert.NotNull(root.DirectoryObjectIdentityUnavailableReason);
+        Assert.NotEqual(staleIdentity, root.DirectoryObjectIdentity);
+        Assert.NotNull(root.DirectoryObjectIdentity);
+        Assert.Null(root.DirectoryObjectIdentityUnavailableReason);
     }
 
     [Fact]

@@ -138,7 +138,7 @@ internal sealed partial class AudiobookScanService(
 
         await ValidateCommandAsync(command, cancellationToken);
         ValidateDiscoverySnapshot(command, pinnedAuthority, discovery);
-        var removedFiles = await ReconcileMissingFilesAsync(
+        var notFoundFiles = await ReconcileMissingFilesAsync(
             command,
             pinnedAuthority,
             audiobook,
@@ -166,12 +166,11 @@ internal sealed partial class AudiobookScanService(
             refreshed,
             discovery.AttributedFiles,
             createdCount,
-            removedFiles,
+            notFoundFiles,
             effectiveBasePath,
             discovery.IsComplete,
             command.AllowReconciliation
                 && command.IsAuthoritativeScope
-                && command.ScanPhysicalIdentity.HasDurableGenerationProof
                 && discovery.CanReconcile,
             diagnostics);
     }

@@ -18,15 +18,17 @@ public sealed record AudiobookScanDiagnostic(
     string? Path,
     string Message);
 
-public sealed record AudiobookScanRemovedFile(
+/// <summary>A tracked file the scan did not find at its path. Its row is kept, flagged.</summary>
+public sealed record AudiobookScanNotFoundFile(
     int Id,
-    string? Path);
+    string? Path,
+    DateTime? NotFoundSinceUtc);
 
 public sealed record AudiobookScanResult(
     Audiobook Audiobook,
     IReadOnlyList<string> AttributedFiles,
     int CreatedCount,
-    IReadOnlyList<AudiobookScanRemovedFile> RemovedFiles,
+    IReadOnlyList<AudiobookScanNotFoundFile> NotFoundFiles,
     string? BasePath,
     bool IsComplete,
     bool ReconciliationPerformed,

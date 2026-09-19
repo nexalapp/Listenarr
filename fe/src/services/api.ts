@@ -1776,6 +1776,13 @@ class ApiService {
     })
   }
 
+  /** Remove the file rows a scan could not find. Nothing on disk is touched. */
+  async removeNotFoundFiles(
+    audiobookId: number,
+  ): Promise<{ audiobookId: number; removed: number; files: { id: number; path: string }[] }> {
+    return this.request(`/library/${audiobookId}/files/not-found`, { method: 'DELETE' })
+  }
+
   /** Forget the stored chapter fix for these files and have it worked out again. */
   async replanChapters(
     audiobookId: number,

@@ -135,6 +135,21 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// <summary>Forget the stored fix for these files, so the next look plans them afresh.</summary>
         Task ClearChapterPlanAsync(IReadOnlyCollection<int> fileIds, CancellationToken ct = default);
 
+        /// <summary>
+        /// Flag files a scan could not find. A file already flagged keeps its first
+        /// not-found time. Returns the ids newly flagged by this call.
+        /// </summary>
+        Task<IReadOnlyList<int>> MarkNotFoundAsync(IReadOnlyCollection<int> fileIds, DateTime whenUtc, CancellationToken ct = default);
+
+        /// <summary>A scan found these files again; the flag comes off.</summary>
+        Task ClearNotFoundAsync(IReadOnlyCollection<int> fileIds, CancellationToken ct = default);
+
+        /// <summary>The operator's removal of a book's not-found rows. Returns what was removed.</summary>
+        Task<IReadOnlyList<AudiobookFileRemoved>> DeleteNotFoundAsync(int audiobookId, CancellationToken ct = default);
+
+        /// <summary>How many of each book's files are flagged not found, for books that have any.</summary>
+        Task<Dictionary<int, int>> GetNotFoundCountsByAudiobookIdAsync(CancellationToken ct = default);
+
         /// <summary>The worst chapter verdict among each book's files, and whether every flagged file is repairable, for books that have one.</summary>
         Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default);
     }
@@ -149,4 +164,7 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
 
     /// <summary>A book's worst chapter verdict and whether a repair can do something about it.</summary>
     public sealed record AudiobookChapterSummary(ChapterHealth Health, bool Repairable);
+
+    /// <summary>A file row that was removed, for the history entry and the page that showed it.</summary>
+    public sealed record AudiobookFileRemoved(int Id, string? Path);
 }

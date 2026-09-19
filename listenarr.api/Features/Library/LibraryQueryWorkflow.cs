@@ -130,7 +130,9 @@ public sealed class LibraryQueryWorkflow(
             chapterHealth = ChapterHealthNames.Of(file.ChapterHealth),
             chapterReason = file.ChapterReason,
             chapterCount = file.ChapterCount,
-            chapterRepairable = file.ChapterRepairable
+            chapterRepairable = file.ChapterRepairable,
+            // Set while a scan cannot find the file at its path; the row is kept until removed.
+            notFoundSince = file.NotFoundSinceUtc
         }).ToList(),
         wanted = AudiobookWantedEvaluator.Compute(audiobook),
         audioAudit = AudioAuditVerdictNames.Of(audiobook.AudioAuditVerdict),

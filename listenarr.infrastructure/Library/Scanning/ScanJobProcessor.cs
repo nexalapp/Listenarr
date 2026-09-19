@@ -111,19 +111,12 @@ namespace Listenarr.Infrastructure.Library.Scanning
                 var result = await scanService.ScanAsync(
                     commandResolution.Command,
                     stoppingToken);
-                if (result.RemovedFiles.Count > 0)
+                if (result.NotFoundFiles.Count > 0)
                 {
-                    var removedFiles = result.RemovedFiles
-                        .Select(file => (object)new
-                        {
-                            id = file.Id,
-                            path = file.Path
-                        })
-                        .ToList();
-                    registerPostCompletionEffects(token => BroadcastFilesRemovedAsync(
+                    _logger.LogWarning(
+                        "Scan of audiobook {AudiobookId} did not find {Count} tracked file(s) at their paths; rows kept and flagged",
                         result.Audiobook.Id,
-                        removedFiles,
-                        token));
+                        result.NotFoundFiles.Count);
                 }
 
                 var terminalDecision = await CommitTerminalDecisionAsync(

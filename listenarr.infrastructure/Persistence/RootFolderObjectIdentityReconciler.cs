@@ -69,6 +69,28 @@ public sealed class RootFolderObjectIdentityReconciler(
                 root.DirectoryObjectIdentityVersion.Value,
                 root.DirectoryObjectIdentity,
                 cancellationToken);
+            if (!current.IsAvailable
+                && current.FailureKind == DirectoryObjectIdentityFailureKind.IdentityMismatch)
+            {
+                // No marker to vouch for the remount, but the path is the identity: a
+                // native identity that no longer matches is what every reboot of a FUSE
+                // union filesystem produces. Adopt the live generation, as the storage
+                // health resolver and the scan authorization already treat it, rather
+                // than leaving the root half-trusted until someone clicks Confirm.
+                var live = await identityResolver.ResolveAsync(canonicalRootPath, cancellationToken);
+                if (live.IsAvailable)
+                {
+                    logger.LogInformation(
+                        "Root folder {RootFolderId} has a new physical directory identity at the same path; adopting the current generation.",
+                        root.Id);
+                    root.DirectoryObjectIdentityVersion = live.Version;
+                    root.DirectoryObjectIdentity = live.Value;
+                    root.DirectoryObjectIdentityUnavailableReason = null;
+                    await db.SaveChangesAsync(cancellationToken);
+                    current = live;
+                }
+            }
+
             if (!current.IsAvailable)
             {
                 root.DirectoryObjectIdentityUnavailableReason =

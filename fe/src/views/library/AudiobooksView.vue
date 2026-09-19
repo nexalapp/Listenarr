@@ -704,6 +704,14 @@
                         <PhEar />
                         {{ audioIssueLabel(audiobook) }}
                       </div>
+                      <div
+                        v-if="notFoundLabel(audiobook)"
+                        class="chapter-badge chapter-badge--not-found"
+                        title="A scan could not find these files at their paths. They are kept until you remove them from the book's Files tab."
+                      >
+                        <PhFileX />
+                        {{ notFoundLabel(audiobook) }}
+                      </div>
                     </div>
                     <div class="action-buttons">
                       <button
@@ -903,6 +911,14 @@
                     <PhEar />
                     {{ audioIssueLabel(audiobook) }}
                   </div>
+                  <div
+                    v-if="notFoundLabel(audiobook)"
+                    class="chapter-badge chapter-badge--not-found"
+                    title="A scan could not find these files at their paths. They are kept until you remove them from the book's Files tab."
+                  >
+                    <PhFileX />
+                    {{ notFoundLabel(audiobook) }}
+                  </div>
                 </div>
                 <div class="list-actions">
                   <button
@@ -1069,6 +1085,7 @@ import {
   PhEyeSlash,
   PhListNumbers,
   PhEar,
+  PhFileX,
   PhLightning,
   PhCaretDown,
   PhWrench,
@@ -1367,7 +1384,15 @@ function handleSaveCustomFilterFromModal(f: CustomFilter) {
 // choice. A stored custom-filter id is only honoured while that filter still exists —
 // deleting a filter must not leave the list quietly filtered by something unnamed.
 const SELECTED_FILTER_KEY = 'listenarr.selectedFilter'
-const BUILT_IN_FILTER_IDS = ['monitored', 'unmonitored', 'missing', 'recent']
+const BUILT_IN_FILTER_IDS = [
+  'monitored',
+  'unmonitored',
+  'missing',
+  'not-found',
+  'recent',
+  'chapter-issues',
+  'audio-mismatch',
+]
 
 function loadSelectedFilter() {
   try {
@@ -1423,6 +1448,13 @@ const audioIssueLabel = (book: Audiobook): string | null => {
   }
 }
 
+/** The badge for a book with files a scan could not find, or null. */
+const notFoundLabel = (book: Audiobook): string | null => {
+  const count = book.notFoundFiles ?? 0
+  if (count === 0) return null
+  return count === 1 ? '1 file not found' : `${count} files not found`
+}
+
 const filteredAndSortedAudiobooks = computed(() => {
   const list = (libraryStore.audiobooks || []).slice()
 
@@ -1454,6 +1486,8 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => !b.monitored)
     } else if (sid === 'missing') {
       filtered = filtered.filter((b) => getAudiobookStatus(b) === 'no-file')
+    } else if (sid === 'not-found') {
+      filtered = filtered.filter((b) => (b.notFoundFiles ?? 0) > 0)
     } else if (sid === 'chapter-issues') {
       filtered = filtered.filter((b) => !!chapterIssueLabel(b))
     } else if (sid === 'audio-mismatch') {
