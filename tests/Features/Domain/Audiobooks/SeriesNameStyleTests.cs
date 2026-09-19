@@ -25,9 +25,9 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
     {
         [Theory]
         [InlineData("Space Odyssey Series", "Space Odyssey")]
-        [InlineData("The Southern Reach Trilogy", "The Southern Reach")]
+        [InlineData("The Southern Reach Trilogy", "Southern Reach")]
         [InlineData("Commonwealth Saga", "Commonwealth")]
-        [InlineData("The Baroque Cycle", "The Baroque")]
+        [InlineData("The Baroque Cycle", "Baroque")]
         [InlineData("Sprawl Trilogy Series", "Sprawl")]              // stacked, stripped repeatedly
         [InlineData("teixcalaan SERIES", "teixcalaan")]              // case-insensitive
         [InlineData("Alliance-Union Universe Series", "Alliance-Union Universe")]
@@ -66,6 +66,24 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             Assert.Equal(["Series", "Saga"], SeriesNameStyle.ParseDropWords("""[" Series ", "Saga", ""]"""));
             Assert.Empty(SeriesNameStyle.ParseDropWords("[]"));
             Assert.Equal(SeriesNameStyle.DefaultDropWords, SeriesNameStyle.ParseDropWords("not json"));
+        }
+
+        /// <summary>
+        /// A leading "The" goes only when a trailing word went: "The Dune Sequence" is a
+        /// series called Dune written out in full, "The Expanse" is the name itself.
+        /// Shorter in a bracket, and nothing renames that did not already.
+        /// </summary>
+        [Theory]
+        [InlineData("The Dune Sequence", "Dune")]
+        [InlineData("The Space Trilogy", "Space")]
+        [InlineData("The Locked Tomb Trilogy", "Locked Tomb")]
+        [InlineData("The Expanse", "The Expanse")]
+        [InlineData("The Dark Tower", "The Dark Tower")]
+        [InlineData("The Series", "The Series")]
+        [InlineData("The", "The")]
+        public void Render_DropsALeadingTheOnlyAfterATrailingWord(string name, string expected)
+        {
+            Assert.Equal(expected, SeriesNameStyle.Render(name, SeriesNameStyle.DefaultDropWords));
         }
     }
 }

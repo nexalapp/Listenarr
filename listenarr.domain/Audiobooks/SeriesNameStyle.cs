@@ -77,9 +77,19 @@ namespace Listenarr.Domain.Audiobooks
         }
 
         /// <summary>
-        /// The name with any trailing drop words removed, repeatedly, case-insensitively.
-        /// A name that is nothing but drop words is returned as it was: better a folder
-        /// called "Series" than one called nothing.
+        /// A leading article that goes once a trailing drop word has gone. "The Dune
+        /// Sequence" is a series called Dune whose publisher wrote it out in full; once
+        /// "Sequence" is dropped, "The Dune" is neither the full form nor the name. "The
+        /// Expanse" has no trailing word to drop and keeps its article: that is its name.
+        /// </summary>
+        private static readonly IReadOnlyList<string> LeadingArticles = ["The"];
+
+        /// <summary>
+        /// The name with any trailing drop words removed, repeatedly, case-insensitively,
+        /// and — only when something was dropped — a leading "The" as well: "The Dune
+        /// Sequence" renders "Dune", "The Locked Tomb Trilogy" renders "Locked Tomb",
+        /// "The Expanse" stays "The Expanse". A name that is nothing but drop words is
+        /// returned as it was: better a folder called "Series" than one called nothing.
         /// </summary>
         public static string Render(string? name, IReadOnlyList<string>? dropWords)
         {
@@ -90,6 +100,7 @@ namespace Listenarr.Domain.Audiobooks
             }
 
             var current = trimmed;
+            var droppedTrailing = false;
             while (true)
             {
                 var lastSpace = current.LastIndexOf(' ');
@@ -105,6 +116,19 @@ namespace Listenarr.Domain.Audiobooks
                 }
 
                 current = current[..lastSpace].TrimEnd();
+                droppedTrailing = true;
+            }
+
+            if (droppedTrailing)
+            {
+                var firstSpace = current.IndexOf(' ');
+                var firstWord = firstSpace > 0 ? current[..firstSpace] : current;
+                if (LeadingArticles.Any(word => string.Equals(word, firstWord, StringComparison.OrdinalIgnoreCase)))
+                {
+                    // "The Series" is an article and a drop word and nothing else; the
+                    // name as written beats a folder called "The".
+                    current = firstSpace > 0 ? current[(firstSpace + 1)..].TrimStart() : string.Empty;
+                }
             }
 
             return current.Length == 0 ? trimmed : current;
