@@ -507,6 +507,25 @@
         <div class="files-header">
           <h3>Files</h3>
           <div class="files-actions">
+            <!--
+              A scan only flags a file it cannot find; removing the row is the operator's
+              call, made here, once they know the file is gone rather than the share late.
+            -->
+            <button
+              v-if="notFoundFiles.length > 0"
+              type="button"
+              class="file-repair-btn file-repair-btn--danger"
+              :disabled="removingNotFound"
+              :title="`Remove the ${notFoundFiles.length} file record(s) a scan could not find. Nothing on disk is touched.`"
+              @click="removeNotFoundFiles"
+            >
+              <PhFileX />
+              {{
+                removingNotFound
+                  ? 'Removing…'
+                  : `Remove ${notFoundFiles.length} not-found file${notFoundFiles.length === 1 ? '' : 's'}`
+              }}
+            </button>
             <div v-if="displayedScanJobId" class="scan-job-status">
               <div class="job-row">
                 <PhClock />
@@ -526,7 +545,10 @@
             v-for="f in audiobook.files"
             :key="f.id"
             class="file-item"
-            :class="{ expanded: isFileAccordionExpanded(f.id) }"
+            :class="{
+              expanded: isFileAccordionExpanded(f.id),
+              'file-item--not-found': !!f.notFoundSince,
+            }"
           >
             <div class="file-header" @click="toggleFileAccordion(f.id)">
               <div class="file-info">
@@ -545,6 +567,14 @@
                 >
               </div>
               <div class="file-actions">
+                <span
+                  v-if="f.notFoundSince"
+                  class="file-chapter-badge"
+                  :title="`Not at its path since ${formatNotFoundSince(f.notFoundSince)}. A scan that finds it again clears this.`"
+                >
+                  <PhFileX />
+                  Not found
+                </span>
                 <span
                   v-if="chapterBadge(f.chapterHealth)"
                   class="file-chapter-badge"
@@ -1043,6 +1073,7 @@ import { buildAudibleProductUrl } from '@/utils/marketDomains'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import LibraryImportSearchModal from '@/components/domain/audiobook/LibraryImportSearchModal.vue'
 import TagPreviewModal from '@/components/domain/tagging/TagPreviewModal.vue'
+import { showConfirm } from '@/composables/useConfirm'
 import ChapterRepairModal from '@/components/domain/tagging/ChapterRepairModal.vue'
 import ChapterListPanel from '@/components/domain/tagging/ChapterListPanel.vue'
 import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepairModal.vue'
@@ -1076,6 +1107,7 @@ import {
   PhFile,
   PhClockCounterClockwise,
   PhFileAudio,
+  PhFileX,
   PhListNumbers,
   PhEar,
   PhCaretDown,
@@ -2190,6 +2222,46 @@ function formatAuditedAt(iso: string) {
 }
 
 const settingNarrator = ref(false)
+
+// ---- not-found files ---------------------------------------------------------------
+
+const notFoundFiles = computed(() =>
+  (audiobook.value?.files ?? []).filter((f) => !!f.notFoundSince),
+)
+const removingNotFound = ref(false)
+
+function formatNotFoundSince(iso: string) {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString()
+}
+
+async function removeNotFoundFiles() {
+  if (!audiobook.value || notFoundFiles.value.length === 0) return
+  const count = notFoundFiles.value.length
+  const ok = await showConfirm(
+    `Remove ${count} file record${count === 1 ? '' : 's'} a scan could not find? ` +
+      'Nothing on disk is touched; the book simply stops tracking these files. If the ' +
+      'files are only temporarily away — a share that has not mounted — a scan will clear ' +
+      'the flag instead.',
+    'Remove not-found files',
+    { confirmText: 'Remove', cancelText: 'Cancel', danger: true },
+  )
+  if (!ok) return
+  removingNotFound.value = true
+  const toast = useToast()
+  try {
+    const result = await apiService.removeNotFoundFiles(audiobook.value.id)
+    toast.success(
+      'Files removed',
+      `${result.removed} file record${result.removed === 1 ? '' : 's'} removed.`,
+    )
+    await loadAudiobook()
+  } catch (err) {
+    toast.error('Could not remove files', err instanceof Error ? err.message : String(err))
+  } finally {
+    removingNotFound.value = false
+  }
+}
 
 /** Put the narrator the audio names on the record, then transcribe again to confirm. */
 async function adoptHeardNarrator() {
@@ -4342,6 +4414,19 @@ a.identifier-link:hover {
   background-color: rgba(148, 163, 184, 0.15);
   border-color: rgba(148, 163, 184, 0.35);
   color: var(--text-muted);
+}
+
+.file-item--not-found .file-name {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.file-repair-btn--danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-color: #e74c3c;
+  color: #e74c3c;
 }
 
 .file-repair-btn {

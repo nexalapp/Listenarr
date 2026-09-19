@@ -1310,7 +1310,14 @@ describe('AudiobooksView Filter Persistence', () => {
     const store = useLibraryStore()
     store.audiobooks = [
       { id: 1, title: 'Watched Book', authors: ['Author A'], monitored: true, files: [] },
-      { id: 2, title: 'Ignored Book', authors: ['Author B'], monitored: false, files: [] },
+      {
+        id: 2,
+        title: 'Ignored Book',
+        authors: ['Author B'],
+        monitored: false,
+        files: [],
+        notFoundFiles: 2,
+      },
     ] as unknown as import('@/types').Audiobook[]
     store.fetchLibrary = vi.fn(async () => undefined)
 
@@ -1348,6 +1355,16 @@ describe('AudiobooksView Filter Persistence', () => {
     ).toBe('unmonitored')
     expect(wrapper.text()).toContain('Ignored Book')
     expect(wrapper.text()).not.toContain('Watched Book')
+  })
+
+  it('filters to books with files a scan could not find, and badges them', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'not-found')
+
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('Ignored Book')
+    expect(wrapper.text()).not.toContain('Watched Book')
+    expect(wrapper.text()).toContain('2 files not found')
   })
 
   it('restores a custom filter that still exists', async () => {

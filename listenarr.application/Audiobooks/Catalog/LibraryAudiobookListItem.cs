@@ -69,6 +69,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public bool ChapterRepairable { get; set; }
 
         /// <summary>
+        /// How many of the book's tracked files a scan last failed to find at their paths.
+        /// Their rows are kept, so the book still counts as having files; the list shows a
+        /// badge and filters on it.
+        /// </summary>
+        public int NotFoundFiles { get; set; }
+
+        /// <summary>
         /// Whether the audio introduces itself as this book, as a lowercase word:
         /// <c>match</c>, <c>narrator-mismatch</c>, <c>mismatch</c>, <c>inconclusive</c>.
         /// Null until an audit has run.

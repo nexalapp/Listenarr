@@ -260,5 +260,20 @@ namespace Listenarr.Domain.Audiobooks
         public string? ChapterPlanKey { get; set; }
 
         public DateTime? ChapterPlannedAt { get; set; }
+
+        /// <summary>
+        /// When a scan last failed to find this file at its path, or null while it is there.
+        ///
+        /// <para>
+        /// A file that is not where its row says is flagged, never removed: a share that
+        /// mounted late, an array that started after the app, a disk out for a swap all
+        /// look exactly like deletion from inside a scan, and none of them should cost a
+        /// row, its chapter verdict or its audit. The next scan that finds the file clears
+        /// this; removing the row is an operator's action.
+        /// </para>
+        /// </summary>
+        public DateTime? NotFoundSinceUtc { get; set; }
+
+        public bool IsNotFound => NotFoundSinceUtc.HasValue;
     }
 }

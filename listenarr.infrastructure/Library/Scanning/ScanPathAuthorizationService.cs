@@ -217,8 +217,15 @@ internal sealed partial class ScanPathAuthorizationService(
                         canonicalBoundary,
                         cancellationToken);
                     if (enrolled.FailureKind
-                        == DirectoryObjectIdentityFailureKind.LegacyWeakIdentity)
+                        is DirectoryObjectIdentityFailureKind.LegacyWeakIdentity
+                        or DirectoryObjectIdentityFailureKind.IdentityMismatch)
                     {
+                        // A native identity that no longer matches is what every reboot of
+                        // a FUSE union filesystem produces, not evidence of a swapped
+                        // folder — the storage health resolver already reads it that way.
+                        // The scan goes ahead on the live generation with limited
+                        // authority; a scan flags what it cannot find, it deletes nothing,
+                        // so there is nothing here worth refusing over.
                         if (!liveBoundary.IsAvailable)
                         {
                             return PhysicalIdentityCapture.Failed(

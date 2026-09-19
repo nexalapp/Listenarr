@@ -571,8 +571,13 @@ namespace Listenarr.Tests.Features.Api.Services
                 Times.Never);
         }
 
+        /// <summary>
+        /// A root whose native identity changed under the same path — every remount of a
+        /// FUSE filesystem — is scanned on its live generation. The scan only reads, so
+        /// there is nothing to fail closed over.
+        /// </summary>
         [Fact]
-        public async Task UnmatchedScanProcessor_AuthorizedRootReplacedBeforeProcessing_FailsClosed()
+        public async Task UnmatchedScanProcessor_AuthorizedRootReplacedBeforeProcessing_ScansTheLiveDirectory()
         {
             var parent = FileService.GetTempDirectory("unmatched-root-replacement-parent");
             var root = Path.Join(parent, "library");
@@ -601,13 +606,13 @@ namespace Listenarr.Tests.Features.Api.Services
                 "Replacement Book.m4b",
                 "replacement audio");
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                processor.ProcessJobAsync(job, CancellationToken.None));
+            await processor.ProcessJobAsync(job, CancellationToken.None);
 
             Assert.True(File.Exists(replacementFile));
             Assert.True(queue.TryGetJob(job.Id, out var updatedJob));
-            Assert.Equal("Processing", updatedJob!.Status);
-            Assert.Null(updatedJob.Results);
+            Assert.Equal("Completed", updatedJob!.Status);
+            var result = Assert.Single(updatedJob.Results!);
+            Assert.Equal(replacementFile, result.FullPath);
         }
 
         private static Mock<IClientProxy> CreateHubProxy<THub>(out Mock<IHubContext<THub>> hubContext)

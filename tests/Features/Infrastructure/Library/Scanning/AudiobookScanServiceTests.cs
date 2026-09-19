@@ -385,7 +385,7 @@ public sealed class AudiobookScanServiceTests : BaseTests
     }
 
     [Fact]
-    public async Task ScanAsync_CompleteScan_RemovesOnlyVerifiedMissingRow()
+    public async Task ScanAsync_CompleteScan_FlagsTheVerifiedMissingRowAndKeepsIt()
     {
         var root = FileService.GetTempDirectory("scan-service-missing");
         var missingPath = Path.Join(root, "Missing Book.m4b");
@@ -403,15 +403,74 @@ public sealed class AudiobookScanServiceTests : BaseTests
 
         Assert.True(result.IsComplete);
         Assert.True(result.ReconciliationPerformed);
-        var removed = Assert.Single(result.RemovedFiles);
-        Assert.Equal(tracked.Id, removed.Id);
-        Assert.Empty(
+        var notFound = Assert.Single(result.NotFoundFiles);
+        Assert.Equal(tracked.Id, notFound.Id);
+        Assert.NotNull(notFound.NotFoundSinceUtc);
+        // The row stays — a share that mounted late looks exactly like this from inside
+        // a scan — flagged with when it went missing.
+        var kept = Assert.Single(
             await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
+        Assert.Equal(notFound.NotFoundSinceUtc, kept.NotFoundSinceUtc);
         var history = await _historyRepository.GetByAudiobookIdAsync(audiobook.Id);
         Assert.Contains(history, entry =>
-            entry.EventType == "File Removed"
+            entry.EventType == "File Not Found"
             && entry.Message != null
-            && entry.Message.Contains("Verified missing", StringComparison.Ordinal));
+            && entry.Message.Contains("not found", StringComparison.Ordinal));
+        Assert.DoesNotContain(history, entry => entry.EventType == "File Removed");
+    }
+
+    [Fact]
+    public async Task ScanAsync_FileBackAtItsPath_ClearsTheFlag()
+    {
+        var root = FileService.GetTempDirectory("scan-service-found-again");
+        var bookDirectory = Path.Join(root, "Book");
+        Directory.CreateDirectory(bookDirectory);
+        var path = Path.Join(bookDirectory, "Book.m4b");
+        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+            .WithTitle("Book")
+            .WithBasePath(bookDirectory)
+            .Build());
+        var tracked = new AudiobookFileBuilder()
+            .WithAudiobook(audiobook)
+            .WithPath(path)
+            .Build();
+        tracked.NotFoundSinceUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await _audiobookFileRepository.AddAsync(tracked);
+        await File.WriteAllBytesAsync(path, new byte[16]);
+
+        var result = await ScanAsync(audiobook, bookDirectory);
+
+        Assert.Empty(result.NotFoundFiles);
+        var kept = Assert.Single(
+            await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
+        Assert.Null(kept.NotFoundSinceUtc);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "TrackedFilesFoundAgain");
+    }
+
+    [Fact]
+    public async Task ScanAsync_FileStillMissing_KeepsTheFirstNotFoundTime()
+    {
+        var root = FileService.GetTempDirectory("scan-service-still-missing");
+        var missingPath = Path.Join(root, "Missing Book.m4b");
+        var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+            .WithTitle("Missing Book")
+            .WithBasePath(root)
+            .Build());
+        var since = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var tracked = new AudiobookFileBuilder()
+            .WithAudiobook(audiobook)
+            .WithPath(missingPath)
+            .Build();
+        tracked.NotFoundSinceUtc = since;
+        await _audiobookFileRepository.AddAsync(tracked);
+
+        var result = await ScanAsync(audiobook, root);
+
+        var notFound = Assert.Single(result.NotFoundFiles);
+        Assert.Equal(since, notFound.NotFoundSinceUtc);
+        var history = await _historyRepository.GetByAudiobookIdAsync(audiobook.Id);
+        // Already flagged: no second history entry for the same absence.
+        Assert.DoesNotContain(history, entry => entry.EventType == "File Not Found");
     }
 
     [Fact]
@@ -437,9 +496,10 @@ public sealed class AudiobookScanServiceTests : BaseTests
             isAuthoritativeScope: false);
 
         Assert.False(result.ReconciliationPerformed);
-        Assert.Empty(result.RemovedFiles);
-        Assert.Single(
+        Assert.Empty(result.NotFoundFiles);
+        var kept = Assert.Single(
             await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
+        Assert.Null(kept.NotFoundSinceUtc);
     }
 
     [Fact]
@@ -692,7 +752,7 @@ public sealed class AudiobookScanServiceTests : BaseTests
         Assert.False(result.IsComplete);
         Assert.False(result.ReconciliationPerformed);
         Assert.Empty(result.AttributedFiles);
-        Assert.Empty(result.RemovedFiles);
+        Assert.Empty(result.NotFoundFiles);
         Assert.Contains(result.Diagnostics, diagnostic =>
             diagnostic.Code == "ReconciliationSkippedIncompleteScan");
         Assert.Single(
@@ -747,7 +807,7 @@ public sealed class AudiobookScanServiceTests : BaseTests
     }
 
     [Fact]
-    public async Task ScanAsync_HistoryFailureAfterVerifiedRemoval_DoesNotReverseSuccess()
+    public async Task ScanAsync_HistoryFailureAfterFlagging_DoesNotReverseTheFlag()
     {
         var root = FileService.GetTempDirectory(
             "scan-service-history-failure");
@@ -772,14 +832,15 @@ public sealed class AudiobookScanServiceTests : BaseTests
 
         var result = await ScanAsync(audiobook, root);
 
-        Assert.Contains(result.RemovedFiles, removed =>
-            removed.Id == tracked.Id);
-        Assert.Empty(await _audiobookFileRepository
+        Assert.Contains(result.NotFoundFiles, notFound =>
+            notFound.Id == tracked.Id);
+        var kept = Assert.Single(await _audiobookFileRepository
             .GetByAudiobookIdAsync(audiobook.Id));
+        Assert.NotNull(kept.NotFoundSinceUtc);
         history.Verify(repository => repository.AddAsync(
             It.Is<History>(entry =>
                 entry.AudiobookId == audiobook.Id
-                && entry.EventType == "File Removed"),
+                && entry.EventType == "File Not Found"),
             CancellationToken.None), Times.Once);
     }
 
@@ -814,7 +875,7 @@ public sealed class AudiobookScanServiceTests : BaseTests
 
         Assert.False(result.IsComplete);
         Assert.False(result.ReconciliationPerformed);
-        Assert.Empty(result.RemovedFiles);
+        Assert.Empty(result.NotFoundFiles);
         Assert.Single(
             await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
         Assert.Contains(result.Diagnostics, diagnostic =>
@@ -868,7 +929,7 @@ public sealed class AudiobookScanServiceTests : BaseTests
     }
 
     [LinuxFact]
-    public async Task ScanAsync_PinnedPathOnly_ClaimsVisiblePathWithoutPhysicalIdentityAndPreservesMissingRows()
+    public async Task ScanAsync_PinnedPathOnly_ClaimsVisiblePathWithoutPhysicalIdentityAndFlagsMissingRows()
     {
         var root = FileService.GetTempDirectory("scan-service-limited-storage");
         var bookDirectory = Path.Join(root, "Author", "Book");
@@ -923,13 +984,14 @@ public sealed class AudiobookScanServiceTests : BaseTests
                 physicalIdentity));
 
         var tracked = await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id);
-        Assert.Contains(tracked, file => file.Id == missing.Id);
+        // Flagging needs no durable generation proof: the row is kept either way, and a
+        // path-only scan can still say the file is not at its path.
+        var flagged = Assert.Single(tracked, file => file.Id == missing.Id);
+        Assert.NotNull(flagged.NotFoundSinceUtc);
         var visible = Assert.Single(tracked, file => file.Path == visiblePath);
         Assert.Null(visible.PhysicalObjectIdentity);
-        Assert.False(result.ReconciliationPerformed);
-        Assert.Empty(result.RemovedFiles);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Code == "ReconciliationNotAuthorized");
+        Assert.True(result.ReconciliationPerformed);
+        Assert.Single(result.NotFoundFiles);
         Assert.Contains(result.Diagnostics, diagnostic =>
             diagnostic.Code == "MetadataEnrichmentSkippedLimitedStorage");
         authorization.VerifyAll();

@@ -185,6 +185,24 @@ namespace Listenarr.Api.Features.Library
         }
 
         /// <summary>
+        /// Remove the file rows a scan could not find at their paths. A scan only flags such
+        /// files; this is the operator saying they are gone for good. Nothing on disk is touched.
+        /// </summary>
+        /// <param name="id">Audiobook ID.</param>
+        /// <param name="workflow">The removal.</param>
+        /// <param name="cancellationToken">Request cancellation token.</param>
+        /// <response code="200">How many rows were removed, and which.</response>
+        /// <response code="404">No such audiobook.</response>
+        [HttpDelete("{id}/files/not-found")]
+        public async Task<IActionResult> RemoveNotFoundFiles(
+            int id,
+            [FromServices] LibraryNotFoundFilesWorkflow workflow,
+            CancellationToken cancellationToken = default)
+        {
+            return await workflow.RemoveAsync(id, cancellationToken);
+        }
+
+        /// <summary>
         /// Update an existing audiobook's metadata and settings. Supports partial updates; omitted fields are left unchanged.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>

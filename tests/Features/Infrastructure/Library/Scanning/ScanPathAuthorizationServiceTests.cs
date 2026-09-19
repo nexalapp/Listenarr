@@ -494,8 +494,14 @@ public sealed class ScanPathAuthorizationServiceTests : BaseTests
         Assert.NotNull(result.PhysicalIdentity);
     }
 
+    /// <summary>
+    /// A root whose native identity no longer matches is what every remount of a FUSE
+    /// filesystem produces; the scan goes ahead on the live generation with limited
+    /// authority. Nothing destructive rides on it: a scan flags what it cannot find and
+    /// deletes nothing.
+    /// </summary>
     [Fact]
-    public async Task AuthorizeAsync_ReplacedEnrolledRoot_IsRejected()
+    public async Task AuthorizeAsync_ReplacedEnrolledRoot_ProceedsWithLimitedAuthority()
     {
         var parent = FileService.GetTempDirectory("scan-authorization-root-replacement");
         var configuredRoot = Path.Join(parent, "library");
@@ -511,11 +517,9 @@ public sealed class ScanPathAuthorizationServiceTests : BaseTests
         Directory.CreateDirectory(scanRoot);
         var replacement = await service.AuthorizeAsync(scanRoot);
 
-        Assert.False(replacement.IsAuthorized);
-        Assert.Equal(
-            ScanPathAuthorizationFailure.IdentityUnavailable,
-            replacement.Failure);
-        Assert.Null(replacement.PhysicalIdentity);
+        Assert.True(replacement.IsAuthorized, replacement.Error);
+        Assert.NotNull(replacement.PhysicalIdentity);
+        Assert.False(replacement.PhysicalIdentity!.Value.HasDurableGenerationProof);
         Assert.True(Directory.Exists(Path.Join(displacedRoot, "Book")));
         Assert.True(Directory.Exists(scanRoot));
     }

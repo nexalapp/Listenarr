@@ -5,7 +5,13 @@ namespace Listenarr.Infrastructure.Library.Scanning;
 
 internal sealed partial class AudiobookScanService
 {
-    private async Task<IReadOnlyList<AudiobookScanRemovedFile>> ReconcileMissingFilesAsync(
+    /// <summary>
+    /// Tracked files the scan did not find at their path are flagged not found, never
+    /// removed: from inside a scan a share that mounted late, an array that started after
+    /// the app and a disk out for a swap all look exactly like deletion. The flag comes
+    /// off when a later scan finds the file; removing the row is an operator's action.
+    /// </summary>
+    private async Task<IReadOnlyList<AudiobookScanNotFoundFile>> ReconcileMissingFilesAsync(
         AudiobookScanCommand command,
         PinnedScanAuthority pinnedAuthority,
         Audiobook audiobook,
@@ -16,16 +22,15 @@ internal sealed partial class AudiobookScanService
         ICollection<AudiobookScanDiagnostic> diagnostics,
         CancellationToken cancellationToken)
     {
-        if (!command.AllowReconciliation
-            || !command.IsAuthoritativeScope
-            || !command.ScanPhysicalIdentity.HasDurableGenerationProof)
+        // Flagging is not destructive, so it does not wait on the durable generation
+        // proof that row removal once did; it still needs a scope that speaks for the
+        // whole book, or a file outside the scope would be flagged for not being in it.
+        if (!command.AllowReconciliation || !command.IsAuthoritativeScope)
         {
             diagnostics.Add(new AudiobookScanDiagnostic(
                 "ReconciliationNotAuthorized",
                 command.ScanRoot,
-                command.ScanPhysicalIdentity.HasDurableGenerationProof
-                    ? "This scan scope is not authorized to remove tracked file rows."
-                    : "Tracked-file removal was skipped because this storage does not expose durable generation identity."));
+                "This scan scope does not speak for the whole book, so tracked files were not judged present or missing."));
             return [];
         }
 
@@ -58,7 +63,9 @@ internal sealed partial class AudiobookScanService
             return [];
         }
 
-        var removed = new List<AudiobookScanRemovedFile>();
+        var notFound = new List<AudiobookScanNotFoundFile>();
+        var newlyMissing = new List<AudiobookFile>();
+        var foundAgain = new List<int>();
         foreach (var file in existingFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -86,6 +93,11 @@ internal sealed partial class AudiobookScanService
                 resolvedPath);
             if (PinnedFileExists(command, pinnedAuthority, resolvedPath))
             {
+                if (file.IsNotFound)
+                {
+                    foundAgain.Add(file.Id);
+                }
+
                 var canonicalResolvedPath = FileSystemPathIdentity.Canonicalize(
                     resolvedPath,
                     command.ScanIdentity.Syntax);
@@ -208,42 +220,72 @@ internal sealed partial class AudiobookScanService
                 continue;
             }
 
-            if (!await fileRepository.DeletePhysicalGenerationAsync(
-                    file.Id,
-                    file.AudiobookId,
-                    file.Path,
-                    file.PhysicalObjectIdentity,
-                    cancellationToken))
+            notFound.Add(new AudiobookScanNotFoundFile(file.Id, file.Path, file.NotFoundSinceUtc));
+            if (!file.IsNotFound)
+            {
+                newlyMissing.Add(file);
+            }
+            else
             {
                 diagnostics.Add(new AudiobookScanDiagnostic(
-                    "TrackedFileChangedBeforeRemoval",
+                    "TrackedFileStillNotFound",
                     resolvedPath,
-                    "The tracked file row changed before verified-missing reconciliation and was preserved."));
-                continue;
+                    $"The tracked file has been missing since {file.NotFoundSinceUtc:u}; its row is kept until an operator removes it."));
             }
-
-            removed.Add(new AudiobookScanRemovedFile(file.Id, file.Path));
-            await TryAddHistoryAsync(new History
-            {
-                AudiobookId = audiobook.Id,
-                AudiobookTitle = audiobook.Title ?? "Unknown",
-                EventType = "File Removed",
-                Message = $"Verified missing file removed: {Path.GetFileName(file.Path)}",
-                Source = command.Source,
-                CorrelationId = command.CorrelationId,
-                Data = JsonSerializer.Serialize(new
-                {
-                    StoredPath = file.Path,
-                    ResolvedPath = resolvedPath,
-                    file.Size,
-                    file.Format,
-                    file.Source
-                }),
-                Timestamp = DateTime.UtcNow
-            }, CancellationToken.None);
         }
 
-        return removed;
+        if (foundAgain.Count > 0)
+        {
+            await fileRepository.ClearNotFoundAsync(foundAgain, cancellationToken);
+            diagnostics.Add(new AudiobookScanDiagnostic(
+                "TrackedFilesFoundAgain",
+                command.ScanRoot,
+                $"{foundAgain.Count} tracked file(s) flagged not found are back at their paths."));
+        }
+
+        if (newlyMissing.Count > 0)
+        {
+            var when = DateTime.UtcNow;
+            var flagged = (await fileRepository.MarkNotFoundAsync(
+                newlyMissing.Select(file => file.Id).ToList(),
+                when,
+                cancellationToken)).ToHashSet();
+            foreach (var file in newlyMissing.Where(file => flagged.Contains(file.Id)))
+            {
+                diagnostics.Add(new AudiobookScanDiagnostic(
+                    "TrackedFileNotFound",
+                    resolvedPaths[file.Id],
+                    "The tracked file is not at its path; its row is kept and flagged not found."));
+                await TryAddHistoryAsync(new History
+                {
+                    AudiobookId = audiobook.Id,
+                    AudiobookTitle = audiobook.Title ?? "Unknown",
+                    EventType = "File Not Found",
+                    Message = $"File not found at its path: {Path.GetFileName(file.Path)}",
+                    Source = command.Source,
+                    CorrelationId = command.CorrelationId,
+                    Data = JsonSerializer.Serialize(new
+                    {
+                        StoredPath = file.Path,
+                        ResolvedPath = resolvedPaths[file.Id],
+                        file.Size,
+                        file.Format,
+                        file.Source
+                    }),
+                    Timestamp = when
+                }, CancellationToken.None);
+            }
+
+            for (var index = 0; index < notFound.Count; index++)
+            {
+                if (notFound[index].NotFoundSinceUtc == null && flagged.Contains(notFound[index].Id))
+                {
+                    notFound[index] = notFound[index] with { NotFoundSinceUtc = when };
+                }
+            }
+        }
+
+        return notFound;
     }
 
     private async Task<int> ReconcileLegacyFilePathAsync(
