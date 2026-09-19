@@ -729,17 +729,17 @@
                 :disabled="audioAuditInFlight"
                 :title="
                   audioAuditInFlight
-                    ? 'Listening…'
+                    ? 'Transcribing…'
                     : 'Hear the opening and closing and check them against the record'
                 "
                 @click="auditAudio"
               >
                 {{
                   audioAuditInFlight
-                    ? 'Listening…'
+                    ? 'Transcribing…'
                     : audiobook.audioAudit
-                      ? 'Listen again'
-                      : 'Listen'
+                      ? 'Transcribe again'
+                      : 'Transcribe'
                 }}
               </button>
             </div>
@@ -2150,7 +2150,7 @@ function formatAuditedAt(iso: string) {
 
 const settingNarrator = ref(false)
 
-/** Put the narrator the audio credits on the record, then listen again to confirm. */
+/** Put the narrator the audio names on the record, then transcribe again to confirm. */
 async function adoptHeardNarrator() {
   if (!audiobook.value?.audioAuditHeardNarrator) return
   settingNarrator.value = true
@@ -2191,7 +2191,7 @@ const creditRecommendations = computed(() => {
       break
     case 'narrator-mismatch':
       recs.push({
-        text: `The audio credits ${book.audioAuditHeardNarrator}, not ${(book.narrators || []).join(' / ')}. If the audio is right, put that narrator on the record.`,
+        text: `The audio names ${book.audioAuditHeardNarrator} as narrator, not ${(book.narrators || []).join(' / ')}. If the audio is right, put that narrator on the record.`,
         label: `Set narrator to ${book.audioAuditHeardNarrator}`,
         action: adoptHeardNarrator,
         busy: settingNarrator.value,
@@ -2204,7 +2204,7 @@ const creditRecommendations = computed(() => {
       break
     case 'inconclusive':
       recs.push({
-        text: 'Too little was heard to tell: the opening may be music, or the credits may be read later than the first minute. Listening again after choosing a larger model in Settings → Metadata Tags can help.',
+        text: 'Too little was heard to tell: the opening may be music, or the title and author may be read later than the first minute. Transcribing again after choosing a larger model in Settings → Metadata Tags can help.',
       })
       break
     default:
@@ -2231,7 +2231,10 @@ async function auditAudio() {
   try {
     const response = await tagJobsStore.auditAudio(audiobook.value.id)
     if (response.queued) {
-      toast.success('Listening', 'The verdict appears here once the credits have been heard.')
+      toast.success(
+        'Transcribing',
+        'The verdict appears on the Transcript tab once the opening and closing have been heard.',
+      )
     } else {
       toast.error('Not queued', response.reason ?? 'This book could not be queued for an audit.')
     }
@@ -2419,7 +2422,7 @@ const audioTabBadge = computed(() => {
     case 'mismatch':
       return 'The audio introduces itself as a different book'
     case 'narrator-mismatch':
-      return 'The audio credits a different narrator'
+      return 'The audio names a different narrator'
     default:
       return null
   }

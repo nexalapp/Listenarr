@@ -161,7 +161,7 @@
           type="button"
           class="toolbar-btn"
           :disabled="working"
-          :title="`Hear the opening and closing credits of ${selectedBookIds.size} selected book(s) and check them against the record`"
+          :title="`Transcribe the opening and closing of ${selectedBookIds.size} selected book(s) and check them against the record`"
           @click="auditSelected"
         >
           <PhEar :size="16" />

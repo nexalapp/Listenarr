@@ -64,7 +64,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             return await tagQueue.EnqueueAudioAuditAsync(audiobookId, trigger, cancellationToken);
         }
 
-        public async Task<AudioAuditResult> AuditAsync(int audiobookId, CancellationToken cancellationToken = default)
+        public async Task<AudioAuditResult> AuditAsync(int audiobookId, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
         {
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId)
                 ?? throw new InvalidOperationException("That audiobook no longer exists.");
@@ -86,7 +86,11 @@ namespace Listenarr.Application.Audiobooks.Audit
                 throw new InvalidOperationException("This book has no audio files here to listen to.");
             }
 
+            // Two stretches to hear, so two steps of progress; whisper gives no rate to
+            // estimate from, and a bar that moves twice beats one that does not move.
+            progress?.Report(0.1);
             var opening = await HearAsync(files[0].FullPath!, TimeSpan.Zero, OpeningWindow, cancellationToken);
+            progress?.Report(0.55);
 
             var last = files[^1];
             string? closing = null;
@@ -94,6 +98,8 @@ namespace Listenarr.Application.Audiobooks.Audit
             {
                 closing = await HearAsync(last.FullPath!, TimeSpan.FromSeconds(seconds) - ClosingWindow, ClosingWindow, cancellationToken);
             }
+
+            progress?.Report(0.9);
 
             // The closing is kept apart from the opening so the page can show which is which.
             var heard = string.IsNullOrWhiteSpace(closing)

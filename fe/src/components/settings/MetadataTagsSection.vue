@@ -90,7 +90,10 @@
               (e) => updateField('audioAuditOnImport', (e.target as HTMLInputElement).checked)
             "
           />
-          <span>Audit every new import: hear its credits and check them against the record</span>
+          <span
+            >Transcribe every new import: hear its opening and closing and check them against the
+            record</span
+          >
         </label>
       </FormRow>
 

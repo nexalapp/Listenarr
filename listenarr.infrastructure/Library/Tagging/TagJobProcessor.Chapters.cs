@@ -158,7 +158,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
             var auditor = services.GetRequiredService<IAudioAuditService>();
             try
             {
-                var result = await auditor.AuditAsync(audiobook.Id, cancellationToken);
+                var result = await auditor.AuditAsync(audiobook.Id, BuildProgress(job.Id, 0, 100), cancellationToken);
                 logger.LogInformation(
                     "Audio audit {JobId}: {Verdict} — {Reason}",
                     job.Id,

@@ -2858,7 +2858,7 @@ async function bulkReadCredits() {
     }
     if (queued > 0) {
       toast.success(
-        'Listening',
+        'Transcribing',
         `${queued} book${queued === 1 ? '' : 's'} queued. Verdicts land on each book's Transcript tab.`,
       )
       libraryStore.clearSelection()

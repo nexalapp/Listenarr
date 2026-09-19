@@ -30,6 +30,6 @@ namespace Listenarr.Application.Audiobooks.Audit
         Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default);
 
         /// <summary>Listen and judge now, on the worker. Records the outcome on the book.</summary>
-        Task<AudioAuditResult> AuditAsync(int audiobookId, CancellationToken cancellationToken = default);
+        Task<AudioAuditResult> AuditAsync(int audiobookId, IProgress<double>? progress = null, CancellationToken cancellationToken = default);
     }
 }
