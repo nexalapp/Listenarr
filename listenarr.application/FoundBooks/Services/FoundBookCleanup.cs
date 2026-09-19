@@ -141,6 +141,117 @@ namespace Listenarr.Application.FoundBooks.Services
             }
         }
 
+        /// <summary>
+        /// The end-of-scan sweep: junk a desktop leaves behind anywhere under the watch
+        /// folder, and directories that hold nothing and have not been written for a
+        /// while — long enough that a download client which just created one has had
+        /// time to put something in it. The watch folder itself is never removed.
+        /// </summary>
+        public int Sweep(string watchFolder, FileSystemPathSemantics semantics, DateTime idleSince)
+        {
+            var removed = 0;
+            List<string> directories;
+            try
+            {
+                directories = fileSystem.EnumerateFiles(watchFolder, "*", SearchOption.AllDirectories)
+                    .Where(f => JunkNames.Contains(Path.GetFileName(f)))
+                    .Select(f => Path.GetDirectoryName(f) ?? watchFolder)
+                    .Concat(EnumerateDirectoriesDeep(watchFolder))
+                    .Distinct(semantics.Comparer)
+                    .OrderByDescending(d => d.Length)
+                    .ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogDebug(ex, "Sweep of {Folder} skipped", watchFolder);
+                return 0;
+            }
+
+            var watch = FileSystemPathIdentity.Canonicalize(watchFolder, semantics.Syntax);
+            foreach (var directory in directories)
+            {
+                var isWatchRoot = semantics.Comparer.Equals(FileSystemPathIdentity.Canonicalize(directory, semantics.Syntax), watch);
+                if (!fileSystem.TryValidateMutationTarget(directory, [watchFolder], out var path, out _))
+                {
+                    continue;
+                }
+
+                List<string> entries;
+                try
+                {
+                    entries = fileSystem.EnumerateFileSystemEntries(path).ToList();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    continue;
+                }
+
+                foreach (var junk in entries.Where(e => JunkNames.Contains(Path.GetFileName(e))).ToList())
+                {
+                    try
+                    {
+                        fileSystem.DeleteFile(junk);
+                        entries.Remove(junk);
+                        removed++;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        logger.LogDebug(ex, "Could not delete {Junk}", junk);
+                    }
+                }
+
+                if (isWatchRoot || entries.Count > 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (fileSystem.GetLastWriteTimeUtc(path) > idleSince)
+                    {
+                        continue;
+                    }
+
+                    fileSystem.DeleteEmptyDirectories(path);
+                    if (!fileSystem.DirectoryExists(path))
+                    {
+                        removed++;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    logger.LogDebug(ex, "Could not remove {Directory}", path);
+                }
+            }
+
+            return removed;
+        }
+
+        private IEnumerable<string> EnumerateDirectoriesDeep(string root)
+        {
+            var stack = new Stack<string>();
+            stack.Push(root);
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+                IEnumerable<string> children;
+                try
+                {
+                    children = fileSystem.EnumerateDirectories(current).ToList();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    continue;
+                }
+
+                foreach (var child in children)
+                {
+                    yield return child;
+                    stack.Push(child);
+                }
+            }
+        }
+
         private bool TryRemoveIfEmpty(string directory, string watchFolder)
         {
             if (!fileSystem.DirectoryExists(directory))
