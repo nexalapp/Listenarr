@@ -30,6 +30,11 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
         [InlineData("This is Audible.\nThe Forever War, by Joe Haldeman.\nNarrated by George Wilson.", "The Forever War", "Joe Haldeman", "George Wilson")]
         [InlineData("Drive, an Expanse short story by James S. A. Corey, performed by Jefferson Mays", "Drive, an Expanse short story", "James S. A. Corey", "Jefferson Mays")]
         [InlineData("[Music]\nAudio Renaissance presents A War of Gifts by Orson Scott Card.\nRead for you by Scott Brick and Stefan Ruttnicki.\n[Music]\n1. St. Nick.", "A War of Gifts", "Orson Scott Card", "Scott Brick and Stefan Ruttnicki")]
+        [InlineData("This has been a Hachette Audio production of Drive.", "Drive", null, null)]
+        [InlineData("You have been listening to The Forever War by Joe Haldeman, read by George Wilson.", "The Forever War", "Joe Haldeman", "George Wilson")]
+        [InlineData("This has been A War of Gifts by Orson Scott Card. Read by Scott Brick.", "A War of Gifts", "Orson Scott Card", "Scott Brick")]
+        [InlineData("then the\n\n[closing]\n[MUSIC] This has been a Hashet audio production of Drive, an expanse story, written by James S.A. Corey, read by Jefferson Mayes.", "Drive, an expanse story", "James S.A. Corey", "Jefferson Mayes")]
+        [InlineData("It's alarms trigger in a strictly informational way by the way. [MUSIC] This has been a Hashet audio production of Drive, an expanse story, written by James S.A. Corey, read by Jefferson Mayes. Executive producer Michelle McGonigal.", "Drive, an expanse story", "James S.A. Corey", "Jefferson Mayes")]
         [InlineData("Read by Simon Vance.", null, null, "Simon Vance")]
         [InlineData("Dilation Sleep, written by Alastair Reynolds.", "Dilation Sleep", "Alastair Reynolds", null)]
         public void Parse_ReadsTheSpokenFormula(string heard, string? title, string? author, string? narrator)

@@ -140,9 +140,56 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
             _transcriber.Verify(
                 t => t.TranscribeAsync(It.Is<string>(p => p.EndsWith("Part 1.m4b")), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()),
                 Times.Once);
+            // No chapters known for the last file, so the closing is the last stretch.
             _transcriber.Verify(
                 t => t.TranscribeAsync(It.Is<string>(p => p.EndsWith("Part 2.m4b")), TimeSpan.FromSeconds(2400) - AudioAuditService.ClosingWindow, AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()),
                 Times.Once);
+        }
+
+        [Fact]
+        public async Task AuditAsync_HearsAShortFinalChapterFromItsStart()
+        {
+            // Drive: the credits are read at the top of a 104-second last chapter, not
+            // in the last ninety seconds of the file.
+            GivenSettings(transcription: true);
+            GivenBook(("Drive.m4b", 3469));
+            var writer = new Mock<IAudiobookTagWriter>();
+            writer
+                .Setup(w => w.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudiobookFileTags(
+                    new Dictionary<string, string>(),
+                    3,
+                    TimeSpan.FromSeconds(3469),
+                    false,
+                    Chapters:
+                    [
+                        new EmbeddedChapter("1", TimeSpan.Zero, TimeSpan.FromSeconds(29)),
+                        new EmbeddedChapter("2", TimeSpan.FromSeconds(29), TimeSpan.FromSeconds(3364.758)),
+                        new EmbeddedChapter("3", TimeSpan.FromSeconds(3364.758), TimeSpan.FromSeconds(3469))
+                    ]));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string _, TimeSpan start, TimeSpan _, CancellationToken _) =>
+                    new Transcript(start == TimeSpan.Zero
+                        ? "Drive. An Expanse short story. Chapter one. Solomon Epstein had built his little yacht."
+                        : "This has been a Hachette Audio production of Drive, an Expanse short story, by James S. A. Corey."));
+
+            var service = new AudioAuditService(
+                _audiobooks.Object,
+                _queue.Object,
+                _configuration.Object,
+                _fileSystem.Object,
+                NullLogger<AudioAuditService>.Instance,
+                _transcriber.Object,
+                new TranscriptCache(),
+                writer.Object);
+            var result = await service.AuditAsync(7);
+
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(3364.758), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()),
+                Times.Once);
+            Assert.Equal("Drive, an Expanse short story", result.Credits.Title);
+            Assert.Equal("James S. A. Corey", result.Credits.Author);
         }
 
         [Fact]

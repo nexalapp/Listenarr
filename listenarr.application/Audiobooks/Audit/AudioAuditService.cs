@@ -41,10 +41,17 @@ namespace Listenarr.Application.Audiobooks.Audit
         IFileSystem fileSystem,
         ILogger<AudioAuditService> logger,
         ITranscriber? transcriber = null,
-        TranscriptCache? transcripts = null) : IAudioAuditService
+        TranscriptCache? transcripts = null,
+        IAudiobookTagWriter? tagWriter = null) : IAudioAuditService
     {
-        public static readonly TimeSpan OpeningWindow = TimeSpan.FromSeconds(60);
-        public static readonly TimeSpan ClosingWindow = TimeSpan.FromSeconds(45);
+        public static readonly TimeSpan OpeningWindow = TimeSpan.FromSeconds(90);
+        public static readonly TimeSpan ClosingWindow = TimeSpan.FromSeconds(90);
+
+        /// <summary>
+        /// A final chapter no longer than this is the credits, not the story: the closing
+        /// is heard from where it starts rather than from ninety seconds before the end.
+        /// </summary>
+        public static readonly TimeSpan CreditsChapterMaximum = TimeSpan.FromMinutes(3);
 
         public async Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default)
         {
@@ -96,7 +103,9 @@ namespace Listenarr.Application.Audiobooks.Audit
             string? closing = null;
             if (last.File.DurationSeconds is { } seconds && seconds > ClosingWindow.TotalSeconds + 5)
             {
-                closing = await HearAsync(last.FullPath!, TimeSpan.FromSeconds(seconds) - ClosingWindow, ClosingWindow, cancellationToken);
+                var duration = TimeSpan.FromSeconds(seconds);
+                var (start, window) = await ClosingWindowFor(last.FullPath!, duration, cancellationToken);
+                closing = await HearAsync(last.FullPath!, start, window, cancellationToken);
             }
 
             progress?.Report(0.9);
@@ -123,6 +132,43 @@ namespace Listenarr.Application.Audiobooks.Audit
                 result.AuthorScore);
 
             return result;
+        }
+
+        /// <summary>
+        /// Where the closing credits are. Productions read them at the top of a short
+        /// final chapter ("This has been a Hachette Audio production of…") as often as at
+        /// the very end, so when the last chapter is short the window starts there.
+        /// </summary>
+        private async Task<(TimeSpan Start, TimeSpan Window)> ClosingWindowFor(string fullPath, TimeSpan duration, CancellationToken cancellationToken)
+        {
+            var fromEnd = (duration - ClosingWindow, ClosingWindow);
+            if (tagWriter == null)
+            {
+                return fromEnd;
+            }
+
+            try
+            {
+                var tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
+                var lastChapter = tags.Chapters is { Count: > 1 } chapters ? chapters[^1] : null;
+                if (lastChapter == null)
+                {
+                    return fromEnd;
+                }
+
+                var length = duration - lastChapter.Start;
+                if (length <= TimeSpan.Zero || length > CreditsChapterMaximum)
+                {
+                    return fromEnd;
+                }
+
+                return (lastChapter.Start, length < ClosingWindow ? length : ClosingWindow);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogDebug(ex, "Could not read chapters of {Path} to place the closing window", LogRedaction.SanitizeFilePath(fullPath));
+                return fromEnd;
+            }
         }
 
         private async Task<string?> HearAsync(string fullPath, TimeSpan start, TimeSpan window, CancellationToken cancellationToken)
