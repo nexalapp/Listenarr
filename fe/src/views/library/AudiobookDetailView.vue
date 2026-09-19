@@ -689,6 +689,7 @@
           :disabled="tagWriteInFlight"
           :disabledReason="writeTagsTitle"
           @repair="(fileId) => openChapterRepair(fileId)"
+          @replan="onReplan"
         />
       </div>
 
@@ -2084,20 +2085,49 @@ async function writeTags(payload: { tags: string[]; values: Record<string, strin
   }
 }
 
+/**
+ * How many of this book's jobs of each kind have finished. A count, not a status
+ * string: a second run of the same kind must register even while the first still
+ * sits completed in the store.
+ */
+function completedCount(kinds: string[]) {
+  return tagJobsStore.jobs.filter(
+    (job) =>
+      job.audiobookId === audiobook.value?.id &&
+      kinds.includes(job.kind) &&
+      job.status === 'Completed',
+  ).length
+}
+
 watch(
-  () => activeTagWrite.value?.status,
-  (status, previous) => {
-    if (status === 'Completed' && previous && previous !== 'Completed') {
+  () => completedCount(['Tags']),
+  (count, previous) => {
+    if (previous !== undefined && count > previous) {
       void tagsPanel.value?.load()
-      // A chapter repair replaced a file and re-judged it; the badge on the row is
-      // whatever the server now says.
-      if (activeTagWrite.value?.kind === 'Chapters' || activeTagWrite.value?.kind === 'Plan') {
-        void loadAudiobook()
-        void chapterPanel.value?.load()
-      }
     }
   },
 )
+
+// A chapter repair replaced a file and re-judged it; a plan job stored its proposal.
+// Either way the badge and the panel are whatever the server now says.
+watch(
+  () => completedCount(['Chapters', 'Plan']),
+  (count, previous) => {
+    if (previous !== undefined && count > previous) {
+      void loadAudiobook()
+      void chapterPanel.value?.load()
+    }
+  },
+)
+
+function onReplan(payload: { fileId: number; queued: boolean; reason?: string }) {
+  const toast = useToast()
+  if (payload.queued) {
+    toast.success('Re-checking', 'The fix is being worked out again; this tab refreshes when it is ready.')
+  } else {
+    toast.error('Not re-checked', payload.reason ?? 'The fix could not be queued for planning.')
+  }
+}
 
 /** The badge text for a file whose chapters a repair can do something about, or null. */
 function chapterBadge(health: ChapterHealth | undefined): string | null {
@@ -2260,13 +2290,9 @@ function openFixMatchFromAudit() {
 
 // An audit that finishes rewrites the verdict on the book; reload to show it.
 watch(
-  () =>
-    tagJobsStore.jobs
-      .filter((job) => job.audiobookId === audiobook.value?.id && job.kind === 'Audit')
-      .map((job) => job.status)
-      .join(','),
-  (statuses, previous) => {
-    if (previous && statuses.includes('Completed') && !previous.includes('Completed')) {
+  () => completedCount(['Audit']),
+  (count, previous) => {
+    if (previous !== undefined && count > previous) {
       void loadAudiobook()
     }
   },

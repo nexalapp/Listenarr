@@ -183,12 +183,21 @@ namespace Listenarr.Infrastructure.Library.Tagging
             ITagQueueService queue,
             CancellationToken cancellationToken)
         {
-            await queue.ReportProgressAsync(job.Id, TagJobPhase.Reading, 5, cancellationToken);
+            await queue.ReportProgressAsync(job.Id, TagJobPhase.Reading, 1, cancellationToken);
             var repair = services.GetRequiredService<IChapterRepairService>();
             var scope = TagQueueService.DeserializeFileIds(job.SelectedFileIdsJson);
-            var planned = await repair.PlanAsync(audiobook.Id, scope, cancellationToken);
-            logger.LogInformation("Chapter planning {JobId}: {Planned} of {Files} file(s) have a fix", job.Id, planned, job.FileCount);
-            return ExecutionOutcome.Succeeded(0, planned, audiobook.Title);
+            try
+            {
+                var planned = await repair.PlanAsync(audiobook.Id, scope, BuildProgress(job.Id, 0, 100), cancellationToken);
+                var withFix = planned?.Files.Count(file => file.Repairable) ?? 0;
+                logger.LogInformation("Chapter planning {JobId}: {Planned} of {Files} file(s) have a fix", job.Id, withFix, job.FileCount);
+                return ExecutionOutcome.Succeeded(0, withFix, audiobook.Title);
+            }
+            catch (ChapterSourceUnavailableException ex)
+            {
+                // Nothing was stored for the files concerned; the retry asks again.
+                return ExecutionOutcome.Failed(TagWriteFailureKind.WriterUnavailable, ex.Message);
+            }
         }
     }
 }

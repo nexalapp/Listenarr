@@ -141,6 +141,35 @@ describe('ChapterRepairModal', () => {
     expect(heard[0].text()).toContain('1. Saint Nick · Zach Morgan sat attentively.')
   })
 
+  it('waits, rather than refuses, while the fix is still being worked out', async () => {
+    const file = {
+      ...preview().files[0],
+      repairable: false,
+      planPending: true,
+      source: null,
+      chapters: null,
+    }
+    const wrapper = await mountModal(preview({ repairable: false, files: [file] }))
+
+    expect(wrapper.text()).toContain('still being worked out')
+    expect(wrapper.text()).not.toContain('None of these files can be repaired')
+    const confirm = wrapper.findAll('button').find((b) => b.text().startsWith('Repair'))
+    expect(confirm?.attributes('disabled')).toBeDefined()
+  })
+
+  it('leaves a pending file out of a repair of the others', async () => {
+    const pending = {
+      ...preview().files[1],
+      chapterHealth: 'oversegmented' as const,
+      rejection: null,
+      planPending: true,
+    }
+    const wrapper = await mountModal(preview({ files: [preview().files[0], pending] }))
+
+    expect(wrapper.text()).toContain('not part of this repair')
+    expect(wrapper.text()).toContain('Repair 1 file(s)')
+  })
+
   it('warns when the list is partial', async () => {
     const file = {
       ...preview().files[0],

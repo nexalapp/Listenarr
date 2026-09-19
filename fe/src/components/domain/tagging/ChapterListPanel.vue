@@ -105,6 +105,17 @@
             >
               {{ proposalFor(file.fileId) ? 'Apply this fix' : 'Repair chapters' }}
             </button>
+            <button
+              v-if="isRepairable(file.chapterHealth) && proposalFor(file.fileId)"
+              type="button"
+              class="chapter-btn chapter-btn--quiet"
+              :disabled="disabled || replanning.has(file.fileId)"
+              title="Forget this fix and work it out again — after turning on transcription, correcting the ASIN, or when the proposal looks wrong"
+              @click="replan(file.fileId)"
+            >
+              <PhArrowsClockwise :class="{ 'ph-spin': replanning.has(file.fileId) }" />
+              Re-check
+            </button>
           </div>
         </header>
 
@@ -232,6 +243,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import {
   PhArrowRight,
+  PhArrowsClockwise,
   PhFileAudio,
   PhListNumbers,
   PhPlay,
@@ -257,6 +269,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'repair', fileId: number): void
+  /** A re-plan was queued (or refused, with the reason) for this file. */
+  (event: 'replan', payload: { fileId: number; queued: boolean; reason?: string }): void
 }>()
 
 const COLLAPSED_ROWS = 30
@@ -451,6 +465,30 @@ function formatTime(seconds: number) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`
 }
 
+const replanning = ref(new Set<number>())
+
+/** Throw the stored fix away and have it worked out again in the background. */
+async function replan(fileId: number) {
+  if (props.audiobookId == null) return
+  replanning.value = new Set([...replanning.value, fileId])
+  try {
+    const response = await apiService.replanChapters(props.audiobookId, [fileId])
+    if (response.queued) {
+      // The proposal is gone until the job brings a new one; show that rather than the old.
+      const next = new Map(proposals.value)
+      next.delete(fileId)
+      proposals.value = next
+    }
+    emit('replan', { fileId, queued: response.queued, reason: response.reason })
+  } catch (err) {
+    emit('replan', { fileId, queued: false, reason: err instanceof Error ? err.message : String(err) })
+  } finally {
+    const next = new Set(replanning.value)
+    next.delete(fileId)
+    replanning.value = next
+  }
+}
+
 async function load() {
   if (props.audiobookId == null) return
   loading.value = true
@@ -617,6 +655,19 @@ defineExpose({ load })
   color: var(--brand-500);
   font-size: 12px;
   cursor: pointer;
+}
+
+.chapter-btn--quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-color: var(--border-color, #444);
+  color: var(--text-secondary, #aaa);
+}
+
+.chapter-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .chapter-pending {

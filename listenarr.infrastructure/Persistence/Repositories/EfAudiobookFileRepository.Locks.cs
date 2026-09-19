@@ -171,6 +171,26 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             await _db.SaveChangesAsync(ct);
         }
 
+        public async Task ClearChapterPlanAsync(IReadOnlyCollection<int> fileIds, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(fileIds);
+            if (fileIds.Count == 0)
+            {
+                return;
+            }
+
+            var ids = fileIds.ToList();
+            var files = await _db.AudiobookFiles.Where(file => ids.Contains(file.Id)).ToListAsync(ct);
+            foreach (var file in files)
+            {
+                file.ChapterPlanJson = null;
+                file.ChapterPlanKey = null;
+                file.ChapterPlannedAt = null;
+            }
+
+            await _db.SaveChangesAsync(ct);
+        }
+
         public async Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default)
         {
             var rows = await _db.AudiobookFiles
@@ -179,18 +199,23 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .Select(file => new { file.AudiobookId, file.ChapterHealth, file.ChapterRepairable })
                 .ToListAsync(ct);
 
-            // The worst verdict wins; among files with that verdict, one that cannot be
-            // repaired is the one to report — red must not be hidden behind amber.
+            // The worst verdict names the book's problem; repairable means every flagged
+            // file can be fixed, because a book is only as fixable as its stuck file.
+            // Red must not be hidden behind amber, whichever file earned it.
             var worst = new Dictionary<int, AudiobookChapterSummary>();
             foreach (var row in rows)
             {
-                var rank = ChapterHealthSeverity.Rank(row.ChapterHealth);
-                if (!worst.TryGetValue(row.AudiobookId, out var current)
-                    || rank > ChapterHealthSeverity.Rank(current.Health)
-                    || (rank == ChapterHealthSeverity.Rank(current.Health) && current.Repairable && !row.ChapterRepairable))
+                var issue = ChapterHealthSeverity.IsRepairableKind(row.ChapterHealth);
+                if (!worst.TryGetValue(row.AudiobookId, out var current))
                 {
-                    worst[row.AudiobookId] = new AudiobookChapterSummary(row.ChapterHealth, row.ChapterRepairable);
+                    worst[row.AudiobookId] = new AudiobookChapterSummary(row.ChapterHealth, !issue || row.ChapterRepairable);
+                    continue;
                 }
+
+                var health = ChapterHealthSeverity.Rank(row.ChapterHealth) > ChapterHealthSeverity.Rank(current.Health)
+                    ? row.ChapterHealth
+                    : current.Health;
+                worst[row.AudiobookId] = new AudiobookChapterSummary(health, current.Repairable && (!issue || row.ChapterRepairable));
             }
 
             return worst;

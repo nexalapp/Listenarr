@@ -76,8 +76,15 @@ namespace Listenarr.Domain.Audiobooks.Chapters
     /// </summary>
     public static class ChapterPlanKeys
     {
+        /// <summary>
+        /// Bump when the planner or the parsers learn something that would change a stored
+        /// plan. Every plan is keyed on it, so a release that plans better re-plans the
+        /// library on its own instead of standing behind the answers of the release before.
+        /// </summary>
+        public const int PlannerVersion = 2;
+
         public static string For(long length, DateTime lastWriteUtc, string? asin, bool transcriptionEnabled) =>
-            $"{length}|{lastWriteUtc.Ticks}|{asin?.Trim().ToUpperInvariant()}|{(transcriptionEnabled ? 1 : 0)}";
+            $"{length}|{lastWriteUtc.Ticks}|{asin?.Trim().ToUpperInvariant()}|{(transcriptionEnabled ? 1 : 0)}|v{PlannerVersion}";
     }
 
     /// <summary>A stored planning outcome: the plan, or why there is none.</summary>

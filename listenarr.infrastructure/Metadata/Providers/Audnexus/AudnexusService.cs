@@ -213,7 +213,10 @@ namespace Listenarr.Infrastructure.Metadata.Providers.Audnexus
         /// <param name="region">The region code (default: us)</param>
         /// <param name="update">Have server check for updated data upstream (default: false)</param>
         /// <returns>Chapter information from Audnexus</returns>
-        public async Task<AudnexusChapterResponse?> GetChaptersAsync(string asin, string region = "us", bool update = false)
+        public async Task<AudnexusChapterResponse?> GetChaptersAsync(string asin, string region = "us", bool update = false) =>
+            (await LookupChaptersAsync(asin, region, update)).Response;
+
+        public async Task<AudnexusChapterLookup> LookupChaptersAsync(string asin, string region = "us", bool update = false, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -222,16 +225,17 @@ namespace Listenarr.Infrastructure.Metadata.Providers.Audnexus
 
                 _logger.LogInformation("Fetching chapters from Audnexus: {Url}", LogRedaction.SanitizeUrl(url));
 
-                var response = await _httpClient.GetAsync(url);
+                var response = await _httpClient.GetAsync(url, cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audnexus API returned status code {StatusCode} for chapters of ASIN {Asin}",
                         response.StatusCode, LogRedaction.SanitizeText(asin));
-                    return null;
+                    // Not found is Audnexus's answer; anything else is Audnexus not answering.
+                    return new AudnexusChapterLookup(null, Unavailable: response.StatusCode != System.Net.HttpStatusCode.NotFound);
                 }
 
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
                 var options = new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true,
@@ -241,22 +245,22 @@ namespace Listenarr.Infrastructure.Metadata.Providers.Audnexus
                 var result = JsonSerializer.Deserialize<AudnexusChapterResponse>(json, options);
 
                 _logger.LogInformation("Successfully fetched chapters for ASIN {Asin} from Audnexus", LogRedaction.SanitizeText(asin));
-                return result;
+                return new AudnexusChapterLookup(result, Unavailable: false);
             }
             catch (HttpRequestException ex)
             {
                 _logger.LogError(ex, "HTTP error fetching chapters from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
-                return null;
+                return new AudnexusChapterLookup(null, Unavailable: true);
             }
             catch (TaskCanceledException ex)
             {
                 _logger.LogError(ex, "Request timed out fetching chapters from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
-                return null;
+                return new AudnexusChapterLookup(null, Unavailable: true);
             }
             catch (JsonException ex)
             {
                 _logger.LogError(ex, "JSON deserialization error fetching chapters from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
-                return null;
+                return new AudnexusChapterLookup(null, Unavailable: true);
             }
         }
     }

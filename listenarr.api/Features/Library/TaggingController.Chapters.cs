@@ -63,6 +63,8 @@ namespace Listenarr.Api.Features.Library
                     chapterReason = file.HealthReason,
                     repairable = file.Repairable,
                     rejection = file.Rejection,
+                    // The fix has not been worked out yet; a planning job has been queued for it.
+                    planPending = file.PlanPending,
                     source = file.Plan?.Source.ToString(),
                     partial = file.Plan?.Partial ?? false,
                     note = file.Plan?.Note,
@@ -161,6 +163,36 @@ namespace Listenarr.Api.Features.Library
 
             logger.LogInformation(
                 "Chapter repair request for audiobook {AudiobookId}: {Outcome}",
+                audiobookId,
+                result.Outcome);
+
+            return ToResponse(result);
+        }
+
+        /// <summary>
+        /// Forget the stored chapter fix for a book's files and work it out again.
+        /// </summary>
+        /// <remarks>
+        /// For a plan the operator does not trust, or one made before transcription was
+        /// turned on, before the ASIN was corrected, or before a release that plans better.
+        /// </remarks>
+        /// <response code="202">Planning was queued.</response>
+        /// <response code="404">No such audiobook.</response>
+        /// <response code="409">Planning is already queued for this book.</response>
+        [HttpPost("audiobooks/{audiobookId:int}/chapters/replan")]
+        public async Task<IActionResult> ReplanChapters(
+            int audiobookId,
+            [FromServices] IChapterRepairService repairService,
+            [FromBody] RepairChaptersRequest? request = null,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await repairService.ReplanAsync(
+                audiobookId,
+                request?.FileIds is { Count: > 0 } fileIds ? fileIds : null,
+                cancellationToken);
+
+            logger.LogInformation(
+                "Chapter re-plan request for audiobook {AudiobookId}: {Outcome}",
                 audiobookId,
                 result.Outcome);
 

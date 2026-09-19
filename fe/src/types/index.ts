@@ -634,6 +634,8 @@ export interface ChapterRepairFile {
   chapterReason?: string | null
   repairable: boolean
   rejection?: string | null
+  /** The fix has not been worked out yet; a planning job has been queued for it. */
+  planPending?: boolean
   /** `Played`, `Audnexus`, `RecoveredAtom` or `Announcements`. */
   source?: string | null
   /** The list is missing its opening chapters and one was synthesised. */

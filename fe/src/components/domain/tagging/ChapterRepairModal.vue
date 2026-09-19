@@ -25,12 +25,25 @@
       <ModalBody compact maxHeight="72vh" class="chapter-modal-body">
         <div v-if="loading" class="chapter-state">
           <PhSpinner class="ph-spin chapter-icon" />
-          <p>Working out what each file's chapters should be…</p>
+          <p>Reading the fix worked out for each file…</p>
         </div>
 
         <div v-else-if="error" class="chapter-state chapter-error">
           <PhWarningCircle class="chapter-icon" />
           <p>{{ error }}</p>
+        </div>
+
+        <div
+          v-else-if="books.length > 0 && repairableCount === 0 && pendingCount > 0"
+          class="chapter-state"
+        >
+          <PhSpinner class="ph-spin chapter-icon" />
+          <p>
+            The fix for {{ pendingCount }} file{{ pendingCount === 1 ? '' : 's' }} is still being
+            worked out — the edition's list is fetched, then the marks are listened at if
+            transcription is on. It shows on the book's Chapters tab when it is ready; come back to
+            apply it then.
+          </p>
         </div>
 
         <div
@@ -69,7 +82,7 @@
               v-for="file in book.preview.files"
               :key="file.fileId"
               class="chapter-file"
-              :class="{ 'chapter-file--rejected': !file.repairable }"
+              :class="{ 'chapter-file--rejected': !file.repairable && !file.planPending }"
             >
               <header class="chapter-file-header">
                 <PhFileAudio />
@@ -85,7 +98,12 @@
                 </span>
               </header>
 
-              <p v-if="!file.repairable" class="chapter-file-rejection">
+              <p v-if="file.planPending" class="chapter-file-pending">
+                <PhSpinner class="ph-spin" />
+                The fix for this file is still being worked out; it is not part of this repair.
+              </p>
+
+              <p v-else-if="!file.repairable" class="chapter-file-rejection">
                 <PhWarningCircle />
                 {{ file.rejection ?? file.chapterReason }}
               </p>
@@ -204,6 +222,7 @@ const allFiles = computed(() =>
 )
 
 const repairableCount = computed(() => allFiles.value.filter((file) => file.repairable).length)
+const pendingCount = computed(() => allFiles.value.filter((file) => file.planPending).length)
 
 const sourceLabel = (source?: string | null) => {
   switch (source) {
@@ -426,6 +445,13 @@ watch(
 
 .chapter-file-warning {
   color: var(--warning-500, #ffa500);
+}
+
+.chapter-file-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary, #aaa);
 }
 
 .chapter-file-rejection svg,

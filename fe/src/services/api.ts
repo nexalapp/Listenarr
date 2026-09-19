@@ -1775,6 +1775,17 @@ class ApiService {
     })
   }
 
+  /** Forget the stored chapter fix for these files and have it worked out again. */
+  async replanChapters(
+    audiobookId: number,
+    fileIds?: number[],
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/chapters/replan`, {
+      method: 'POST',
+      body: JSON.stringify({ fileIds: fileIds?.length ? fileIds : null }),
+    })
+  }
+
   /** Queue an audio audit: listen to the book and judge it against its record. */
   async auditAudio(
     audiobookId: number,

@@ -2806,7 +2806,8 @@ async function bulkRepairChapters() {
   const ok = await showConfirm(
     `Repair the chapters of ${ids.length} book${ids.length !== 1 ? 's' : ''}? ` +
       'Each flagged file is rewritten with the fix shown on its Chapters tab, verified, and ' +
-      'then replaces the original. Books with nothing to repair are skipped.',
+      'then replaces the original. Books with nothing to repair, or whose fix is still being ' +
+      'worked out, are skipped.',
     'Repair Chapters',
     { confirmText: 'Queue Repairs', cancelText: 'Cancel' },
   )

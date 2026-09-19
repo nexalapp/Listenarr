@@ -37,6 +37,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         private readonly Mock<IAudnexusService> _audnexus = new();
         private readonly Mock<IConfigurationService> _configuration = new();
         private readonly Mock<ITranscriber> _transcriber = new();
+        private readonly Mock<IAudiobookFileRepository> _files = new();
+        private Audiobook? _book;
 
         private static readonly TimeSpan Duration = TimeSpan.FromMinutes(100);
 
@@ -55,7 +57,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             NullLogger<ChapterRepairService>.Instance,
             _audnexus.Object,
             _transcriber.Object,
-            new TranscriptCache());
+            new TranscriptCache(),
+            _files.Object);
 
         private void GivenTranscription(bool enabled)
         {
@@ -97,8 +100,22 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             var file = AudiobookFile.CreateUnresolved("Book.m4b");
             file.Id = 41;
             audiobook.Files = [file];
+            _book = audiobook;
             _audiobooks.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(audiobook);
             _fileSystem.Setup(fs => fs.FileExists(It.IsAny<string>())).Returns(true);
+            _fileSystem.Setup(fs => fs.GetFileLength(It.IsAny<string>())).Returns(1024);
+            _fileSystem.Setup(fs => fs.GetLastWriteTimeUtc(It.IsAny<string>())).Returns(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            // The stored plan lands on the entity, as it does through EF.
+            _files
+                .Setup(f => f.SetChapterPlanAsync(41, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+                .Callback<int, string, string, bool, DateTime, CancellationToken>((_, json, key, repairable, at, _) =>
+                {
+                    file.ChapterPlanJson = json;
+                    file.ChapterPlanKey = key;
+                    file.ChapterRepairable = repairable;
+                    file.ChapterPlannedAt = at;
+                })
+                .Returns(Task.CompletedTask);
             return audiobook;
         }
 
@@ -114,12 +131,12 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                     Atoms: atoms));
 
         [Fact]
-        public async Task PreviewAsync_PlansFromTheChapterTrackWhenTheAtomIsBroken()
+        public async Task PlanAsync_PlansFromTheChapterTrackWhenTheAtomIsBroken()
         {
             GivenBook();
             GivenFileReads(Evenly(10, TimeSpan.FromMinutes(10)), new ChapterAtomState(true, "version byte is 58", 0, true));
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.Equal(ChapterHealth.Corrupt, file.Health);
@@ -127,17 +144,17 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             Assert.Equal(ChapterSource.Played, file.Plan!.Source);
             Assert.Equal(10, file.Plan.Chapters.Count);
             // Audnexus is not asked when the file's own track answers.
-            _audnexus.Verify(a => a.GetChaptersAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+            _audnexus.Verify(a => a.LookupChaptersAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
-        public async Task PreviewAsync_FallsBackToAudnexusThenTheDamagedAtom()
+        public async Task PlanAsync_FallsBackToAudnexusThenTheDamagedAtom()
         {
             GivenBook(asin: "B00X");
             GivenFileReads([], new ChapterAtomState(true, "version byte is 58", 0, false));
             _audnexus
-                .Setup(a => a.GetChaptersAsync("B00X", It.IsAny<string>(), It.IsAny<bool>()))
-                .ReturnsAsync(new AudnexusChapterResponse
+                .Setup(a => a.LookupChaptersAsync("B00X", It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudnexusChapterLookup(new AudnexusChapterResponse
                 {
                     RuntimeLengthMs = (int)Duration.TotalMilliseconds,
                     Chapters = Enumerable.Range(0, 8).Select(i => new AudnexusChapter
@@ -146,9 +163,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                         StartOffsetMs = i * 12 * 60 * 1000,
                         LengthMs = 12 * 60 * 1000
                     }).ToList()
-                });
+                }, Unavailable: false));
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.Equal(ChapterSource.Audnexus, file.Plan!.Source);
@@ -156,7 +173,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_UsesTheDamagedAtomAsALastResort()
+        public async Task PlanAsync_UsesTheDamagedAtomAsALastResort()
         {
             GivenBook();
             GivenFileReads([], new ChapterAtomState(true, "version byte is 58", 0, false));
@@ -164,7 +181,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 .Setup(r => r.TryRecover(It.IsAny<string>()))
                 .Returns(Evenly(5, TimeSpan.FromMinutes(10)).Select(c => c with { Start = c.Start + TimeSpan.FromMinutes(20), End = c.End + TimeSpan.FromMinutes(20) }).ToList());
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.Equal(ChapterSource.RecoveredAtom, file.Plan!.Source);
@@ -177,12 +194,12 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             Enumerable.Range(0, count).Select(i => new EmbeddedChapter($"Track {i + 1:D2}", each * i, each * (i + 1))).ToList();
 
         [Fact]
-        public async Task PreviewAsync_TellsTheOperatorToTurnTranscriptionOnForCdTracks()
+        public async Task PlanAsync_TellsTheOperatorToTurnTranscriptionOnForCdTracks()
         {
             GivenBook();
             GivenFileReads(Tracks(30, TimeSpan.FromMinutes(3)), new ChapterAtomState(true, null, 30, true));
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.Equal(ChapterHealth.Oversegmented, file.Health);
@@ -192,7 +209,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_MergesCdTracksAtTheAnnouncementsItHears()
+        public async Task PlanAsync_MergesCdTracksAtTheAnnouncementsItHears()
         {
             GivenBook();
             GivenTranscription(enabled: true);
@@ -200,7 +217,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
             GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one.", [10] = "Chapter two. The war.", [20] = "Chapter three." });
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.True(file.Repairable);
@@ -214,7 +231,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_ListensOnlyOnceAcrossPreviewAndEnqueue()
+        public async Task PlanAsync_StoresThePlanTheEnqueueThenWrites()
         {
             GivenBook();
             GivenTranscription(enabled: true);
@@ -226,7 +243,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 .ReturnsAsync(new TagEnqueueResult(TagEnqueueOutcome.Queued, Guid.NewGuid()));
 
             var service = BuildService();
-            await service.PreviewAsync(7);
+            await service.PlanAsync(7);
             var result = await service.EnqueueAsync(7);
 
             Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
@@ -236,7 +253,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_FlagsACdRipWhoseNarratorNeverAnnounces()
+        public async Task PlanAsync_FlagsACdRipWhoseNarratorNeverAnnounces()
         {
             GivenBook();
             GivenTranscription(enabled: true);
@@ -244,7 +261,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
             GivenHeard(marks, new Dictionary<int, string>());
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.False(file.Repairable);
@@ -252,7 +269,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_RetitlesPlaceholderChaptersFromWhatItHears()
+        public async Task PlanAsync_RetitlesPlaceholderChaptersFromWhatItHears()
         {
             GivenBook();
             GivenTranscription(enabled: true);
@@ -262,7 +279,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             GivenFileReads(marks, new ChapterAtomState(true, null, 5, true));
             GivenHeard(marks, new Dictionary<int, string> { [1] = "Chapter one.", [2] = "Chapter two.", [3] = "Chapter three.", [4] = "Chapter four." });
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.Equal(ChapterHealth.GenericTitles, file.Health);
@@ -272,7 +289,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_MergesPlaceholderMarksWhenOnlyAFewAreAnnounced()
+        public async Task PlanAsync_MergesPlaceholderMarksWhenOnlyAFewAreAnnounced()
         {
             // A War of Gifts: 25 five-minute tracks titled "Chapter 001 - 00:00:38", with
             // the author's chapters heard at a handful of them.
@@ -289,7 +306,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 [7] = "3. The Devil's Questions\nZack got into a hover car with the man."
             });
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.True(file.Repairable);
@@ -301,8 +318,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
 
         private void GivenAudnexus(IReadOnlyList<EmbeddedChapter> chapters, TimeSpan runtime) =>
             _audnexus
-                .Setup(a => a.GetChaptersAsync("B00X", It.IsAny<string>(), It.IsAny<bool>()))
-                .ReturnsAsync(new AudnexusChapterResponse
+                .Setup(a => a.LookupChaptersAsync("B00X", It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudnexusChapterLookup(new AudnexusChapterResponse
                 {
                     RuntimeLengthMs = (int)runtime.TotalMilliseconds,
                     Chapters = chapters.Select(c => new AudnexusChapter
@@ -311,10 +328,10 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                         StartOffsetMs = (int)c.Start.TotalMilliseconds,
                         LengthMs = (int)(c.End - c.Start).TotalMilliseconds
                     }).ToList()
-                });
+                }, Unavailable: false));
 
         [Fact]
-        public async Task PreviewAsync_UsesTheEditionsMarksWithoutListeningWhenTheyLandOnTheRips()
+        public async Task PlanAsync_UsesTheEditionsMarksWithoutListeningWhenTheyLandOnTheRips()
         {
             // Transcription off, but Audible's chapters sit on every third track: the
             // edition is this file and its list is the plan, at no cost.
@@ -325,7 +342,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 Enumerable.Range(0, 10).Select(i => new EmbeddedChapter($"Chapter {i + 1}", TimeSpan.FromMinutes(9) * i + TimeSpan.FromMilliseconds(400), TimeSpan.FromMinutes(9) * (i + 1))).ToList(),
                 Duration - TimeSpan.FromSeconds(10));
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.True(file.Repairable);
@@ -338,7 +355,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_ListensOnlyAtTheEditionsMarksForTheirNames()
+        public async Task PlanAsync_ListensOnlyAtTheEditionsMarksForTheirNames()
         {
             GivenBook(asin: "B00X");
             GivenTranscription(enabled: true);
@@ -349,7 +366,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 Duration);
             GivenHeard(marks, new Dictionary<int, string> { [3] = "2. Stockings.\nRat Army was small.", [6] = "3. Peace." });
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.Equal(ChapterSource.Audnexus, file.Plan!.Source);
@@ -362,7 +379,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_IgnoresAnEditionWhoseMarksDoNotLandOnTheRips()
+        public async Task PlanAsync_IgnoresAnEditionWhoseMarksDoNotLandOnTheRips()
         {
             // Same runtime, different cut: the edition's marks fall between the tracks.
             GivenBook(asin: "B00X");
@@ -374,7 +391,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 Duration);
             GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one.", [15] = "Chapter two." });
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.Equal(ChapterSource.Announcements, file.Plan!.Source);
@@ -382,7 +399,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
-        public async Task PreviewAsync_NamesAShortWorkFromItsCreditsWhenNothingIsAnnounced()
+        public async Task PlanAsync_NamesAShortWorkFromItsCreditsWhenNothingIsAnnounced()
         {
             GivenBook();
             GivenTranscription(enabled: true);
@@ -400,7 +417,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 [3] = "We hope you've enjoyed Unauthorized Bread, a Macmillan audio production."
             });
 
-            var preview = await BuildService().PreviewAsync(7);
+            var preview = await BuildService().PlanAsync(7);
 
             var file = Assert.Single(preview!.Files);
             Assert.True(file.Repairable);
@@ -432,7 +449,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
                 .Callback<int, IReadOnlyDictionary<int, ChapterPlan>, TagTrigger, CancellationToken>((_, plans, _, _) => handed = plans)
                 .ReturnsAsync(new TagEnqueueResult(TagEnqueueOutcome.Queued, Guid.NewGuid()));
 
-            var result = await BuildService().EnqueueAsync(7);
+            var service = BuildService();
+            await service.PlanAsync(7);
+            var result = await service.EnqueueAsync(7);
 
             Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
             Assert.Equal([41], handed!.Keys);
@@ -449,6 +468,153 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
             Assert.Contains("not corrupt", result.Reason);
             _queue.VerifyNoOtherCalls();
+        }
+        // ---- stored plans and bad moments ------------------------------------------------
+
+        [Fact]
+        public async Task PreviewAsync_QueuesPlanningInsteadOfListening()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            var marks = Tracks(30, TimeSpan.FromMinutes(3));
+            GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
+            GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one.", [15] = "Chapter two." });
+            _queue
+                .Setup(q => q.EnqueueChapterPlanAsync(7, It.IsAny<IReadOnlyCollection<int>>(), TagTrigger.Automatic, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TagEnqueueResult(TagEnqueueOutcome.Queued, Guid.NewGuid()));
+
+            var preview = await BuildService().PreviewAsync(7);
+
+            var file = Assert.Single(preview!.Files);
+            Assert.True(file.PlanPending);
+            Assert.False(file.Repairable);
+            _transcriber.Verify(t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
+            _queue.Verify(q => q.EnqueueChapterPlanAsync(7, It.Is<IReadOnlyCollection<int>>(ids => ids.Single() == 41), TagTrigger.Automatic, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task EnqueueAsync_SaysTheFixIsStillBeingWorkedOut()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            GivenFileReads(Tracks(30, TimeSpan.FromMinutes(3)), new ChapterAtomState(true, null, 30, true));
+            _queue
+                .Setup(q => q.EnqueueChapterPlanAsync(7, It.IsAny<IReadOnlyCollection<int>>(), TagTrigger.Automatic, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TagEnqueueResult(TagEnqueueOutcome.Queued, Guid.NewGuid()));
+
+            var result = await BuildService().EnqueueAsync(7);
+
+            Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
+            Assert.Contains("being worked out", result.Reason);
+            _queue.Verify(q => q.EnqueueChapterRepairAsync(It.IsAny<int>(), It.IsAny<IReadOnlyDictionary<int, ChapterPlan>>(), It.IsAny<TagTrigger>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task PlanAsync_KeepsNothingWhenAMarkCouldNotBeHeard()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            var marks = Tracks(30, TimeSpan.FromMinutes(3));
+            GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new IOException("ffmpeg exited with 1"));
+
+            var failure = await Assert.ThrowsAsync<ChapterSourceUnavailableException>(() => BuildService().PlanAsync(7));
+
+            // Silence would have merged every mark into one chapter; a failure to listen is not silence.
+            Assert.Contains("Could not transcribe", failure.Message);
+            _files.Verify(f => f.SetChapterPlanAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+            Assert.Null(_book!.Files![0].ChapterPlanJson);
+        }
+
+        [Fact]
+        public async Task PlanAsync_KeepsNothingWhenAudnexusCouldNotBeAsked()
+        {
+            GivenBook(asin: "B00X");
+            GivenFileReads([], new ChapterAtomState(true, "version byte is 58", 0, false));
+            _audnexus
+                .Setup(a => a.LookupChaptersAsync("B00X", It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudnexusChapterLookup(null, Unavailable: true));
+
+            var failure = await Assert.ThrowsAsync<ChapterSourceUnavailableException>(() => BuildService().PlanAsync(7));
+
+            Assert.Contains("Audnexus", failure.Message);
+            _files.Verify(f => f.SetChapterPlanAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task PlanAsync_StoresARejectionWhenAudnexusHasNoChapters()
+        {
+            GivenBook(asin: "B00X");
+            GivenFileReads([], new ChapterAtomState(true, "version byte is 58", 0, false));
+            _audnexus
+                .Setup(a => a.LookupChaptersAsync("B00X", It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudnexusChapterLookup(null, Unavailable: false));
+
+            var preview = await BuildService().PlanAsync(7);
+
+            // "The edition has none" is a fact worth keeping; the next look need not ask again.
+            var file = Assert.Single(preview!.Files);
+            Assert.False(file.Repairable);
+            Assert.NotNull(_book!.Files![0].ChapterPlanJson);
+        }
+
+        [Fact]
+        public async Task PlanAsync_ReportsProgressAsMarksAreHeard()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            var marks = Tracks(30, TimeSpan.FromMinutes(3));
+            GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
+            GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one.", [15] = "Chapter two." });
+            var reports = new List<double>();
+            var progress = new SynchronousProgress(reports.Add);
+
+            await BuildService().PlanAsync(7, progress: progress);
+
+            Assert.True(reports.Count >= 30, $"expected a report per mark, got {reports.Count}");
+            Assert.Equal(reports.OrderBy(r => r), reports);
+            Assert.Equal(1, reports[^1]);
+        }
+
+        private sealed class SynchronousProgress(Action<double> handler) : IProgress<double>
+        {
+            public void Report(double value) => handler(value);
+        }
+
+        [Fact]
+        public async Task ReplanAsync_ForgetsTheStoredPlanAndQueuesPlanning()
+        {
+            GivenBook();
+            GivenFileReads(Evenly(10, TimeSpan.FromMinutes(10)), new ChapterAtomState(true, "version byte is 58", 0, true));
+            _queue
+                .Setup(q => q.EnqueueChapterPlanAsync(7, It.IsAny<IReadOnlyCollection<int>>(), TagTrigger.Manual, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TagEnqueueResult(TagEnqueueOutcome.Queued, Guid.NewGuid()));
+
+            var result = await BuildService().ReplanAsync(7);
+
+            Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
+            _files.Verify(f => f.ClearChapterPlanAsync(It.Is<IReadOnlyCollection<int>>(ids => ids.Single() == 41), It.IsAny<CancellationToken>()), Times.Once);
+            _queue.Verify(q => q.EnqueueChapterPlanAsync(7, It.Is<IReadOnlyCollection<int>>(ids => ids.Single() == 41), TagTrigger.Manual, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task PlanAsync_UsesTheStoredPlanWhenTheKeyStillHolds()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            var marks = Tracks(30, TimeSpan.FromMinutes(3));
+            GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
+            GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one.", [15] = "Chapter two." });
+
+            var service = BuildService();
+            await service.PlanAsync(7);
+            await service.PlanAsync(7);
+
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+                Times.Exactly(30));
         }
     }
 }

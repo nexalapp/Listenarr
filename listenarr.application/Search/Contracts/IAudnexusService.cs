@@ -27,5 +27,18 @@ namespace Listenarr.Application.Search.Contracts
         Task<List<AudnexusAuthorSearchResult>?> SearchAuthorsAsync(string name, string region = "us");
         Task<AudnexusAuthorResponse?> GetAuthorAsync(string asin, string region = "us", bool update = false);
         Task<AudnexusChapterResponse?> GetChaptersAsync(string asin, string region = "us", bool update = false);
+
+        /// <summary>
+        /// The edition's chapters, telling "Audnexus has none" apart from "Audnexus could
+        /// not be asked". A caller that stores its answer needs the difference: the first
+        /// is a fact about the edition, the second is a bad moment.
+        /// </summary>
+        async Task<AudnexusChapterLookup> LookupChaptersAsync(string asin, string region = "us", bool update = false, CancellationToken cancellationToken = default) =>
+            new(await GetChaptersAsync(asin, region, update), Unavailable: false);
     }
+
+    /// <summary>What a chapters lookup came back with.</summary>
+    /// <param name="Response">The edition's chapters, or null when Audnexus has none for the ASIN.</param>
+    /// <param name="Unavailable">True when the answer is missing because the request failed, not because the edition has no chapters.</param>
+    public sealed record AudnexusChapterLookup(AudnexusChapterResponse? Response, bool Unavailable);
 }

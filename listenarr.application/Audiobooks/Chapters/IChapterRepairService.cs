@@ -24,16 +24,28 @@ namespace Listenarr.Application.Audiobooks.Chapters
     /// One file as the repair preview shows it: its verdict, and either the list a
     /// repair would write or why there is none.
     /// </summary>
+    /// <remarks>
+    /// <c>PlanPending</c> means the file is flagged and its fix has not been worked out
+    /// yet; a planning job has been queued for it.
+    /// </remarks>
     public sealed record ChapterRepairFilePreview(
         int FileId,
         string FileName,
         ChapterHealth Health,
         string? HealthReason,
         ChapterPlan? Plan,
-        string? Rejection)
+        string? Rejection,
+        bool PlanPending = false)
     {
         public bool Repairable => Plan != null;
     }
+
+    /// <summary>
+    /// A planning pass could not finish because a source it needed — Audnexus, the
+    /// whisper model, a mark's audio — was not there. Nothing was stored for the files
+    /// concerned; the job that ran it fails and is retried.
+    /// </summary>
+    public sealed class ChapterSourceUnavailableException(string message) : Exception(message);
 
     public sealed record ChapterRepairPreview(
         int AudiobookId,
@@ -60,13 +72,14 @@ namespace Listenarr.Application.Audiobooks.Chapters
     /// Decides what a chapter repair would write and queues it.
     ///
     /// <para>
-    /// The preview and the enqueue share one planning pass so that what was shown is
-    /// what gets written: the plan is serialised onto the job rather than recomputed by
-    /// the worker against a file that may read differently by then.
+    /// Only <see cref="PlanAsync"/> works a plan out, and only the queue's worker calls
+    /// it. The preview and the enqueue read the plan stored on the file, so what was
+    /// shown is what gets written and no request waits on Audnexus or whisper.
     /// </para>
     /// </summary>
     public interface IChapterRepairService
     {
+        /// <summary>The stored fix for each file in scope. Files without one are marked pending and queued for planning.</summary>
         /// <param name="audiobookId">The book.</param>
         /// <param name="fileIds">Which of its files, or null for every file with a chapter issue.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
@@ -78,8 +91,19 @@ namespace Listenarr.Application.Audiobooks.Chapters
         /// <summary>Read every M4B of the book and describe its chapters. Nothing is planned or written.</summary>
         Task<IReadOnlyList<ChapterDescription>?> DescribeAsync(int audiobookId, CancellationToken cancellationToken = default);
 
-        /// <summary>Work out and store the fix for the files in scope (all flagged files when null). Returns how many have one.</summary>
-        Task<int> PlanAsync(int audiobookId, IReadOnlyCollection<int>? fileIds = null, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Work out and store the fix for the files in scope (all flagged files when null).
+        /// Throws <see cref="ChapterSourceUnavailableException"/> when a source could not be
+        /// asked, with nothing stored for those files.
+        /// </summary>
+        Task<ChapterRepairPreview?> PlanAsync(
+            int audiobookId,
+            IReadOnlyCollection<int>? fileIds = null,
+            IProgress<double>? progress = null,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>Forget the stored fix for the files in scope and queue planning again.</summary>
+        Task<TagEnqueueResult> ReplanAsync(int audiobookId, IReadOnlyCollection<int>? fileIds = null, CancellationToken cancellationToken = default);
 
         /// <summary>Queue a repair for every repairable file in scope.</summary>
         Task<TagEnqueueResult> EnqueueAsync(

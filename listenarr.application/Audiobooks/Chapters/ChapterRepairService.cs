@@ -23,8 +23,15 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Application.Audiobooks.Chapters
 {
     /// <summary>
-    /// Plans a chapter repair per file from the three sources the planner knows, and
-    /// hands the accepted plans to the tag queue as one job for the book.
+    /// Plans a chapter repair per file from the sources the planner knows, keeps the
+    /// plan on the file, and hands stored plans to the tag queue as one job for the book.
+    ///
+    /// <para>
+    /// Planning is background work: it may fetch the edition and listen at every mark.
+    /// So the interactive paths — the preview, the enqueue, the chapter page — only ever
+    /// read a plan already stored, and queue a planning job for whatever has none. Only
+    /// <see cref="PlanAsync"/> computes, and only the queue's worker calls it.
+    /// </para>
     /// </summary>
     public sealed partial class ChapterRepairService(
         IAudiobookRepository audiobookRepository,
@@ -56,76 +63,38 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 return null;
             }
 
-            var scope = fileIds == null ? null : new HashSet<int>(fileIds);
-            var files = (audiobook.Files ?? [])
-                .Where(file => TaggableFile.IsTaggable(file.Path))
-                .Where(file => scope == null || scope.Contains(file.Id))
-                .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            var previews = new List<ChapterRepairFilePreview>(files.Count);
-            foreach (var file in files)
+            var settings = await configurationService.GetApplicationSettingsAsync();
+            var previews = new List<ChapterRepairFilePreview>();
+            var pending = new List<int>();
+            foreach (var (file, fullPath, fileName) in FilesInScope(audiobook, fileIds))
             {
-                var fullPath = AudiobookFilePaths.ResolveFullPath(audiobook, file);
-                var fileName = Path.GetFileName(fullPath ?? file.Path ?? string.Empty);
-
-                if (fullPath == null || !fileSystem.FileExists(fullPath))
+                var read = await ReadAsync(file, fullPath, fileName, cancellationToken);
+                if (read.Preview != null)
                 {
-                    previews.Add(new ChapterRepairFilePreview(file.Id, fileName, ChapterHealth.Unknown, null, null, "The file is not readable from here."));
+                    previews.Add(read.Preview);
                     continue;
                 }
 
-                AudiobookFileTags tags;
-                try
-                {
-                    tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    previews.Add(new ChapterRepairFilePreview(file.Id, fileName, ChapterHealth.Unknown, null, null, $"The file could not be read: {ex.Message}"));
-                    continue;
-                }
-
-                var health = ChapterHealthAnalyzer.Analyze(
-                    tags.Chapters,
-                    tags.Atoms,
-                    tags.Duration,
-                    Path.GetFileNameWithoutExtension(fileName));
-
-                if (!ChapterHealthSeverity.IsRepairableKind(health.Health))
-                {
-                    previews.Add(new ChapterRepairFilePreview(
-                        file.Id,
-                        fileName,
-                        health.Health,
-                        health.Reason,
-                        null,
-                        "This file's chapters are not corrupt, so there is nothing to repair."));
-                    continue;
-                }
-
-                // A plan worked out earlier for this exact file, book and settings holds.
-                var settings = await configurationService.GetApplicationSettingsAsync();
-                var key = PlanKey(fullPath, audiobook, settings.TranscriptionEnabled);
+                var key = PlanKey(fullPath!, audiobook, settings.TranscriptionEnabled);
                 var outcome = key != null ? ReadStoredPlan(file, key) : null;
                 if (outcome == null)
                 {
-                    outcome = health.Health is ChapterHealth.Oversegmented or ChapterHealth.GenericTitles
-                        ? ToOutcome(await PlanFromAnnouncementsAsync(audiobook, fullPath, tags, health.Health, cancellationToken))
-                        : ToOutcome(await PlanCorruptAsync(audiobook, fullPath, tags, cancellationToken));
-                    if (key != null)
-                    {
-                        await StorePlanAsync(file.Id, outcome, key, cancellationToken);
-                    }
+                    pending.Add(file.Id);
                 }
 
                 previews.Add(new ChapterRepairFilePreview(
                     file.Id,
                     fileName,
-                    health.Health,
-                    health.Reason,
-                    outcome.Plan,
-                    outcome.Rejection));
+                    read.Health!.Health,
+                    read.Health.Reason,
+                    outcome?.Plan,
+                    outcome?.Rejection,
+                    PlanPending: outcome == null));
+            }
+
+            if (pending.Count > 0)
+            {
+                await tagQueue.EnqueueChapterPlanAsync(audiobookId, pending, TagTrigger.Automatic, cancellationToken);
             }
 
             return new ChapterRepairPreview(audiobookId, previews);
@@ -142,13 +111,9 @@ namespace Listenarr.Application.Audiobooks.Chapters
             var settings = await configurationService.GetApplicationSettingsAsync();
             var hasAsin = !string.IsNullOrWhiteSpace(audiobook.Asin);
             var descriptions = new List<ChapterDescription>();
-            foreach (var file in (audiobook.Files ?? [])
-                         .Where(file => TaggableFile.IsTaggable(file.Path))
-                         .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase))
+            foreach (var (file, fullPath, fileName) in FilesInScope(audiobook, null))
             {
-                var fullPath = AudiobookFilePaths.ResolveFullPath(audiobook, file);
-                var fileName = Path.GetFileName(fullPath ?? file.Path ?? string.Empty);
-                if (fullPath == null || !fileSystem.FileExists(fullPath))
+                if (fullPath == null)
                 {
                     descriptions.Add(new ChapterDescription(file.Id, fileName, ChapterHealth.Unknown, null, [], null, TimeSpan.Zero, "The file is not readable from here."));
                     continue;
@@ -199,10 +164,95 @@ namespace Listenarr.Application.Audiobooks.Chapters
             return descriptions;
         }
 
-        public async Task<int> PlanAsync(int audiobookId, IReadOnlyCollection<int>? fileIds = null, CancellationToken cancellationToken = default)
+        public async Task<ChapterRepairPreview?> PlanAsync(
+            int audiobookId,
+            IReadOnlyCollection<int>? fileIds = null,
+            IProgress<double>? progress = null,
+            CancellationToken cancellationToken = default)
         {
-            var preview = await PreviewAsync(audiobookId, fileIds, cancellationToken);
-            return preview?.Files.Count(file => file.Repairable) ?? 0;
+            var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
+            if (audiobook == null)
+            {
+                return null;
+            }
+
+            var settings = await configurationService.GetApplicationSettingsAsync();
+            var files = FilesInScope(audiobook, fileIds).ToList();
+            var previews = new List<ChapterRepairFilePreview>(files.Count);
+            var unavailable = new List<string>();
+            for (var index = 0; index < files.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var (file, fullPath, fileName) = files[index];
+                var read = await ReadAsync(file, fullPath, fileName, cancellationToken);
+                if (read.Preview != null)
+                {
+                    previews.Add(read.Preview);
+                    continue;
+                }
+
+                var health = read.Health!;
+                var tags = read.Tags!;
+                var key = PlanKey(fullPath!, audiobook, settings.TranscriptionEnabled);
+                var outcome = key != null ? ReadStoredPlan(file, key) : null;
+                if (outcome == null)
+                {
+                    var stage = new PlanProgress(progress, index, files.Count);
+                    var attempt = health.Health is ChapterHealth.Oversegmented or ChapterHealth.GenericTitles
+                        ? await PlanFromAnnouncementsAsync(audiobook, fullPath!, tags, health.Health, stage, cancellationToken)
+                        : await PlanCorruptAsync(audiobook, fullPath!, tags, cancellationToken);
+                    outcome = new ChapterPlanOutcome(attempt.Plan, attempt.Rejection?.Reason);
+
+                    // An answer reached without a source that should have been asked is
+                    // not the answer; it is not kept, and the job says why so it retries.
+                    if (attempt.Unavailable != null)
+                    {
+                        unavailable.Add($"{fileName}: {attempt.Unavailable}");
+                    }
+                    else if (key != null)
+                    {
+                        await StorePlanAsync(file.Id, outcome, key, cancellationToken);
+                    }
+                }
+
+                previews.Add(new ChapterRepairFilePreview(
+                    file.Id,
+                    fileName,
+                    health.Health,
+                    health.Reason,
+                    outcome.Plan,
+                    outcome.Rejection));
+            }
+
+            progress?.Report(1);
+            if (unavailable.Count > 0)
+            {
+                throw new ChapterSourceUnavailableException(string.Join(" ", unavailable));
+            }
+
+            return new ChapterRepairPreview(audiobookId, previews);
+        }
+
+        public async Task<TagEnqueueResult> ReplanAsync(int audiobookId, IReadOnlyCollection<int>? fileIds = null, CancellationToken cancellationToken = default)
+        {
+            var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
+            if (audiobook == null)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.NotFound, Reason: "That audiobook no longer exists.");
+            }
+
+            var ids = FilesInScope(audiobook, fileIds).Select(entry => entry.File.Id).ToList();
+            if (ids.Count == 0)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.NothingToTag, Reason: "No file in scope has chapters to plan for.");
+            }
+
+            if (fileRepository != null)
+            {
+                await fileRepository.ClearChapterPlanAsync(ids, cancellationToken);
+            }
+
+            return await tagQueue.EnqueueChapterPlanAsync(audiobookId, ids, TagTrigger.Manual, cancellationToken);
         }
 
         public async Task<TagEnqueueResult> EnqueueAsync(
@@ -222,11 +272,76 @@ namespace Listenarr.Application.Audiobooks.Chapters
 
             if (plans.Count == 0)
             {
-                var reason = preview.Files.FirstOrDefault()?.Rejection ?? "No file in scope has a repairable chapter atom.";
+                var pending = preview.Files.Count(file => file.PlanPending);
+                var reason = pending > 0
+                    ? $"The fix for {pending} file(s) is still being worked out; it will show on the Chapters tab when it is ready."
+                    : preview.Files.FirstOrDefault(file => file.Rejection != null)?.Rejection
+                        ?? "No file in scope has a repairable chapter atom.";
                 return new TagEnqueueResult(TagEnqueueOutcome.NothingToTag, Reason: reason);
             }
 
             return await tagQueue.EnqueueChapterRepairAsync(audiobookId, plans, TagTrigger.Manual, cancellationToken);
+        }
+
+        /// <summary>The book's M4Bs in scope, with where each is on disk (null when it is not here).</summary>
+        private IEnumerable<(AudiobookFile File, string? FullPath, string FileName)> FilesInScope(Audiobook audiobook, IReadOnlyCollection<int>? fileIds)
+        {
+            var scope = fileIds == null ? null : new HashSet<int>(fileIds);
+            foreach (var file in (audiobook.Files ?? [])
+                         .Where(file => TaggableFile.IsTaggable(file.Path))
+                         .Where(file => scope == null || scope.Contains(file.Id))
+                         .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase))
+            {
+                var fullPath = AudiobookFilePaths.ResolveFullPath(audiobook, file);
+                var fileName = Path.GetFileName(fullPath ?? file.Path ?? string.Empty);
+                yield return (file, fullPath != null && fileSystem.FileExists(fullPath) ? fullPath : null, fileName);
+            }
+        }
+
+        /// <summary>
+        /// Read one file and judge it. Comes back with a finished preview when there is
+        /// nothing to plan — unreadable, or not a repairable kind — else with the tags
+        /// and verdict to plan from.
+        /// </summary>
+        private async Task<(ChapterRepairFilePreview? Preview, AudiobookFileTags? Tags, ChapterHealthReport? Health)> ReadAsync(
+            AudiobookFile file,
+            string? fullPath,
+            string fileName,
+            CancellationToken cancellationToken)
+        {
+            if (fullPath == null)
+            {
+                return (new ChapterRepairFilePreview(file.Id, fileName, ChapterHealth.Unknown, null, null, "The file is not readable from here."), null, null);
+            }
+
+            AudiobookFileTags tags;
+            try
+            {
+                tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                return (new ChapterRepairFilePreview(file.Id, fileName, ChapterHealth.Unknown, null, null, $"The file could not be read: {ex.Message}"), null, null);
+            }
+
+            var health = ChapterHealthAnalyzer.Analyze(
+                tags.Chapters,
+                tags.Atoms,
+                tags.Duration,
+                Path.GetFileNameWithoutExtension(fileName));
+
+            if (!ChapterHealthSeverity.IsRepairableKind(health.Health))
+            {
+                return (new ChapterRepairFilePreview(
+                    file.Id,
+                    fileName,
+                    health.Health,
+                    health.Reason,
+                    null,
+                    "This file's chapters are not corrupt, so there is nothing to repair."), null, null);
+            }
+
+            return (null, tags, health);
         }
     }
 }
