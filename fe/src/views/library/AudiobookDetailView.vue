@@ -314,11 +314,11 @@
           </button>
           <button
             class="tab"
-            :class="{ active: activeTab === 'credits' }"
-            @click="activeTab = 'credits'"
+            :class="{ active: activeTab === 'transcript' }"
+            @click="activeTab = 'transcript'"
           >
             <PhEar />
-            Credits
+            Transcript
             <span v-if="audioTabBadge" class="tab-badge tab-badge--issue" :title="audioTabBadge"
               >!</span
             >
@@ -692,8 +692,8 @@
         />
       </div>
 
-      <!-- Credits Tab: what the narrator says the book is, beside what the record says. -->
-      <div id="credits" v-if="activeTab === 'credits'" class="credits-content">
+      <!-- Transcript Tab: what the narrator says the book is, beside what the record says. -->
+      <div id="transcript" v-if="activeTab === 'transcript'" class="credits-content">
         <div v-if="!audiobook.files || !audiobook.files.length" class="credits-empty">
           <PhEar />
           <p>This book has no audio files here to listen to.</p>
@@ -715,7 +715,7 @@
                 {{
                   audiobook.audioAudit
                     ? audiobook.audioAuditReason
-                    : 'An audit hears the first minute and the last of the book — where the title, author and narrator are read — and checks them against this record.'
+                    : 'Transcribing hears the first minute and the last of the book — where the title, author, narrator and publisher are read — and checks what it hears against this record.'
                 }}
               </div>
               <div v-if="audiobook.audioAuditedAt" class="audio-audit-when">
@@ -730,7 +730,7 @@
                 :title="
                   audioAuditInFlight
                     ? 'Listening…'
-                    : 'Hear the credits and check them against the record'
+                    : 'Hear the opening and closing and check them against the record'
                 "
                 @click="auditAudio"
               >
@@ -1100,7 +1100,7 @@ const conversionJobsStore = useConversionJobsStore()
 const tagJobsStore = useTagJobsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
-type DetailTab = 'details' | 'files' | 'chapters' | 'credits' | 'tags' | 'history'
+type DetailTab = 'details' | 'files' | 'chapters' | 'transcript' | 'tags' | 'history'
 
 const audiobook = ref<Audiobook | null>(null)
 const loading = ref(true)
@@ -1283,7 +1283,7 @@ const mobileTabOptions = computed(() => [
   { value: 'details', label: 'Details', icon: PhInfo },
   { value: 'files', label: 'Files', icon: PhFile },
   { value: 'chapters', label: 'Chapters', icon: PhListNumbers },
-  { value: 'credits', label: 'Credits', icon: PhEar },
+  { value: 'transcript', label: 'Transcript', icon: PhEar },
   { value: 'tags', label: 'Tags', icon: PhTag },
   { value: 'history', label: 'History', icon: PhClockCounterClockwise },
 ])
@@ -1702,7 +1702,7 @@ function normalizeDetailTabCandidate(value: unknown): DetailTab | null {
     normalized === 'details' ||
     normalized === 'files' ||
     normalized === 'chapters' ||
-    normalized === 'credits' ||
+    normalized === 'transcript' ||
     normalized === 'tags' ||
     normalized === 'history'
   ) {

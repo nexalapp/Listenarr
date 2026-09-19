@@ -735,7 +735,8 @@ const CONVERSION_PHASE_LABELS: Record<string, string> = {
  */
 const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
   const failed = job.status === 'Failed'
-  const phaseLabel = TAG_PHASE_LABELS[job.phase] ?? 'Writing tags'
+  const kind = TAG_KIND_LABELS[job.kind] ?? TAG_KIND_LABELS.Tags
+  const phaseLabel = kind.phases[job.phase] ?? kind.phases.None
 
   return {
     id: `tagging:${job.jobId}`,
@@ -748,13 +749,13 @@ const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
     downloadSpeed: 0,
     eta: undefined,
     quality: '',
-    actionLabel: 'Write tags',
+    actionLabel: kind.action,
     actionDetail: failed
       ? undefined
       : `${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
     downloadClient: failed
-      ? 'Metadata tags'
-      : `Metadata tags · ${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
+      ? kind.client
+      : `${kind.client} · ${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
     downloadClientId: 'LISTENARR_TAGGING',
     downloadClientType: 'tagging',
     addedAt: '',
@@ -767,12 +768,46 @@ const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
   }
 }
 
-const TAG_PHASE_LABELS: Record<string, string> = {
-  None: 'Waiting',
-  Reading: 'Reading current tags',
-  Writing: 'Writing tags',
-  Verifying: 'Verifying',
-  Publishing: 'Publishing',
+/**
+ * The tag queue carries four kinds of job, and a row has to say which: a file being
+ * rewritten and a book being listened to are not the same thing to see in a list.
+ */
+const TAG_KIND_LABELS: Record<
+  string,
+  { action: string; client: string; phases: Record<string, string> }
+> = {
+  Tags: {
+    action: 'Write tags',
+    client: 'Metadata tags',
+    phases: {
+      None: 'Waiting',
+      Reading: 'Reading current tags',
+      Writing: 'Writing tags',
+      Verifying: 'Verifying',
+      Publishing: 'Publishing',
+    },
+  },
+  Chapters: {
+    action: 'Repair chapters',
+    client: 'Chapters',
+    phases: {
+      None: 'Waiting',
+      Reading: 'Reading the file',
+      Writing: 'Rewriting chapters',
+      Verifying: 'Verifying',
+      Publishing: 'Publishing',
+    },
+  },
+  Plan: {
+    action: 'Plan chapter fix',
+    client: 'Chapters',
+    phases: { None: 'Waiting', Reading: 'Working out the fix' },
+  },
+  Audit: {
+    action: 'Transcribe',
+    client: 'Transcript',
+    phases: { None: 'Waiting', Reading: 'Listening to the opening and closing' },
+  },
 }
 
 // Read user preference from configuration store

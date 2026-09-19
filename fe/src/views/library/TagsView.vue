@@ -165,7 +165,7 @@
           @click="auditSelected"
         >
           <PhEar :size="16" />
-          Listen ({{ selectedBookIds.size }})
+          Transcribe ({{ selectedBookIds.size }})
         </button>
 
         <div class="columns-menu" ref="columnsMenuEl">
@@ -949,7 +949,7 @@ function headerHint(key: string): string | undefined {
     return 'Each M4B’s chapter atom and chapter track, judged when this table loads. Re-read re-inspects the files; tick rows and press Repair chapters to fix them.'
   }
   if (key === AUDIT_KEY) {
-    return 'Whether the audio introduces itself as this book. Tick rows and press Listen to hear the credits; needs transcription on in Settings.'
+    return 'Whether the audio introduces itself as this book. Tick rows and press Transcribe to hear the opening and closing; needs transcription on in Settings.'
   }
   return undefined
 }
@@ -1057,7 +1057,7 @@ function cellTitle(row: LibraryTagRow, key: string): string {
   }
 
   if (key === AUDIT_KEY) {
-    return row.audioAuditReason ?? 'Not yet listened to. Tick the row and press Listen.'
+    return row.audioAuditReason ?? 'Not yet transcribed. Tick the row and press Transcribe.'
   }
 
   if (key === PATH_KEY) {
@@ -1476,8 +1476,8 @@ async function auditSelected() {
   working.value = false
   selectedFiles.value = new Set()
   actionMessage.value = refusals.length
-    ? `Listening to ${queued} book(s). ${refusals.length} refused: ${refusals[0]}`
-    : `Listening to ${queued} book${queued === 1 ? '' : 's'}. Verdicts appear in the Audio column.`
+    ? `Transcribing ${queued} book(s). ${refusals.length} refused: ${refusals[0]}`
+    : `Transcribing ${queued} book${queued === 1 ? '' : 's'}. Verdicts appear in the Audio column.`
 }
 
 /** The books the ticked files belong to, which is what organizing takes. */

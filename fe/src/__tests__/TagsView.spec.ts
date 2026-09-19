@@ -1072,7 +1072,7 @@ describe('TagsView', () => {
       await box.trigger('click')
     }
     await wrapper.vm.$nextTick()
-    const button = wrapper.findAll('button').find((b) => b.text().includes('Listen'))
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Transcribe'))
     await button!.trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
@@ -1080,7 +1080,7 @@ describe('TagsView', () => {
     expect(auditAudio).toHaveBeenCalledTimes(2)
     expect(auditAudio).toHaveBeenCalledWith(7)
     expect(auditAudio).toHaveBeenCalledWith(9)
-    expect(wrapper.text()).toContain('Listening to 2 books')
+    expect(wrapper.text()).toContain('Transcribing 2 books')
   })
 
   it('reports the failure instead of an empty table', async () => {

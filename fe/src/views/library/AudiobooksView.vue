@@ -151,7 +151,7 @@
               >
             </button>
 
-            <div class="actions-group">Credits</div>
+            <div class="actions-group">Transcript</div>
             <button
               type="button"
               class="actions-option"
@@ -160,8 +160,11 @@
             >
               <PhEar />
               <span
-                ><strong>Read Credits</strong
-                ><small>Hear the opening and closing and check them against the record</small></span
+                ><strong>Transcribe</strong
+                ><small
+                  >Hear the opening and closing; check title, author and narrator against the
+                  record</small
+                ></span
               >
             </button>
 
@@ -2856,7 +2859,7 @@ async function bulkReadCredits() {
     if (queued > 0) {
       toast.success(
         'Listening',
-        `${queued} book${queued === 1 ? '' : 's'} queued. Verdicts land on each book's Credits tab.`,
+        `${queued} book${queued === 1 ? '' : 's'} queued. Verdicts land on each book's Transcript tab.`,
       )
       libraryStore.clearSelection()
     } else {
