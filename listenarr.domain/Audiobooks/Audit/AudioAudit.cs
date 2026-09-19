@@ -35,6 +35,12 @@ namespace Listenarr.Domain.Audiobooks.Audit
         Inconclusive
     }
 
+    /// <summary>How the stored transcript separates what was heard at the end from what was heard at the start.</summary>
+    public static class AudioAuditTranscript
+    {
+        public const string ClosingMarker = "\n\n[closing]\n";
+    }
+
     /// <summary>The verdict as the API spells it, or null for a book not yet audited.</summary>
     public static class AudioAuditVerdictNames
     {

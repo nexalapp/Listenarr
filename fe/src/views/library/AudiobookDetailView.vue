@@ -296,9 +296,6 @@
           >
             <PhFile />
             Files
-            <span v-if="audioTabBadge" class="tab-badge tab-badge--issue" :title="audioTabBadge"
-              >!</span
-            >
           </button>
           <button
             class="tab"
@@ -312,6 +309,17 @@
               class="tab-badge"
               :class="`tab-badge--${chapterTabBadge.severity}`"
               :title="chapterTabBadge.title"
+              >!</span
+            >
+          </button>
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'credits' }"
+            @click="activeTab = 'credits'"
+          >
+            <PhEar />
+            Credits
+            <span v-if="audioTabBadge" class="tab-badge tab-badge--issue" :title="audioTabBadge"
               >!</span
             >
           </button>
@@ -513,78 +521,6 @@
             </div>
           </div>
         </div>
-        <!--
-          What the audio says it is, beside the files that say it. A verdict of "match"
-          is a line, not a badge; a mismatch is the one thing on this page that says the
-          record may be the wrong book, so it is loud and it offers the way out.
-        -->
-        <div
-          v-if="audiobook.audioAudit"
-          class="audio-audit"
-          :class="`audio-audit--${audiobook.audioAudit}`"
-        >
-          <PhEar class="audio-audit-icon" />
-          <div class="audio-audit-body">
-            <div class="audio-audit-verdict">{{ audioAuditLabel }}</div>
-            <div class="audio-audit-reason">{{ audiobook.audioAuditReason }}</div>
-            <div
-              v-if="audiobook.audioAuditHeard"
-              class="audio-audit-heard"
-              :title="audiobook.audioAuditHeard"
-            >
-              “{{ heardExcerpt }}”
-            </div>
-          </div>
-          <div class="audio-audit-actions">
-            <button
-              v-if="
-                audiobook.audioAudit === 'mismatch' || audiobook.audioAudit === 'narrator-mismatch'
-              "
-              type="button"
-              class="file-repair-btn"
-              title="Search for the edition the audio says it is and re-match this book to it"
-              @click="openFixMatchFromAudit"
-            >
-              Fix match…
-            </button>
-            <button
-              type="button"
-              class="file-repair-btn file-repair-btn--quiet"
-              :disabled="audioAuditInFlight"
-              :title="audioAuditInFlight ? 'Listening…' : 'Listen again'"
-              @click="auditAudio"
-            >
-              {{ audioAuditInFlight ? 'Listening…' : 'Listen again' }}
-            </button>
-          </div>
-        </div>
-        <div
-          v-else-if="audiobook.files && audiobook.files.length"
-          class="audio-audit audio-audit--none"
-        >
-          <PhEar class="audio-audit-icon" />
-          <div class="audio-audit-body">
-            <div class="audio-audit-reason">
-              Not yet listened to. An audit hears the book's opening and closing credits and checks
-              them against this record.
-            </div>
-          </div>
-          <div class="audio-audit-actions">
-            <button
-              type="button"
-              class="file-repair-btn"
-              :disabled="audioAuditInFlight"
-              :title="
-                audioAuditInFlight
-                  ? 'Listening…'
-                  : 'Hear the credits and check them against the record'
-              "
-              @click="auditAudio"
-            >
-              {{ audioAuditInFlight ? 'Listening…' : 'Listen' }}
-            </button>
-          </div>
-        </div>
         <div v-if="audiobook.files && audiobook.files.length" class="file-list">
           <div
             v-for="f in audiobook.files"
@@ -754,6 +690,122 @@
           :disabledReason="writeTagsTitle"
           @repair="(fileId) => openChapterRepair(fileId)"
         />
+      </div>
+
+      <!-- Credits Tab: what the narrator says the book is, beside what the record says. -->
+      <div id="credits" v-if="activeTab === 'credits'" class="credits-content">
+        <div v-if="!audiobook.files || !audiobook.files.length" class="credits-empty">
+          <PhEar />
+          <p>This book has no audio files here to listen to.</p>
+        </div>
+
+        <template v-else>
+          <div
+            class="audio-audit"
+            :class="
+              audiobook.audioAudit ? `audio-audit--${audiobook.audioAudit}` : 'audio-audit--none'
+            "
+          >
+            <PhEar class="audio-audit-icon" />
+            <div class="audio-audit-body">
+              <div class="audio-audit-verdict">
+                {{ audiobook.audioAudit ? audioAuditLabel : 'Not yet listened to.' }}
+              </div>
+              <div class="audio-audit-reason">
+                {{
+                  audiobook.audioAudit
+                    ? audiobook.audioAuditReason
+                    : 'An audit hears the first minute and the last of the book — where the title, author and narrator are read — and checks them against this record.'
+                }}
+              </div>
+              <div v-if="audiobook.audioAuditedAt" class="audio-audit-when">
+                Heard {{ formatAuditedAt(audiobook.audioAuditedAt) }}
+              </div>
+            </div>
+            <div class="audio-audit-actions">
+              <button
+                type="button"
+                class="file-repair-btn"
+                :disabled="audioAuditInFlight"
+                :title="
+                  audioAuditInFlight
+                    ? 'Listening…'
+                    : 'Hear the credits and check them against the record'
+                "
+                @click="auditAudio"
+              >
+                {{
+                  audioAuditInFlight
+                    ? 'Listening…'
+                    : audiobook.audioAudit
+                      ? 'Listen again'
+                      : 'Listen'
+                }}
+              </button>
+            </div>
+          </div>
+
+          <template v-if="audiobook.audioAudit">
+            <div class="credits-compare">
+              <div class="credits-col">
+                <h4>Heard in the audio</h4>
+                <dl>
+                  <dt>Title</dt>
+                  <dd :class="{ 'credits-missing': !audiobook.audioAuditHeardTitle }">
+                    {{ audiobook.audioAuditHeardTitle || 'not heard' }}
+                  </dd>
+                  <dt>Author</dt>
+                  <dd :class="{ 'credits-missing': !audiobook.audioAuditHeardAuthor }">
+                    {{ audiobook.audioAuditHeardAuthor || 'not heard' }}
+                  </dd>
+                  <dt>Narrator</dt>
+                  <dd :class="{ 'credits-missing': !audiobook.audioAuditHeardNarrator }">
+                    {{ audiobook.audioAuditHeardNarrator || 'not heard' }}
+                  </dd>
+                </dl>
+              </div>
+              <div class="credits-col">
+                <h4>On record</h4>
+                <dl>
+                  <dt>Title</dt>
+                  <dd>{{ audiobook.title }}</dd>
+                  <dt>Author</dt>
+                  <dd>{{ (audiobook.authors || []).join(', ') || '—' }}</dd>
+                  <dt>Narrator</dt>
+                  <dd>{{ (audiobook.narrators || []).join(', ') || '—' }}</dd>
+                </dl>
+              </div>
+            </div>
+
+            <div v-if="creditRecommendations.length" class="credits-recommend">
+              <h4>What to do</h4>
+              <ul>
+                <li v-for="(rec, index) in creditRecommendations" :key="index">
+                  <span>{{ rec.text }}</span>
+                  <button
+                    v-if="rec.action"
+                    type="button"
+                    class="file-repair-btn"
+                    :disabled="rec.busy"
+                    @click="rec.action"
+                  >
+                    {{ rec.label }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <div class="credits-transcript">
+              <h4>Opening</h4>
+              <p v-if="heardOpening" class="credits-text">{{ heardOpening }}</p>
+              <p v-else class="credits-missing">Nothing was heard in the first minute.</p>
+              <template v-if="heardClosing">
+                <h4>Closing</h4>
+                <p class="credits-text">{{ heardClosing }}</p>
+              </template>
+            </div>
+          </template>
+        </template>
       </div>
 
       <!-- Tags Tab -->
@@ -1048,7 +1100,7 @@ const conversionJobsStore = useConversionJobsStore()
 const tagJobsStore = useTagJobsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
-type DetailTab = 'details' | 'files' | 'chapters' | 'tags' | 'history'
+type DetailTab = 'details' | 'files' | 'chapters' | 'credits' | 'tags' | 'history'
 
 const audiobook = ref<Audiobook | null>(null)
 const loading = ref(true)
@@ -1231,6 +1283,7 @@ const mobileTabOptions = computed(() => [
   { value: 'details', label: 'Details', icon: PhInfo },
   { value: 'files', label: 'Files', icon: PhFile },
   { value: 'chapters', label: 'Chapters', icon: PhListNumbers },
+  { value: 'credits', label: 'Credits', icon: PhEar },
   { value: 'tags', label: 'Tags', icon: PhTag },
   { value: 'history', label: 'History', icon: PhClockCounterClockwise },
 ])
@@ -1649,6 +1702,7 @@ function normalizeDetailTabCandidate(value: unknown): DetailTab | null {
     normalized === 'details' ||
     normalized === 'files' ||
     normalized === 'chapters' ||
+    normalized === 'credits' ||
     normalized === 'tags' ||
     normalized === 'history'
   ) {
@@ -2076,9 +2130,87 @@ const audioAuditLabel = computed(() => {
   }
 })
 
-const heardExcerpt = computed(() => {
-  const heard = (audiobook.value?.audioAuditHeard ?? '').replace(/\s*\n\s*/g, ' · ').trim()
-  return heard.length > 220 ? `${heard.slice(0, 217)}…` : heard
+const CLOSING_MARKER = '\n\n[closing]\n'
+
+const heardParts = computed(() => {
+  const heard = audiobook.value?.audioAuditHeard ?? ''
+  const at = heard.indexOf(CLOSING_MARKER)
+  const opening = at >= 0 ? heard.slice(0, at) : heard
+  const closing = at >= 0 ? heard.slice(at + CLOSING_MARKER.length) : ''
+  const flatten = (text: string) => text.replace(/\s*\n\s*/g, ' ').trim()
+  return { opening: flatten(opening), closing: flatten(closing) }
+})
+const heardOpening = computed(() => heardParts.value.opening)
+const heardClosing = computed(() => heardParts.value.closing)
+
+function formatAuditedAt(iso: string) {
+  const when = new Date(iso)
+  return Number.isNaN(when.getTime()) ? '' : when.toLocaleString()
+}
+
+const settingNarrator = ref(false)
+
+/** Put the narrator the audio credits on the record, then listen again to confirm. */
+async function adoptHeardNarrator() {
+  if (!audiobook.value?.audioAuditHeardNarrator) return
+  settingNarrator.value = true
+  const toast = useToast()
+  try {
+    const narrators = audiobook.value.audioAuditHeardNarrator
+      .split(/\s+(?:and|&)\s+/i)
+      .map((n) => n.trim())
+      .filter(Boolean)
+    await apiService.updateAudiobook(audiobook.value.id, { narrators })
+    toast.success('Narrator updated', `Set to ${narrators.join(', ')}.`)
+    await loadAudiobook()
+    await auditAudio()
+  } catch (err) {
+    toast.error('Could not update the narrator', err instanceof Error ? err.message : String(err))
+  } finally {
+    settingNarrator.value = false
+  }
+}
+
+/**
+ * What to do about the verdict. Each is a sentence and, where one exists, the action:
+ * a wrong book is re-matched from what the narrator said, a wrong narrator is adopted.
+ */
+const creditRecommendations = computed(() => {
+  const book = audiobook.value
+  if (!book?.audioAudit) return []
+  const recs: { text: string; label?: string; action?: () => void; busy?: boolean }[] = []
+  switch (book.audioAudit) {
+    case 'mismatch':
+      recs.push({
+        text: book.audioAuditHeardTitle
+          ? `The audio introduces itself as “${book.audioAuditHeardTitle}”${book.audioAuditHeardAuthor ? ` by ${book.audioAuditHeardAuthor}` : ''}. Re-match this record to that edition.`
+          : 'Neither the title nor the author on record was heard. Re-match this record, or check the files are the right book.',
+        label: 'Fix match…',
+        action: openFixMatchFromAudit,
+      })
+      break
+    case 'narrator-mismatch':
+      recs.push({
+        text: `The audio credits ${book.audioAuditHeardNarrator}, not ${(book.narrators || []).join(' / ')}. If the audio is right, put that narrator on the record.`,
+        label: `Set narrator to ${book.audioAuditHeardNarrator}`,
+        action: adoptHeardNarrator,
+        busy: settingNarrator.value,
+      })
+      recs.push({
+        text: 'If the record is right and this is a different edition, re-match it.',
+        label: 'Fix match…',
+        action: openFixMatchFromAudit,
+      })
+      break
+    case 'inconclusive':
+      recs.push({
+        text: 'Too little was heard to tell: the opening may be music, or the credits may be read later than the first minute. Listening again after choosing a larger model in Settings → Metadata Tags can help.',
+      })
+      break
+    default:
+      break
+  }
+  return recs
 })
 
 const audioAuditInFlight = computed(() => {
@@ -3854,6 +3986,7 @@ a.identifier-link:hover {
 
 .files-content,
 .chapters-content,
+.credits-content,
 .tags-content,
 .history-content {
   background-color: #2a2a2a;
@@ -3986,6 +4119,108 @@ a.identifier-link:hover {
 
 .audio-audit--summary {
   margin-bottom: 0;
+}
+
+.credits-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.credits-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.audio-audit-when {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.credits-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.credits-col,
+.credits-recommend,
+.credits-transcript {
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.credits-col h4,
+.credits-recommend h4,
+.credits-transcript h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.credits-transcript p + h4 {
+  margin-top: 12px;
+}
+
+.credits-col dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.credits-col dt {
+  color: var(--text-muted);
+}
+
+.credits-col dd {
+  margin: 0;
+}
+
+.credits-missing {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.credits-recommend ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credits-recommend li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.credits-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 800px) {
+  .credits-compare {
+    grid-template-columns: 1fr;
+  }
 }
 
 .audio-audit--mismatch,

@@ -95,7 +95,10 @@ namespace Listenarr.Application.Audiobooks.Audit
                 closing = await HearAsync(last.FullPath!, TimeSpan.FromSeconds(seconds) - ClosingWindow, ClosingWindow, cancellationToken);
             }
 
-            var heard = string.Join("\n", new[] { opening, closing }.Where(text => !string.IsNullOrWhiteSpace(text)));
+            // The closing is kept apart from the opening so the page can show which is which.
+            var heard = string.IsNullOrWhiteSpace(closing)
+                ? opening ?? string.Empty
+                : $"{opening}{AudioAuditTranscript.ClosingMarker}{closing}";
             var settings = await configurationService.GetApplicationSettingsAsync();
             var aliases = AuthorAliases.Parse(settings.AuthorAliasesJson);
 
