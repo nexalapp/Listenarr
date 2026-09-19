@@ -87,7 +87,9 @@ namespace Listenarr.Tests.Features.Infrastructure.FoundBooks
 
         private async Task<string> Write(string relative, string content = "x")
         {
-            var full = Path.Join(_watch, relative);
+            // Written with the host's separator so the probe's key matches what the
+            // scanner enumerates; a "/" inside a Windows path is not the same string.
+            var full = Path.Join(_watch, relative.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             await File.WriteAllTextAsync(full, content);
             File.SetLastWriteTimeUtc(full, DateTime.UtcNow.AddHours(-1));
@@ -184,7 +186,7 @@ namespace Listenarr.Tests.Features.Infrastructure.FoundBooks
 
         private sealed class FakeProbe : IFoundBookProbe
         {
-            public Dictionary<string, FoundBookProbeSnapshot> Tags { get; } = new(StringComparer.Ordinal);
+            public Dictionary<string, FoundBookProbeSnapshot> Tags { get; } = new(StringComparer.OrdinalIgnoreCase);
 
             public Task<FoundBookProbeSnapshot> ProbeAsync(string path, CancellationToken cancellationToken = default) =>
                 Task.FromResult(Tags.TryGetValue(path, out var snapshot) ? snapshot : FfprobeFoundBookProbe.Failed("not a real file"));
