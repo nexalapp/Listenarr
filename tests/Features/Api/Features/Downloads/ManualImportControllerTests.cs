@@ -390,8 +390,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                     It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
-            return new ManualImportController(
-                Mock.Of<Microsoft.Extensions.Logging.ILogger<ManualImportController>>(),
+            var workflow = new ManualImportWorkflow(
+                Mock.Of<Microsoft.Extensions.Logging.ILogger<ManualImportWorkflow>>(),
                 repoMock.Object,
                 metadataMock.Object,
                 new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance),
@@ -412,6 +412,11 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 directoryOwnershipStore,
                 filesystemMutationGate ?? TestLibraryFilesystemReadiness.Ready()
             );
+            return new ManualImportController(
+                Mock.Of<Microsoft.Extensions.Logging.ILogger<ManualImportController>>(),
+                configMock.Object,
+                new LocalFileSystem(),
+                workflow);
         }
 
         [Fact]

@@ -2,7 +2,7 @@ using Listenarr.Domain.Common;
 
 namespace Listenarr.Api.Features.Downloads;
 
-public partial class ManualImportController
+public sealed partial class ManualImportWorkflow
 {
     private async Task<FilePublicationPreparationResult> PrepareOwnedManualImportActionForRegistrationAsync(
         FilePublicationPlan publicationPlan,

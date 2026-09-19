@@ -58,9 +58,10 @@ namespace Listenarr.Api.Features.FoundBooks
             }
 
             var rows = await repository.GetAllAsync(cancellationToken);
+            var shared = FoundBookFolderSharing.SharedRows(rows);
             var items = rows
                 .Where(row => filter == null || row.State == filter)
-                .Select(FoundBookDto.From)
+                .Select(row => FoundBookDto.From(row, shared.Contains(row.Id)))
                 .ToList();
 
             return Ok(new FoundBooksResponse(
@@ -117,7 +118,7 @@ namespace Listenarr.Api.Features.FoundBooks
                 return BadRequest(new { message = "An audiobook id is required." });
             }
 
-            return Respond(await decisions.FinishImportAsync(id, request.AudiobookId, cancellationToken));
+            return Respond(await decisions.FinishImportAsync(id, request.AudiobookId, autoAdded: false, cancellationToken));
         }
 
         /// <summary>Delete the book's files. The UI confirms first; nothing here asks again.</summary>
@@ -171,9 +172,11 @@ namespace Listenarr.Api.Features.FoundBooks
         string BlockedKind,
         string? BlockedReason,
         DateTime FirstSeenAt,
-        DateTime LastSeenAt)
+        DateTime LastSeenAt,
+        bool AutoAdded,
+        bool SharesFolder)
     {
-        public static FoundBookDto From(FoundBook row) => new(
+        public static FoundBookDto From(FoundBook row, bool sharesFolder = false) => new(
             row.Id,
             row.WatchFolder,
             row.BookFolder,
@@ -204,6 +207,8 @@ namespace Listenarr.Api.Features.FoundBooks
             row.BlockedKind.ToString(),
             row.BlockedReason,
             row.FirstSeenAt,
-            row.LastSeenAt);
+            row.LastSeenAt,
+            row.AutoAdded,
+            sharesFolder);
     }
 }

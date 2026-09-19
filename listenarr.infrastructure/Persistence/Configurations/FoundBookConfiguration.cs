@@ -47,6 +47,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(b => b.LibraryStatus).HasConversion<string>().HasMaxLength(16);
             builder.Property(b => b.State).HasConversion<string>().HasMaxLength(16);
             builder.Property(b => b.BlockedKind).HasConversion<string>().HasMaxLength(20).HasDefaultValue(FoundBookBlockedKind.None);
+            builder.Property(b => b.AutoAdded).HasDefaultValue(false);
 
             // One row per cluster per watch folder: the key is what a scan uses to find
             // last time's row, and an Ignore decision is remembered against it.

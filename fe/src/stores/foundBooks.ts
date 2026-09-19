@@ -304,6 +304,9 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
         action: 'move',
         monitored,
         separateBook: state.separateBook,
+        // A pack's loose files share one directory; the companion pass would sweep the
+        // neighbours' covers and notes into this book, so it stays off for those.
+        includeCompanionFiles: !item.sharesFolder,
       })
 
       const finished = await apiService.finishFoundBookImport(id, result.audiobookId)

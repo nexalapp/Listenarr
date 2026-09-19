@@ -61,7 +61,7 @@ namespace Listenarr.Application.FoundBooks.Services
         /// After the manual import moved the audio: confirm it is gone, clear what it
         /// left behind, and record the row as imported into <paramref name="audiobookId"/>.
         /// </summary>
-        Task<FoundBookDecisionResult> FinishImportAsync(int id, int audiobookId, CancellationToken cancellationToken = default);
+        Task<FoundBookDecisionResult> FinishImportAsync(int id, int audiobookId, bool autoAdded = false, CancellationToken cancellationToken = default);
 
         /// <summary>Delete the row's files and whatever empty directories that leaves.</summary>
         Task<FoundBookDecisionResult> DiscardAsync(int id, CancellationToken cancellationToken = default);
@@ -102,7 +102,7 @@ namespace Listenarr.Application.FoundBooks.Services
         public Task<FoundBookDecisionResult> AbortImportAsync(int id, CancellationToken cancellationToken = default) =>
             TransitionAsync(id, [FoundBookState.Importing], FoundBookState.Pending, cancellationToken);
 
-        public async Task<FoundBookDecisionResult> FinishImportAsync(int id, int audiobookId, CancellationToken cancellationToken = default)
+        public async Task<FoundBookDecisionResult> FinishImportAsync(int id, int audiobookId, bool autoAdded = false, CancellationToken cancellationToken = default)
         {
             var row = await repository.GetAsync(id, cancellationToken);
             if (row == null)
@@ -143,6 +143,7 @@ namespace Listenarr.Application.FoundBooks.Services
                 r.State = FoundBookState.Imported;
                 r.MatchedAudiobookId = audiobookId;
                 r.LibraryStatus = FoundBookLibraryStatus.InLibrary;
+                r.AutoAdded = autoAdded;
                 r.DecidedAt = now;
             }, cancellationToken);
 
@@ -152,7 +153,7 @@ namespace Listenarr.Application.FoundBooks.Services
                 AudiobookTitle = row.DetectedTitle,
                 EventType = HistoryEvents.Imported,
                 Source = HistorySource,
-                Message = $"Found book imported from {row.BookFolder}: {row.AudioFileCount} audio file(s)"
+                Message = $"Found book {(autoAdded ? "added automatically" : "imported")} from {row.BookFolder}: {row.AudioFileCount} audio file(s)"
                     + (deletion.Deleted.Count > 0 ? $", {deletion.Deleted.Count} leftover file(s) removed" : string.Empty),
                 Timestamp = now
             });

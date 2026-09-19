@@ -133,6 +133,21 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
                     summary.Pending,
                     summary.Blocked,
                     summary.Warnings.Count);
+
+                if (summary.Pending > 0)
+                {
+                    var auto = await scope.ServiceProvider
+                        .GetRequiredService<IFoundBookAutoAddService>()
+                        .RunAsync(cancellationToken);
+                    if (auto.Considered > 0)
+                    {
+                        logger.LogInformation(
+                            "Found-book automatic add: {Added} added, {Skipped} left for review of {Considered}",
+                            auto.Added,
+                            auto.Skipped,
+                            auto.Considered);
+                    }
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

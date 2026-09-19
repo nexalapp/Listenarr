@@ -20,6 +20,7 @@ using Listenarr.Application.FoundBooks.Services;
 using Listenarr.Infrastructure.FoundBooks.Scanning;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Infrastructure.DependencyInjection.FoundBooks;
 
@@ -34,6 +35,10 @@ internal static class FoundBooksRegistrationExtensions
         services.AddScoped<IFoundBookScanService, FoundBookScanService>();
         services.AddScoped<FoundBookCleanup>();
         services.AddScoped<IFoundBookDecisionService, FoundBookDecisionService>();
+        services.AddScoped<IFoundBookCatalogueMatcher, FoundBookCatalogueMatcher>();
+        services.AddScoped<IFoundBookAutoAddService, FoundBookAutoAddService>();
+        // The host that owns a manual-import workflow replaces this; a test host keeps it.
+        services.TryAddScoped<IFoundBookImporter, UnavailableFoundBookImporter>();
         return services;
     }
 }

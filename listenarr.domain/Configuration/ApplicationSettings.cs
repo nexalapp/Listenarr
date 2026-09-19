@@ -138,6 +138,11 @@ namespace Listenarr.Domain.Configuration
         // the Found tab's own scan button still works.
         public int FoundBooksScanIntervalMinutes { get; set; } = 60;
 
+        // Whether a found book that is complete, not in the library, and matched to the
+        // catalogue beyond doubt (an ASIN in its tags, or title and author agreeing
+        // exactly) is added without asking. Anything less certain waits for a person.
+        public bool FoundBooksAutoAdd { get; set; } = false;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

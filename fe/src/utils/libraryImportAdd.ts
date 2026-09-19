@@ -136,6 +136,8 @@ export interface AddAndImportRequest {
   action: LibraryImportAction
   monitored: boolean
   separateBook: boolean
+  /** Move the non-audio files beside the audio too. Defaults to yes for any action but 'none'. */
+  includeCompanionFiles?: boolean
 }
 
 export interface AddAndImportResult {
@@ -220,7 +222,7 @@ export async function addAndImportBook(request: AddAndImportRequest): Promise<Ad
     path: request.folderPath,
     mode: 'interactive',
     action: request.action,
-    includeCompanionFiles: request.action !== 'none',
+    includeCompanionFiles: request.includeCompanionFiles ?? request.action !== 'none',
     cleanupEmptySourceFolders: request.action === 'move',
     items: request.sourceFiles.map((fullPath) => ({
       fullPath,
