@@ -137,7 +137,7 @@
                   :title="`Hear ${CLIP_SECONDS}s from ${formatTime(chapter.startSeconds)}`"
                   @click="togglePlay(file.fileId, chapter.startSeconds)"
                 >
-                  {{ isPlaying(file.fileId, chapter.startSeconds) ? '■' : '▶' }}
+                  <span>{{ isPlaying(file.fileId, chapter.startSeconds) ? '■' : '▶' }}</span>
                 </button>
                 {{ formatTime(chapter.startSeconds) }}
               </td>
@@ -188,7 +188,7 @@
                   :title="`Hear ${CLIP_SECONDS}s from ${formatTime(extra.startSeconds)}`"
                   @click="togglePlay(file.fileId, extra.startSeconds)"
                 >
-                  {{ isPlaying(file.fileId, extra.startSeconds) ? '■' : '▶' }}
+                  <span>{{ isPlaying(file.fileId, extra.startSeconds) ? '■' : '▶' }}</span>
                 </button>
                 {{ formatTime(extra.startSeconds) }}
               </td>
@@ -623,6 +623,9 @@ defineExpose({ load })
 }
 
 .row-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 20px;
   height: 20px;
   margin-right: 6px;
@@ -635,6 +638,12 @@ defineExpose({ load })
   line-height: 1;
   cursor: pointer;
   vertical-align: middle;
+}
+
+/* The glyphs sit off-centre in most fonts; nudge them onto the axis. */
+.row-play span {
+  display: block;
+  transform: translateX(0.5px);
 }
 
 .row-play:hover,
