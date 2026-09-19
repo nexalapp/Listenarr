@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Audiobooks.Tagging;
+using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Audiobooks.Conversion;
 using Microsoft.Extensions.Logging;
@@ -56,6 +57,28 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 : null;
 
             return ChapterPlanner.Plan(tags.Chapters, tags.Duration, edition, recovered);
+        }
+
+        /// <summary>Whisper writes an emphasised word in capitals — "DRIVE, an Expanse story" — which a chapter title should not keep.</summary>
+        private static string? Unshout(string? title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return title;
+            }
+
+            var words = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (var index = 0; index < words.Length; index++)
+            {
+                var letters = words[index].Where(char.IsLetter).ToArray();
+                if (letters.Length >= 2 && letters.All(char.IsUpper))
+                {
+                    var lower = words[index].ToLowerInvariant();
+                    words[index] = char.ToUpperInvariant(lower[0]) + lower[1..];
+                }
+            }
+
+            return string.Join(' ', words);
         }
 
         private static ChapterPlanOutcome ToOutcome((ChapterPlan? Plan, ChapterPlanRejection? Rejection) result) =>
@@ -216,6 +239,32 @@ namespace Listenarr.Application.Audiobooks.Chapters
             // few, and the rest are tracks. Merge those; retitle when the marks are
             // themselves the chapters.
             var announced = heard.Count(text => ChapterAnnouncementParser.Parse(text) != null);
+            if (announced == 0)
+            {
+                // A short work: credits, the story in parts, credits. The story's own
+                // title comes from whichever credits named it.
+                var storyTitle = Unshout(
+                    AudioCreditsParser.Parse(heard[0]).Title
+                    ?? AudioCreditsParser.Parse(heard[^1]).Title
+                    ?? audiobook.Title);
+                var (shaped, shapeRejection) = ChapterRebuildPlanner.NameFromCredits(
+                    marks,
+                    heard,
+                    tags.Duration,
+                    storyTitle,
+                    AudioCreditsParser.LooksLikeOpeningCredits,
+                    AudioCreditsParser.LooksLikeClosingCredits);
+                if (shaped != null)
+                {
+                    return (shaped, null);
+                }
+
+                return health == ChapterHealth.GenericTitles
+                    ? ChapterRebuildPlanner.Retitle(marks, heard, tags.Duration)
+                    : (null, new ChapterPlanRejection(
+                        $"No chapter announcements were heard at any mark, and {shapeRejection?.Reason.TrimEnd('.').ToLowerInvariant()}."));
+            }
+
             if (health == ChapterHealth.GenericTitles
                 && (announced < ChapterRebuildPlanner.MinimumAnnouncements || announced * 2 >= marks.Count))
             {

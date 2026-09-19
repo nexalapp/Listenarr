@@ -152,6 +152,81 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Chapters
             Assert.Equal(["Chapter 1", "Chapter 2"], plan!.Chapters.Select(c => c.Title));
         }
 
+        private static bool Opening(string? t) => t != null && (t.Contains("presents") || t.Contains("Audible"));
+        private static bool Closing(string? t) => t != null && (t.Contains("has been") || t.Contains("enjoyed"));
+
+        [Fact]
+        public void NameFromCredits_NamesAShortWorkInParts()
+        {
+            // Radicalized: nine seconds of "Macmillan Audio presents…", three hour-long
+            // parts nobody announces, twenty-five seconds of "we hope you've enjoyed".
+            var marks = new List<EmbeddedChapter>
+            {
+                new("Chapter 001", TimeSpan.Zero, TimeSpan.FromSeconds(9)),
+                new("Chapter 002", TimeSpan.FromSeconds(9), TimeSpan.FromMinutes(65)),
+                new("Chapter 003", TimeSpan.FromMinutes(65), TimeSpan.FromMinutes(120)),
+                new("Chapter 004", TimeSpan.FromMinutes(120), TimeSpan.FromMinutes(181)),
+                new("Chapter 005", TimeSpan.FromMinutes(181), TimeSpan.FromMinutes(181.4))
+            };
+            var heard = new string?[]
+            {
+                "Macmillan Audio presents Unauthorized Bread by Cory Doctorow.",
+                "The way Salima found out.",
+                "Perhaps Nadifa would have been upset.",
+                "A sense of purpose is a wonderful tonic.",
+                "We hope you've enjoyed Unauthorized Bread."
+            };
+
+            var (plan, rejection) = ChapterRebuildPlanner.NameFromCredits(marks, heard, TimeSpan.FromMinutes(181.4), "Unauthorized Bread", Opening, Closing);
+
+            Assert.Null(rejection);
+            Assert.Equal(ChapterSource.Credits, plan!.Source);
+            Assert.Equal(["Intro", "Part 1", "Part 2", "Part 3", "Credits"], plan.Chapters.Select(c => c.Title));
+            Assert.Equal(marks.Select(m => m.Start), plan.Chapters.Select(c => c.Start));
+        }
+
+        [Fact]
+        public void NameFromCredits_GivesASingleStoryItsOwnTitle()
+        {
+            // Drive: "This is Audible", fifty-five minutes of story, the credits.
+            var marks = new List<EmbeddedChapter>
+            {
+                new("Chapter 001", TimeSpan.Zero, TimeSpan.FromSeconds(29)),
+                new("Chapter 002", TimeSpan.FromSeconds(29), TimeSpan.FromSeconds(3364)),
+                new("Chapter 003", TimeSpan.FromSeconds(3364), TimeSpan.FromSeconds(3469))
+            };
+            // Whisper heard the jingle as "This is honorable"; twenty-nine seconds is credits regardless.
+            var heard = new string?[] { "This is honorable.", "Acceleration throws Solomon back.", "This has been a Hachette Audio production of Drive." };
+
+            var (plan, _) = ChapterRebuildPlanner.NameFromCredits(marks, heard, TimeSpan.FromSeconds(3469), "Drive, an Expanse story", Opening, Closing);
+
+            Assert.Equal(["Intro", "Drive, an Expanse story", "Credits"], plan!.Chapters.Select(c => c.Title));
+        }
+
+        [Fact]
+        public void NameFromCredits_RefusesWhenNeitherEndSoundsLikeCredits()
+        {
+            // Three-minute tracks at both ends: long enough to be story, and nothing heard says otherwise.
+            var marks = Tracks(4);
+            var heard = new string?[] { "prose", "prose", "prose", "prose" };
+
+            var (plan, rejection) = ChapterRebuildPlanner.NameFromCredits(marks, heard, Track * 4, null, Opening, Closing);
+
+            Assert.Null(plan);
+            Assert.Contains("sounds like credits", rejection!.Reason);
+        }
+
+        [Fact]
+        public void NameFromCredits_StandsAsideWhenChaptersAreAnnounced()
+        {
+            var marks = Tracks(3);
+            var heard = new string?[] { "Audible presents.", "Chapter one.", "This has been." };
+
+            var (plan, _) = ChapterRebuildPlanner.NameFromCredits(marks, heard, Track * 3, null, Opening, Closing);
+
+            Assert.Null(plan);
+        }
+
         [Fact]
         public void Retitle_KeepsEveryMarkAndNamesTheAnnouncedOnes()
         {

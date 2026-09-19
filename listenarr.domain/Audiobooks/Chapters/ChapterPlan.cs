@@ -42,7 +42,13 @@ namespace Listenarr.Domain.Audiobooks.Chapters
         /// The marks at which the narrator was heard to announce a chapter. For a CD rip
         /// whose tracks outnumber its chapters, and for placeholder titles.
         /// </summary>
-        Announcements
+        Announcements,
+
+        /// <summary>
+        /// The shape of a short work: credits, the story in parts, credits. Nothing is
+        /// announced, so the marks are kept and named for what they are.
+        /// </summary>
+        Credits
     }
 
     /// <summary>

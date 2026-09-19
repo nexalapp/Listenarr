@@ -256,6 +256,110 @@ namespace Listenarr.Domain.Audiobooks.Chapters
                 heard.ToList()), null);
         }
 
+        /// <summary>A credits chapter is short; longer than this and it is story.</summary>
+        public static readonly TimeSpan CreditsMaximum = TimeSpan.FromMinutes(3);
+
+        /// <summary>
+        /// Shorter than this at either end is credits whatever was heard: no story has a
+        /// half-minute first chapter, and whisper hears "This is Audible" over a jingle
+        /// as often as not.
+        /// </summary>
+        public static readonly TimeSpan CreditsCertain = TimeSpan.FromSeconds(60);
+
+        /// <summary>
+        /// Name the marks of a short work whose narrator announces nothing: a publisher's
+        /// credits at the top, the story in one or more parts, credits at the end.
+        ///
+        /// <para>
+        /// Novellas and short stories arrive this way — "Macmillan Audio presents
+        /// Unauthorized Bread by Cory Doctorow" for nine seconds, three hour-long parts
+        /// with no heading read, and "we hope you've enjoyed" for twenty — and the marks
+        /// are exactly right; only the names are a tool's. So nothing moves: the short
+        /// opening is the intro (credits, an epigraph, a prologue's first breath — it is
+        /// not story), the short close is the credits, one part takes the story's own
+        /// title, several are numbered.
+        /// </para>
+        /// </summary>
+        public static (ChapterPlan? Plan, ChapterPlanRejection? Rejection) NameFromCredits(
+            IReadOnlyList<EmbeddedChapter> marks,
+            IReadOnlyList<string?> heard,
+            TimeSpan duration,
+            string? storyTitle,
+            Func<string?, bool> looksLikeOpeningCredits,
+            Func<string?, bool> looksLikeClosingCredits)
+        {
+            if (marks.Count < 2 || heard.Count != marks.Count)
+            {
+                return (null, new ChapterPlanRejection("Too few marks to be credits and a story."));
+            }
+
+            if (heard.Any(text => ChapterAnnouncementParser.Parse(text) != null))
+            {
+                return (null, new ChapterPlanRejection("Chapters are announced here; this is not the credits shape."));
+            }
+
+            var openingLength = Length(0, marks, duration);
+            var closingLength = Length(marks.Count - 1, marks, duration);
+            var opening = openingLength <= CreditsCertain
+                || (openingLength <= CreditsMaximum && looksLikeOpeningCredits(heard[0]));
+            var closing = closingLength <= CreditsCertain
+                || (closingLength <= CreditsMaximum && looksLikeClosingCredits(heard[^1]));
+            if (!opening && !closing)
+            {
+                return (null, new ChapterPlanRejection("Neither the first nor the last mark sounds like credits, so the marks cannot be named without announcements."));
+            }
+
+            var first = opening ? 1 : 0;
+            var last = closing ? marks.Count - 2 : marks.Count - 1;
+            var parts = last - first + 1;
+            if (parts < 1)
+            {
+                return (null, new ChapterPlanRejection("The file is credits with no story between them."));
+            }
+
+            var titled = new List<EmbeddedChapter>(marks.Count);
+            for (var index = 0; index < marks.Count; index++)
+            {
+                string title;
+                if (opening && index == 0)
+                {
+                    title = "Intro";
+                }
+                else if (closing && index == marks.Count - 1)
+                {
+                    title = "Credits";
+                }
+                else if (parts == 1)
+                {
+                    title = string.IsNullOrWhiteSpace(storyTitle) ? "Part 1" : storyTitle.Trim();
+                }
+                else
+                {
+                    title = $"Part {index - first + 1}";
+                }
+
+                titled.Add(new EmbeddedChapter(title, marks[index].Start, marks[index].End));
+            }
+
+            var shape = (opening, closing) switch
+            {
+                (true, true) => "an intro, the story, the credits",
+                (true, false) => "an intro, then the story",
+                _ => "the story, then the credits"
+            };
+            var note = parts == 1
+                ? $"Named from the shape of a short work — {shape}."
+                : $"Named from the shape of a short work — {shape} — in {parts} parts. The narrator announces no chapters, so the parts are numbered.";
+            return (new ChapterPlan(ChapterSource.Credits, WithEnds(titled, duration), Partial: false, note, heard.ToList()), null);
+        }
+
+        private static TimeSpan Length(int index, IReadOnlyList<EmbeddedChapter> marks, TimeSpan duration)
+        {
+            var mark = marks[index];
+            var end = index + 1 < marks.Count ? marks[index + 1].Start : (duration > TimeSpan.Zero ? duration : mark.End);
+            return end - mark.Start;
+        }
+
         /// <summary>
         /// The first mark's title when nothing was announced there: the space before
         /// Chapter 1 is an introduction when a Chapter 1 follows, and Chapter 1 itself

@@ -344,6 +344,8 @@ const sourceLabel = (source?: string | null) => {
       return 'the damaged atom'
     case 'Announcements':
       return 'what the narrator announced'
+    case 'Credits':
+      return 'the opening and closing credits'
     default:
       return 'an unknown source'
   }

@@ -382,6 +382,33 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
+        public async Task PreviewAsync_NamesAShortWorkFromItsCreditsWhenNothingIsAnnounced()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            var marks = new List<EmbeddedChapter>
+            {
+                new("Chapter 001  - 00:00:09", TimeSpan.Zero, TimeSpan.FromSeconds(9)),
+                new("Chapter 002  - 01:05:16", TimeSpan.FromSeconds(9), TimeSpan.FromMinutes(65)),
+                new("Chapter 003  - 00:54:33", TimeSpan.FromMinutes(65), TimeSpan.FromMinutes(99)),
+                new("Chapter 004  - 00:00:25", TimeSpan.FromMinutes(99), TimeSpan.FromMinutes(99.5))
+            };
+            GivenFileReads(marks, new ChapterAtomState(true, null, 4, true));
+            GivenHeard(marks, new Dictionary<int, string>
+            {
+                [0] = "Macmillan Audio presents Unauthorized Bread by Cory Doctorow.\nRead for you by Lameece Issaq.",
+                [3] = "We hope you've enjoyed Unauthorized Bread, a Macmillan audio production."
+            });
+
+            var preview = await BuildService().PreviewAsync(7);
+
+            var file = Assert.Single(preview!.Files);
+            Assert.True(file.Repairable);
+            Assert.Equal(ChapterSource.Credits, file.Plan!.Source);
+            Assert.Equal(["Intro", "Part 1", "Part 2", "Credits"], file.Plan.Chapters.Select(c => c.Title));
+        }
+
+        [Fact]
         public async Task PreviewAsync_RejectsAHealthyFile()
         {
             GivenBook();

@@ -60,6 +60,20 @@ namespace Listenarr.Domain.Audiobooks.Audit
         [GeneratedRegex(@"\[[^\]]*\]|\([^)]*\)|\*[^*]*\*")]
         private static partial Regex SoundTag();
 
+        [GeneratedRegex(@"(?i:\bpresents\b|this is audible|audible presents|read (?:for you )?by|narrated by|performed by|written by|an? (?:[\w.&']+\s+){0,3}audio ?(?:book )?(?:production|recording|presentation|edition)|unabridged)")]
+        private static partial Regex OpeningCue();
+
+        [GeneratedRegex(@"(?i:this has been|that was|we hope you(?:'ve| have) enjoyed|thank you for listening|you(?:'ve| have) been listening|the end\b|produced by|directed by|copyright|all rights reserved|production of|audio production)")]
+        private static partial Regex ClosingCue();
+
+        /// <summary>Whether a stretch reads as a publisher's opening: "X presents Title by Author, read by Narrator".</summary>
+        public static bool LooksLikeOpeningCredits(string? transcript) =>
+            !string.IsNullOrWhiteSpace(transcript) && OpeningCue().IsMatch(transcript);
+
+        /// <summary>Whether a stretch reads as the closing: "this has been", "we hope you've enjoyed", the copyright line.</summary>
+        public static bool LooksLikeClosingCredits(string? transcript) =>
+            !string.IsNullOrWhiteSpace(transcript) && ClosingCue().IsMatch(transcript);
+
         public static AudioCredits Parse(string? transcript)
         {
             if (string.IsNullOrWhiteSpace(transcript))
