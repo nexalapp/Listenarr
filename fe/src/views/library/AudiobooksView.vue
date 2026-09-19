@@ -606,6 +606,7 @@
                       <div
                         v-if="chapterIssueLabel(audiobook)"
                         class="chapter-badge"
+                        :class="{ 'chapter-badge--fixable': audiobook.chapterRepairable }"
                         :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
                       >
                         <PhListNumbers />
@@ -804,6 +805,7 @@
                   <div
                     v-if="chapterIssueLabel(audiobook)"
                     class="chapter-badge"
+                    :class="{ 'chapter-badge--fixable': audiobook.chapterRepairable }"
                     :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
                   >
                     <PhListNumbers />
@@ -1314,6 +1316,8 @@ const chapterIssueLabel = (book: Audiobook): string | null => {
       return 'Corrupt chapters'
     case 'oversegmented':
       return 'CD-track chapters'
+    case 'generic-titles':
+      return 'Unnamed chapters'
     default:
       return null
   }
@@ -4267,6 +4271,13 @@ defineExpose({
   font-weight: 500;
   color: #e74c3c;
   white-space: nowrap;
+}
+
+/* Amber: a repair can fix it automatically. Red: it cannot, yet. */
+.chapter-badge--fixable {
+  background-color: rgba(243, 156, 18, 0.12);
+  border-color: rgba(243, 156, 18, 0.25);
+  color: #f39c12;
 }
 
 .action-buttons {

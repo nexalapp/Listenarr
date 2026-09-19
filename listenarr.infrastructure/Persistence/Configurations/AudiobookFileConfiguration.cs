@@ -49,6 +49,7 @@ public sealed class AudiobookFileConfiguration : IEntityTypeConfiguration<Audiob
             .HasDefaultValue(ChapterHealth.Unknown);
         builder.Property(file => file.ChapterReason).HasMaxLength(512);
         builder.Property(file => file.ChapterCount).HasDefaultValue(0);
+        builder.Property(file => file.ChapterRepairable).HasDefaultValue(false);
 
         builder.HasIndex(file => file.PathIdentityLookupKey);
         builder.HasIndex(file => file.PathOwnershipKey)

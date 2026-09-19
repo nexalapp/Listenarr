@@ -136,7 +136,8 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 var verdict = byId[file.Id];
                 if (file.ChapterHealth == verdict.Health
                     && file.ChapterReason == verdict.Reason
-                    && file.ChapterCount == verdict.ChapterCount)
+                    && file.ChapterCount == verdict.ChapterCount
+                    && file.ChapterRepairable == verdict.Repairable)
                 {
                     continue;
                 }
@@ -144,6 +145,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 file.ChapterHealth = verdict.Health;
                 file.ChapterReason = verdict.Reason;
                 file.ChapterCount = verdict.ChapterCount;
+                file.ChapterRepairable = verdict.Repairable;
                 changed = true;
             }
 
@@ -153,21 +155,25 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             }
         }
 
-        public async Task<Dictionary<int, ChapterHealth>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default)
+        public async Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default)
         {
             var rows = await _db.AudiobookFiles
                 .AsNoTracking()
                 .Where(file => file.ChapterHealth != ChapterHealth.Unknown)
-                .Select(file => new { file.AudiobookId, file.ChapterHealth })
+                .Select(file => new { file.AudiobookId, file.ChapterHealth, file.ChapterRepairable })
                 .ToListAsync(ct);
 
-            var worst = new Dictionary<int, ChapterHealth>();
+            // The worst verdict wins; among files with that verdict, one that cannot be
+            // repaired is the one to report — red must not be hidden behind amber.
+            var worst = new Dictionary<int, AudiobookChapterSummary>();
             foreach (var row in rows)
             {
+                var rank = ChapterHealthSeverity.Rank(row.ChapterHealth);
                 if (!worst.TryGetValue(row.AudiobookId, out var current)
-                    || ChapterHealthSeverity.Rank(row.ChapterHealth) > ChapterHealthSeverity.Rank(current))
+                    || rank > ChapterHealthSeverity.Rank(current.Health)
+                    || (rank == ChapterHealthSeverity.Rank(current.Health) && current.Repairable && !row.ChapterRepairable))
                 {
-                    worst[row.AudiobookId] = row.ChapterHealth;
+                    worst[row.AudiobookId] = new AudiobookChapterSummary(row.ChapterHealth, row.ChapterRepairable);
                 }
             }
 

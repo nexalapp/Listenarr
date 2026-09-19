@@ -160,6 +160,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                         mappings,
                         tags,
                         error,
+                        settings.TranscriptionEnabled,
                         libraryRoots,
                         pathExpectations.GetValueOrDefault(item.File.Id));
                 }
@@ -199,7 +200,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
             await PersistPendingAsync(cancellationToken);
             await PersistChapterHealthAsync(
                 rows.Where(row => row.ChapterHealth != ChapterHealth.Unknown)
-                    .Select(row => new AudiobookFileChapterHealth(row.FileId, row.ChapterHealth, row.ChapterReason, row.ChapterCount))
+                    .Select(row => new AudiobookFileChapterHealth(row.FileId, row.ChapterHealth, row.ChapterReason, row.ChapterCount, row.ChapterRepairable))
                     .ToList(),
                 cancellationToken);
             return new LibraryTagIndex(rows, filesRead, DateTime.UtcNow);
@@ -226,8 +227,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     tags.Atoms,
                     tags.Duration,
                     Path.GetFileNameWithoutExtension(fullPath));
+                // A file just written is judged without knowing its book; transcription
+                // alone decides whether tracks or titles could be fixed, and the next
+                // table load refines it with the ASIN.
+                var settings = await configurationService.GetApplicationSettingsAsync();
+                var repairable = ChapterHealthSeverity.LikelyRepairable(report.Health, tags.Atoms, hasAsin: false, settings.TranscriptionEnabled);
                 await PersistChapterHealthAsync(
-                    [new AudiobookFileChapterHealth(id, report.Health, report.Reason, report.ChapterCount)],
+                    [new AudiobookFileChapterHealth(id, report.Health, report.Reason, report.ChapterCount, repairable)],
                     cancellationToken);
             }
         }
@@ -363,6 +369,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
             IReadOnlyList<TagMapping> mappings,
             AudiobookFileTags? tags,
             string? error,
+            bool transcriptionEnabled,
             IReadOnlyList<string> libraryRoots,
             PathExpectation? pathExpectation)
         {
@@ -452,6 +459,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 chapters.Health,
                 chapters.Reason,
                 chapters.ChapterCount,
+                ChapterHealthSeverity.LikelyRepairable(chapters.Health, tags?.Atoms, !string.IsNullOrWhiteSpace(audiobook.Asin), transcriptionEnabled),
                 audiobook.AudioAuditVerdict,
                 audiobook.AudioAuditReason);
         }

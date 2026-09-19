@@ -129,8 +129,8 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
             CancellationToken ct = default);
 
-        /// <summary>The worst chapter verdict among each book's files, for books that have one.</summary>
-        Task<Dictionary<int, ChapterHealth>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default);
+        /// <summary>The worst chapter verdict among each book's files, and whether that file is repairable, for books that have one.</summary>
+        Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default);
     }
 
     /// <summary>One file's chapter verdict, as the tag index decided it.</summary>
@@ -138,5 +138,9 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         int FileId,
         ChapterHealth Health,
         string? Reason,
-        int ChapterCount);
+        int ChapterCount,
+        bool Repairable = false);
+
+    /// <summary>A book's worst chapter verdict and whether a repair can do something about it.</summary>
+    public sealed record AudiobookChapterSummary(ChapterHealth Health, bool Repairable);
 }

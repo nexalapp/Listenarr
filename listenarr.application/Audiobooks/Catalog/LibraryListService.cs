@@ -151,9 +151,10 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     QualityProfileId = a.QualityProfileId,
                     AuthorAsins = a.AuthorAsins?.ToArray(),
                     Wanted = wanted,
-                    ChapterHealth = chapterHealthById.TryGetValue(a.Id, out var chapterHealth)
-                        ? ChapterHealthNames.Of(chapterHealth)
+                    ChapterHealth = chapterHealthById.TryGetValue(a.Id, out var chapterSummary)
+                        ? ChapterHealthNames.Of(chapterSummary.Health)
                         : null,
+                    ChapterRepairable = chapterSummary?.Repairable ?? false,
                     AudioAudit = AudioAuditVerdictNames.Of(a.AudioAuditVerdict),
                     Status = AudiobookStatusEvaluator.ComputeStatus(
                          activeDownloadAudiobookIdSet.Contains(a.Id),

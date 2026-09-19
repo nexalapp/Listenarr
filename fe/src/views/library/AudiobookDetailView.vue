@@ -296,6 +296,9 @@
           >
             <PhFile />
             Files
+            <span v-if="audioTabBadge" class="tab-badge tab-badge--issue" :title="audioTabBadge"
+              >!</span
+            >
           </button>
           <button
             class="tab"
@@ -304,6 +307,13 @@
           >
             <PhListNumbers />
             Chapters
+            <span
+              v-if="chapterTabBadge"
+              class="tab-badge"
+              :class="`tab-badge--${chapterTabBadge.severity}`"
+              :title="chapterTabBadge.title"
+              >!</span
+            >
           </button>
           <button class="tab" :class="{ active: activeTab === 'tags' }" @click="activeTab = 'tags'">
             <PhTag />
@@ -2181,29 +2191,37 @@ const chapterSummary = computed(() => {
     .filter((r): r is string => !!r)
   const count = judged.reduce((sum, f) => sum + (f.chapterCount ?? 0), 0)
 
+  // Amber when every flagged file can be fixed automatically, red when one cannot.
+  const flagged = judged.filter((f) => CHAPTER_ISSUE_HEALTH.has(f.chapterHealth as ChapterHealth))
+  const fixable = flagged.length > 0 && flagged.every((f) => f.chapterRepairable)
+  const severity = fixable ? ('fixable' as const) : ('issue' as const)
+  const fixNote = fixable
+    ? ' A repair can fix this automatically.'
+    : ' No automatic fix is available yet: the book needs an ASIN match, or transcription turned on, for a repair to have a source.'
+
   switch (worst) {
     case 'corrupt':
       return {
         checked: true,
-        severity: 'issue' as const,
+        severity,
         headline: 'Corrupt chapter atom.',
-        detail: reasons[0] ?? '',
+        detail: (reasons[0] ?? '') + fixNote,
         repairableFileIds,
       }
     case 'oversegmented':
       return {
         checked: true,
-        severity: 'issue' as const,
+        severity,
         headline: 'Chapters are CD tracks.',
-        detail: reasons[0] ?? '',
+        detail: (reasons[0] ?? '') + fixNote,
         repairableFileIds,
       }
     case 'generic-titles':
       return {
         checked: true,
-        severity: 'note' as const,
+        severity,
         headline: 'Chapters have placeholder titles.',
-        detail: reasons[0] ?? '',
+        detail: (reasons[0] ?? '') + fixNote,
         repairableFileIds,
       }
     case 'none':
@@ -2242,10 +2260,45 @@ function severityRank(health: ChapterHealth): number {
   }
 }
 
+/**
+ * A mark on the Chapters tab before it is opened: how many files a repair has
+ * something to do for, red when the marks themselves are wrong and amber when only
+ * the names are. From the verdicts the server already holds, so it costs nothing.
+ */
+const chapterTabBadge = computed(() => {
+  const files = (audiobook.value?.files ?? []).filter((f) =>
+    CHAPTER_ISSUE_HEALTH.has(f.chapterHealth as ChapterHealth),
+  )
+  if (files.length === 0) return null
+  // Amber: every flagged file can be fixed automatically. Red: at least one cannot.
+  const stuck = files.filter((f) => !f.chapterRepairable).length
+  return stuck > 0
+    ? {
+        severity: 'issue',
+        title: `${stuck} of ${files.length} file(s) have chapter problems that cannot be fixed automatically — open Chapters to see why`,
+      }
+    : {
+        severity: 'note',
+        title: `${files.length} file(s) have chapter problems a repair can fix — open Chapters to preview it`,
+      }
+})
+const audioTabBadge = computed(() => {
+  switch (audiobook.value?.audioAudit) {
+    case 'mismatch':
+      return 'The audio introduces itself as a different book'
+    case 'narrator-mismatch':
+      return 'The audio credits a different narrator'
+    default:
+      return null
+  }
+})
+
 const chapterPanelClass = computed(() => {
   switch (chapterSummary.value.severity) {
     case 'issue':
       return 'audio-audit--mismatch'
+    case 'fixable':
+      return 'audio-audit--fixable'
     case 'ok':
       return 'audio-audit--match'
     default:
@@ -3553,6 +3606,29 @@ function formatDate(dateString?: string): string {
   color: #fff;
 }
 
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tab-badge--issue {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.tab-badge--note {
+  background: rgba(243, 156, 18, 0.18);
+  color: #f39c12;
+}
+
 .tab.active {
   color: var(--brand-500);
   border-bottom-color: var(--brand-500);
@@ -3920,6 +3996,15 @@ a.identifier-link:hover {
 
 .audio-audit--match {
   border-color: rgba(46, 204, 113, 0.25);
+}
+
+.audio-audit--fixable {
+  border-color: rgba(243, 156, 18, 0.4);
+  background: rgba(243, 156, 18, 0.08);
+}
+
+.audio-audit--fixable .audio-audit-icon {
+  color: #f39c12;
 }
 
 .audio-audit-icon {

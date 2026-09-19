@@ -105,6 +105,7 @@ namespace Listenarr.Api.Features.Library
                     name = file.FileName,
                     chapterHealth = ChapterHealthNames.Of(file.Health),
                     chapterReason = file.Reason,
+                    chapterRepairable = file.Repairable,
                     error = file.Error,
                     durationSeconds = file.Duration.TotalSeconds,
                     // What the bytes say, so the page can explain a verdict rather than assert it.

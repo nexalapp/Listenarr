@@ -610,6 +610,7 @@ export interface LibraryTagRow {
   /** Why the verdict, in a sentence. */
   chapterReason?: string | null
   chapterCount: number
+  chapterRepairable?: boolean
   /** The book's audio-audit verdict, repeated on each of its rows; null until audited. */
   audioAudit?: AudioAuditVerdict | null
   audioAuditReason?: string | null
@@ -655,6 +656,8 @@ export interface BookChapterFile {
   name: string
   chapterHealth: ChapterHealth
   chapterReason?: string | null
+  /** A repair likely has a source to fix this file from; the proposal is definitive. */
+  chapterRepairable?: boolean
   error?: string | null
   durationSeconds: number
   /** `ok`, `broken` or `missing`; null when the container was not inspected. */
@@ -1186,6 +1189,8 @@ export interface Audiobook {
     chapterHealth?: ChapterHealth
     chapterReason?: string | null
     chapterCount?: number
+    /** A repair has a source to fix this file from: amber when true, red when false. */
+    chapterRepairable?: boolean
   }[]
   quality?: string
   qualityProfileId?: number
@@ -1198,6 +1203,7 @@ export interface Audiobook {
   status?: AudiobookStatus
   /** The worst chapter verdict among the book's files; absent until a file has been judged. */
   chapterHealth?: ChapterHealth | null
+  chapterRepairable?: boolean
   /** Whether the audio introduces itself as this book; absent until an audit has run. */
   audioAudit?: AudioAuditVerdict | null
   audioAuditReason?: string | null

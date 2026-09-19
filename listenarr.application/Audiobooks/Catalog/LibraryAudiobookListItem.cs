@@ -65,6 +65,9 @@ namespace Listenarr.Application.Audiobooks.Catalog
         /// </summary>
         public string? ChapterHealth { get; set; }
 
+        /// <summary>Whether a repair can do something about the worst file: amber when true, red when false.</summary>
+        public bool ChapterRepairable { get; set; }
+
         /// <summary>
         /// Whether the audio introduces itself as this book, as a lowercase word:
         /// <c>match</c>, <c>narrator-mismatch</c>, <c>mismatch</c>, <c>inconclusive</c>.

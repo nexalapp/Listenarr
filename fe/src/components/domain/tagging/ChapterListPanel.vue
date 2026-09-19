@@ -37,10 +37,7 @@
 
     <template v-else>
       <section v-for="file in files" :key="file.fileId" class="chapter-file">
-        <header
-          class="chapter-file-header"
-          :class="`chapter-file-header--${severity(file.chapterHealth)}`"
-        >
+        <header class="chapter-file-header" :class="`chapter-file-header--${severity(file)}`">
           <div class="chapter-file-title">
             <PhFileAudio />
             <span class="chapter-file-name">{{ file.name }}</span>
@@ -72,16 +69,47 @@
               >{{ file.chapters.length }} chapters · {{ formatTime(file.durationSeconds) }}</span
             >
           </div>
+          <div
+            v-if="proposalFor(file.fileId)"
+            class="chapter-proposal-summary"
+            :class="{ 'chapter-proposal-summary--rejected': !proposalFor(file.fileId)!.repairable }"
+          >
+            <PhArrowRight />
+            <span v-if="proposalFor(file.fileId)!.repairable">
+              Proposed:
+              <strong>{{ proposalFor(file.fileId)!.chapters?.length ?? 0 }} chapters</strong> from
+              {{ sourceLabel(proposalFor(file.fileId)!.source) }} —
+              {{ proposalFor(file.fileId)!.note }}
+            </span>
+            <span v-else>No fix available: {{ proposalFor(file.fileId)!.rejection }}</span>
+          </div>
           <div class="chapter-file-actions">
             <button
-              v-if="isRepairable(file.chapterHealth)"
+              v-if="isRepairable(file.chapterHealth) && !proposalFor(file.fileId)"
+              type="button"
+              class="chapter-btn chapter-btn--quiet"
+              :disabled="proposing.has(file.fileId)"
+              :title="
+                proposing.has(file.fileId)
+                  ? 'Working it out — listening to the marks can take a minute'
+                  : 'Work out what a repair would write, and show it beside each chapter'
+              "
+              @click="propose(file.fileId)"
+            >
+              {{ proposing.has(file.fileId) ? 'Working out the fix…' : 'Show proposed fix' }}
+            </button>
+            <button
+              v-if="
+                isRepairable(file.chapterHealth) &&
+                (!proposalFor(file.fileId) || proposalFor(file.fileId)!.repairable)
+              "
               type="button"
               class="chapter-btn"
               :disabled="disabled"
               :title="disabled ? disabledReason : 'Preview and rebuild this file’s chapters'"
               @click="emit('repair', file.fileId)"
             >
-              Repair chapters
+              {{ proposalFor(file.fileId) ? 'Apply this fix' : 'Repair chapters' }}
             </button>
           </div>
         </header>
@@ -93,13 +121,18 @@
               <th class="time">Start</th>
               <th class="time">Length</th>
               <th>Title</th>
+              <th v-if="proposalFor(file.fileId)?.repairable" class="proposed">Proposed</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="(chapter, index) in visibleChapters(file)"
               :key="index"
-              :class="{ 'chapter-row--placeholder': chapter.placeholder }"
+              :class="{
+                'chapter-row--placeholder': chapter.placeholder,
+                'chapter-row--merged':
+                  proposalFor(file.fileId)?.repairable && proposedFor(file, chapter) === null,
+              }"
             >
               <td class="num">{{ index + 1 }}</td>
               <td class="time">{{ formatTime(chapter.startSeconds) }}</td>
@@ -112,6 +145,41 @@
                   title="A ripping tool's name, not the author's."
                   >placeholder</span
                 >
+              </td>
+              <td v-if="proposalFor(file.fileId)?.repairable" class="proposed">
+                <template v-if="proposedFor(file, chapter) === null">
+                  <span class="merged">merged into the chapter above</span>
+                </template>
+                <template v-else>
+                  <span
+                    class="proposed-title"
+                    :class="{
+                      'proposed-title--same': proposedFor(file, chapter)?.title === chapter.title,
+                    }"
+                  >
+                    {{ proposedFor(file, chapter)?.title }}
+                  </span>
+                  <span
+                    v-if="proposedFor(file, chapter)?.heard"
+                    class="heard"
+                    :title="proposedFor(file, chapter)?.heard ?? undefined"
+                  >
+                    “{{ heardText(proposedFor(file, chapter)!.heard!) }}”
+                  </span>
+                </template>
+              </td>
+            </tr>
+            <tr
+              v-for="(extra, index) in unmatchedProposed(file)"
+              :key="`extra-${index}`"
+              class="chapter-row--added"
+            >
+              <td class="num">+</td>
+              <td class="time">{{ formatTime(extra.startSeconds) }}</td>
+              <td class="time">{{ formatTime(extra.endSeconds - extra.startSeconds) }}</td>
+              <td class="title"><span class="merged">no mark here today</span></td>
+              <td class="proposed">
+                <span class="proposed-title">{{ extra.title }}</span>
               </td>
             </tr>
           </tbody>
@@ -131,10 +199,22 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { PhFileAudio, PhListNumbers, PhSpinner, PhWarningCircle } from '@phosphor-icons/vue'
+import {
+  PhArrowRight,
+  PhFileAudio,
+  PhListNumbers,
+  PhSpinner,
+  PhWarningCircle,
+} from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
-import type { BookChapter, BookChapterFile, ChapterHealth } from '@/types'
+import type {
+  BookChapter,
+  BookChapterFile,
+  ChapterHealth,
+  ChapterRepairChapter,
+  ChapterRepairFile,
+} from '@/types'
 
 const props = defineProps<{
   audiobookId: number | null
@@ -177,12 +257,16 @@ function verdictLabel(health: ChapterHealth) {
   }
 }
 
-function severity(health: ChapterHealth) {
-  switch (health) {
+/** Amber when a repair can fix it automatically, red when it cannot; the proposal, once fetched, is definitive. */
+function severity(file: BookChapterFile) {
+  switch (file.chapterHealth) {
     case 'corrupt':
     case 'oversegmented':
-      return 'issue'
-    case 'generic-titles':
+    case 'generic-titles': {
+      const proposal = proposals.value.get(file.fileId)
+      const fixable = proposal ? proposal.repairable : file.chapterRepairable
+      return fixable ? 'fixable' : 'issue'
+    }
     case 'none':
       return 'note'
     case 'healthy':
@@ -210,6 +294,82 @@ function explain(file: BookChapterFile) {
   }
 }
 
+// ---- the proposed fix -------------------------------------------------------------
+
+/** What a repair would write, per file, once asked for. */
+const proposals = ref(new Map<number, ChapterRepairFile>())
+const proposing = ref(new Set<number>())
+
+const proposalFor = (fileId: number) => proposals.value.get(fileId) ?? null
+
+const sourceLabel = (source?: string | null) => {
+  switch (source) {
+    case 'Played':
+      return 'the file’s own chapter track'
+    case 'Audnexus':
+      return 'Audnexus (the edition’s list)'
+    case 'RecoveredAtom':
+      return 'the damaged atom'
+    case 'Announcements':
+      return 'what the narrator announced'
+    default:
+      return 'an unknown source'
+  }
+}
+
+/** Marks within this many seconds are the same place. */
+const SAME_MARK = 1.5
+
+/**
+ * The proposed chapter that starts at this mark, or null when the mark is folded into
+ * the chapter before it. Undefined until a proposal has been fetched.
+ */
+function proposedFor(
+  file: BookChapterFile,
+  chapter: BookChapter,
+): ChapterRepairChapter | null | undefined {
+  const proposal = proposals.value.get(file.fileId)
+  if (!proposal?.chapters) return undefined
+  return (
+    proposal.chapters.find((c) => Math.abs(c.startSeconds - chapter.startSeconds) <= SAME_MARK) ??
+    null
+  )
+}
+
+/** Proposed chapters that start where the file has no mark today (an edition's list can). */
+function unmatchedProposed(file: BookChapterFile): ChapterRepairChapter[] {
+  const proposal = proposals.value.get(file.fileId)
+  if (!proposal?.repairable || !proposal.chapters) return []
+  return proposal.chapters.filter(
+    (c) => !file.chapters.some((mark) => Math.abs(mark.startSeconds - c.startSeconds) <= SAME_MARK),
+  )
+}
+
+function heardText(heard: string) {
+  const flat = heard.replace(/\s*\n\s*/g, ' · ').trim()
+  return flat.length > 70 ? `${flat.slice(0, 67)}…` : flat
+}
+
+async function propose(fileId: number) {
+  if (props.audiobookId == null) return
+  proposing.value = new Set([...proposing.value, fileId])
+  try {
+    const preview = await apiService.previewChapterRepair(props.audiobookId, [fileId])
+    const file = preview.files.find((f) => f.fileId === fileId)
+    if (file) {
+      proposals.value = new Map([...proposals.value, [fileId, file]])
+      expanded.value = new Set([...expanded.value, fileId])
+    }
+  } catch (err) {
+    logger.warn('Failed to work out a chapter fix', err)
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    const next = new Set(proposing.value)
+    next.delete(fileId)
+    proposing.value = next
+  }
+}
+
 function visibleChapters(file: BookChapterFile): BookChapter[] {
   return expanded.value.has(file.fileId) ? file.chapters : file.chapters.slice(0, COLLAPSED_ROWS)
 }
@@ -234,6 +394,8 @@ async function load() {
   error.value = null
   try {
     files.value = (await apiService.getBookChapters(props.audiobookId)).files
+    // A fresh read makes every earlier proposal stale.
+    proposals.value = new Map()
   } catch (err) {
     logger.warn('Failed to load chapters', err)
     error.value = err instanceof Error ? err.message : String(err)
@@ -295,8 +457,12 @@ defineExpose({ load })
   border-left-color: #e74c3c;
 }
 
-.chapter-file-header--note {
+.chapter-file-header--fixable {
   border-left-color: #f39c12;
+}
+
+.chapter-file-header--note {
+  border-left-color: var(--text-muted);
 }
 
 .chapter-file-header--ok {
@@ -370,6 +536,68 @@ defineExpose({ load })
   color: var(--brand-500);
   font-size: 12px;
   cursor: pointer;
+}
+
+.chapter-btn--quiet {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
+}
+
+.chapter-proposal-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(46, 204, 113, 0.08);
+  border: 1px solid rgba(46, 204, 113, 0.25);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.chapter-proposal-summary svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.chapter-proposal-summary--rejected {
+  background: rgba(231, 76, 60, 0.08);
+  border-color: rgba(231, 76, 60, 0.25);
+}
+
+.chapter-table .proposed {
+  width: 40%;
+}
+
+.proposed-title {
+  color: #2ecc71;
+}
+
+.proposed-title--same {
+  color: var(--text-secondary);
+}
+
+.chapter-row--merged td {
+  color: var(--text-muted);
+}
+
+.chapter-row--merged .merged,
+.chapter-row--added .merged {
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.chapter-row--added td {
+  background: rgba(46, 204, 113, 0.05);
+}
+
+.heard {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 11px;
 }
 
 .chapter-btn:disabled {

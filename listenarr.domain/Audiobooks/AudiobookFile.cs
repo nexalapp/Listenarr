@@ -244,5 +244,8 @@ namespace Listenarr.Domain.Audiobooks
         public string? ChapterReason { get; set; }
 
         public int ChapterCount { get; set; }
+
+        /// <summary>Whether a repair has a source to fix this file's chapters from. Colours the badge: amber fixable, red not.</summary>
+        public bool ChapterRepairable { get; set; }
     }
 }

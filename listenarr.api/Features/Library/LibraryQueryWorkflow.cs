@@ -129,7 +129,8 @@ public sealed class LibraryQueryWorkflow(
             createdAt = file.CreatedAt,
             chapterHealth = ChapterHealthNames.Of(file.ChapterHealth),
             chapterReason = file.ChapterReason,
-            chapterCount = file.ChapterCount
+            chapterCount = file.ChapterCount,
+            chapterRepairable = file.ChapterRepairable
         }).ToList(),
         wanted = AudiobookWantedEvaluator.Compute(audiobook),
         audioAudit = AudioAuditVerdictNames.Of(audiobook.AudioAuditVerdict),

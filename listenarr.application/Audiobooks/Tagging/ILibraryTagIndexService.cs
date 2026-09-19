@@ -79,6 +79,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
         ChapterHealth ChapterHealth = ChapterHealth.Unknown,
         string? ChapterReason = null,
         int ChapterCount = 0,
+        bool ChapterRepairable = false,
         AudioAuditVerdict AudioAudit = AudioAuditVerdict.NotAudited,
         string? AudioAuditReason = null);
 

@@ -992,10 +992,16 @@ function cellClass(row: LibraryTagRow, key: string) {
     'tags-td--audio': key === AUDIO_KEY,
     'tags-td--sticky': key === FILENAME_KEY,
     'tags-td--mismatch': isMismatched(row, key),
+    // Red: a problem no repair can fix yet. Amber: a problem a repair can fix.
     'tags-td--chapters-issue':
-      (key === CHAPTERS_KEY && hasChapterIssue(row)) || (key === AUDIT_KEY && hasAudioIssue(row)),
+      (key === CHAPTERS_KEY &&
+        REPAIRABLE_HEALTH.has(row.chapterHealth) &&
+        !row.chapterRepairable) ||
+      (key === AUDIT_KEY && hasAudioIssue(row)),
+    'tags-td--chapters-fixable':
+      key === CHAPTERS_KEY && REPAIRABLE_HEALTH.has(row.chapterHealth) && !!row.chapterRepairable,
     'tags-td--chapters-note':
-      (key === CHAPTERS_KEY && !hasChapterIssue(row) && row.chapterHealth !== 'healthy') ||
+      (key === CHAPTERS_KEY && row.chapterHealth === 'none') ||
       (key === AUDIT_KEY && row.audioAudit === 'inconclusive'),
     'tags-td--locked': isLocked(row, key),
     'tags-td--empty': isTagColumn(key) && !row.tags[key],
@@ -2538,6 +2544,11 @@ onBeforeUnmount(() => {
 /* A broken or CD-track chapter list is a defect; a missing or placeholder one is a note. */
 .tags-td--chapters-issue {
   color: var(--danger-500);
+  box-shadow: inset 2px 0 0 currentColor;
+}
+
+.tags-td--chapters-fixable {
+  color: var(--warning-500);
   box-shadow: inset 2px 0 0 currentColor;
 }
 

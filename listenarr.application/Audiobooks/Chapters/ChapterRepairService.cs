@@ -157,6 +157,8 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 return null;
             }
 
+            var settings = await configurationService.GetApplicationSettingsAsync();
+            var hasAsin = !string.IsNullOrWhiteSpace(audiobook.Asin);
             var descriptions = new List<ChapterDescription>();
             foreach (var file in (audiobook.Files ?? [])
                          .Where(file => TaggableFile.IsTaggable(file.Path))
@@ -174,7 +176,16 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 {
                     var tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
                     var health = ChapterHealthAnalyzer.Analyze(tags.Chapters, tags.Atoms, tags.Duration, Path.GetFileNameWithoutExtension(fileName));
-                    descriptions.Add(new ChapterDescription(file.Id, fileName, health.Health, health.Reason, tags.Chapters ?? [], tags.Atoms, tags.Duration, null));
+                    descriptions.Add(new ChapterDescription(
+                        file.Id,
+                        fileName,
+                        health.Health,
+                        health.Reason,
+                        tags.Chapters ?? [],
+                        tags.Atoms,
+                        tags.Duration,
+                        null,
+                        ChapterHealthSeverity.LikelyRepairable(health.Health, tags.Atoms, hasAsin, settings.TranscriptionEnabled)));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {

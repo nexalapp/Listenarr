@@ -51,7 +51,8 @@ namespace Listenarr.Application.Audiobooks.Chapters
         IReadOnlyList<Domain.Audiobooks.Conversion.EmbeddedChapter> Chapters,
         ChapterAtomState? Atoms,
         TimeSpan Duration,
-        string? Error);
+        string? Error,
+        bool Repairable = false);
 
     /// <summary>
     /// Decides what a chapter repair would write and queues it.
