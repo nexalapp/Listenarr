@@ -106,6 +106,23 @@ namespace Listenarr.Api.Features.Library
                     chapterHealth = ChapterHealthNames.Of(file.Health),
                     chapterReason = file.Reason,
                     chapterRepairable = file.Repairable,
+                    // The fix worked out for this file, if it has been; pending means a job will.
+                    planPending = file.PlanPending,
+                    proposal = file.Proposal == null ? null : new
+                    {
+                        repairable = file.Proposal.Plan != null,
+                        rejection = file.Proposal.Rejection,
+                        source = file.Proposal.Plan?.Source.ToString(),
+                        partial = file.Proposal.Plan?.Partial ?? false,
+                        note = file.Proposal.Plan?.Note,
+                        chapters = file.Proposal.Plan?.Chapters.Select((chapter, index) => new
+                        {
+                            title = chapter.Title,
+                            startSeconds = chapter.Start.TotalSeconds,
+                            endSeconds = chapter.End.TotalSeconds,
+                            heard = file.Proposal.Plan.Heard != null && index < file.Proposal.Plan.Heard.Count ? file.Proposal.Plan.Heard[index] : null
+                        })
+                    },
                     error = file.Error,
                     durationSeconds = file.Duration.TotalSeconds,
                     // What the bytes say, so the page can explain a verdict rather than assert it.

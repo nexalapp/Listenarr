@@ -2037,7 +2037,7 @@ watch(
       void tagsPanel.value?.load()
       // A chapter repair replaced a file and re-judged it; the badge on the row is
       // whatever the server now says.
-      if (activeTagWrite.value?.kind === 'Chapters') {
+      if (activeTagWrite.value?.kind === 'Chapters' || activeTagWrite.value?.kind === 'Plan') {
         void loadAudiobook()
         void chapterPanel.value?.load()
       }

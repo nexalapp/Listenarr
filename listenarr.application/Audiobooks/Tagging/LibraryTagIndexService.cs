@@ -48,7 +48,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
         ILogger<LibraryTagIndexService> logger,
         IRenameService? renameService = null,
         ILibraryTagCacheStore? cacheStore = null,
-        IAudiobookFileRepository? fileRepository = null) : ILibraryTagIndexService
+        IAudiobookFileRepository? fileRepository = null,
+        ITagQueueService? tagQueue = null) : ILibraryTagIndexService
     {
         /// <summary>
         /// How many files are probed at once on a cold load.
@@ -203,6 +204,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     .Select(row => new AudiobookFileChapterHealth(row.FileId, row.ChapterHealth, row.ChapterReason, row.ChapterCount, row.ChapterRepairable))
                     .ToList(),
                 cancellationToken);
+            await QueuePlanningAsync(rows, cancellationToken);
             return new LibraryTagIndex(rows, filesRead, DateTime.UtcNow);
         }
 
@@ -235,119 +237,6 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 await PersistChapterHealthAsync(
                     [new AudiobookFileChapterHealth(id, report.Health, report.Reason, report.ChapterCount, repairable)],
                     cancellationToken);
-            }
-        }
-
-        /// <summary>
-        /// Record the verdicts on the files themselves, so the books list and the book
-        /// page can show them without this table. Failing costs nothing but the badge.
-        /// </summary>
-        private async Task PersistChapterHealthAsync(
-            IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
-            CancellationToken cancellationToken)
-        {
-            if (fileRepository == null || verdicts.Count == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                await fileRepository.SetChapterHealthAsync(verdicts, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(ex, "Could not record chapter verdicts for {Count} file(s)", verdicts.Count);
-            }
-        }
-
-        /// <summary>
-        /// Write what this call probed back to the durable store. A store that fails
-        /// costs the next process a probe per file, not the table.
-        /// </summary>
-        private async Task PersistPendingAsync(CancellationToken cancellationToken)
-        {
-            if (cacheStore == null)
-            {
-                return;
-            }
-
-            var pending = cache.TakePending();
-            if (pending.Count == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                await cacheStore.SaveAsync(pending, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(ex, "Could not persist {Count} tag cache entries", pending.Count);
-            }
-        }
-
-        /// <summary>
-        /// One file's current tags, from the cache when its size and modification time
-        /// still match, and from a probe otherwise.
-        /// </summary>
-        /// <returns>
-        /// The tags, the reason there are none, and whether this call actually probed —
-        /// which is what separates a cold load from a warm one in the reported count.
-        /// </returns>
-        private async Task<(AudiobookFileTags? Tags, string? Error, bool Read)> ReadTagsAsync(
-            string? fullPath,
-            bool probeAvailable,
-            CancellationToken cancellationToken)
-        {
-            if (fullPath == null || !fileSystem.FileExists(fullPath))
-            {
-                return (null, "This file is not readable from here, so its tags are unknown.", false);
-            }
-
-            long length;
-            DateTime lastWrite;
-            try
-            {
-                length = fileSystem.GetFileLength(fullPath);
-                lastWrite = fileSystem.GetLastWriteTimeUtc(fullPath);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return (null, $"This file could not be inspected: {ex.Message}", false);
-            }
-
-            // A record cached before chapters were kept is a miss for a taggable file:
-            // the row would show its chapters as unknown forever otherwise.
-            var cached = cache.TryGet(fullPath, length, lastWrite);
-            if (cached != null && (cached.Chapters != null || !TaggableFile.IsTaggable(fullPath)))
-            {
-                return (cached, null, false);
-            }
-
-            if (!probeAvailable)
-            {
-                return (null, "No ffprobe is installed, so this file's tags cannot be read.", false);
-            }
-
-            try
-            {
-                var tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
-                cache.Set(fullPath, length, lastWrite, tags);
-                return (tags, null, true);
-            }
-            catch (Exception ex) when (
-                ex is not OperationCanceledException
-                && ex is not OutOfMemoryException
-                && ex is not StackOverflowException)
-            {
-                logger.LogWarning(
-                    ex,
-                    "Could not read the tags of {Path} for the library tag table",
-                    LogRedaction.SanitizeFilePath(fullPath));
-
-                return (null, $"This file's tags could not be read: {ex.Message}", true);
             }
         }
 
@@ -437,6 +326,22 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     tags.Duration,
                     Path.GetFileNameWithoutExtension(fileName));
 
+            // A flagged file whose stored fix does not hold for the file, the ASIN and
+            // the transcription setting as they are now needs planning again.
+            var planPending = false;
+            var repairable = ChapterHealthSeverity.LikelyRepairable(chapters.Health, tags?.Atoms, !string.IsNullOrWhiteSpace(audiobook.Asin), transcriptionEnabled);
+            if (ChapterHealthSeverity.IsRepairableKind(chapters.Health) && fullPath != null)
+            {
+                var key = PlanKey(fullPath, audiobook.Asin, transcriptionEnabled);
+                var fresh = key != null && string.Equals(file.ChapterPlanKey, key, StringComparison.Ordinal) && file.ChapterPlanJson != null;
+                planPending = !fresh;
+                if (fresh)
+                {
+                    // The stored plan is the definitive word on repairability.
+                    repairable = file.ChapterRepairable;
+                }
+            }
+
             return new LibraryTagRow(
                 audiobook.Id,
                 file.Id,
@@ -459,7 +364,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 chapters.Health,
                 chapters.Reason,
                 chapters.ChapterCount,
-                ChapterHealthSeverity.LikelyRepairable(chapters.Health, tags?.Atoms, !string.IsNullOrWhiteSpace(audiobook.Asin), transcriptionEnabled),
+                repairable,
+                planPending,
                 audiobook.AudioAuditVerdict,
                 audiobook.AudioAuditReason);
         }

@@ -52,7 +52,9 @@ namespace Listenarr.Application.Audiobooks.Chapters
         ChapterAtomState? Atoms,
         TimeSpan Duration,
         string? Error,
-        bool Repairable = false);
+        bool Repairable = false,
+        ChapterPlanOutcome? Proposal = null,
+        bool PlanPending = false);
 
     /// <summary>
     /// Decides what a chapter repair would write and queues it.
@@ -75,6 +77,9 @@ namespace Listenarr.Application.Audiobooks.Chapters
 
         /// <summary>Read every M4B of the book and describe its chapters. Nothing is planned or written.</summary>
         Task<IReadOnlyList<ChapterDescription>?> DescribeAsync(int audiobookId, CancellationToken cancellationToken = default);
+
+        /// <summary>Work out and store the fix for the files in scope (all flagged files when null). Returns how many have one.</summary>
+        Task<int> PlanAsync(int audiobookId, IReadOnlyCollection<int>? fileIds = null, CancellationToken cancellationToken = default);
 
         /// <summary>Queue a repair for every repairable file in scope.</summary>
         Task<TagEnqueueResult> EnqueueAsync(

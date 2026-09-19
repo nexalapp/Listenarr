@@ -47,7 +47,10 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         Chapters,
 
         /// <summary>Listen to the book and record whether it is what its record says. Writes nothing to the file.</summary>
-        Audit
+        Audit,
+
+        /// <summary>Work out and store the chapter fix for a book's flagged files. Writes nothing to the file.</summary>
+        Plan
     }
 
     public enum TagTrigger
@@ -218,5 +221,8 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         /// beside a tag write for the same book without either being refused.
         /// </summary>
         public static string BuildAuditDeduplicationKey(int audiobookId) => $"audit:{audiobookId}";
+
+        /// <summary>Planning writes nothing either, so it too queues beside a tag write.</summary>
+        public static string BuildPlanDeduplicationKey(int audiobookId) => $"plan:{audiobookId}";
     }
 }

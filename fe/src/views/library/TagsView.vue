@@ -996,10 +996,13 @@ function cellClass(row: LibraryTagRow, key: string) {
     'tags-td--chapters-issue':
       (key === CHAPTERS_KEY &&
         REPAIRABLE_HEALTH.has(row.chapterHealth) &&
-        !row.chapterRepairable) ||
+        !row.chapterRepairable &&
+        !row.chapterPlanPending) ||
       (key === AUDIT_KEY && hasAudioIssue(row)),
     'tags-td--chapters-fixable':
-      key === CHAPTERS_KEY && REPAIRABLE_HEALTH.has(row.chapterHealth) && !!row.chapterRepairable,
+      key === CHAPTERS_KEY &&
+      REPAIRABLE_HEALTH.has(row.chapterHealth) &&
+      (!!row.chapterRepairable || !!row.chapterPlanPending),
     'tags-td--chapters-note':
       (key === CHAPTERS_KEY && row.chapterHealth === 'none') ||
       (key === AUDIT_KEY && row.audioAudit === 'inconclusive'),
@@ -1043,7 +1046,14 @@ function cellTitle(row: LibraryTagRow, key: string): string {
   }
 
   if (key === CHAPTERS_KEY) {
-    return row.chapterReason ?? 'Chapters have not been inspected.'
+    const reason = row.chapterReason ?? 'Chapters have not been inspected.'
+    if (row.chapterPlanPending) return `${reason}\n\nThe fix is being worked out in the background.`
+    if (REPAIRABLE_HEALTH.has(row.chapterHealth)) {
+      return row.chapterRepairable
+        ? `${reason}\n\nA repair can fix this automatically.`
+        : `${reason}\n\nNo automatic fix: the book needs an ASIN match or transcription on.`
+    }
+    return reason
   }
 
   if (key === AUDIT_KEY) {

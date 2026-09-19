@@ -138,5 +138,44 @@ namespace Listenarr.Application.Audiobooks.Tagging
             await BroadcastAsync(stored, cancellationToken);
             return new TagEnqueueResult(TagEnqueueOutcome.Queued, stored.Id);
         }
+        public async Task<TagEnqueueResult> EnqueueChapterPlanAsync(
+            int audiobookId,
+            IReadOnlyCollection<int> fileIds,
+            TagTrigger trigger,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(fileIds);
+            if (fileIds.Count == 0)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.NothingToTag, Reason: "No files to plan for.");
+            }
+
+            var existing = await repository.GetActiveForAudiobookAsync(audiobookId, TagJobKind.Plan, cancellationToken);
+            if (existing != null)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.AlreadyQueued, existing.Id, "This book's chapter fix is already being worked out.");
+            }
+
+            var job = new TagJob
+            {
+                AudiobookId = audiobookId,
+                Trigger = trigger,
+                Kind = TagJobKind.Plan,
+                FileCount = fileIds.Count,
+                SelectedFileIdsJson = SerializeFileIds(fileIds),
+                ActiveDeduplicationKey = TagJob.BuildPlanDeduplicationKey(audiobookId),
+                EnqueuedAt = timeProvider.GetUtcNow().UtcDateTime
+            };
+
+            var stored = await repository.AddAsync(job, cancellationToken);
+            if (stored == null)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.AlreadyQueued, Reason: "This book's chapter fix is already being worked out.");
+            }
+
+            logger.LogInformation("Queued chapter planning {JobId} for audiobook {AudiobookId} ({FileCount} file(s))", stored.Id, audiobookId, fileIds.Count);
+            await BroadcastAsync(stored, cancellationToken);
+            return new TagEnqueueResult(TagEnqueueOutcome.Queued, stored.Id);
+        }
     }
 }

@@ -611,6 +611,7 @@ export interface LibraryTagRow {
   chapterReason?: string | null
   chapterCount: number
   chapterRepairable?: boolean
+  chapterPlanPending?: boolean
   /** The book's audio-audit verdict, repeated on each of its rows; null until audited. */
   audioAudit?: AudioAuditVerdict | null
   audioAuditReason?: string | null
@@ -658,6 +659,17 @@ export interface BookChapterFile {
   chapterReason?: string | null
   /** A repair likely has a source to fix this file from; the proposal is definitive. */
   chapterRepairable?: boolean
+  /** The fix is being worked out in the background; reload when the Plan job completes. */
+  planPending?: boolean
+  /** The fix worked out for this file, once it has been. */
+  proposal?: {
+    repairable: boolean
+    rejection?: string | null
+    source?: string | null
+    partial: boolean
+    note?: string | null
+    chapters?: ChapterRepairChapter[] | null
+  } | null
   error?: string | null
   durationSeconds: number
   /** `ok`, `broken` or `missing`; null when the container was not inspected. */

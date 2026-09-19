@@ -247,5 +247,18 @@ namespace Listenarr.Domain.Audiobooks
 
         /// <summary>Whether a repair has a source to fix this file's chapters from. Colours the badge: amber fixable, red not.</summary>
         public bool ChapterRepairable { get; set; }
+
+        /// <summary>
+        /// The fix a repair would write, worked out once in the background and kept: the
+        /// plan, or the reason there is none, as JSON. Valid only while
+        /// <see cref="ChapterPlanKey"/> matches the file and the book — a changed file, a
+        /// changed ASIN or transcription switched on all make it stale.
+        /// </summary>
+        public string? ChapterPlanJson { get; set; }
+
+        [MaxLength(160)]
+        public string? ChapterPlanKey { get; set; }
+
+        public DateTime? ChapterPlannedAt { get; set; }
     }
 }

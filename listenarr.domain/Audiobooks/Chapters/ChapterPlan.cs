@@ -63,4 +63,17 @@ namespace Listenarr.Domain.Audiobooks.Chapters
 
     /// <summary>A file the planner could not produce a list for, and why.</summary>
     public sealed record ChapterPlanRejection(string Reason);
+
+    /// <summary>
+    /// What a stored plan was computed against. Equal keys mean the stored answer still
+    /// holds; anything else means plan again.
+    /// </summary>
+    public static class ChapterPlanKeys
+    {
+        public static string For(long length, DateTime lastWriteUtc, string? asin, bool transcriptionEnabled) =>
+            $"{length}|{lastWriteUtc.Ticks}|{asin?.Trim().ToUpperInvariant()}|{(transcriptionEnabled ? 1 : 0)}";
+    }
+
+    /// <summary>A stored planning outcome: the plan, or why there is none.</summary>
+    public sealed record ChapterPlanOutcome(ChapterPlan? Plan, string? Rejection);
 }

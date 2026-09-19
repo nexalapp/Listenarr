@@ -175,5 +175,20 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 return ExecutionOutcome.Failed(TagWriteFailureKind.SourceUnreadable, ex.Message);
             }
         }
+        /// <summary>The plan kind: work out the fix for the named files and store it on them.</summary>
+        private async Task<ExecutionOutcome> ExecuteChapterPlanAsync(
+            TagJob job,
+            Audiobook audiobook,
+            IServiceProvider services,
+            ITagQueueService queue,
+            CancellationToken cancellationToken)
+        {
+            await queue.ReportProgressAsync(job.Id, TagJobPhase.Reading, 5, cancellationToken);
+            var repair = services.GetRequiredService<IChapterRepairService>();
+            var scope = TagQueueService.DeserializeFileIds(job.SelectedFileIdsJson);
+            var planned = await repair.PlanAsync(audiobook.Id, scope, cancellationToken);
+            logger.LogInformation("Chapter planning {JobId}: {Planned} of {Files} file(s) have a fix", job.Id, planned, job.FileCount);
+            return ExecutionOutcome.Succeeded(0, planned, audiobook.Title);
+        }
     }
 }

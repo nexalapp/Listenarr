@@ -97,6 +97,13 @@ namespace Listenarr.Application.Audiobooks.Tagging
             TagTrigger trigger,
             CancellationToken cancellationToken = default);
 
+        /// <summary>Queue the working-out of a chapter fix for a book's files. Writes nothing; its own key.</summary>
+        Task<TagEnqueueResult> EnqueueChapterPlanAsync(
+            int audiobookId,
+            IReadOnlyCollection<int> fileIds,
+            TagTrigger trigger,
+            CancellationToken cancellationToken = default);
+
         /// <summary>Re-queue a terminal job that is allowed to retry.</summary>
         Task<TagEnqueueResult> RetryAsync(Guid jobId, CancellationToken cancellationToken = default);
 

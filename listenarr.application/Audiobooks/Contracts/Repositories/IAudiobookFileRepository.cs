@@ -129,6 +129,9 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
             CancellationToken ct = default);
 
+        /// <summary>Store the chapter fix worked out for a file, with the key it holds for.</summary>
+        Task SetChapterPlanAsync(int fileId, string planJson, string planKey, bool repairable, DateTime plannedAtUtc, CancellationToken ct = default);
+
         /// <summary>The worst chapter verdict among each book's files, and whether that file is repairable, for books that have one.</summary>
         Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default);
     }

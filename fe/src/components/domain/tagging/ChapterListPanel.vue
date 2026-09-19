@@ -84,20 +84,14 @@
             <span v-else>No fix available: {{ proposalFor(file.fileId)!.rejection }}</span>
           </div>
           <div class="chapter-file-actions">
-            <button
+            <span
               v-if="isRepairable(file.chapterHealth) && !proposalFor(file.fileId)"
-              type="button"
-              class="chapter-btn chapter-btn--quiet"
-              :disabled="proposing.has(file.fileId)"
-              :title="
-                proposing.has(file.fileId)
-                  ? 'Working it out — listening to the marks can take a minute'
-                  : 'Work out what a repair would write, and show it beside each chapter'
-              "
-              @click="propose(file.fileId)"
+              class="chapter-pending"
+              title="The fix is worked out in the background — the edition's list, then listening at the marks if transcription is on. This refreshes when it is done."
             >
-              {{ proposing.has(file.fileId) ? 'Working out the fix…' : 'Show proposed fix' }}
-            </button>
+              <PhSpinner class="ph-spin" />
+              Working out the fix…
+            </span>
             <button
               v-if="
                 isRepairable(file.chapterHealth) &&
@@ -135,7 +129,18 @@
               }"
             >
               <td class="num">{{ index + 1 }}</td>
-              <td class="time">{{ formatTime(chapter.startSeconds) }}</td>
+              <td class="time">
+                <button
+                  type="button"
+                  class="row-play"
+                  :class="{ 'row-play--on': isPlaying(file.fileId, chapter.startSeconds) }"
+                  :title="`Hear ${CLIP_SECONDS}s from ${formatTime(chapter.startSeconds)}`"
+                  @click="togglePlay(file.fileId, chapter.startSeconds)"
+                >
+                  {{ isPlaying(file.fileId, chapter.startSeconds) ? '■' : '▶' }}
+                </button>
+                {{ formatTime(chapter.startSeconds) }}
+              </td>
               <td class="time">{{ formatTime(chapter.endSeconds - chapter.startSeconds) }}</td>
               <td class="title">
                 {{ chapter.title || '(untitled)' }}
@@ -175,7 +180,18 @@
               class="chapter-row--added"
             >
               <td class="num">+</td>
-              <td class="time">{{ formatTime(extra.startSeconds) }}</td>
+              <td class="time">
+                <button
+                  type="button"
+                  class="row-play"
+                  :class="{ 'row-play--on': isPlaying(file.fileId, extra.startSeconds) }"
+                  :title="`Hear ${CLIP_SECONDS}s from ${formatTime(extra.startSeconds)}`"
+                  @click="togglePlay(file.fileId, extra.startSeconds)"
+                >
+                  {{ isPlaying(file.fileId, extra.startSeconds) ? '■' : '▶' }}
+                </button>
+                {{ formatTime(extra.startSeconds) }}
+              </td>
               <td class="time">{{ formatTime(extra.endSeconds - extra.startSeconds) }}</td>
               <td class="title"><span class="merged">no mark here today</span></td>
               <td class="proposed">
@@ -194,11 +210,20 @@
         </button>
       </section>
     </template>
+
+    <!-- One player for every chapter row: hear a few seconds from any mark to check a boundary or a name. -->
+    <audio
+      ref="audioEl"
+      preload="none"
+      @timeupdate="onTimeUpdate"
+      @ended="stopPlayback"
+      @error="stopPlayback"
+    ></audio>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import {
   PhArrowRight,
   PhFileAudio,
@@ -296,9 +321,8 @@ function explain(file: BookChapterFile) {
 
 // ---- the proposed fix -------------------------------------------------------------
 
-/** What a repair would write, per file, once asked for. */
+/** What a repair would write, per file, as the server worked it out and kept it. */
 const proposals = ref(new Map<number, ChapterRepairFile>())
-const proposing = ref(new Set<number>())
 
 const proposalFor = (fileId: number) => proposals.value.get(fileId) ?? null
 
@@ -350,24 +374,53 @@ function heardText(heard: string) {
   return flat.length > 70 ? `${flat.slice(0, 67)}…` : flat
 }
 
-async function propose(fileId: number) {
-  if (props.audiobookId == null) return
-  proposing.value = new Set([...proposing.value, fileId])
-  try {
-    const preview = await apiService.previewChapterRepair(props.audiobookId, [fileId])
-    const file = preview.files.find((f) => f.fileId === fileId)
-    if (file) {
-      proposals.value = new Map([...proposals.value, [fileId, file]])
-      expanded.value = new Set([...expanded.value, fileId])
-    }
-  } catch (err) {
-    logger.warn('Failed to work out a chapter fix', err)
-    error.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    const next = new Set(proposing.value)
-    next.delete(fileId)
-    proposing.value = next
+// ---- listening to a mark -----------------------------------------------------------
+
+/** How much to play from a mark: enough to hear an announcement and the first words. */
+const CLIP_SECONDS = 15
+
+const audioEl = ref<HTMLAudioElement | null>(null)
+const playing = ref<{ fileId: number; start: number } | null>(null)
+
+const isPlaying = (fileId: number, start: number) =>
+  playing.value?.fileId === fileId && Math.abs(playing.value.start - start) < 0.01
+
+async function togglePlay(fileId: number, start: number) {
+  const element = audioEl.value
+  if (!element) return
+
+  if (isPlaying(fileId, start)) {
+    stopPlayback()
+    return
   }
+
+  // A new file needs a new source; the same file only needs a seek. The stream
+  // endpoint honours range requests, so seeking does not download the book.
+  const src = apiService.buildLibraryFileAudioUrl(fileId)
+  if (!element.src.endsWith(src)) {
+    element.src = src
+  }
+  playing.value = { fileId, start }
+  try {
+    element.currentTime = start
+    await element.play()
+  } catch (err) {
+    logger.warn(`Could not play file ${fileId} at ${start}s`, err)
+    playing.value = null
+  }
+}
+
+function onTimeUpdate() {
+  const element = audioEl.value
+  if (!element || !playing.value) return
+  if (element.currentTime >= playing.value.start + CLIP_SECONDS) {
+    stopPlayback()
+  }
+}
+
+function stopPlayback() {
+  audioEl.value?.pause()
+  playing.value = null
 }
 
 function visibleChapters(file: BookChapterFile): BookChapter[] {
@@ -394,8 +447,25 @@ async function load() {
   error.value = null
   try {
     files.value = (await apiService.getBookChapters(props.audiobookId)).files
-    // A fresh read makes every earlier proposal stale.
-    proposals.value = new Map()
+    // Proposals come with the files: worked out earlier and kept on each one.
+    const next = new Map<number, ChapterRepairFile>()
+    for (const file of files.value) {
+      if (file.proposal) {
+        next.set(file.fileId, {
+          fileId: file.fileId,
+          name: file.name,
+          chapterHealth: file.chapterHealth,
+          chapterReason: file.chapterReason,
+          repairable: file.proposal.repairable,
+          rejection: file.proposal.rejection,
+          source: file.proposal.source,
+          partial: file.proposal.partial,
+          note: file.proposal.note,
+          chapters: file.proposal.chapters,
+        })
+      }
+    }
+    proposals.value = next
   } catch (err) {
     logger.warn('Failed to load chapters', err)
     error.value = err instanceof Error ? err.message : String(err)
@@ -409,6 +479,7 @@ watch(
   () => void load(),
   { immediate: true },
 )
+onBeforeUnmount(stopPlayback)
 
 defineExpose({ load })
 </script>
@@ -538,6 +609,40 @@ defineExpose({ load })
   cursor: pointer;
 }
 
+.chapter-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.chapter-pending svg {
+  width: 14px;
+  height: 14px;
+}
+
+.row-play {
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.row-play:hover,
+.row-play--on {
+  color: var(--brand-500);
+  border-color: var(--brand-500);
+}
+
 .chapter-btn--quiet {
   border-color: rgba(255, 255, 255, 0.15);
   color: var(--text-secondary);
@@ -631,7 +736,8 @@ defineExpose({ load })
 }
 
 .chapter-table .time {
-  width: 6rem;
+  width: 7.5rem;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }

@@ -120,6 +120,7 @@ namespace Listenarr.Api.Features.Library
                     chapterReason = row.ChapterReason,
                     chapterCount = row.ChapterCount,
                     chapterRepairable = row.ChapterRepairable,
+                    chapterPlanPending = row.ChapterPlanPending,
                     // The book's audio verdict, on every one of its rows.
                     audioAudit = AudioAuditVerdictNames.Of(row.AudioAudit),
                     audioAuditReason = row.AudioAuditReason

@@ -82,6 +82,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260918031633_AddAudioAudit";
     private const string ChapterRepairableMigrationId =
         "20260919012607_AddChapterRepairable";
+    private const string ChapterPlanMigrationId =
+        "20260919013914_AddChapterPlan";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -227,7 +229,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 ChapterHealthAndChapterJobsMigrationId,
                 TranscriptionSettingsMigrationId,
                 AudioAuditMigrationId,
-                ChapterRepairableMigrationId
+                ChapterRepairableMigrationId,
+                ChapterPlanMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

@@ -80,6 +80,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
         string? ChapterReason = null,
         int ChapterCount = 0,
         bool ChapterRepairable = false,
+        bool ChapterPlanPending = false,
         AudioAuditVerdict AudioAudit = AudioAuditVerdict.NotAudited,
         string? AudioAuditReason = null);
 

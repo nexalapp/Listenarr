@@ -155,6 +155,22 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             }
         }
 
+        public async Task SetChapterPlanAsync(int fileId, string planJson, string planKey, bool repairable, DateTime plannedAtUtc, CancellationToken ct = default)
+        {
+            var file = await _db.AudiobookFiles.FirstOrDefaultAsync(candidate => candidate.Id == fileId, ct);
+            if (file == null)
+            {
+                return;
+            }
+
+            file.ChapterPlanJson = planJson;
+            file.ChapterPlanKey = planKey;
+            file.ChapterPlannedAt = plannedAtUtc;
+            // A plan is the definitive word on repairability; the cheap guess gives way.
+            file.ChapterRepairable = repairable;
+            await _db.SaveChangesAsync(ct);
+        }
+
         public async Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default)
         {
             var rows = await _db.AudiobookFiles
