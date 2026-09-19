@@ -218,7 +218,7 @@
         <div class="modal-header">
           <h3>
             <PhWarningCircle />
-            {{ formatStatus(blockDetailsItem.status) }}
+            {{ blockDetailsHeading }}
           </h3>
           <button class="modal-close" @click="blockDetailsItem = null">
             <PhX />
@@ -248,6 +248,19 @@
             checked, but could not be put back — it is being held and has not been deleted. Retrying
             publishes it.
           </p>
+          <p v-else-if="blockDetailsTagKind === 'Audit'" class="warning-text">
+            <PhInfo />
+            Retrying listens to the book's opening and closing again. Nothing was written.
+          </p>
+          <p v-else-if="blockDetailsTagKind === 'Plan'" class="warning-text">
+            <PhInfo />
+            Retrying works out the chapter fix again. Nothing was written.
+          </p>
+          <p v-else-if="blockDetailsTagKind === 'Chapters'" class="warning-text">
+            <PhInfo />
+            Retrying rewrites the chapters again from the stored plan. The files were left exactly
+            as they were.
+          </p>
           <p v-else-if="blockDetailsIsTagging" class="warning-text">
             <PhInfo />
             Retrying re-reads the book's files and writes the tags again. The files were left
@@ -270,7 +283,7 @@
             <component
               :is="retryingImportId === blockDetailsItem.id ? PhSpinner : PhArrowClockwise"
             />
-            {{ retryingImportId === blockDetailsItem.id ? 'Retrying...' : 'Retry Import' }}
+            {{ retryingImportId === blockDetailsItem.id ? 'Retrying...' : blockDetailsRetryLabel }}
           </button>
         </div>
       </div>
@@ -1026,6 +1039,35 @@ const blockDetailsIsConversion = computed(
 
 const blockDetailsIsTagging = computed(
   () => blockDetailsItem.value?.id.startsWith('tagging:') ?? false,
+)
+
+/** Which kind of tag-queue job the dialog is about, so it can speak about the right thing. */
+const blockDetailsTagKind = computed(() => {
+  const id = blockDetailsItem.value?.id
+  if (!id?.startsWith('tagging:')) return null
+  const jobId = id.slice('tagging:'.length).toLowerCase()
+  return tagJobsStore.jobs.find((job) => job.jobId.toLowerCase() === jobId)?.kind ?? 'Tags'
+})
+
+const blockDetailsHeading = computed(() => {
+  if (!blockDetailsItem.value) return ''
+  if (blockDetailsIsConversion.value) return 'Conversion Failed'
+  switch (blockDetailsTagKind.value) {
+    case 'Audit':
+      return 'Transcription Failed'
+    case 'Plan':
+      return 'Chapter Planning Failed'
+    case 'Chapters':
+      return 'Chapter Repair Failed'
+    case 'Tags':
+      return 'Tag Write Failed'
+    default:
+      return formatStatus(blockDetailsItem.value.status)
+  }
+})
+
+const blockDetailsRetryLabel = computed(() =>
+  blockDetailsIsConversion.value || blockDetailsIsTagging.value ? 'Retry' : 'Retry Import',
 )
 
 /**
