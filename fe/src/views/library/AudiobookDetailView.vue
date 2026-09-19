@@ -496,6 +496,53 @@
           </div>
         </div>
         <!--
+          The chapter verdict, always shown, so "checked and fine" and "never checked"
+          do not look the same. Checking reads the files' atoms; it writes nothing.
+        -->
+        <div
+          v-if="audiobook.files && audiobook.files.length"
+          class="audio-audit"
+          :class="chapterPanelClass"
+        >
+          <PhListNumbers class="audio-audit-icon" />
+          <div class="audio-audit-body">
+            <div class="audio-audit-verdict">{{ chapterSummary.headline }}</div>
+            <div class="audio-audit-reason">{{ chapterSummary.detail }}</div>
+          </div>
+          <div class="audio-audit-actions">
+            <button
+              v-if="chapterSummary.repairableFileIds.length > 0"
+              type="button"
+              class="file-repair-btn"
+              :disabled="tagWriteInFlight"
+              title="Preview and rebuild the chapters of the files that need it"
+              @click="openChapterRepair(...chapterSummary.repairableFileIds)"
+            >
+              Repair chapters
+            </button>
+            <button
+              type="button"
+              class="file-repair-btn file-repair-btn--quiet"
+              :disabled="checkingChapters"
+              :title="
+                checkingChapters
+                  ? 'Reading the files…'
+                  : 'Read each file’s chapter atom and chapter track and judge them'
+              "
+              @click="checkChapters"
+            >
+              {{
+                checkingChapters
+                  ? 'Checking…'
+                  : chapterSummary.checked
+                    ? 'Check again'
+                    : 'Check chapters'
+              }}
+            </button>
+          </div>
+        </div>
+
+        <!--
           What the audio says it is, beside the files that say it. A verdict of "match"
           is a line, not a badge; a mismatch is the one thing on this page that says the
           record may be the wrong book, so it is loud and it offers the way out.
@@ -2059,12 +2106,148 @@ watch(
 const showChapterRepairModal = ref(false)
 const chapterRepairScopes = ref<ChapterRepairScope[]>([])
 
-function openChapterRepair(fileId: number) {
-  if (!audiobook.value) return
+function openChapterRepair(...fileIds: number[]) {
+  if (!audiobook.value || fileIds.length === 0) return
   chapterRepairScopes.value = [
-    { audiobookId: audiobook.value.id, title: audiobook.value.title ?? '', fileIds: [fileId] },
+    { audiobookId: audiobook.value.id, title: audiobook.value.title ?? '', fileIds },
   ]
   showChapterRepairModal.value = true
+}
+
+// ---- chapter check ---------------------------------------------------------------
+
+const CHAPTER_ISSUE_HEALTH = new Set<ChapterHealth>(['corrupt', 'oversegmented', 'generic-titles'])
+
+/** One line for the whole book, from the worst of its files. */
+const chapterSummary = computed(() => {
+  const files = audiobook.value?.files ?? []
+  const taggable = files.filter((f) => /\.(m4b|m4a)$/i.test(f.path ?? ''))
+  const judged = taggable.filter((f) => f.chapterHealth && f.chapterHealth !== 'unknown')
+  const repairableFileIds = judged
+    .filter((f) => CHAPTER_ISSUE_HEALTH.has(f.chapterHealth as ChapterHealth))
+    .map((f) => f.id)
+
+  if (taggable.length === 0) {
+    return {
+      checked: false,
+      severity: 'none' as const,
+      headline: 'Chapters are only inspected in M4B files.',
+      detail: 'Convert this book to M4B to have its chapter structure checked and repaired.',
+      repairableFileIds,
+    }
+  }
+
+  if (judged.length === 0) {
+    return {
+      checked: false,
+      severity: 'none' as const,
+      headline: 'Chapters not yet checked.',
+      detail:
+        'A check reads each file’s chapter atom and chapter track and reports a broken atom, CD-track splits, or placeholder titles.',
+      repairableFileIds,
+    }
+  }
+
+  const worst = judged
+    .map((f) => f.chapterHealth as ChapterHealth)
+    .sort((a, b) => severityRank(b) - severityRank(a))[0]
+  const reasons = judged
+    .filter((f) => f.chapterHealth === worst)
+    .map((f) => f.chapterReason)
+    .filter((r): r is string => !!r)
+  const count = judged.reduce((sum, f) => sum + (f.chapterCount ?? 0), 0)
+
+  switch (worst) {
+    case 'corrupt':
+      return {
+        checked: true,
+        severity: 'issue' as const,
+        headline: 'Corrupt chapter atom.',
+        detail: reasons[0] ?? '',
+        repairableFileIds,
+      }
+    case 'oversegmented':
+      return {
+        checked: true,
+        severity: 'issue' as const,
+        headline: 'Chapters are CD tracks.',
+        detail: reasons[0] ?? '',
+        repairableFileIds,
+      }
+    case 'generic-titles':
+      return {
+        checked: true,
+        severity: 'note' as const,
+        headline: 'Chapters have placeholder titles.',
+        detail: reasons[0] ?? '',
+        repairableFileIds,
+      }
+    case 'none':
+      return {
+        checked: true,
+        severity: 'note' as const,
+        headline: 'No chapter marks.',
+        detail: reasons[0] ?? '',
+        repairableFileIds,
+      }
+    default:
+      return {
+        checked: true,
+        severity: 'ok' as const,
+        headline: `Chapters look right (${count} across ${judged.length} file${judged.length === 1 ? '' : 's'}).`,
+        detail: 'The chapter atom parses and agrees with what the file plays.',
+        repairableFileIds,
+      }
+  }
+})
+
+function severityRank(health: ChapterHealth): number {
+  switch (health) {
+    case 'corrupt':
+      return 5
+    case 'oversegmented':
+      return 4
+    case 'generic-titles':
+      return 3
+    case 'none':
+      return 2
+    case 'healthy':
+      return 1
+    default:
+      return 0
+  }
+}
+
+const chapterPanelClass = computed(() => {
+  switch (chapterSummary.value.severity) {
+    case 'issue':
+      return 'audio-audit--mismatch'
+    case 'ok':
+      return 'audio-audit--match'
+    default:
+      return 'audio-audit--none'
+  }
+})
+
+const checkingChapters = ref(false)
+
+/**
+ * Judging is what the tag table does when it loads: probe the files (cached by size
+ * and mtime) and record the verdict on each. Asking for this one book does the same
+ * for it alone and does not clear anything else's cache.
+ */
+async function checkChapters() {
+  if (!audiobook.value) return
+  checkingChapters.value = true
+  const toast = useToast()
+  try {
+    await apiService.getLibraryTags(false, [audiobook.value.id])
+    await loadAudiobook()
+  } catch (err) {
+    toast.error('Could not check chapters', err instanceof Error ? err.message : String(err))
+  } finally {
+    checkingChapters.value = false
+  }
 }
 
 async function repairChapters(books: { audiobookId: number; fileIds: number[] }[]) {

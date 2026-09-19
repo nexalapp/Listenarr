@@ -283,7 +283,12 @@
               </template>
 
               <template v-else>
-                <button type="button" class="tags-th-label" @click="sortBy(column.key)">
+                <button
+                  type="button"
+                  class="tags-th-label"
+                  :title="headerHint(column.key)"
+                  @click="sortBy(column.key)"
+                >
                   <span>{{ column.label }}</span>
                   <PhCaretUp v-if="sort.key === column.key && sort.ascending" :size="11" />
                   <PhCaretDown v-else-if="sort.key === column.key" :size="11" />
@@ -937,6 +942,17 @@ function chapterText(row: LibraryTagRow) {
 }
 
 const hasChapterIssue = (row: LibraryTagRow) => CHAPTER_ISSUES.has(row.chapterHealth)
+
+/** What a column is, for the heading's tooltip; the two judged columns say when they are judged. */
+function headerHint(key: string): string | undefined {
+  if (key === CHAPTERS_KEY) {
+    return 'Each M4B’s chapter atom and chapter track, judged when this table loads. Re-read re-inspects the files; tick rows and press Repair chapters to fix them.'
+  }
+  if (key === AUDIT_KEY) {
+    return 'Whether the audio introduces itself as this book. Tick rows and press Listen to hear the credits; needs transcription on in Settings.'
+  }
+  return undefined
+}
 
 const isLocked = (row: LibraryTagRow, key: string) =>
   key === FILENAME_KEY ? row.pathLocked : isTagColumn(key) && row.lockedTags.includes(key)
