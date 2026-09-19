@@ -67,10 +67,6 @@
             }}
           </template>
         </span>
-        <button class="toolbar-btn" @click="refreshLibrary">
-          <PhArrowClockwise />
-          Refresh
-        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn" @click="libraryStore.clearSelection()">
           <PhX />
           Clear Selection
