@@ -137,7 +137,10 @@
                   :title="`Hear ${CLIP_SECONDS}s from ${formatTime(chapter.startSeconds)}`"
                   @click="togglePlay(file.fileId, chapter.startSeconds)"
                 >
-                  <span>{{ isPlaying(file.fileId, chapter.startSeconds) ? '■' : '▶' }}</span>
+                  <component
+                    :is="isPlaying(file.fileId, chapter.startSeconds) ? PhStop : PhPlay"
+                    weight="fill"
+                  />
                 </button>
                 {{ formatTime(chapter.startSeconds) }}
               </td>
@@ -188,7 +191,10 @@
                   :title="`Hear ${CLIP_SECONDS}s from ${formatTime(extra.startSeconds)}`"
                   @click="togglePlay(file.fileId, extra.startSeconds)"
                 >
-                  <span>{{ isPlaying(file.fileId, extra.startSeconds) ? '■' : '▶' }}</span>
+                  <component
+                    :is="isPlaying(file.fileId, extra.startSeconds) ? PhStop : PhPlay"
+                    weight="fill"
+                  />
                 </button>
                 {{ formatTime(extra.startSeconds) }}
               </td>
@@ -228,7 +234,9 @@ import {
   PhArrowRight,
   PhFileAudio,
   PhListNumbers,
+  PhPlay,
   PhSpinner,
+  PhStop,
   PhWarningCircle,
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
@@ -626,8 +634,8 @@ defineExpose({ load })
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   margin-right: 6px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -640,10 +648,10 @@ defineExpose({ load })
   vertical-align: middle;
 }
 
-/* The glyphs sit off-centre in most fonts; nudge them onto the axis. */
-.row-play span {
+.row-play svg {
+  width: 12px;
+  height: 12px;
   display: block;
-  transform: translateX(0.5px);
 }
 
 .row-play:hover,
