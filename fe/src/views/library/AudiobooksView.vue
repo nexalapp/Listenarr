@@ -42,24 +42,30 @@
                 : 0) > 0
           "
           class="count-badge"
+          :class="{ 'count-badge--selected': selectedCount > 0 }"
         >
-          {{
-            groupBy === 'books'
-              ? audiobooks.length
-              : groupedCollections
-                ? groupedCollections.length
-                : 0
-          }}
-          {{ groupBy === 'books' ? 'Book' : groupBy === 'authors' ? 'Author' : 'Series'
-          }}{{
-            (groupBy === 'books'
-              ? audiobooks.length
-              : groupedCollections
-                ? groupedCollections.length
-                : 0) !== 1 && groupBy !== 'series'
-              ? 's'
-              : ''
-          }}
+          <!-- While books are ticked the chip counts the selection; the library total is
+               not the number the toolbar's actions apply to. -->
+          <template v-if="selectedCount > 0">{{ selectedCount }} selected</template>
+          <template v-else>
+            {{
+              groupBy === 'books'
+                ? audiobooks.length
+                : groupedCollections
+                  ? groupedCollections.length
+                  : 0
+            }}
+            {{ groupBy === 'books' ? 'Book' : groupBy === 'authors' ? 'Author' : 'Series'
+            }}{{
+              (groupBy === 'books'
+                ? audiobooks.length
+                : groupedCollections
+                  ? groupedCollections.length
+                  : 0) !== 1 && groupBy !== 'series'
+                ? 's'
+                : ''
+            }}
+          </template>
         </span>
         <button class="toolbar-btn" @click="refreshLibrary">
           <PhArrowClockwise />
@@ -90,7 +96,7 @@
             @click="actionsOpen = !actionsOpen"
           >
             <PhLightning />
-            Actions ({{ selectedCount }})
+            Actions
             <PhCaretDown :size="12" />
           </button>
           <div v-if="actionsOpen" class="actions-dropdown">
