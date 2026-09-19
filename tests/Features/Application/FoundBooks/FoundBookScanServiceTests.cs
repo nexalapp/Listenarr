@@ -32,7 +32,9 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
     [Trait("Category", "FoundBooks")]
     public sealed class FoundBookScanServiceTests : BaseTests
     {
-        private const string Watch = "/downloads/completed";
+        // A native absolute path: the ownership check canonicalises under the host's own
+        // syntax, and a Unix spelling is not a valid Windows path.
+        private static readonly string Watch = Path.Join(Path.GetTempPath(), "listenarr-found-tests", "completed");
 
         private readonly Mock<IHubBroadcaster> _broadcaster = new();
         private readonly FakeScanner _scanner = new();
@@ -63,10 +65,10 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             string title = "Wool",
             string author = "Hugh Howey") => new(
             Watch,
-            $"{Watch}/{key}",
+            Path.Join(Watch, key),
             key,
             signature,
-            [new FoundBookFileEntry($"{Watch}/{key}/01.mp3", 100, _clock.GetUtcNow().UtcDateTime - (age ?? TimeSpan.FromHours(1)), true,
+            [new FoundBookFileEntry(Path.Join(Watch, key, "01.mp3"), 100, _clock.GetUtcNow().UtcDateTime - (age ?? TimeSpan.FromHours(1)), true,
                 new FoundBookProbeSnapshot(true, null, 600, 0, 1, 1, null, title, author, null, null, null, null, null, null, null))],
             title,
             author,
@@ -231,7 +233,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             {
                 Title = "Wool pack",
                 Status = DownloadStatus.ImportPending,
-                FinalPath = $"{Watch}/a"
+                FinalPath = Path.Join(Watch, "a")
             });
             _scanner.Next = [Candidate("a")];
 
@@ -251,7 +253,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             {
                 Title = "Wool pack",
                 Status = DownloadStatus.ImportBlocked,
-                FinalPath = $"{Watch}/a"
+                FinalPath = Path.Join(Watch, "a")
             });
             _scanner.Next = [Candidate("a")];
 
@@ -285,7 +287,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             _scanner.Next = [Candidate("a")];
             await service.ScanAllAsync();
 
-            Assert.Contains($"{Watch}/a/01.mp3", _scanner.LastKnownFiles.Keys);
+            Assert.Contains(Path.Join(Watch, "a", "01.mp3"), _scanner.LastKnownFiles.Keys);
         }
 
         private sealed class FakeResolver(IReadOnlyList<string> folders, IReadOnlyList<string>? unavailable = null) : IFoundBookWatchFolderResolver
