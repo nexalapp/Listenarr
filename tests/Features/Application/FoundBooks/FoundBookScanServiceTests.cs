@@ -40,11 +40,13 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         private readonly FakeScanner _scanner = new();
         private readonly MutableTimeProvider _clock = new(new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.Zero));
         private IFoundBookRepository _repository = null!;
+        private IFileSystem _fileSystem = null!;
 
         public override async Task InitializeAsync()
         {
             await base.InitializeAsync();
             _repository = _provider.GetRequiredService<IFoundBookRepository>();
+            _fileSystem = _provider.GetRequiredService<IFileSystem>();
         }
 
         private FoundBookScanService BuildService(params string[] folders) => new(
@@ -53,6 +55,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             _repository,
             _audiobookRepository,
             _downloadRepository,
+            new FoundBookCleanup(_fileSystem, _rootFolderRepository, NullLogger<FoundBookCleanup>.Instance),
             _broadcaster.Object,
             _clock,
             NullLogger<FoundBookScanService>.Instance);
@@ -203,6 +206,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
                 _repository,
                 _audiobookRepository,
                 _downloadRepository,
+                new FoundBookCleanup(_fileSystem, _rootFolderRepository, NullLogger<FoundBookCleanup>.Instance),
                 _broadcaster.Object,
                 _clock,
                 NullLogger<FoundBookScanService>.Instance);
@@ -260,6 +264,27 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             await BuildService().ScanAllAsync();
 
             Assert.Equal(FoundBookState.Pending, Assert.Single(await _repository.GetAllAsync()).State);
+        }
+
+        [Fact]
+        public async Task Scan_SweepsJunkAndLongEmptyDirectories_ButNotFreshOnes()
+        {
+            var watch = FileService.GetTempDirectory("sweep");
+            var stale = Directory.CreateDirectory(Path.Join(watch, "left behind"));
+            Directory.SetLastWriteTimeUtc(stale.FullName, _clock.GetUtcNow().UtcDateTime.AddHours(-2));
+            var fresh = Directory.CreateDirectory(Path.Join(watch, "just created"));
+            Directory.SetLastWriteTimeUtc(fresh.FullName, _clock.GetUtcNow().UtcDateTime.AddMinutes(-1));
+            await File.WriteAllTextAsync(Path.Join(watch, ".DS_Store"), "junk");
+            await File.WriteAllTextAsync(Path.Join(watch, "keep.nfo"), "note");
+            _scanner.Next = [];
+
+            await BuildService(watch).ScanAllAsync();
+
+            Assert.False(Directory.Exists(stale.FullName));
+            Assert.True(Directory.Exists(fresh.FullName));
+            Assert.False(File.Exists(Path.Join(watch, ".DS_Store")));
+            Assert.True(File.Exists(Path.Join(watch, "keep.nfo")));
+            Assert.True(Directory.Exists(watch));
         }
 
         [Fact]

@@ -45,6 +45,7 @@ namespace Listenarr.Application.FoundBooks.Services
         IFoundBookRepository repository,
         IAudiobookRepository audiobookRepository,
         IDownloadRepository downloadRepository,
+        FoundBookCleanup cleanup,
         IHubBroadcaster hubBroadcaster,
         TimeProvider timeProvider,
         ILogger<FoundBookScanService> logger) : IFoundBookScanService
@@ -257,6 +258,14 @@ namespace Listenarr.Application.FoundBooks.Services
             if (gone.Count > 0)
             {
                 await repository.DeleteAsync(gone, cancellationToken);
+            }
+
+            // Junk and long-empty directories are nobody's book; a scan is the moment
+            // to clear them, so a folder whose last book was taken ends up empty.
+            var swept = cleanup.Sweep(folder.Path, folder.Semantics, now - SettleWindow);
+            if (swept > 0)
+            {
+                logger.LogInformation("Swept {Count} junk file(s) and empty director(ies) from {Folder}", swept, folder.Path);
             }
 
             return (pending, blocked);
