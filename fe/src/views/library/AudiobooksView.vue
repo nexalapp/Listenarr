@@ -1327,7 +1327,7 @@ const chapterIssueLabel = (book: Audiobook): string | null => {
 const audioIssueLabel = (book: Audiobook): string | null => {
   switch (book.audioAudit) {
     case 'mismatch':
-      return 'Audio mismatch'
+      return 'Metadata mismatch'
     case 'narrator-mismatch':
       return 'Narrator mismatch'
     default:
