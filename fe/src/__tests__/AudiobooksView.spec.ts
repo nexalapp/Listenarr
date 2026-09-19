@@ -1434,8 +1434,15 @@ describe('AudiobooksView Bulk Conversion', () => {
     return wrapper
   }
 
-  const convertButton = (wrapper: ReturnType<typeof mount>) =>
-    wrapper.findAll('button.toolbar-btn').find((b) => b.text().includes('Convert Selected'))
+  // Conversion lives in the Actions menu now, with everything else the selection can
+  // have done to it. Open the menu first; absent a selection there is no menu at all.
+  const convertButton = async (wrapper: ReturnType<typeof mount>) => {
+    const menu = wrapper.findAll('button.toolbar-btn').find((b) => b.text().includes('Actions'))
+    if (!menu) return undefined
+    await menu.trigger('click')
+    await wrapper.vm.$nextTick()
+    return wrapper.findAll('button.actions-option').find((b) => b.text().includes('Convert to M4B'))
+  }
 
   beforeEach(() => {
     localStorage.clear()
@@ -1447,17 +1454,17 @@ describe('AudiobooksView Bulk Conversion', () => {
 
   it('offers the action only once books are selected', async () => {
     const empty = await mountWithSelection([])
-    expect(convertButton(empty)).toBeUndefined()
+    expect(await convertButton(empty)).toBeUndefined()
 
     const selected = await mountWithSelection([1, 2])
-    expect(convertButton(selected)).toBeDefined()
+    expect(await convertButton(selected)).toBeDefined()
   })
 
   it('confirms before queueing, because converting rewrites the library', async () => {
     showConfirmMock.mockResolvedValue(false)
     const wrapper = await mountWithSelection([1, 2])
 
-    await convertButton(wrapper)!.trigger('click')
+    await (await convertButton(wrapper))!.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(showConfirmMock).toHaveBeenCalled()
@@ -1472,7 +1479,7 @@ describe('AudiobooksView Bulk Conversion', () => {
     })
     const wrapper = await mountWithSelection([1, 2, 3])
 
-    await convertButton(wrapper)!.trigger('click')
+    await (await convertButton(wrapper))!.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(convertAudiobooksBulkMock).toHaveBeenCalledTimes(1)
@@ -1494,7 +1501,7 @@ describe('AudiobooksView Bulk Conversion', () => {
     })
     const wrapper = await mountWithSelection([1, 2, 3, 4])
 
-    await convertButton(wrapper)!.trigger('click')
+    await (await convertButton(wrapper))!.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(successToast).toHaveBeenCalledTimes(1)
@@ -1515,7 +1522,7 @@ describe('AudiobooksView Bulk Conversion', () => {
     })
     const wrapper = await mountWithSelection([1, 2])
 
-    await convertButton(wrapper)!.trigger('click')
+    await (await convertButton(wrapper))!.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(successToast).not.toHaveBeenCalled()
@@ -1535,7 +1542,7 @@ describe('AudiobooksView Bulk Conversion', () => {
     })
     const wrapper = await mountWithSelection([1, 2])
 
-    await convertButton(wrapper)!.trigger('click')
+    await (await convertButton(wrapper))!.trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
     expect(useLibraryStore().selectedIds.size).toBe(2)
