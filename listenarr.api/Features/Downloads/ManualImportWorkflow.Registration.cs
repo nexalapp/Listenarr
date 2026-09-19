@@ -1,6 +1,6 @@
 namespace Listenarr.Api.Features.Downloads;
 
-public partial class ManualImportController
+public sealed partial class ManualImportWorkflow
 {
     private Task<bool> RegisterPublishedManualImportAsync(
         Audiobook audiobook,

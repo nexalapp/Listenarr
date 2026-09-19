@@ -83,6 +83,8 @@ function book(overrides: Partial<FoundBook> = {}): FoundBook {
     blockedKind: 'None',
     firstSeenAt: '2026-09-19T00:00:00Z',
     lastSeenAt: '2026-09-19T00:00:00Z',
+    autoAdded: false,
+    sharesFolder: false,
     ...overrides,
   }
 }
@@ -183,6 +185,25 @@ describe('found books store', () => {
     )
     expect(finishFoundBookImport).toHaveBeenCalledWith(1, 42)
     expect(store.items[0]?.state).toBe('Imported')
+  })
+
+  it('leaves companions behind when the book shares its folder', async () => {
+    getFoundBooks.mockResolvedValue({
+      items: [book({ sharesFolder: true })],
+      pending: 1,
+      blocked: 0,
+      scanning: false,
+    })
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+    await store.load()
+    await flush()
+
+    await store.add(1, '/library', true)
+
+    expect(startManualImport).toHaveBeenCalledWith(
+      expect.objectContaining({ includeCompanionFiles: false }),
+    )
   })
 
   it('aborts the import and keeps the error when the move fails', async () => {

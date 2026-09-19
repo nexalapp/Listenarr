@@ -111,7 +111,12 @@
       >
         {{ item.blockedReason }}
       </span>
-      <span v-else class="state-label">{{ item.state }}</span>
+      <span v-else class="state-label">
+        {{ item.state }}
+        <Pill v-if="item.autoAdded" variant="info" size="small" title="Added by the automatic add"
+          >auto</Pill
+        >
+      </span>
     </td>
 
     <td class="cell-actions" data-label="Actions">

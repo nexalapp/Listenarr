@@ -181,6 +181,9 @@ namespace Listenarr.Domain.FoundBooks
         public DateTime SignatureChangedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime? DecidedAt { get; set; }
+
+        /// <summary>Imported by the automatic add rather than by a person.</summary>
+        public bool AutoAdded { get; set; }
     }
 
     /// <summary>One file of a found book, as stored in <see cref="FoundBook.FilesJson"/>.</summary>

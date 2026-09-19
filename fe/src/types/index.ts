@@ -772,6 +772,7 @@ export interface ApplicationSettings {
   audioAuditOnImport?: boolean
   foundBooksWatchFolders?: string[]
   foundBooksScanIntervalMinutes?: number
+  foundBooksAutoAdd?: boolean
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean
   // What goes into each tag and whether it may be overwritten. Absent means the
@@ -1879,6 +1880,9 @@ export interface FoundBook {
   blockedReason?: string | null
   firstSeenAt: string
   lastSeenAt: string
+  autoAdded: boolean
+  /** Another found book shares this one's directory, so a companion pass would take its files too. */
+  sharesFolder: boolean
 }
 
 export interface FoundBooksResponse {

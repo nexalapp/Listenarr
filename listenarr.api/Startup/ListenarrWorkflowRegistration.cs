@@ -16,9 +16,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Api.Features.FoundBooks;
 using Listenarr.Application.Common;
+using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Application.Search.Filters;
 using Listenarr.Application.Search.Strategies;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Listenarr.Api.Startup;
 
@@ -98,6 +101,11 @@ public static class ListenarrWorkflowRegistration
         services.AddScoped<SearchByTitleWorkflow>();
         services.AddScoped<ManualImportPathPlanner>();
         services.AddScoped<ManualImportCompanionImporter>();
+        services.AddScoped<ManualImportWorkflow>();
+        // The host is where the manual-import workflow lives, so the found-book
+        // importer that drives it is registered here, replacing the null-object
+        // infrastructure registers for hosts without one.
+        services.Replace(ServiceDescriptor.Scoped<IFoundBookImporter, FoundBookManualImportAdapter>());
         return services;
     }
 }

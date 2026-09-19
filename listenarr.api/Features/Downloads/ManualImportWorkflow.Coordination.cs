@@ -3,7 +3,7 @@ using Listenarr.Application.Common;
 
 namespace Listenarr.Api.Features.Downloads;
 
-public partial class ManualImportController
+public sealed partial class ManualImportWorkflow
 {
     private Task ExecuteWithAudiobookLocksAsync(
         IEnumerable<int> audiobookIds,

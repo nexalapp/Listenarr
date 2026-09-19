@@ -44,6 +44,11 @@
           @update:settings="(val) => Object.assign(localSettings, val)"
         ></MetadataTagsSection>
 
+        <FoundBooksSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></FoundBooksSection>
+
         <AuthorAliasesSection
           :settings="localSettings"
           @update:settings="(val) => Object.assign(localSettings, val)"
@@ -82,6 +87,7 @@ import type { ApplicationSettings, StartupConfig } from '@/types'
 import FileManagementSection from '@/components/settings/FileManagementSection.vue'
 import DownloadSettingsSection from '@/components/settings/DownloadSettingsSection.vue'
 import MetadataTagsSection from '@/components/settings/MetadataTagsSection.vue'
+import FoundBooksSection from '@/components/settings/FoundBooksSection.vue'
 import AuthorAliasesSection from '@/components/settings/AuthorAliasesSection.vue'
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'

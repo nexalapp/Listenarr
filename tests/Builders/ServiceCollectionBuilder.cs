@@ -199,6 +199,7 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<DownloadClientSelector>();
             services.AddSingleton<DownloadCachedTorrentStore>();
             services.AddSingleton<LibraryMetadataRescanWorkflow>();
+            services.AddScoped<ManualImportWorkflow>();
             services.AddSingleton<LibraryScanPathResolver>();
             services.AddSingleton<LibraryScanQueueWorkflow>();
             services.AddSingleton<LibraryAddWorkflow>();
