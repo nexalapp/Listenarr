@@ -81,7 +81,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
         }
 
         [Fact]
-        public async Task ProcessJobAsync_PathlessAuthoritativeScan_RemovesVerifiedMissingTrackedFile()
+        public async Task ProcessJobAsync_PathlessAuthoritativeScan_FlagsVerifiedMissingTrackedFile()
         {
             var basePath = FileService.GetTempDirectory("scan-processor-pathless-authoritative");
             var missingPath = Path.Join(basePath, "Missing Book.m4b");
@@ -102,8 +102,10 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
 
             var updatedJob = GetRequiredJob(queue, job.Id);
             Assert.Equal("Completed", updatedJob.Status);
-            Assert.Empty(
+            // The row is kept and flagged; a scan never removes what it cannot find.
+            var kept = Assert.Single(
                 await _audiobookFileRepository.GetByAudiobookIdAsync(audiobook.Id));
+            Assert.NotNull(kept.NotFoundSinceUtc);
         }
 
         [Fact]
