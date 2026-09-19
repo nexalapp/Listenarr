@@ -1832,3 +1832,71 @@ export interface NzbKingLedger {
   configured: boolean
   entries: NzbKingAccess[]
 }
+
+// ─── Found books ─────────────────────────────────────────────────────────────
+
+export type FoundBookCompleteness = 'Unknown' | 'Complete' | 'Incomplete' | 'Corrupt'
+export type FoundBookLibraryStatus = 'New' | 'InLibrary' | 'Wanted'
+export type FoundBookState =
+  | 'Pending'
+  | 'Blocked'
+  | 'Ignored'
+  | 'Importing'
+  | 'Imported'
+  | 'Discarded'
+export type FoundBookBlockedKind = 'None' | 'Settling' | 'Downloading' | 'OwnedByDownload'
+
+export interface FoundBookFile {
+  path: string
+  length: number
+  isAudio: boolean
+  durationSeconds?: number | null
+  error?: string | null
+}
+
+export interface FoundBook {
+  id: number
+  watchFolder: string
+  bookFolder: string
+  files: FoundBookFile[]
+  audioFileCount: number
+  totalBytes: number
+  totalDurationSeconds: number
+  format?: string | null
+  title?: string | null
+  author?: string | null
+  series?: string | null
+  seriesPosition?: string | null
+  narrator?: string | null
+  year?: string | null
+  asin?: string | null
+  completeness: FoundBookCompleteness
+  completenessReason?: string | null
+  libraryStatus: FoundBookLibraryStatus
+  matchedAudiobookId?: number | null
+  state: FoundBookState
+  blockedKind: FoundBookBlockedKind
+  blockedReason?: string | null
+  firstSeenAt: string
+  lastSeenAt: string
+}
+
+export interface FoundBooksResponse {
+  items: FoundBook[]
+  pending: number
+  blocked: number
+  scanning: boolean
+  lastScanCompletedAt?: string | null
+}
+
+export interface FoundBookWatchFolders {
+  folders: { path: string }[]
+  unavailable: string[]
+  warnings: string[]
+  fromSettings: boolean
+}
+
+export interface FoundBookDecisionResponse {
+  book: FoundBook
+  skipped: string[]
+}

@@ -32,6 +32,8 @@ internal static class FoundBooksRegistrationExtensions
         services.AddScoped<IFoundBookScanner, FoundBookScanner>();
         services.AddScoped<IFoundBookWatchFolderResolver, FoundBookWatchFolderResolver>();
         services.AddScoped<IFoundBookScanService, FoundBookScanService>();
+        services.AddScoped<FoundBookCleanup>();
+        services.AddScoped<IFoundBookDecisionService, FoundBookDecisionService>();
         return services;
     }
 }

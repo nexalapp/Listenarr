@@ -88,6 +88,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260919194124_AddAudiobookFileNotFound";
     private const string FoundBooksMigrationId =
         "20260919203017_AddFoundBooks";
+    private const string FoundBookBlockedKindMigrationId =
+        "20260919205715_AddFoundBookBlockedKind";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -236,7 +238,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 ChapterRepairableMigrationId,
                 ChapterPlanMigrationId,
                 FileNotFoundMigrationId,
-                FoundBooksMigrationId
+                FoundBooksMigrationId,
+                FoundBookBlockedKindMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

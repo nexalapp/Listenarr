@@ -21,12 +21,8 @@ import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
-import type {
-  SearchResult,
-  AudibleBookMetadata,
-  AudiobookSeriesMembership,
-  UnmatchedFileItem,
-} from '@/types'
+import { ASIN_PATTERN, addAndImportBook } from '@/utils/libraryImportAdd'
+import type { SearchResult, AudibleBookMetadata, UnmatchedFileItem } from '@/types'
 
 export interface LibraryImportItem {
   id: string // = fullPath (unique key)
@@ -60,20 +56,6 @@ export interface LibraryImportItem {
   importAsSeparateBook?: boolean
 }
 
-const ASIN_PATTERN = /^[A-Z0-9]{10}$/i
-
-/**
- * Whether two folder paths name the same folder, for the purpose of deciding
- * whether a file can be registered in place against a held record. Deliberately
- * lenient about separators and a trailing slash; the backend applies the
- * authoritative comparison with the root folder's real case-sensitivity rules.
- */
-function _sameFolder(left: string, right: string): boolean {
-  const normalize = (value: string) =>
-    value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-  return normalize(left) === normalize(right)
-}
-
 function extractFolderName(relativePath: string): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
   // Prefer the last meaningful segment (author/title structure)
@@ -92,13 +74,6 @@ function pickBestMatch(results: SearchResult[], detectedAuthor?: string): Search
     return { r, match }
   })
   return scored.find((s) => s.match)?.r ?? results[0] ?? null
-}
-
-function normalizeGenres(genres: unknown): string[] | undefined {
-  if (!Array.isArray(genres)) return genres as string[] | undefined
-  return genres
-    .map((g) => (typeof g === 'string' ? g : ((g as { name?: string })?.name ?? '')))
-    .filter(Boolean)
 }
 
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
@@ -122,62 +97,6 @@ function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
     searchFailed: false,
     isSearching: false,
     selected: false,
-  }
-}
-
-function matchToMetadata(result: SearchResult): AudibleBookMetadata {
-  const authors: string[] =
-    result.authors && result.authors.length > 0
-      ? result.authors.map((a) => a.name ?? '').filter(Boolean)
-      : []
-
-  // series may come back as AudibleSeries[] from the search endpoint. A book can belong to
-  // more than one series (Audnexus seriesPrimary/seriesSecondary), so every entry becomes a
-  // membership; the scalar fields below stay populated from the primary for older consumers.
-  const seriesRaw = result.series as unknown
-  const seriesEntries = Array.isArray(seriesRaw)
-    ? (seriesRaw as Array<{ name?: string; asin?: string; position?: string }>)
-    : []
-  const seriesMemberships: AudiobookSeriesMembership[] = seriesEntries
-    .filter((entry) => (entry?.name ?? '').trim().length > 0)
-    .map((entry, index) => {
-      const asin = entry.asin?.trim()
-      return {
-        seriesName: (entry.name ?? '').trim(),
-        seriesNumber: entry.position?.trim() || undefined,
-        // The search fallback branch fills `asin` with the series *name* when the ASIN
-        // re-fetch fails, so only keep a value that actually looks like an ASIN. Until now
-        // that bogus value was discarded anyway; a membership would persist it.
-        seriesAsin: asin && ASIN_PATTERN.test(asin) ? asin : undefined,
-        isPrimary: index === 0,
-        sortOrder: index,
-      }
-    })
-  const seriesItem = seriesEntries[0] ?? null
-  const series = seriesItem?.name ?? (typeof seriesRaw === 'string' ? seriesRaw : undefined)
-  const seriesNumber = seriesItem?.position ?? result.seriesNumber
-  const seriesAsin = seriesItem?.asin ?? result.seriesAsin
-
-  return {
-    title: result.title ?? '',
-    asin: result.asin ?? '',
-    authors,
-    subtitle: result.subtitle,
-    series,
-    seriesNumber,
-    seriesAsin,
-    ...(seriesMemberships.length > 0 ? { seriesMemberships } : {}),
-    description: result.description,
-    publisher: result.publisher,
-    language: result.language,
-    runtime: result.runtime ?? (result.lengthMinutes ? result.lengthMinutes * 60 : undefined),
-    imageUrl: result.imageUrl,
-    // SearchResult.genres comes as objects {asin, name, type} from Audible;
-    // AudibleBookMetadata.genres expects string[] (genre names only)
-    genres: normalizeGenres(result.genres),
-    narrators: result.narrators?.map((n) => n.name ?? '').filter(Boolean),
-    publishYear: result.releaseDate?.substring(0, 4) ?? result.publishDate?.substring(0, 4),
-    metadataSource: result.metadataSource,
   }
 }
 
@@ -561,34 +480,6 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
   // ─── Import ───────────────────────────────────────────────────────────────
 
-  // Enrich metadata with full Audible data before adding to library.
-  // Search results often have authors: [{ asin, name: undefined }] — the full
-  // metadata fetch is the only way to get real author/narrator names.
-  async function _enrichMetadata(match: SearchResult): Promise<AudibleBookMetadata> {
-    const base = matchToMetadata(match)
-    if (!match.asin) return base
-    try {
-      type AudiblePayload = {
-        authors?: { name?: string }[]
-        narrators?: { name?: string }[]
-      }
-      const resp = await apiService.getAudibleMetadata<
-        { source?: string; metadata?: AudiblePayload } | AudiblePayload
-      >(match.asin)
-      const raw: AudiblePayload =
-        resp && 'metadata' in resp && resp.metadata ? resp.metadata : (resp as AudiblePayload)
-      const enrichedAuthors = (raw.authors ?? []).map((a) => a?.name ?? '').filter(Boolean)
-      const enrichedNarrators = (raw.narrators ?? []).map((n) => n?.name ?? '').filter(Boolean)
-      return {
-        ...base,
-        ...(enrichedAuthors.length > 0 ? { authors: enrichedAuthors } : {}),
-        ...(enrichedNarrators.length > 0 ? { narrators: enrichedNarrators } : {}),
-      }
-    } catch {
-      return base
-    }
-  }
-
   async function importSelected(
     rootFolderPath: string,
   ): Promise<{ imported: number; errors: string[]; warnings: string[] }> {
@@ -598,95 +489,19 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     let imported = 0
 
     for (const item of toImport) {
-      const match = item.selectedMatch
       try {
-        let audiobookId: number
-        try {
-          // A file-metadata import has no catalogue match to enrich or send, and is
-          // never monitored: the book is already on disk, and without an ASIN an
-          // automatic search cannot identify a release for it.
-          const metadata = match ? await _enrichMetadata(match) : item.fileMetadata!
-          const sanitizedMatch = match
-            ? {
-                ...match,
-                genres: normalizeGenres(match.genres),
-                series: Array.isArray(match.series)
-                  ? ((match.series as Array<{ name?: string }>)[0]?.name ?? undefined)
-                  : match.series,
-              }
-            : undefined
-          const { audiobook } = await apiService.addToLibrary(metadata, {
-            monitored: match ? monitor.value != 'none' : false,
-            destinationPath: action.value === 'none' ? item.folderPath : rootFolderPath,
-            searchResult: sanitizedMatch,
-            allowDuplicateEdition: item.importAsSeparateBook === true,
-          })
-          audiobookId = audiobook.id
-        } catch (e: unknown) {
-          // 409 = book already in library, extract existing audiobook from response body
-          const err = e as { status?: number; body?: unknown }
-          if (err?.status === 409 && err?.body) {
-            const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body
-            if (body?.audiobook?.id) {
-              audiobookId = body.audiobook.id
-              // Attaching to the held record registers the file into that record's
-              // folder. When the file is somewhere else entirely, in-place
-              // registration refuses it, and the backend's reason never reaches the
-              // UI - so say plainly what happened and what the two ways out are.
-              const heldBasePath: string | undefined = body.audiobook.basePath
-              if (
-                action.value === 'none' &&
-                heldBasePath &&
-                !_sameFolder(heldBasePath, item.folderPath)
-              ) {
-                throw new Error(
-                  `"${body.audiobook.title ?? 'A book'}" is already in the library at ` +
-                    `${heldBasePath}, which is not the folder this file is in. ` +
-                    `Tick "Separate book" on this row to add it as its own record, ` +
-                    `or choose Move/Copy so the file is placed into that folder.`,
-                )
-              }
-              // Mutation imports may compatibility-route an existing audiobook to the
-              // selected destination. In-place registration must never rewrite BasePath:
-              // the existing file has to belong to the audiobook's current managed folder.
-              if (action.value !== 'none' && rootFolderPath) {
-                try {
-                  await apiService.updateAudiobook(audiobookId, { basePath: rootFolderPath })
-                } catch {
-                  // Non-critical — import continues, file may go to OutputPath fallback
-                }
-              }
-            } else {
-              throw e
-            }
-          } else {
-            throw e
-          }
-        }
-        const importResult = await apiService.startManualImport({
-          path: item.folderPath,
-          mode: 'interactive',
+        const result = await addAndImportBook({
+          folderPath: item.folderPath,
+          sourceFiles: item.sourceFiles,
+          match: item.selectedMatch,
+          fileMetadata: item.fileMetadata,
+          rootFolderPath,
           action: action.value,
-          includeCompanionFiles: action.value !== 'none',
-          cleanupEmptySourceFolders: action.value === 'move',
-          items: item.sourceFiles.map((fullPath) => ({
-            fullPath,
-            matchedAudiobookId: audiobookId,
-          })),
+          monitored: item.selectedMatch ? monitor.value != 'none' : false,
+          separateBook: item.importAsSeparateBook === true,
         })
-        const failedResult = importResult.results?.find((result) => !result.success)
-        if (failedResult || importResult.importedCount !== item.sourceFiles.length) {
-          const reason = failedResult?.error ?? failedResult?.skipReason
-          throw new Error(
-            reason ??
-              `Only ${importResult.importedCount} of ${item.sourceFiles.length} file(s) were imported`,
-          )
-        }
-
-        for (const result of importResult.results ?? []) {
-          if (result.success && result.warning && !warnings.includes(result.warning)) {
-            warnings.push(result.warning)
-          }
+        for (const warning of result.warnings) {
+          if (!warnings.includes(warning)) warnings.push(warning)
         }
 
         // Remove imported item from store only after the backend confirms every

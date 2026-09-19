@@ -23,16 +23,23 @@ using Microsoft.AspNetCore.Mvc;
 namespace Listenarr.Api.Features.FoundBooks
 {
     /// <summary>
-    /// Books found in the watch folders that the library does not have. Read-only in
-    /// this slice: listing, scan status, and starting a scan.
+    /// Books found in the watch folders that the library does not have: listing them,
+    /// and the operator's decisions about each one.
     /// </summary>
+    /// <remarks>
+    /// Adding a book is client-driven, as Library Import is: the UI matches the book,
+    /// adds it, and runs the manual import, bracketed by <c>begin-import</c> and
+    /// <c>finish-import</c> here so a scan in the meantime leaves the row alone and the
+    /// leftovers are cleared once the audio has moved.
+    /// </remarks>
     [ApiController]
     [Route("api/v{version:apiVersion}/found")]
     [Tags("Library")]
     public sealed class FoundBooksController(
         IFoundBookRepository repository,
         IFoundBookScanProcessor scanProcessor,
-        IFoundBookWatchFolderResolver watchFolderResolver) : ControllerBase
+        IFoundBookWatchFolderResolver watchFolderResolver,
+        IFoundBookDecisionService decisions) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<FoundBooksResponse>> List(
@@ -82,7 +89,54 @@ namespace Listenarr.Api.Features.FoundBooks
             scanProcessor.TriggerScan()
                 ? Accepted(new { scanning = true })
                 : Conflict(new { scanning = true, message = "A scan is already running." });
+
+        [HttpPost("{id:int}/ignore")]
+        public async Task<ActionResult<FoundBookDecisionResponse>> Ignore(int id, CancellationToken cancellationToken = default) =>
+            Respond(await decisions.IgnoreAsync(id, cancellationToken));
+
+        [HttpPost("{id:int}/restore")]
+        public async Task<ActionResult<FoundBookDecisionResponse>> Restore(int id, CancellationToken cancellationToken = default) =>
+            Respond(await decisions.RestoreAsync(id, cancellationToken));
+
+        [HttpPost("{id:int}/begin-import")]
+        public async Task<ActionResult<FoundBookDecisionResponse>> BeginImport(int id, CancellationToken cancellationToken = default) =>
+            Respond(await decisions.BeginImportAsync(id, cancellationToken));
+
+        [HttpPost("{id:int}/abort-import")]
+        public async Task<ActionResult<FoundBookDecisionResponse>> AbortImport(int id, CancellationToken cancellationToken = default) =>
+            Respond(await decisions.AbortImportAsync(id, cancellationToken));
+
+        [HttpPost("{id:int}/finish-import")]
+        public async Task<ActionResult<FoundBookDecisionResponse>> FinishImport(
+            int id,
+            [FromBody] FinishImportRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request == null || request.AudiobookId <= 0)
+            {
+                return BadRequest(new { message = "An audiobook id is required." });
+            }
+
+            return Respond(await decisions.FinishImportAsync(id, request.AudiobookId, cancellationToken));
+        }
+
+        /// <summary>Delete the book's files. The UI confirms first; nothing here asks again.</summary>
+        [HttpPost("{id:int}/discard")]
+        public async Task<ActionResult<FoundBookDecisionResponse>> Discard(int id, CancellationToken cancellationToken = default) =>
+            Respond(await decisions.DiscardAsync(id, cancellationToken));
+
+        private ActionResult<FoundBookDecisionResponse> Respond(FoundBookDecisionResult result) => result.Failure switch
+        {
+            FoundBookDecisionFailure.None => Ok(new FoundBookDecisionResponse(FoundBookDto.From(result.Book!), result.Skipped)),
+            FoundBookDecisionFailure.NotFound => NotFound(new { message = result.Error }),
+            FoundBookDecisionFailure.WrongState or FoundBookDecisionFailure.FilesRemain => Conflict(new { message = result.Error }),
+            _ => StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = result.Error })
+        };
     }
+
+    public sealed record FinishImportRequest(int AudiobookId);
+
+    public sealed record FoundBookDecisionResponse(FoundBookDto Book, IReadOnlyList<string> Skipped);
 
     public sealed record FoundBooksResponse(
         IReadOnlyList<FoundBookDto> Items,
@@ -114,6 +168,7 @@ namespace Listenarr.Api.Features.FoundBooks
         string LibraryStatus,
         int? MatchedAudiobookId,
         string State,
+        string BlockedKind,
         string? BlockedReason,
         DateTime FirstSeenAt,
         DateTime LastSeenAt)
@@ -146,6 +201,7 @@ namespace Listenarr.Api.Features.FoundBooks
             row.LibraryStatus.ToString(),
             row.MatchedAudiobookId,
             row.State.ToString(),
+            row.BlockedKind.ToString(),
             row.BlockedReason,
             row.FirstSeenAt,
             row.LastSeenAt);

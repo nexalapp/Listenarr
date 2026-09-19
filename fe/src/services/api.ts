@@ -78,6 +78,9 @@ import type {
   RenameResult,
   NzbKingStatus,
   NzbKingLedger,
+  FoundBooksResponse,
+  FoundBookWatchFolders,
+  FoundBookDecisionResponse,
 } from '@/types'
 import { getStartupConfigCached, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -1141,6 +1144,35 @@ class ApiService {
 
   async getSavedUnmatchedFiles(rootFolderId: number): Promise<SavedUnmatchedResponse> {
     return this.request<SavedUnmatchedResponse>(`/rootfolders/${rootFolderId}/unmatched`)
+  }
+
+  // ─── Found books ───────────────────────────────────────────────────────────
+
+  async getFoundBooks(state?: string): Promise<FoundBooksResponse> {
+    const query = state ? `?state=${encodeURIComponent(state)}` : ''
+    return this.request<FoundBooksResponse>(`/found${query}`)
+  }
+
+  async getFoundWatchFolders(): Promise<FoundBookWatchFolders> {
+    return this.request<FoundBookWatchFolders>('/found/watch-folders')
+  }
+
+  async scanFoundBooks(): Promise<{ scanning: boolean }> {
+    return this.request<{ scanning: boolean }>('/found/scan', { method: 'POST' })
+  }
+
+  async foundBookDecision(
+    id: number,
+    decision: 'ignore' | 'restore' | 'begin-import' | 'abort-import' | 'discard',
+  ): Promise<FoundBookDecisionResponse> {
+    return this.request<FoundBookDecisionResponse>(`/found/${id}/${decision}`, { method: 'POST' })
+  }
+
+  async finishFoundBookImport(id: number, audiobookId: number): Promise<FoundBookDecisionResponse> {
+    return this.request<FoundBookDecisionResponse>(`/found/${id}/finish-import`, {
+      method: 'POST',
+      body: JSON.stringify({ audiobookId }),
+    })
   }
 
   // Discord integration helpers

@@ -18,6 +18,7 @@
 using Listenarr.Application.Common;
 using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Application.FoundBooks.Models;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.FoundBooks;
 using Microsoft.Extensions.Logging;
 
@@ -43,6 +44,7 @@ namespace Listenarr.Application.FoundBooks.Services
         IFoundBookScanner scanner,
         IFoundBookRepository repository,
         IAudiobookRepository audiobookRepository,
+        IDownloadRepository downloadRepository,
         IHubBroadcaster hubBroadcaster,
         TimeProvider timeProvider,
         ILogger<FoundBookScanService> logger) : IFoundBookScanService
@@ -61,6 +63,7 @@ namespace Listenarr.Application.FoundBooks.Services
             var resolved = await watchFolderResolver.ResolveAsync(cancellationToken);
             var warnings = new List<string>(resolved.Warnings);
             var library = await audiobookRepository.GetAllAsync();
+            var ownedPaths = await LoadDownloadOwnedPathsAsync();
 
             var existing = await repository.GetAllAsync(cancellationToken);
             var stale = existing
@@ -81,7 +84,7 @@ namespace Listenarr.Application.FoundBooks.Services
                 var rows = existing.Where(row => folder.Semantics.Comparer.Equals(row.WatchFolder, folder.Path)).ToList();
                 try
                 {
-                    var (p, b) = await ScanFolderAsync(folder, rows, library, warnings, cancellationToken);
+                    var (p, b) = await ScanFolderAsync(folder, rows, library, ownedPaths, warnings, cancellationToken);
                     pending += p;
                     blocked += b;
                 }
@@ -101,10 +104,79 @@ namespace Listenarr.Application.FoundBooks.Services
             return new FoundBookScanSummary(resolved.Folders, pending, blocked, warnings);
         }
 
+        /// <summary>
+        /// Paths a Listenarr download record still owns, with why. The import pipeline
+        /// is working on Queued through ImportPending; Moved with the files still present
+        /// is a copy kept for seeding. Failed and ImportBlocked are exactly the leftovers
+        /// this feature exists to offer, so they are not owners.
+        /// </summary>
+        private async Task<IReadOnlyList<(string Path, string Reason)>> LoadDownloadOwnedPathsAsync()
+        {
+            var downloads = await downloadRepository.GetAllAsync();
+            var owned = new List<(string, string)>();
+            foreach (var download in downloads)
+            {
+                var reason = download.Status switch
+                {
+                    DownloadStatus.Queued or DownloadStatus.Downloading or DownloadStatus.Paused
+                        => "still downloading",
+                    DownloadStatus.Completed or DownloadStatus.Processing or DownloadStatus.Ready or DownloadStatus.ImportPending
+                        => "being imported by the download pipeline",
+                    DownloadStatus.Moved => "kept for seeding by the download client",
+                    _ => null
+                };
+                if (reason == null)
+                {
+                    continue;
+                }
+
+                // FinalPath is the local spelling once the pipeline has resolved it; the
+                // client's own content path is kept in metadata and may be the remote
+                // spelling, which then simply fails to overlap anything here.
+                foreach (var path in new[] { download.FinalPath, download.GetMetadataString("ClientContentPath") }
+                    .Where(p => !string.IsNullOrWhiteSpace(p)))
+                {
+                    owned.Add((path!, $"{reason} ({download.Title})"));
+                }
+            }
+
+            return owned;
+        }
+
+        private static string? DownloadOwner(
+            FoundBookCandidate candidate,
+            FoundBookWatchFolder folder,
+            IReadOnlyList<(string Path, string Reason)> ownedPaths)
+        {
+            foreach (var (path, reason) in ownedPaths)
+            {
+                string canonical;
+                try
+                {
+                    canonical = FileSystemPathIdentity.Canonicalize(path, folder.Semantics.Syntax);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+
+                var overlaps = FileSystemPathIdentity.IsSameOrInside(candidate.BookFolder, canonical, folder.Semantics)
+                    || candidate.AudioFiles.Any(f => FileSystemPathIdentity.IsSameOrInside(f.Path, canonical, folder.Semantics))
+                    || FileSystemPathIdentity.IsSameOrInside(canonical, candidate.BookFolder, folder.Semantics);
+                if (overlaps)
+                {
+                    return reason;
+                }
+            }
+
+            return null;
+        }
+
         private async Task<(int Pending, int Blocked)> ScanFolderAsync(
             FoundBookWatchFolder folder,
             IReadOnlyList<FoundBook> rows,
             IReadOnlyList<Audiobook> library,
+            IReadOnlyList<(string Path, string Reason)> ownedPaths,
             List<string> warnings,
             CancellationToken cancellationToken)
         {
@@ -135,6 +207,7 @@ namespace Listenarr.Application.FoundBooks.Services
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var match = FoundBookLibraryMatcher.Match(candidate.Asin, candidate.Title, candidate.Author, library);
+                var owner = DownloadOwner(candidate, folder, ownedPaths);
 
                 if (byKey.TryGetValue(candidate.ClusterKey, out var row))
                 {
@@ -151,10 +224,10 @@ namespace Listenarr.Application.FoundBooks.Services
 
                         if (r.State is FoundBookState.Pending or FoundBookState.Blocked)
                         {
-                            SetOffer(r, candidate, stable: unchanged || Settled(candidate, now));
+                            SetOffer(r, candidate, stable: unchanged || Settled(candidate, now), owner);
                         }
                     }, cancellationToken);
-                    Count(row.State, unchanged || Settled(candidate, now), candidate, ref pending, ref blocked);
+                    Count(row.State, unchanged || Settled(candidate, now), candidate, owner, ref pending, ref blocked);
                 }
                 else
                 {
@@ -167,7 +240,7 @@ namespace Listenarr.Application.FoundBooks.Services
                         SignatureChangedAt = now
                     };
                     Apply(created, candidate, match);
-                    SetOffer(created, candidate, stable: Settled(candidate, now));
+                    SetOffer(created, candidate, stable: Settled(candidate, now), owner);
                     await repository.AddAsync(created, cancellationToken);
                     if (created.State == FoundBookState.Pending)
                     {
@@ -193,6 +266,7 @@ namespace Listenarr.Application.FoundBooks.Services
             FoundBookState previousState,
             bool stable,
             FoundBookCandidate candidate,
+            string? owner,
             ref int pending,
             ref int blocked)
         {
@@ -201,7 +275,7 @@ namespace Listenarr.Application.FoundBooks.Services
                 return;
             }
 
-            if (stable && !candidate.DownloadInProgress)
+            if (stable && !candidate.DownloadInProgress && owner == null)
             {
                 pending++;
             }
@@ -225,21 +299,30 @@ namespace Listenarr.Application.FoundBooks.Services
         private static bool Settled(FoundBookCandidate candidate, DateTime now) =>
             now - candidate.NewestWriteUtc >= SettleWindow;
 
-        private static void SetOffer(FoundBook row, FoundBookCandidate candidate, bool stable)
+        private static void SetOffer(FoundBook row, FoundBookCandidate candidate, bool stable, string? owner)
         {
-            if (candidate.DownloadInProgress)
+            if (owner != null)
             {
                 row.State = FoundBookState.Blocked;
+                row.BlockedKind = FoundBookBlockedKind.OwnedByDownload;
+                row.BlockedReason = $"A download record still owns these files: {owner}.";
+            }
+            else if (candidate.DownloadInProgress)
+            {
+                row.State = FoundBookState.Blocked;
+                row.BlockedKind = FoundBookBlockedKind.Downloading;
                 row.BlockedReason = "A download is still in progress in this folder.";
             }
             else if (!stable)
             {
                 row.State = FoundBookState.Blocked;
+                row.BlockedKind = FoundBookBlockedKind.Settling;
                 row.BlockedReason = "The files are still changing; offered once they settle.";
             }
             else
             {
                 row.State = FoundBookState.Pending;
+                row.BlockedKind = FoundBookBlockedKind.None;
                 row.BlockedReason = null;
             }
         }

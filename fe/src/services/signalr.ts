@@ -246,6 +246,9 @@ class SignalRService {
   private unmatchedScanCompleteCallbacks: Set<
     (payload: { jobId: string; count: number; error?: string }) => void
   > = new Set()
+  private foundBooksChangedCallbacks: Set<
+    (payload: { pending: number; blocked: number; watchFolders: number }) => void
+  > = new Set()
   private pingInterval: number | null = null
   private visibilityListener: (() => void) | null = null
   // Connection state listeners (for UI to subscribe to connect/disconnect events)
@@ -542,6 +545,13 @@ class SignalRService {
         if (args && args[0]) {
           const payload = args[0] as { jobId: string; count: number; error?: string }
           this.unmatchedScanCompleteCallbacks.forEach((cb) => cb(payload))
+        }
+        break
+
+      case 'FoundBooksChanged':
+        if (args && args[0]) {
+          const payload = args[0] as { pending: number; blocked: number; watchFolders: number }
+          this.foundBooksChangedCallbacks.forEach((cb) => cb(payload))
         }
         break
     }
@@ -875,6 +885,16 @@ class SignalRService {
     this.unmatchedScanCompleteCallbacks.add(callback)
     return () => {
       this.unmatchedScanCompleteCallbacks.delete(callback)
+    }
+  }
+
+  // Subscribe to found-book scan results
+  onFoundBooksChanged(
+    callback: (payload: { pending: number; blocked: number; watchFolders: number }) => void,
+  ): () => void {
+    this.foundBooksChangedCallbacks.add(callback)
+    return () => {
+      this.foundBooksChangedCallbacks.delete(callback)
     }
   }
 

@@ -50,6 +50,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             _scanner,
             _repository,
             _audiobookRepository,
+            _downloadRepository,
             _broadcaster.Object,
             _clock,
             NullLogger<FoundBookScanService>.Instance);
@@ -199,6 +200,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
                 _scanner,
                 _repository,
                 _audiobookRepository,
+                _downloadRepository,
                 _broadcaster.Object,
                 _clock,
                 NullLogger<FoundBookScanService>.Instance);
@@ -220,6 +222,42 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             await service.ScanAllAsync();
 
             Assert.Single(await _repository.GetAllAsync());
+        }
+
+        [Fact]
+        public async Task ClusterInsideAnActiveDownload_IsBlockedAsOwned()
+        {
+            await _downloadRepository.AddAsync(new Download
+            {
+                Title = "Wool pack",
+                Status = DownloadStatus.ImportPending,
+                FinalPath = $"{Watch}/a"
+            });
+            _scanner.Next = [Candidate("a")];
+
+            await BuildService().ScanAllAsync();
+
+            var row = Assert.Single(await _repository.GetAllAsync());
+            Assert.Equal(FoundBookState.Blocked, row.State);
+            Assert.Equal(FoundBookBlockedKind.OwnedByDownload, row.BlockedKind);
+            Assert.Contains("Wool pack", row.BlockedReason);
+        }
+
+        [Fact]
+        public async Task ClusterOfAnImportBlockedDownload_IsOffered()
+        {
+            // A failed import is exactly the leftover this feature is for.
+            await _downloadRepository.AddAsync(new Download
+            {
+                Title = "Wool pack",
+                Status = DownloadStatus.ImportBlocked,
+                FinalPath = $"{Watch}/a"
+            });
+            _scanner.Next = [Candidate("a")];
+
+            await BuildService().ScanAllAsync();
+
+            Assert.Equal(FoundBookState.Pending, Assert.Single(await _repository.GetAllAsync()).State);
         }
 
         [Fact]
