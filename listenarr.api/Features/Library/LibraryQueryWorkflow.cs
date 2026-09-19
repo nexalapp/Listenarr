@@ -7,6 +7,8 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Domain.Audiobooks.Audit;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library;
@@ -124,8 +126,19 @@ public sealed class LibraryQueryWorkflow(
             sampleRate = file.SampleRate,
             channels = file.Channels,
             source = file.Source,
-            createdAt = file.CreatedAt
+            createdAt = file.CreatedAt,
+            chapterHealth = ChapterHealthNames.Of(file.ChapterHealth),
+            chapterReason = file.ChapterReason,
+            chapterCount = file.ChapterCount,
+            chapterRepairable = file.ChapterRepairable
         }).ToList(),
-        wanted = AudiobookWantedEvaluator.Compute(audiobook)
+        wanted = AudiobookWantedEvaluator.Compute(audiobook),
+        audioAudit = AudioAuditVerdictNames.Of(audiobook.AudioAuditVerdict),
+        audioAuditReason = audiobook.AudioAuditReason,
+        audioAuditHeard = audiobook.AudioAuditHeard,
+        audioAuditHeardTitle = audiobook.AudioAuditHeardTitle,
+        audioAuditHeardAuthor = audiobook.AudioAuditHeardAuthor,
+        audioAuditHeardNarrator = audiobook.AudioAuditHeardNarrator,
+        audioAuditedAt = audiobook.AudioAuditedAt
     };
 }

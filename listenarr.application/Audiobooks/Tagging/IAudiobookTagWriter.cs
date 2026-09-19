@@ -16,6 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Chapters;
+using Listenarr.Domain.Audiobooks.Conversion;
+
 namespace Listenarr.Application.Audiobooks.Tagging
 {
     /// <summary>
@@ -49,13 +52,22 @@ namespace Listenarr.Application.Audiobooks.Tagging
     /// <c>MajorBrand</c> is the container's declared brand — <c>M4B</c> on a
     /// properly-tagged audiobook. It is carried through a rewrite rather than left to the
     /// muxer's default, which would quietly downgrade an M4B to an M4A.
+    /// <para>
+    /// <c>Chapters</c> is the list ffprobe played back and <c>Atoms</c> is what the
+    /// container's bytes say; they are kept apart because the whole point of reading both
+    /// is that they can disagree. Either is null when it was not read — a record cached
+    /// before they existed, or a container with no atoms — and the analyzer reports
+    /// <c>Unknown</c> rather than guessing.
+    /// </para>
     /// </remarks>
     public sealed record AudiobookFileTags(
         IReadOnlyDictionary<string, string> Tags,
         int ChapterCount,
         TimeSpan Duration,
         bool HasCoverArt,
-        string? MajorBrand = null)
+        string? MajorBrand = null,
+        IReadOnlyList<EmbeddedChapter>? Chapters = null,
+        ChapterAtomState? Atoms = null)
     {
         public static AudiobookFileTags Empty { get; } = new(
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),

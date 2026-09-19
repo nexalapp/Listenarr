@@ -17,6 +17,8 @@
  */
 using System.Globalization;
 using Listenarr.Application.Audiobooks;
+using Listenarr.Domain.Audiobooks.Audit;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
@@ -111,7 +113,17 @@ namespace Listenarr.Api.Features.Library
                     // The filename is its own column, so its disagreement is its own
                     // fact: organizing can rename a file without moving it.
                     expectedFileName = row.ExpectedFileName,
-                    fileNameMismatched = row.FileNameMismatched
+                    fileNameMismatched = row.FileNameMismatched,
+                    // The chapter verdict is a lowercase word the table filters on, and
+                    // the reason is the sentence behind it.
+                    chapterHealth = ChapterHealthNames.Of(row.ChapterHealth),
+                    chapterReason = row.ChapterReason,
+                    chapterCount = row.ChapterCount,
+                    chapterRepairable = row.ChapterRepairable,
+                    chapterPlanPending = row.ChapterPlanPending,
+                    // The book's audio verdict, on every one of its rows.
+                    audioAudit = AudioAuditVerdictNames.Of(row.AudioAudit),
+                    audioAuditReason = row.AudioAuditReason
                 })
             });
         }
@@ -453,6 +465,7 @@ namespace Listenarr.Api.Features.Library
             phase = job.Phase.ToString(),
             progress = job.Progress,
             trigger = job.Trigger.ToString(),
+            kind = job.Kind.ToString(),
             fileCount = job.FileCount,
             tagsWritten = job.TagsWritten,
             error = job.Error,

@@ -17,6 +17,7 @@
  */
 using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Audiobooks.Tagging;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -85,6 +86,108 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
                     It.IsAny<TagJob>(),
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync((TagJob job, CancellationToken _) => job);
+
+        // ---- chapter repairs --------------------------------------------------------
+
+        private static ChapterPlan SomePlan() => new(
+            ChapterSource.Played,
+            [new EmbeddedChapter("One", TimeSpan.Zero, TimeSpan.FromMinutes(5)), new EmbeddedChapter("Two", TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10))],
+            Partial: false,
+            "two chapters");
+
+        [Fact]
+        public async Task EnqueueChapterRepairAsync_QueuesAChapterJobCarryingThePlan()
+        {
+            GivenWriterAvailable();
+            var audiobook = GivenAudiobook("Book.m4b", "Other.mp3");
+            audiobook.Files![0].Id = 41;
+            audiobook.Files[1].Id = 42;
+            GivenNoActiveJob();
+            TagJob? stored = null;
+            _repository
+                .Setup(repository => repository.AddAsync(It.IsAny<TagJob>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob job, CancellationToken _) => stored = job);
+
+            var result = await BuildService().EnqueueChapterRepairAsync(
+                7,
+                new Dictionary<int, ChapterPlan> { [41] = SomePlan(), [42] = SomePlan(), [99] = SomePlan() },
+                TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
+            Assert.Equal(TagJobKind.Chapters, stored!.Kind);
+            Assert.Equal(1, stored.FileCount);
+            Assert.Equal([41], TagQueueService.DeserializeFileIds(stored.SelectedFileIdsJson)!);
+            var plans = TagQueueService.DeserializeChapterPlans(stored.ChapterPlanJson);
+            Assert.Equal(["One", "Two"], plans[41].Chapters.Select(c => c.Title));
+            Assert.Equal(ChapterSource.Played, plans[41].Source);
+            // The one-active-job-per-book rule is shared with tag writes.
+            Assert.Equal(TagJob.BuildDeduplicationKey(7), stored.ActiveDeduplicationKey);
+        }
+
+        [Fact]
+        public async Task EnqueueChapterRepairAsync_RefusesWhenNoPlanNamesOneOfTheBooksM4bs()
+        {
+            GivenWriterAvailable();
+            var audiobook = GivenAudiobook("Book.mp3");
+            audiobook.Files![0].Id = 41;
+            GivenNoActiveJob();
+
+            var result = await BuildService().EnqueueChapterRepairAsync(
+                7,
+                new Dictionary<int, ChapterPlan> { [41] = SomePlan() },
+                TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
+        }
+
+        [Fact]
+        public async Task EnqueueChapterRepairAsync_RefusesWhileATagWriteIsQueued()
+        {
+            GivenWriterAvailable();
+            var audiobook = GivenAudiobook("Book.m4b");
+            audiobook.Files![0].Id = 41;
+            _repository
+                .Setup(repository => repository.GetActiveForAudiobookAsync(7, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TagJob { AudiobookId = 7 });
+
+            var result = await BuildService().EnqueueChapterRepairAsync(
+                7,
+                new Dictionary<int, ChapterPlan> { [41] = SomePlan() },
+                TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.AlreadyQueued, result.Outcome);
+        }
+
+        [Fact]
+        public async Task EnqueueAudioAuditAsync_QueuesBesideATagWriteForTheSameBook()
+        {
+            var audiobook = GivenAudiobook("Book.m4b");
+            audiobook.Files![0].Id = 41;
+            // A tag write is active, but an audit has its own key.
+            _repository
+                .Setup(repository => repository.GetActiveForAudiobookAsync(7, TagJobKind.Audit, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob?)null);
+            TagJob? stored = null;
+            _repository
+                .Setup(repository => repository.AddAsync(It.IsAny<TagJob>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob job, CancellationToken _) => stored = job);
+
+            var result = await BuildService().EnqueueAudioAuditAsync(7, TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
+            Assert.Equal(TagJobKind.Audit, stored!.Kind);
+            Assert.Equal(TagJob.BuildAuditDeduplicationKey(7), stored.ActiveDeduplicationKey);
+        }
+
+        [Fact]
+        public async Task EnqueueAudioAuditAsync_RefusesABookWithNoAudio()
+        {
+            GivenAudiobook("cover.jpg");
+
+            var result = await BuildService().EnqueueAudioAuditAsync(7, TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
+        }
 
         // ---- what gets queued -------------------------------------------------------
 

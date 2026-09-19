@@ -57,6 +57,69 @@
       </FormRow>
 
       <FormRow
+        label="Transcription"
+        help="Lets a chapter repair listen to the audio. A CD rip's tracks outnumber its chapters; hearing the narrator announce “Chapter Four” at a track is how the author's chapters are found among them, and how placeholder titles get their names. Runs on the CPU and downloads a 150 MB model the first time it is needed."
+      >
+        <label class="tags-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.transcriptionEnabled ?? false"
+            @change="
+              (e) => updateField('transcriptionEnabled', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span>Listen to audio when repairing chapters</span>
+        </label>
+        <select
+          class="tag-mapping-mode transcription-model"
+          :value="settings.transcriptionModel ?? 'base.en'"
+          :disabled="!(settings.transcriptionEnabled ?? false)"
+          aria-label="Whisper model"
+          @change="(e) => updateField('transcriptionModel', (e.target as HTMLSelectElement).value)"
+        >
+          <option value="tiny.en">tiny.en — fastest, least accurate</option>
+          <option value="base.en">base.en — hears chapter announcements well</option>
+          <option value="small.en">small.en — better with names, about 3× slower</option>
+        </select>
+        <div
+          v-if="settings.transcriptionEnabled"
+          class="transcription-model-status"
+          :class="`transcription-model-status--${modelStatus?.state ?? 'unknown'}`"
+        >
+          <PhSpinner v-if="modelStatus?.state === 'downloading'" class="ph-spin" :size="14" />
+          <PhCheckCircle v-else-if="modelStatus?.state === 'ready'" :size="14" />
+          <PhWarningCircle v-else-if="modelStatus?.state === 'failed'" :size="14" />
+          <PhDownloadSimple v-else :size="14" />
+          <span>{{ modelStatusText }}</span>
+          <button
+            v-if="
+              modelStatus && modelStatus.state !== 'ready' && modelStatus.state !== 'downloading'
+            "
+            type="button"
+            class="transcription-download-btn"
+            :disabled="downloading"
+            @click="downloadModel"
+          >
+            {{ modelStatus.state === 'failed' ? 'Try again' : 'Download now' }}
+          </button>
+        </div>
+        <label class="tags-toggle transcription-audit">
+          <input
+            type="checkbox"
+            :checked="settings.audioAuditOnImport ?? false"
+            :disabled="!(settings.transcriptionEnabled ?? false)"
+            @change="
+              (e) => updateField('audioAuditOnImport', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span
+            >Transcribe every new import: hear its opening and closing and check them against the
+            record</span
+          >
+        </label>
+      </FormRow>
+
+      <FormRow
         label="Tag Mapping"
         help="What goes into each tag, written with the same pattern language as the naming patterns. An empty token takes its brackets and separators with it, so one pattern serves a series book and a standalone alike."
       >
@@ -109,12 +172,24 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { PhTag } from '@phosphor-icons/vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  PhCheckCircle,
+  PhDownloadSimple,
+  PhSpinner,
+  PhTag,
+  PhWarningCircle,
+} from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
-import type { ApplicationSettings, TagDefinition, TagMapping, TagWriteMode } from '@/types'
+import type {
+  ApplicationSettings,
+  TagDefinition,
+  TagMapping,
+  TagWriteMode,
+  TranscriptionModelStatus,
+} from '@/types'
 
 const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{
@@ -157,7 +232,82 @@ const updateField = <K extends keyof ApplicationSettings>(
   value: ApplicationSettings[K],
 ) => {
   emit('update:settings', { ...props.settings, [key]: value })
+  // Turning transcription on, or choosing a model, is the moment to fetch it: the
+  // download then runs while the operator is still on this page, not inside the
+  // first repair that needs it.
+  if ((key === 'transcriptionEnabled' && value === true) || key === 'transcriptionModel') {
+    void downloadModel()
+  }
 }
+
+// ---- whisper model ---------------------------------------------------------------
+
+const modelStatus = ref<TranscriptionModelStatus | null>(null)
+const downloading = ref(false)
+let poll: ReturnType<typeof setTimeout> | null = null
+
+const selectedModel = computed(() => props.settings.transcriptionModel ?? 'base.en')
+
+const modelStatusText = computed(() => {
+  const status = modelStatus.value
+  if (!status) return `Checking for the ${selectedModel.value} model…`
+  const mb = status.sizeBytes != null ? `${Math.round(status.sizeBytes / 1_048_576)} MB` : null
+  switch (status.state) {
+    case 'ready':
+      return `Model ${status.model} is on disk${mb ? ` (${mb})` : ''}.`
+    case 'downloading':
+      return `Downloading ${status.model}${mb ? `… ${mb} so far` : '…'}`
+    case 'failed':
+      return `Model ${status.model} could not be downloaded: ${status.error ?? 'unknown error'}`
+    default:
+      return `Model ${status.model} is not downloaded yet; the first repair that listens would wait for it.`
+  }
+})
+
+function stopPolling() {
+  if (poll) {
+    clearTimeout(poll)
+    poll = null
+  }
+}
+
+async function refreshModelStatus() {
+  stopPolling()
+  try {
+    modelStatus.value = await apiService.getTranscriptionModel(selectedModel.value)
+  } catch (err) {
+    logger.warn('Failed to read the whisper model status', err)
+    return
+  }
+  if (modelStatus.value?.state === 'downloading') {
+    poll = setTimeout(() => void refreshModelStatus(), 3000)
+  }
+}
+
+async function downloadModel() {
+  downloading.value = true
+  try {
+    modelStatus.value = await apiService.downloadTranscriptionModel(selectedModel.value)
+    stopPolling()
+    if (modelStatus.value.state === 'downloading') {
+      poll = setTimeout(() => void refreshModelStatus(), 3000)
+    }
+  } catch (err) {
+    logger.warn('Failed to start the whisper model download', err)
+  } finally {
+    downloading.value = false
+  }
+}
+
+watch(
+  () => [props.settings.transcriptionEnabled, selectedModel.value] as const,
+  ([enabled]) => {
+    if (enabled) void refreshModelStatus()
+    else stopPolling()
+  },
+  { immediate: true },
+)
+onBeforeUnmount(stopPolling)
 
 /**
  * The saved mapping, or the catalog's defaults where the operator has changed nothing.
@@ -333,5 +483,41 @@ onMounted(async () => {
     flex-direction: column;
     gap: 0.1rem;
   }
+}
+
+.transcription-model-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+}
+
+.transcription-model-status--ready {
+  color: var(--success-500, #4caf50);
+}
+
+.transcription-model-status--failed {
+  color: var(--danger-500, #ff6b6b);
+}
+
+.transcription-download-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--brand-500);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand-500);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.transcription-model {
+  margin-top: 0.5rem;
+  display: block;
+}
+
+.transcription-audit {
+  margin-top: 0.5rem;
 }
 </style>

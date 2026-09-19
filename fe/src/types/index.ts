@@ -490,6 +490,8 @@ export interface TagJobUpdate {
    * what puts it back, so this is not an ordinary failure and must not read like one.
    */
   holdingUnpublishedFile?: boolean
+  /** `Tags` or `Chapters`: what the job writes. */
+  kind?: string
   attemptCount?: number
   enqueuedAt?: string
   completedAt?: string | null
@@ -571,6 +573,18 @@ export interface LibraryTagColumn {
  * organizing would put it — null when organizing could not answer, which the table has
  * to show as unknown rather than as agreement.
  */
+/**
+ * What a file's chapter marks are worth, as the server judged them. `unknown` is an MP3
+ * or a file not yet re-read since chapters were recorded; the rest are verdicts.
+ */
+export type ChapterHealth =
+  | 'unknown'
+  | 'healthy'
+  | 'corrupt'
+  | 'oversegmented'
+  | 'generic-titles'
+  | 'none'
+
 export interface LibraryTagRow {
   audiobookId: number
   fileId: number
@@ -592,6 +606,99 @@ export interface LibraryTagRow {
   pathLocked: boolean
   expectedFileName?: string | null
   fileNameMismatched: boolean
+  chapterHealth: ChapterHealth
+  /** Why the verdict, in a sentence. */
+  chapterReason?: string | null
+  chapterCount: number
+  chapterRepairable?: boolean
+  chapterPlanPending?: boolean
+  /** The book's audio-audit verdict, repeated on each of its rows; null until audited. */
+  audioAudit?: AudioAuditVerdict | null
+  audioAuditReason?: string | null
+}
+
+/** One chapter as a repair would write it. */
+export interface ChapterRepairChapter {
+  title: string | null
+  startSeconds: number
+  endSeconds: number
+  /** What the narrator said at this mark, when the plan came from listening. Segments are newline-separated. */
+  heard?: string | null
+}
+
+/** One file in a chapter-repair preview: the list a repair would write, or why there is none. */
+export interface ChapterRepairFile {
+  fileId: number
+  name: string
+  chapterHealth: ChapterHealth
+  chapterReason?: string | null
+  repairable: boolean
+  rejection?: string | null
+  /** The fix has not been worked out yet; a planning job has been queued for it. */
+  planPending?: boolean
+  /** `Played`, `Audnexus`, `RecoveredAtom` or `Announcements`. */
+  source?: string | null
+  /** The list is missing its opening chapters and one was synthesised. */
+  partial: boolean
+  note?: string | null
+  chapters?: ChapterRepairChapter[] | null
+}
+
+/** One chapter as a file carries it. */
+export interface BookChapter {
+  title: string | null
+  startSeconds: number
+  endSeconds: number
+  /** The title is a ripping tool's — "Chapter 001 - 00:06:20" — not the author's. */
+  placeholder: boolean
+}
+
+/** One file's chapters, verdict, and what its atoms say. */
+export interface BookChapterFile {
+  fileId: number
+  name: string
+  chapterHealth: ChapterHealth
+  chapterReason?: string | null
+  /** A repair likely has a source to fix this file from; the proposal is definitive. */
+  chapterRepairable?: boolean
+  /** The fix is being worked out in the background; reload when the Plan job completes. */
+  planPending?: boolean
+  /** The fix worked out for this file, once it has been. */
+  proposal?: {
+    repairable: boolean
+    rejection?: string | null
+    source?: string | null
+    partial: boolean
+    note?: string | null
+    chapters?: ChapterRepairChapter[] | null
+  } | null
+  error?: string | null
+  durationSeconds: number
+  /** `ok`, `broken` or `missing`; null when the container was not inspected. */
+  neroAtom?: 'ok' | 'broken' | 'missing' | null
+  neroAtomError?: string | null
+  chapterTrack?: boolean | null
+  chapters: BookChapter[]
+}
+
+export interface BookChapters {
+  audiobookId: number
+  files: BookChapterFile[]
+}
+
+export interface ChapterRepairPreview {
+  audiobookId: number
+  repairable: boolean
+  files: ChapterRepairFile[]
+}
+
+/** One whisper model as the settings page shows it. */
+export interface TranscriptionModelStatus {
+  model: string
+  state: 'missing' | 'downloading' | 'ready' | 'failed'
+  /** Bytes on disk when ready; bytes so far when downloading. */
+  sizeBytes: number | null
+  error?: string | null
 }
 
 /** The whole library's tags, with the columns to show them under. */
@@ -657,6 +764,12 @@ export interface ApplicationSettings {
   conversionArchivePath?: string
   // Write the library's metadata into a book's M4B files once it lands
   writeMetadataTags?: boolean
+  /** Whether a chapter repair may listen to the audio (whisper). */
+  transcriptionEnabled?: boolean
+  /** Which whisper model: `tiny.en`, `base.en` or `small.en`. */
+  transcriptionModel?: string
+  /** Whether every newly scanned book is listened to and judged against its record. */
+  audioAuditOnImport?: boolean
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean
   // What goes into each tag and whether it may be overwritten. Absent means the
@@ -1096,6 +1209,11 @@ export interface Audiobook {
     channels?: number
     createdAt?: string
     source?: string
+    chapterHealth?: ChapterHealth
+    chapterReason?: string | null
+    chapterCount?: number
+    /** A repair has a source to fix this file from: amber when true, red when false. */
+    chapterRepairable?: boolean
   }[]
   quality?: string
   qualityProfileId?: number
@@ -1106,7 +1224,22 @@ export interface Audiobook {
   wanted?: boolean
   // Server-computed list status used by slim /library responses.
   status?: AudiobookStatus
+  /** The worst chapter verdict among the book's files; absent until a file has been judged. */
+  chapterHealth?: ChapterHealth | null
+  chapterRepairable?: boolean
+  /** Whether the audio introduces itself as this book; absent until an audit has run. */
+  audioAudit?: AudioAuditVerdict | null
+  audioAuditReason?: string | null
+  /** What was heard, segments newline-separated. */
+  audioAuditHeard?: string | null
+  audioAuditHeardTitle?: string | null
+  audioAuditHeardAuthor?: string | null
+  audioAuditHeardNarrator?: string | null
+  audioAuditedAt?: string | null
 }
+
+/** The audio audit's verdict as the API spells it. */
+export type AudioAuditVerdict = 'match' | 'narrator-mismatch' | 'mismatch' | 'inconclusive'
 
 /**
  * A field that can be pinned against a metadata rescan.

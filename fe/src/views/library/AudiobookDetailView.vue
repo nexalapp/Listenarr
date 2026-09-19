@@ -297,6 +297,32 @@
             <PhFile />
             Files
           </button>
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'chapters' }"
+            @click="activeTab = 'chapters'"
+          >
+            <PhListNumbers />
+            Chapters
+            <span
+              v-if="chapterTabBadge"
+              class="tab-badge"
+              :class="`tab-badge--${chapterTabBadge.severity}`"
+              :title="chapterTabBadge.title"
+              >!</span
+            >
+          </button>
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'transcript' }"
+            @click="activeTab = 'transcript'"
+          >
+            <PhEar />
+            Transcript
+            <span v-if="audioTabBadge" class="tab-badge tab-badge--issue" :title="audioTabBadge"
+              >!</span
+            >
+          </button>
           <button class="tab" :class="{ active: activeTab === 'tags' }" @click="activeTab = 'tags'">
             <PhTag />
             Tags
@@ -519,6 +545,27 @@
                 >
               </div>
               <div class="file-actions">
+                <span
+                  v-if="chapterBadge(f.chapterHealth)"
+                  class="file-chapter-badge"
+                  :class="{ 'file-chapter-badge--note': f.chapterHealth === 'generic-titles' }"
+                  :title="f.chapterReason ?? undefined"
+                >
+                  <PhListNumbers />
+                  {{ chapterBadge(f.chapterHealth) }}
+                </span>
+                <button
+                  v-if="chapterBadge(f.chapterHealth)"
+                  type="button"
+                  class="file-repair-btn"
+                  :disabled="tagWriteInFlight"
+                  :title="
+                    tagWriteInFlight ? writeTagsTitle : 'Preview and rebuild this file’s chapters'
+                  "
+                  @click.stop="openChapterRepair(f.id)"
+                >
+                  Repair
+                </button>
                 <span class="file-size" v-if="f.size">{{ formatFileSize(f.size) }}</span>
                 <span class="file-size" v-else>Unknown size</span>
                 <PhCaretDown
@@ -584,6 +631,184 @@
           <p>No files available</p>
           <p class="hint">This audiobook hasn't been downloaded yet</p>
         </div>
+      </div>
+
+      <!-- Chapters Tab -->
+      <div id="chapters" v-if="activeTab === 'chapters'" class="chapters-content">
+        <!--
+          The chapter verdict, always shown, so "checked and fine" and "never checked"
+          do not look the same. Checking reads the files' atoms; it writes nothing.
+        -->
+        <div
+          v-if="audiobook && audiobook.files && audiobook.files.length"
+          class="audio-audit audio-audit--summary"
+          :class="chapterPanelClass"
+        >
+          <PhListNumbers class="audio-audit-icon" />
+          <div class="audio-audit-body">
+            <div class="audio-audit-verdict">{{ chapterSummary.headline }}</div>
+            <div class="audio-audit-reason">{{ chapterSummary.detail }}</div>
+          </div>
+          <div class="audio-audit-actions">
+            <button
+              v-if="chapterSummary.repairableFileIds.length > 0"
+              type="button"
+              class="file-repair-btn"
+              :disabled="tagWriteInFlight"
+              title="Preview and rebuild the chapters of the files that need it"
+              @click="openChapterRepair(...chapterSummary.repairableFileIds)"
+            >
+              Repair chapters
+            </button>
+            <button
+              type="button"
+              class="file-repair-btn file-repair-btn--quiet"
+              :disabled="checkingChapters"
+              :title="
+                checkingChapters
+                  ? 'Reading the files…'
+                  : 'Read each file’s chapter atom and chapter track and judge them'
+              "
+              @click="checkChapters"
+            >
+              {{
+                checkingChapters
+                  ? 'Checking…'
+                  : chapterSummary.checked
+                    ? 'Check again'
+                    : 'Check chapters'
+              }}
+            </button>
+          </div>
+        </div>
+
+        <ChapterListPanel
+          v-if="audiobook"
+          ref="chapterPanel"
+          :audiobookId="audiobook.id"
+          :disabled="tagWriteInFlight"
+          :disabledReason="writeTagsTitle"
+          @repair="(fileId) => openChapterRepair(fileId)"
+          @replan="onReplan"
+        />
+      </div>
+
+      <!-- Transcript Tab: what the narrator says the book is, beside what the record says. -->
+      <div id="transcript" v-if="activeTab === 'transcript'" class="credits-content">
+        <div v-if="!audiobook.files || !audiobook.files.length" class="credits-empty">
+          <PhEar />
+          <p>This book has no audio files here to listen to.</p>
+        </div>
+
+        <template v-else>
+          <div
+            class="audio-audit"
+            :class="
+              audiobook.audioAudit ? `audio-audit--${audiobook.audioAudit}` : 'audio-audit--none'
+            "
+          >
+            <PhEar class="audio-audit-icon" />
+            <div class="audio-audit-body">
+              <div class="audio-audit-verdict">
+                {{ audiobook.audioAudit ? audioAuditLabel : 'Not yet listened to.' }}
+              </div>
+              <div class="audio-audit-reason">
+                {{
+                  audiobook.audioAudit
+                    ? audiobook.audioAuditReason
+                    : 'Transcribing hears the first minute and the last of the book — where the title, author, narrator and publisher are read — and checks what it hears against this record.'
+                }}
+              </div>
+              <div v-if="audiobook.audioAuditedAt" class="audio-audit-when">
+                Heard {{ formatAuditedAt(audiobook.audioAuditedAt) }}
+              </div>
+            </div>
+            <div class="audio-audit-actions">
+              <button
+                type="button"
+                class="file-repair-btn"
+                :disabled="audioAuditInFlight || transcriptionOff"
+                :title="
+                  audioAuditInFlight
+                    ? 'Transcribing…'
+                    : transcriptionOff
+                      ? 'Transcription is off. Turn it on in Settings → Metadata Tags.'
+                      : 'Hear the opening and closing and check them against the record'
+                "
+                @click="auditAudio"
+              >
+                {{
+                  audioAuditInFlight
+                    ? 'Transcribing…'
+                    : audiobook.audioAudit
+                      ? 'Transcribe again'
+                      : 'Transcribe'
+                }}
+              </button>
+            </div>
+          </div>
+
+          <template v-if="audiobook.audioAudit">
+            <div class="credits-compare">
+              <div class="credits-col">
+                <h4>Heard in the audio</h4>
+                <dl>
+                  <dt>Title</dt>
+                  <dd :class="{ 'credits-missing': !audiobook.audioAuditHeardTitle }">
+                    {{ audiobook.audioAuditHeardTitle || 'not heard' }}
+                  </dd>
+                  <dt>Author</dt>
+                  <dd :class="{ 'credits-missing': !audiobook.audioAuditHeardAuthor }">
+                    {{ audiobook.audioAuditHeardAuthor || 'not heard' }}
+                  </dd>
+                  <dt>Narrator</dt>
+                  <dd :class="{ 'credits-missing': !audiobook.audioAuditHeardNarrator }">
+                    {{ audiobook.audioAuditHeardNarrator || 'not heard' }}
+                  </dd>
+                </dl>
+              </div>
+              <div class="credits-col">
+                <h4>On record</h4>
+                <dl>
+                  <dt>Title</dt>
+                  <dd>{{ audiobook.title }}</dd>
+                  <dt>Author</dt>
+                  <dd>{{ (audiobook.authors || []).join(', ') || '—' }}</dd>
+                  <dt>Narrator</dt>
+                  <dd>{{ (audiobook.narrators || []).join(', ') || '—' }}</dd>
+                </dl>
+              </div>
+            </div>
+
+            <div v-if="creditRecommendations.length" class="credits-recommend">
+              <h4>What to do</h4>
+              <ul>
+                <li v-for="(rec, index) in creditRecommendations" :key="index">
+                  <span>{{ rec.text }}</span>
+                  <button
+                    v-if="rec.action"
+                    type="button"
+                    class="file-repair-btn"
+                    :disabled="rec.busy"
+                    @click="rec.action"
+                  >
+                    {{ rec.label }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <div class="credits-transcript">
+              <h4>Opening</h4>
+              <p v-if="heardOpening" class="credits-text">{{ heardOpening }}</p>
+              <p v-else class="credits-missing">Nothing was heard in the first minute.</p>
+              <template v-if="heardClosing">
+                <h4>Closing</h4>
+                <p class="credits-text">{{ heardClosing }}</p>
+              </template>
+            </div>
+          </template>
+        </template>
       </div>
 
       <!-- Tags Tab -->
@@ -737,9 +962,9 @@
   <LibraryImportSearchModal
     v-if="showFixMatchModal && audiobook"
     :heading="safeText(audiobook.title)"
-    :initial-query="audiobook.title || ''"
-    :initial-author="(audiobook.authors || [])[0] || ''"
-    @close="showFixMatchModal = false"
+    :initial-query="fixMatchQuery ?? audiobook.title ?? ''"
+    :initial-author="fixMatchAuthor ?? (audiobook.authors || [])[0] ?? ''"
+    @close="closeFixMatch"
     @select="applyMatch"
   />
 
@@ -772,12 +997,20 @@
     @close="showTagPreviewModal = false"
     @confirm="writeTags"
   />
+
+  <ChapterRepairModal
+    v-if="chapterRepairScopes.length > 0"
+    :visible="showChapterRepairModal"
+    :scopes="chapterRepairScopes"
+    @close="showChapterRepairModal = false"
+    @confirm="repairChapters"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed, type Component } from 'vue'
 import { useToast } from '@/services/toastService'
-import type { Audiobook as AudiobookType } from '@/types'
+import type { Audiobook as AudiobookType, ChapterHealth } from '@/types'
 import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -810,6 +1043,9 @@ import { buildAudibleProductUrl } from '@/utils/marketDomains'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import LibraryImportSearchModal from '@/components/domain/audiobook/LibraryImportSearchModal.vue'
 import TagPreviewModal from '@/components/domain/tagging/TagPreviewModal.vue'
+import ChapterRepairModal from '@/components/domain/tagging/ChapterRepairModal.vue'
+import ChapterListPanel from '@/components/domain/tagging/ChapterListPanel.vue'
+import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepairModal.vue'
 import AudiobookTagsPanel from '@/components/domain/tagging/AudiobookTagsPanel.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
@@ -840,6 +1076,8 @@ import {
   PhFile,
   PhClockCounterClockwise,
   PhFileAudio,
+  PhListNumbers,
+  PhEar,
   PhCaretDown,
   PhFileDashed,
   PhWarningCircle,
@@ -865,7 +1103,7 @@ const conversionJobsStore = useConversionJobsStore()
 const tagJobsStore = useTagJobsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
-type DetailTab = 'details' | 'files' | 'tags' | 'history'
+type DetailTab = 'details' | 'files' | 'chapters' | 'transcript' | 'tags' | 'history'
 
 const audiobook = ref<Audiobook | null>(null)
 const loading = ref(true)
@@ -1047,6 +1285,8 @@ const expandedFileAccordions = ref<Set<number>>(new Set())
 const mobileTabOptions = computed(() => [
   { value: 'details', label: 'Details', icon: PhInfo },
   { value: 'files', label: 'Files', icon: PhFile },
+  { value: 'chapters', label: 'Chapters', icon: PhListNumbers },
+  { value: 'transcript', label: 'Transcript', icon: PhEar },
   { value: 'tags', label: 'Tags', icon: PhTag },
   { value: 'history', label: 'History', icon: PhClockCounterClockwise },
 ])
@@ -1464,6 +1704,8 @@ function normalizeDetailTabCandidate(value: unknown): DetailTab | null {
   if (
     normalized === 'details' ||
     normalized === 'files' ||
+    normalized === 'chapters' ||
+    normalized === 'transcript' ||
     normalized === 'tags' ||
     normalized === 'history'
   ) {
@@ -1513,6 +1755,12 @@ onMounted(async () => {
   // it already. Without it the button cannot tell that a conversion is running.
   conversionJobsStore.start()
   tagJobsStore.start()
+
+  // The Transcribe button reads the transcription setting; App.vue may not have
+  // loaded settings yet on a deep link.
+  if (!configStore.applicationSettings) {
+    void configStore.loadApplicationSettings()
+  }
 
   await loadAudiobook()
 
@@ -1845,16 +2093,454 @@ async function writeTags(payload: { tags: string[]; values: Record<string, strin
   }
 }
 
+/**
+ * How many of this book's jobs of each kind have finished. A count, not a status
+ * string: a second run of the same kind must register even while the first still
+ * sits completed in the store.
+ */
+function completedCount(kinds: string[]) {
+  return tagJobsStore.jobs.filter(
+    (job) =>
+      job.audiobookId === audiobook.value?.id &&
+      kinds.includes(job.kind) &&
+      job.status === 'Completed',
+  ).length
+}
+
 watch(
-  () => activeTagWrite.value?.status,
-  (status, previous) => {
-    if (status === 'Completed' && previous && previous !== 'Completed') {
+  () => completedCount(['Tags']),
+  (count, previous) => {
+    if (previous !== undefined && count > previous) {
       void tagsPanel.value?.load()
     }
   },
 )
 
+// A chapter repair replaced a file and re-judged it; a plan job stored its proposal.
+// Either way the badge and the panel are whatever the server now says.
+watch(
+  () => completedCount(['Chapters', 'Plan']),
+  (count, previous) => {
+    if (previous !== undefined && count > previous) {
+      void loadAudiobook()
+      void chapterPanel.value?.load()
+    }
+  },
+)
+
+function onReplan(payload: { fileId: number; queued: boolean; reason?: string }) {
+  const toast = useToast()
+  if (payload.queued) {
+    toast.success(
+      'Re-checking',
+      'The fix is being worked out again; this tab refreshes when it is ready.',
+    )
+  } else {
+    toast.error('Not re-checked', payload.reason ?? 'The fix could not be queued for planning.')
+  }
+}
+
+/** The badge text for a file whose chapters a repair can do something about, or null. */
+function chapterBadge(health: ChapterHealth | undefined): string | null {
+  switch (health) {
+    case 'corrupt':
+      return 'Corrupt chapters'
+    case 'oversegmented':
+      return 'CD-track chapters'
+    case 'generic-titles':
+      return 'Unnamed chapters'
+    default:
+      return null
+  }
+}
+
+// ---- audio audit -----------------------------------------------------------------
+
+const audioAuditLabel = computed(() => {
+  switch (audiobook.value?.audioAudit) {
+    case 'match':
+      return 'The audio introduces itself as this book.'
+    case 'narrator-mismatch':
+      return 'Right book, different narrator.'
+    case 'mismatch':
+      return 'The audio introduces itself as a different book.'
+    case 'inconclusive':
+      return 'Could not tell from the audio.'
+    default:
+      return ''
+  }
+})
+
+const CLOSING_MARKER = '\n\n[closing]\n'
+
+const heardParts = computed(() => {
+  const heard = audiobook.value?.audioAuditHeard ?? ''
+  const at = heard.indexOf(CLOSING_MARKER)
+  const opening = at >= 0 ? heard.slice(0, at) : heard
+  const closing = at >= 0 ? heard.slice(at + CLOSING_MARKER.length) : ''
+  const flatten = (text: string) => text.replace(/\s*\n\s*/g, ' ').trim()
+  return { opening: flatten(opening), closing: flatten(closing) }
+})
+const heardOpening = computed(() => heardParts.value.opening)
+const heardClosing = computed(() => heardParts.value.closing)
+
+function formatAuditedAt(iso: string) {
+  const when = new Date(iso)
+  return Number.isNaN(when.getTime()) ? '' : when.toLocaleString()
+}
+
+const settingNarrator = ref(false)
+
+/** Put the narrator the audio names on the record, then transcribe again to confirm. */
+async function adoptHeardNarrator() {
+  if (!audiobook.value?.audioAuditHeardNarrator) return
+  settingNarrator.value = true
+  const toast = useToast()
+  try {
+    const narrators = audiobook.value.audioAuditHeardNarrator
+      .split(/\s+(?:and|&)\s+/i)
+      .map((n) => n.trim())
+      .filter(Boolean)
+    await apiService.updateAudiobook(audiobook.value.id, { narrators })
+    toast.success('Narrator updated', `Set to ${narrators.join(', ')}.`)
+    await loadAudiobook()
+    await auditAudio()
+  } catch (err) {
+    toast.error('Could not update the narrator', err instanceof Error ? err.message : String(err))
+  } finally {
+    settingNarrator.value = false
+  }
+}
+
+/**
+ * What to do about the verdict. Each is a sentence and, where one exists, the action:
+ * a wrong book is re-matched from what the narrator said, a wrong narrator is adopted.
+ */
+const creditRecommendations = computed(() => {
+  const book = audiobook.value
+  if (!book?.audioAudit) return []
+  const recs: { text: string; label?: string; action?: () => void; busy?: boolean }[] = []
+  switch (book.audioAudit) {
+    case 'mismatch':
+      recs.push({
+        text: book.audioAuditHeardTitle
+          ? `The audio introduces itself as “${book.audioAuditHeardTitle}”${book.audioAuditHeardAuthor ? ` by ${book.audioAuditHeardAuthor}` : ''}. Re-match this record to that edition.`
+          : 'Neither the title nor the author on record was heard. Re-match this record, or check the files are the right book.',
+        label: 'Fix match…',
+        action: openFixMatchFromAudit,
+      })
+      break
+    case 'narrator-mismatch':
+      recs.push({
+        text: `The audio names ${book.audioAuditHeardNarrator} as narrator, not ${(book.narrators || []).join(' / ')}. If the audio is right, put that narrator on the record.`,
+        label: `Set narrator to ${book.audioAuditHeardNarrator}`,
+        action: adoptHeardNarrator,
+        busy: settingNarrator.value,
+      })
+      recs.push({
+        text: 'If the record is right and this is a different edition, re-match it.',
+        label: 'Fix match…',
+        action: openFixMatchFromAudit,
+      })
+      break
+    case 'inconclusive':
+      recs.push({
+        text: 'Too little was heard to tell: the opening may be music, or the title and author may be read later than the first minute. Transcribing again after choosing a larger model in Settings → Metadata Tags can help.',
+      })
+      break
+    default:
+      break
+  }
+  return recs
+})
+
+/** Known off, as against not yet loaded: the button is only disabled on a definite no. */
+const transcriptionOff = computed(
+  () => configStore.applicationSettings?.transcriptionEnabled === false,
+)
+
+const audioAuditInFlight = computed(() => {
+  const job = tagJobsStore.jobs.find(
+    (candidate) =>
+      candidate.audiobookId === audiobook.value?.id &&
+      candidate.kind === 'Audit' &&
+      (candidate.status === 'Queued' ||
+        candidate.status === 'Running' ||
+        candidate.status === 'RetryScheduled'),
+  )
+  return !!job
+})
+
+async function auditAudio() {
+  if (!audiobook.value) return
+  const toast = useToast()
+  try {
+    const response = await tagJobsStore.auditAudio(audiobook.value.id)
+    if (response.queued) {
+      toast.success(
+        'Transcribing',
+        'The verdict appears on the Transcript tab once the opening and closing have been heard.',
+      )
+    } else {
+      toast.error('Not queued', response.reason ?? 'This book could not be queued for an audit.')
+    }
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobookDetailView',
+      operation: 'auditAudio',
+      metadata: { audiobookId: audiobook.value?.id },
+    })
+    toast.error('Audit failed to queue', err instanceof Error ? err.message : String(err))
+  }
+}
+
+/** Start the re-match from what the narrator said the book is, not from the record that may be wrong. */
+const fixMatchQuery = ref<string | null>(null)
+const fixMatchAuthor = ref<string | null>(null)
+
+function openFixMatchFromAudit() {
+  fixMatchQuery.value = audiobook.value?.audioAuditHeardTitle ?? null
+  fixMatchAuthor.value = audiobook.value?.audioAuditHeardAuthor ?? null
+  showFixMatchModal.value = true
+}
+
+// An audit that finishes rewrites the verdict on the book; reload to show it.
+watch(
+  () => completedCount(['Audit']),
+  (count, previous) => {
+    if (previous !== undefined && count > previous) {
+      void loadAudiobook()
+    }
+  },
+)
+
+const showChapterRepairModal = ref(false)
+const chapterRepairScopes = ref<ChapterRepairScope[]>([])
+
+function openChapterRepair(...fileIds: number[]) {
+  if (!audiobook.value || fileIds.length === 0) return
+  chapterRepairScopes.value = [
+    { audiobookId: audiobook.value.id, title: audiobook.value.title ?? '', fileIds },
+  ]
+  showChapterRepairModal.value = true
+}
+
+// ---- chapter check ---------------------------------------------------------------
+
+const CHAPTER_ISSUE_HEALTH = new Set<ChapterHealth>(['corrupt', 'oversegmented', 'generic-titles'])
+
+/** One line for the whole book, from the worst of its files. */
+const chapterSummary = computed(() => {
+  const files = audiobook.value?.files ?? []
+  const taggable = files.filter((f) => /\.(m4b|m4a)$/i.test(f.path ?? ''))
+  const judged = taggable.filter((f) => f.chapterHealth && f.chapterHealth !== 'unknown')
+  const repairableFileIds = judged
+    .filter((f) => CHAPTER_ISSUE_HEALTH.has(f.chapterHealth as ChapterHealth))
+    .map((f) => f.id)
+
+  if (taggable.length === 0) {
+    return {
+      checked: false,
+      severity: 'none' as const,
+      headline: 'Chapters are only inspected in M4B files.',
+      detail: 'Convert this book to M4B to have its chapter structure checked and repaired.',
+      repairableFileIds,
+    }
+  }
+
+  if (judged.length === 0) {
+    return {
+      checked: false,
+      severity: 'none' as const,
+      headline: 'Chapters not yet checked.',
+      detail:
+        'A check reads each file’s chapter atom and chapter track and reports a broken atom, CD-track splits, or placeholder titles.',
+      repairableFileIds,
+    }
+  }
+
+  const worst = judged
+    .map((f) => f.chapterHealth as ChapterHealth)
+    .sort((a, b) => severityRank(b) - severityRank(a))[0]
+  const reasons = judged
+    .filter((f) => f.chapterHealth === worst)
+    .map((f) => f.chapterReason)
+    .filter((r): r is string => !!r)
+  const count = judged.reduce((sum, f) => sum + (f.chapterCount ?? 0), 0)
+
+  // Amber when every flagged file can be fixed automatically, red when one cannot.
+  const flagged = judged.filter((f) => CHAPTER_ISSUE_HEALTH.has(f.chapterHealth as ChapterHealth))
+  const fixable = flagged.length > 0 && flagged.every((f) => f.chapterRepairable)
+  const severity = fixable ? ('fixable' as const) : ('issue' as const)
+  const fixNote = fixable
+    ? ' A repair can fix this automatically.'
+    : ' No automatic fix is available yet: the book needs an ASIN match, or transcription turned on, for a repair to have a source.'
+
+  switch (worst) {
+    case 'corrupt':
+      return {
+        checked: true,
+        severity,
+        headline: 'Corrupt chapter atom.',
+        detail: (reasons[0] ?? '') + fixNote,
+        repairableFileIds,
+      }
+    case 'oversegmented':
+      return {
+        checked: true,
+        severity,
+        headline: 'Chapters are CD tracks.',
+        detail: (reasons[0] ?? '') + fixNote,
+        repairableFileIds,
+      }
+    case 'generic-titles':
+      return {
+        checked: true,
+        severity,
+        headline: 'Chapters have placeholder titles.',
+        detail: (reasons[0] ?? '') + fixNote,
+        repairableFileIds,
+      }
+    case 'none':
+      return {
+        checked: true,
+        severity: 'note' as const,
+        headline: 'No chapter marks.',
+        detail: reasons[0] ?? '',
+        repairableFileIds,
+      }
+    default:
+      return {
+        checked: true,
+        severity: 'ok' as const,
+        headline: `Chapters look right (${count} across ${judged.length} file${judged.length === 1 ? '' : 's'}).`,
+        detail: 'The chapter atom parses and agrees with what the file plays.',
+        repairableFileIds,
+      }
+  }
+})
+
+function severityRank(health: ChapterHealth): number {
+  switch (health) {
+    case 'corrupt':
+      return 5
+    case 'oversegmented':
+      return 4
+    case 'generic-titles':
+      return 3
+    case 'none':
+      return 2
+    case 'healthy':
+      return 1
+    default:
+      return 0
+  }
+}
+
+/**
+ * A mark on the Chapters tab before it is opened: how many files a repair has
+ * something to do for, red when the marks themselves are wrong and amber when only
+ * the names are. From the verdicts the server already holds, so it costs nothing.
+ */
+const chapterTabBadge = computed(() => {
+  const files = (audiobook.value?.files ?? []).filter((f) =>
+    CHAPTER_ISSUE_HEALTH.has(f.chapterHealth as ChapterHealth),
+  )
+  if (files.length === 0) return null
+  // Amber: every flagged file can be fixed automatically. Red: at least one cannot.
+  const stuck = files.filter((f) => !f.chapterRepairable).length
+  return stuck > 0
+    ? {
+        severity: 'issue',
+        title: `${stuck} of ${files.length} file(s) have chapter problems that cannot be fixed automatically — open Chapters to see why`,
+      }
+    : {
+        severity: 'note',
+        title: `${files.length} file(s) have chapter problems a repair can fix — open Chapters to preview it`,
+      }
+})
+const audioTabBadge = computed(() => {
+  switch (audiobook.value?.audioAudit) {
+    case 'mismatch':
+      return 'The audio introduces itself as a different book'
+    case 'narrator-mismatch':
+      return 'The audio names a different narrator'
+    default:
+      return null
+  }
+})
+
+const chapterPanelClass = computed(() => {
+  switch (chapterSummary.value.severity) {
+    case 'issue':
+      return 'audio-audit--mismatch'
+    case 'fixable':
+      return 'audio-audit--fixable'
+    case 'ok':
+      return 'audio-audit--match'
+    default:
+      return 'audio-audit--none'
+  }
+})
+
+const chapterPanel = ref<InstanceType<typeof ChapterListPanel> | null>(null)
+const checkingChapters = ref(false)
+
+/**
+ * Judging is what the tag table does when it loads: probe the files (cached by size
+ * and mtime) and record the verdict on each. Asking for this one book does the same
+ * for it alone and does not clear anything else's cache.
+ */
+async function checkChapters() {
+  if (!audiobook.value) return
+  checkingChapters.value = true
+  const toast = useToast()
+  try {
+    await apiService.getLibraryTags(false, [audiobook.value.id])
+    await loadAudiobook()
+    await chapterPanel.value?.load()
+  } catch (err) {
+    toast.error('Could not check chapters', err instanceof Error ? err.message : String(err))
+  } finally {
+    checkingChapters.value = false
+  }
+}
+
+async function repairChapters(books: { audiobookId: number; fileIds: number[] }[]) {
+  showChapterRepairModal.value = false
+  const toast = useToast()
+  for (const book of books) {
+    try {
+      const response = await tagJobsStore.repairChapters(book.audiobookId, book.fileIds)
+      if (response.queued) {
+        toast.success(
+          'Chapter repair queued',
+          'Progress is shown in Activity. The file is remuxed, re-tagged and checked before it replaces the original.',
+        )
+      } else {
+        toast.error('Not queued', response.reason ?? 'This file could not be queued for repair.')
+      }
+    } catch (err) {
+      errorTracking.captureException(err as Error, {
+        component: 'AudiobookDetailView',
+        operation: 'repairChapters',
+        metadata: { audiobookId: book.audiobookId },
+      })
+      toast.error(
+        'Chapter repair failed to queue',
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  }
+}
+
 const showFixMatchModal = ref(false)
+
+function closeFixMatch() {
+  showFixMatchModal.value = false
+  fixMatchQuery.value = null
+  fixMatchAuthor.value = null
+}
 
 // A wrong match is fixed by pointing the book at the right edition and letting the
 // ordinary rescan do the rest; locked fields survive it as they would any rescan.
@@ -3097,6 +3783,29 @@ function formatDate(dateString?: string): string {
   color: #fff;
 }
 
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tab-badge--issue {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.tab-badge--note {
+  background: rgba(243, 156, 18, 0.18);
+  color: #f39c12;
+}
+
 .tab.active {
   color: var(--brand-500);
   border-bottom-color: var(--brand-500);
@@ -3321,6 +4030,8 @@ a.identifier-link:hover {
 }
 
 .files-content,
+.chapters-content,
+.credits-content,
 .tags-content,
 .history-content {
   background-color: #2a2a2a;
@@ -3418,6 +4129,234 @@ a.identifier-link:hover {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.file-chapter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background-color: rgba(231, 76, 60, 0.12);
+  border: 1px solid rgba(231, 76, 60, 0.18);
+  color: #e74c3c;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.audio-audit {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chapters-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.audio-audit--summary {
+  margin-bottom: 0;
+}
+
+.credits-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.credits-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.audio-audit-when {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.credits-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.credits-col,
+.credits-recommend,
+.credits-transcript {
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.credits-col h4,
+.credits-recommend h4,
+.credits-transcript h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.credits-transcript p + h4 {
+  margin-top: 12px;
+}
+
+.credits-col dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.credits-col dt {
+  color: var(--text-muted);
+}
+
+.credits-col dd {
+  margin: 0;
+}
+
+.credits-missing {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.credits-recommend ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credits-recommend li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.credits-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 800px) {
+  .credits-compare {
+    grid-template-columns: 1fr;
+  }
+}
+
+.audio-audit--mismatch,
+.audio-audit--narrator-mismatch {
+  border-color: rgba(231, 76, 60, 0.35);
+  background: rgba(231, 76, 60, 0.08);
+}
+
+.audio-audit--match {
+  border-color: rgba(46, 204, 113, 0.25);
+}
+
+.audio-audit--fixable {
+  border-color: rgba(243, 156, 18, 0.4);
+  background: rgba(243, 156, 18, 0.08);
+}
+
+.audio-audit--fixable .audio-audit-icon {
+  color: #f39c12;
+}
+
+.audio-audit-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+}
+
+.audio-audit--mismatch .audio-audit-icon,
+.audio-audit--narrator-mismatch .audio-audit-icon {
+  color: #e74c3c;
+}
+
+.audio-audit--match .audio-audit-icon {
+  color: #2ecc71;
+}
+
+.audio-audit-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.audio-audit-verdict {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.audio-audit-reason {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.audio-audit-heard {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.audio-audit-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.file-repair-btn--quiet {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
+}
+
+.file-chapter-badge--note {
+  background-color: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text-muted);
+}
+
+.file-repair-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--brand-500);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand-500);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.file-repair-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .accordion-toggle {

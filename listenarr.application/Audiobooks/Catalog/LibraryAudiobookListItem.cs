@@ -57,5 +57,22 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public string[]? AuthorAsins { get; set; }
         public bool Wanted { get; set; }
         public string Status { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The worst chapter verdict among the book's files, as a lowercase word the
+        /// list filters on: <c>corrupt</c>, <c>oversegmented</c>, <c>generic-titles</c>,
+        /// <c>none</c>, <c>healthy</c>. Null when no file has been judged yet.
+        /// </summary>
+        public string? ChapterHealth { get; set; }
+
+        /// <summary>Whether a repair can do something about the worst file: amber when true, red when false.</summary>
+        public bool ChapterRepairable { get; set; }
+
+        /// <summary>
+        /// Whether the audio introduces itself as this book, as a lowercase word:
+        /// <c>match</c>, <c>narrator-mismatch</c>, <c>mismatch</c>, <c>inconclusive</c>.
+        /// Null until an audit has run.
+        /// </summary>
+        public string? AudioAudit { get; set; }
     }
 }

@@ -41,6 +41,18 @@ namespace Listenarr.Domain.Audiobooks.Tagging
     }
 
     /// <summary>How the job came to exist. A manual request ignores the automatic setting.</summary>
+    public enum TagJobKind
+    {
+        Tags,
+        Chapters,
+
+        /// <summary>Listen to the book and record whether it is what its record says. Writes nothing to the file.</summary>
+        Audit,
+
+        /// <summary>Work out and store the chapter fix for a book's flagged files. Writes nothing to the file.</summary>
+        Plan
+    }
+
     public enum TagTrigger
     {
         Automatic,
@@ -75,6 +87,20 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         public TagJobStatus Status { get; set; } = TagJobStatus.Queued;
         public TagJobPhase Phase { get; set; } = TagJobPhase.None;
         public TagTrigger Trigger { get; set; } = TagTrigger.Automatic;
+
+        /// <summary>
+        /// Whether this job writes tags or rewrites chapters. One queue for both because
+        /// they replace the same files through the same publication path, and one active
+        /// job per book is exactly the guarantee that path needs.
+        /// </summary>
+        public TagJobKind Kind { get; set; } = TagJobKind.Tags;
+
+        /// <summary>
+        /// For a chapter job: the chapter list to write for each file, as JSON keyed by
+        /// file id. Decided at enqueue time so what the operator previewed is what gets
+        /// written, whatever the file reads as by the time the worker gets to it.
+        /// </summary>
+        public string? ChapterPlanJson { get; set; }
 
         /// <summary>
         /// Set while the job is active and cleared when it reaches a terminal state. A
@@ -189,5 +215,14 @@ namespace Listenarr.Domain.Audiobooks.Tagging
 
         /// <summary>One tagging run per audiobook: a second request while one is in flight is the same request.</summary>
         public static string BuildDeduplicationKey(int audiobookId) => $"tagging:{audiobookId}";
+
+        /// <summary>
+        /// An audit's key is its own: it writes nothing, so it may sit in the queue
+        /// beside a tag write for the same book without either being refused.
+        /// </summary>
+        public static string BuildAuditDeduplicationKey(int audiobookId) => $"audit:{audiobookId}";
+
+        /// <summary>Planning writes nothing either, so it too queues beside a tag write.</summary>
+        public static string BuildPlanDeduplicationKey(int audiobookId) => $"plan:{audiobookId}";
     }
 }

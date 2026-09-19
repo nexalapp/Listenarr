@@ -42,29 +42,31 @@
                 : 0) > 0
           "
           class="count-badge"
+          :class="{ 'count-badge--selected': selectedCount > 0 }"
         >
-          {{
-            groupBy === 'books'
-              ? audiobooks.length
-              : groupedCollections
-                ? groupedCollections.length
-                : 0
-          }}
-          {{ groupBy === 'books' ? 'Book' : groupBy === 'authors' ? 'Author' : 'Series'
-          }}{{
-            (groupBy === 'books'
-              ? audiobooks.length
-              : groupedCollections
-                ? groupedCollections.length
-                : 0) !== 1 && groupBy !== 'series'
-              ? 's'
-              : ''
-          }}
+          <!-- While books are ticked the chip counts the selection; the library total is
+               not the number the toolbar's actions apply to. -->
+          <template v-if="selectedCount > 0">{{ selectedCount }} selected</template>
+          <template v-else>
+            {{
+              groupBy === 'books'
+                ? audiobooks.length
+                : groupedCollections
+                  ? groupedCollections.length
+                  : 0
+            }}
+            {{ groupBy === 'books' ? 'Book' : groupBy === 'authors' ? 'Author' : 'Series'
+            }}{{
+              (groupBy === 'books'
+                ? audiobooks.length
+                : groupedCollections
+                  ? groupedCollections.length
+                  : 0) !== 1 && groupBy !== 'series'
+                ? 's'
+                : ''
+            }}
+          </template>
         </span>
-        <button class="toolbar-btn" @click="refreshLibrary">
-          <PhArrowClockwise />
-          Refresh
-        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn" @click="libraryStore.clearSelection()">
           <PhX />
           Clear Selection
@@ -77,29 +79,111 @@
           <PhCheckSquare />
           Select All
         </button>
-        <button v-if="selectedCount > 0" class="toolbar-btn edit-btn" @click="showBulkEdit">
-          <PhPencil />
-          Edit Selected
-        </button>
-        <button v-if="selectedCount > 0" class="toolbar-btn" @click="showOrganize">
-          <PhFolderOpen />
-          Organize Selected
-        </button>
-        <button
-          v-if="selectedCount > 0"
-          class="toolbar-btn"
-          :disabled="converting"
-          :title="convertSelectedTitle"
-          @click="confirmBulkConvert"
-        >
-          <PhSpinner v-if="converting" class="ph-spin" />
-          <PhFileAudio v-else />
-          {{ converting ? 'Queueing...' : 'Convert Selected' }}
-        </button>
-        <button v-if="selectedCount > 0" class="toolbar-btn delete-btn" @click="confirmBulkDelete">
-          <PhTrash />
-          Delete Selected ({{ selectedCount }})
-        </button>
+        <!--
+          One menu for everything that can be done to the selection, one book or many.
+          The list is long enough now that a row of buttons pushed the filters off the
+          toolbar; a menu also reads as "what can I do with these", which is the question.
+        -->
+        <div v-if="selectedCount > 0" ref="actionsMenuEl" class="actions-menu">
+          <button
+            class="toolbar-btn actions-btn"
+            :class="{ active: actionsOpen }"
+            :aria-expanded="actionsOpen"
+            @click="actionsOpen = !actionsOpen"
+          >
+            <PhLightning />
+            Actions
+            <PhCaretDown :size="12" />
+          </button>
+          <div v-if="actionsOpen" class="actions-dropdown">
+            <div class="actions-group">Metadata</div>
+            <button type="button" class="actions-option" @click="pick(showBulkEdit)">
+              <PhPencil />
+              <span><strong>Edit</strong><small>Change fields across the selection</small></span>
+            </button>
+            <button type="button" class="actions-option" @click="pick(showOrganize)">
+              <PhFolderOpen />
+              <span
+                ><strong>Organize</strong><small>Move and rename to the naming pattern</small></span
+              >
+            </button>
+
+            <div class="actions-group">Files</div>
+            <button
+              type="button"
+              class="actions-option"
+              :disabled="converting"
+              :title="convertSelectedTitle"
+              @click="pick(confirmBulkConvert)"
+            >
+              <PhFileAudio />
+              <span
+                ><strong>Convert to M4B</strong
+                ><small>MP3 books only; M4B books are skipped</small></span
+              >
+            </button>
+
+            <div class="actions-group">Chapters</div>
+            <button
+              type="button"
+              class="actions-option"
+              :disabled="bulkBusy"
+              @click="pick(bulkCheckChapters)"
+            >
+              <PhListNumbers />
+              <span
+                ><strong>Check Chapters</strong
+                ><small v-if="bulkProgress"
+                  >Checking {{ bulkProgress.done }} of {{ bulkProgress.total }}…</small
+                ><small v-else
+                  >Judge each file's chapters; work out fixes for anything flagged</small
+                ></span
+              >
+            </button>
+            <button
+              type="button"
+              class="actions-option"
+              :disabled="bulkBusy"
+              @click="pick(bulkRepairChapters)"
+            >
+              <PhWrench />
+              <span
+                ><strong>Repair Chapters</strong
+                ><small>Apply the stored fix where there is one</small></span
+              >
+            </button>
+
+            <div class="actions-group">Transcript</div>
+            <button
+              type="button"
+              class="actions-option"
+              :disabled="bulkBusy"
+              @click="pick(bulkReadCredits)"
+            >
+              <PhEar />
+              <span
+                ><strong>Transcribe</strong
+                ><small
+                  >Hear the opening and closing; check title, author and narrator against the
+                  record</small
+                ></span
+              >
+            </button>
+
+            <div class="actions-divider"></div>
+            <button
+              type="button"
+              class="actions-option actions-option--danger"
+              @click="pick(confirmBulkDelete)"
+            >
+              <PhTrash />
+              <span
+                ><strong>Delete</strong
+                ><small>Remove {{ selectedCount }} book(s) from the library</small></span
+              >
+            </button>
+          </div>
+        </div>
       </div>
       <div class="toolbar-right">
         <!-- Sort / Filter controls -->
@@ -603,6 +687,23 @@
                         <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
                         {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
                       </div>
+                      <div
+                        v-if="chapterIssueLabel(audiobook)"
+                        class="chapter-badge"
+                        :class="{ 'chapter-badge--fixable': audiobook.chapterRepairable }"
+                        :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
+                      >
+                        <PhListNumbers />
+                        {{ chapterIssueLabel(audiobook) }}
+                      </div>
+                      <div
+                        v-if="audioIssueLabel(audiobook)"
+                        class="chapter-badge"
+                        :title="audiobook.audioAuditReason ?? undefined"
+                      >
+                        <PhEar />
+                        {{ audioIssueLabel(audiobook) }}
+                      </div>
                     </div>
                     <div class="action-buttons">
                       <button
@@ -785,6 +886,23 @@
                     <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
                     {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
                   </div>
+                  <div
+                    v-if="chapterIssueLabel(audiobook)"
+                    class="chapter-badge"
+                    :class="{ 'chapter-badge--fixable': audiobook.chapterRepairable }"
+                    :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
+                  >
+                    <PhListNumbers />
+                    {{ chapterIssueLabel(audiobook) }}
+                  </div>
+                  <div
+                    v-if="audioIssueLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="audiobook.audioAuditReason ?? undefined"
+                  >
+                    <PhEar />
+                    {{ audioIssueLabel(audiobook) }}
+                  </div>
                 </div>
                 <div class="list-actions">
                   <button
@@ -949,6 +1067,11 @@ import {
   PhStar,
   PhEye,
   PhEyeSlash,
+  PhListNumbers,
+  PhEar,
+  PhLightning,
+  PhCaretDown,
+  PhWrench,
   PhSpinner,
   PhWarningCircle,
   PhInfo,
@@ -978,6 +1101,7 @@ import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
 import CustomFilterModal from '@/components/domain/collection/CustomFilterModal.vue'
 import { EmptyState } from '@/components/base'
 import { showConfirm } from '@/composables/useConfirm'
+import { useTagJobsStore } from '@/stores/tagJobs'
 import { useToast } from '@/services/toastService'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import type { Audiobook, AudiobookStatus, QualityProfile } from '@/types'
@@ -1269,6 +1393,36 @@ watch(selectedFilterId, (v) => {
 
 // sortOrder toggled via sortKeyProxy when selecting same key; explicit toggle removed
 
+/**
+ * The badge text for a book whose worst file needs a chapter repair, or null. Only the
+ * two verdicts a repair exists for: placeholder titles and missing marks are notes on
+ * the tag table, not something to flag beside every cover.
+ */
+const chapterIssueLabel = (book: Audiobook): string | null => {
+  switch (book.chapterHealth) {
+    case 'corrupt':
+      return 'Corrupt chapters'
+    case 'oversegmented':
+      return 'CD-track chapters'
+    case 'generic-titles':
+      return 'Unnamed chapters'
+    default:
+      return null
+  }
+}
+
+/** The badge for a book whose audio does not introduce itself as this book, or null. */
+const audioIssueLabel = (book: Audiobook): string | null => {
+  switch (book.audioAudit) {
+    case 'mismatch':
+      return 'Metadata mismatch'
+    case 'narrator-mismatch':
+      return 'Narrator mismatch'
+    default:
+      return null
+  }
+}
+
 const filteredAndSortedAudiobooks = computed(() => {
   const list = (libraryStore.audiobooks || []).slice()
 
@@ -1300,6 +1454,10 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => !b.monitored)
     } else if (sid === 'missing') {
       filtered = filtered.filter((b) => getAudiobookStatus(b) === 'no-file')
+    } else if (sid === 'chapter-issues') {
+      filtered = filtered.filter((b) => !!chapterIssueLabel(b))
+    } else if (sid === 'audio-mismatch') {
+      filtered = filtered.filter((b) => !!audioIssueLabel(b))
     } else if (sid === 'recent') {
       // For now: approximate by publishYear being this year or last year
       const thisYear = new Date().getFullYear()
@@ -2209,6 +2367,8 @@ async function initializeVirtualScroller() {
 }
 
 onMounted(async () => {
+  // Idempotent; the badges this list shows follow the tag queue's jobs.
+  tagJobsStore.start()
   await Promise.all([
     libraryStore.fetchLibrary(),
     configStore.loadApplicationSettings(),
@@ -2590,6 +2750,164 @@ const convertSelectedTitle = computed(
  * books already in M4B and books already queued. The server reports each one, and
  * what comes back here is a count per reason rather than a toast per book.
  */
+// ---- the Actions menu ------------------------------------------------------------
+
+const actionsOpen = ref(false)
+const actionsMenuEl = ref<HTMLElement | null>(null)
+/** Where a long-running bulk action is, shown on the menu item while it runs. */
+const bulkProgress = ref<{ done: number; total: number } | null>(null)
+const bulkBusy = ref(false)
+const tagJobsStore = useTagJobsStore()
+
+function onActionsDocumentClick(event: MouseEvent) {
+  if (
+    actionsOpen.value &&
+    actionsMenuEl.value &&
+    !actionsMenuEl.value.contains(event.target as Node)
+  ) {
+    actionsOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('click', onActionsDocumentClick))
+
+// A finished repair, plan or audit changed a badge this list shows; fetch once the
+// burst is over rather than once per job.
+let badgeRefresh: ReturnType<typeof setTimeout> | null = null
+watch(
+  () =>
+    tagJobsStore.jobs.filter(
+      (job) => ['Chapters', 'Plan', 'Audit'].includes(job.kind) && job.status === 'Completed',
+    ).length,
+  (count, previous) => {
+    if (previous === undefined || count <= previous) return
+    if (badgeRefresh) clearTimeout(badgeRefresh)
+    badgeRefresh = setTimeout(() => {
+      badgeRefresh = null
+      void libraryStore.fetchLibrary()
+    }, 1500)
+  },
+)
+onUnmounted(() => {
+  if (badgeRefresh) clearTimeout(badgeRefresh)
+})
+onUnmounted(() => document.removeEventListener('click', onActionsDocumentClick))
+
+/** Close the menu, then run the action. */
+function pick(action: () => unknown) {
+  actionsOpen.value = false
+  void action()
+}
+
+/** How many books one chapter-check request probes. Each file is opened and read; a request that covers hundreds would sit behind a proxy timeout. */
+const CHECK_CHAPTERS_BATCH = 8
+
+/** Judge the selection's chapters now; anything flagged gets its fix worked out in the background. */
+async function bulkCheckChapters() {
+  const ids = Array.from(libraryStore.selectedIds)
+  if (ids.length === 0) return
+  bulkBusy.value = true
+  bulkProgress.value = { done: 0, total: ids.length }
+  try {
+    const flagged = new Set<number>()
+    for (let offset = 0; offset < ids.length; offset += CHECK_CHAPTERS_BATCH) {
+      const batch = ids.slice(offset, offset + CHECK_CHAPTERS_BATCH)
+      const table = await apiService.getLibraryTags(false, batch)
+      for (const row of table.rows) {
+        if (['corrupt', 'oversegmented', 'generic-titles'].includes(row.chapterHealth)) {
+          flagged.add(row.audiobookId)
+        }
+      }
+      bulkProgress.value = { done: Math.min(ids.length, offset + batch.length), total: ids.length }
+    }
+    toast.success(
+      'Chapters checked',
+      flagged.size
+        ? `${flagged.size} of ${ids.length} book(s) have chapter problems; fixes are being worked out. Filter by Broken Chapters to see them.`
+        : `All ${ids.length} book(s) have sound chapters.`,
+    )
+    await libraryStore.fetchLibrary()
+    libraryStore.clearSelection()
+  } catch (err) {
+    toast.error('Could not check chapters', err instanceof Error ? err.message : String(err))
+  } finally {
+    bulkBusy.value = false
+    bulkProgress.value = null
+  }
+}
+
+/** Queue a chapter repair for every selected book whose flagged files have a fix. */
+async function bulkRepairChapters() {
+  const ids = Array.from(libraryStore.selectedIds)
+  if (ids.length === 0) return
+
+  const ok = await showConfirm(
+    `Repair the chapters of ${ids.length} book${ids.length !== 1 ? 's' : ''}? ` +
+      'Each flagged file is rewritten with the fix shown on its Chapters tab, verified, and ' +
+      'then replaces the original. Books with nothing to repair, or whose fix is still being ' +
+      'worked out, are skipped.',
+    'Repair Chapters',
+    { confirmText: 'Queue Repairs', cancelText: 'Cancel' },
+  )
+  if (!ok) return
+
+  bulkBusy.value = true
+  let queued = 0
+  const refusals: string[] = []
+  try {
+    for (const id of ids) {
+      try {
+        const response = await tagJobsStore.repairChapters(id)
+        if (response.queued) queued++
+        else if (response.reason) refusals.push(response.reason)
+      } catch (err) {
+        refusals.push(err instanceof Error ? err.message : String(err))
+      }
+    }
+    if (queued > 0) {
+      toast.success(
+        'Repairs queued',
+        `${queued} book${queued === 1 ? '' : 's'} queued. Progress is shown in Activity.`,
+      )
+      libraryStore.clearSelection()
+    } else {
+      toast.error('Nothing queued', refusals[0] ?? 'No selected book has a chapter fix to apply.')
+    }
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+/** Queue an audio audit for every selected book. */
+async function bulkReadCredits() {
+  const ids = Array.from(libraryStore.selectedIds)
+  if (ids.length === 0) return
+  bulkBusy.value = true
+  let queued = 0
+  const refusals: string[] = []
+  try {
+    for (const id of ids) {
+      try {
+        const response = await tagJobsStore.auditAudio(id)
+        if (response.queued) queued++
+        else if (response.reason) refusals.push(response.reason)
+      } catch (err) {
+        refusals.push(err instanceof Error ? err.message : String(err))
+      }
+    }
+    if (queued > 0) {
+      toast.success(
+        'Transcribing',
+        `${queued} book${queued === 1 ? '' : 's'} queued. Verdicts land on each book's Transcript tab.`,
+      )
+      libraryStore.clearSelection()
+    } else {
+      toast.error('Nothing queued', refusals[0] ?? 'No selected book could be queued.')
+    }
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
 async function confirmBulkConvert() {
   const ids = Array.from(libraryStore.selectedIds)
   if (ids.length === 0 || converting.value) return
@@ -2890,6 +3208,96 @@ defineExpose({
     background-color 0.12s ease,
     transform 0.08s ease,
     box-shadow 0.12s ease;
+}
+
+.actions-menu {
+  position: relative;
+}
+
+.actions-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 320px;
+  padding: 6px;
+  background: var(--bg-secondary, #202020);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.actions-group {
+  padding: 8px 10px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.actions-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.actions-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary, #e6eef8);
+  text-align: left;
+  cursor: pointer;
+}
+
+.actions-option:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.actions-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.actions-option svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+}
+
+.actions-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.actions-option strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.actions-option small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.actions-option--danger,
+.actions-option--danger svg {
+  color: #ff6b6b;
+}
+
+.actions-option--danger:hover:not(:disabled) {
+  background: rgba(231, 76, 60, 0.12);
 }
 
 .toolbar-btn:hover {
@@ -4185,6 +4593,29 @@ defineExpose({
 .monitored-badge i {
   font-size: 12px;
   flex-shrink: 0;
+}
+
+.chapter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  margin-left: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background-color: rgba(231, 76, 60, 0.12);
+  border: 1px solid rgba(231, 76, 60, 0.18);
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #e74c3c;
+  white-space: nowrap;
+}
+
+/* Amber: a repair can fix it automatically. Red: it cannot, yet. */
+.chapter-badge--fixable {
+  background-color: rgba(243, 156, 18, 0.12);
+  border-color: rgba(243, 156, 18, 0.25);
+  color: #f39c12;
 }
 
 .action-buttons {

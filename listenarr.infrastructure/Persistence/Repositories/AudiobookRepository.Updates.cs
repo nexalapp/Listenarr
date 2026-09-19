@@ -1,4 +1,6 @@
+using Listenarr.Domain.Audiobooks.Audit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories;
 
@@ -102,11 +104,35 @@ public partial class AudiobookRepository
         return true;
     }
 
+    public async Task SetAudioAuditAsync(int audiobookId, AudioAuditRecord audit, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(audit);
+
+        var existing = await _db.Audiobooks.FirstOrDefaultAsync(candidate => candidate.Id == audiobookId, ct);
+        if (existing == null)
+        {
+            return;
+        }
+
+        existing.AudioAuditVerdict = audit.Verdict;
+        existing.AudioAuditReason = Truncate(audit.Reason, 512);
+        existing.AudioAuditHeard = Truncate(audit.Heard, 4000);
+        existing.AudioAuditHeardTitle = Truncate(audit.Credits.Title, 256);
+        existing.AudioAuditHeardAuthor = Truncate(audit.Credits.Author, 256);
+        existing.AudioAuditHeardNarrator = Truncate(audit.Credits.Narrator, 256);
+        existing.AudioAuditedAt = audit.AuditedAtUtc;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static string? Truncate(string? value, int max) =>
+        value == null || value.Length <= max ? value : value[..max];
+
     public async Task<bool> UpdateAsync(Audiobook audiobook)
     {
         ArgumentNullException.ThrowIfNull(audiobook);
 
         var entry = _db.Entry(audiobook);
+        var tracked = entry;
         if (entry.State == EntityState.Detached)
         {
             var existing = await _db.Audiobooks.FirstOrDefaultAsync(candidate => candidate.Id == audiobook.Id);
@@ -114,6 +140,8 @@ public partial class AudiobookRepository
             {
                 return false;
             }
+
+            tracked = _db.Entry(existing);
 
             var preservedBasePath = existing.BasePath;
             var preservedFilePath = existing.FilePath;
@@ -133,9 +161,50 @@ public partial class AudiobookRepository
         // properties the caller actually changed. Calling Update here would mark BasePath and
         // every other property modified, allowing an unrelated stale metadata save to undo a
         // completed move from another DbContext.
+        await RejudgeAudioAuditAsync(tracked);
         await _db.SaveChangesAsync();
         return true;
     }
+
+    /// <summary>
+    /// The audio audit's verdict is what the transcript says against the record, so a
+    /// record that changes — a fix-match, a corrected narrator — is judged again from the
+    /// transcript already stored. Nothing is listened to; the book stops showing a
+    /// mismatch it no longer has the moment the record is right.
+    /// </summary>
+    private async Task RejudgeAudioAuditAsync(EntityEntry<Audiobook> entry)
+    {
+        var audiobook = entry.Entity;
+        if (audiobook.AudioAuditVerdict == AudioAuditVerdict.NotAudited || string.IsNullOrWhiteSpace(audiobook.AudioAuditHeard))
+        {
+            return;
+        }
+
+        var original = entry.OriginalValues;
+        var sameTitle = string.Equals(original.GetValue<string?>(nameof(Audiobook.Title)), audiobook.Title, StringComparison.Ordinal);
+        var sameAuthors = SameNames(original.GetValue<List<string>?>(nameof(Audiobook.Authors)), audiobook.Authors);
+        var sameNarrators = SameNames(original.GetValue<List<string>?>(nameof(Audiobook.Narrators)), audiobook.Narrators);
+        if (sameTitle && sameAuthors && sameNarrators)
+        {
+            return;
+        }
+
+        var aliasesJson = await _db.ApplicationSettings
+            .AsNoTracking()
+            .Select(settings => settings.AuthorAliasesJson)
+            .FirstOrDefaultAsync();
+        var result = AudioIdentityMatcher.Judge(
+            audiobook.AudioAuditHeard,
+            audiobook.Title,
+            audiobook.Authors,
+            audiobook.Narrators,
+            AuthorAliases.Parse(aliasesJson));
+        audiobook.AudioAuditVerdict = result.Verdict;
+        audiobook.AudioAuditReason = Truncate(result.Reason, 512);
+    }
+
+    private static bool SameNames(List<string>? left, List<string>? right) =>
+        (left ?? []).SequenceEqual(right ?? [], StringComparer.Ordinal);
 
     private void SynchronizeTrackedImageUrl(
         int audiobookId,

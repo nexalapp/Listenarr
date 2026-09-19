@@ -35,6 +35,10 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .HasConversion<string>()
                 .HasMaxLength(16)
                 .HasDefaultValue(TagTrigger.Automatic);
+            builder.Property(job => job.Kind)
+                .HasConversion<string>()
+                .HasMaxLength(16)
+                .HasDefaultValue(TagJobKind.Tags);
 
             builder.Property(job => job.ActiveDeduplicationKey).HasMaxLength(256);
             builder.Property(job => job.PendingOutputPath).HasMaxLength(2000);

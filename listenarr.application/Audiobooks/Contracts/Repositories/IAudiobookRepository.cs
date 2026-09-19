@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Common;
 
 namespace Listenarr.Application.Audiobooks.Contracts.Repositories
@@ -99,6 +100,13 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<bool> RemoveSuggestionDismissalAsync(string key, CancellationToken ct = default);
         Task<Audiobook> AddAsync(Audiobook audiobook);
         Task<bool> UpdateAsync(Audiobook audiobook);
+
+        /// <summary>
+        /// Record what the audio audit heard and decided. A dedicated write, as for the
+        /// locks: the verdict is the only thing changing, and a whole-entity update
+        /// would put every other column back on the wire for the sake of six.
+        /// </summary>
+        Task SetAudioAuditAsync(int audiobookId, AudioAuditRecord audit, CancellationToken ct = default);
         Task<bool> RewritePathReferencesAsync(
             int audiobookId,
             string? sourceBasePath,
@@ -121,4 +129,12 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task SaveChangesAsync(CancellationToken ct = default);
         Task<bool> UpdateWithIdentifierReplaceAsync(Audiobook audiobook, List<AudiobookExternalIdentifier> newIdentifiers, CancellationToken ct = default);
     }
+
+    /// <summary>The audit's outcome as it is stored on the book.</summary>
+    public sealed record AudioAuditRecord(
+        AudioAuditVerdict Verdict,
+        string Reason,
+        string? Heard,
+        AudioCredits Credits,
+        DateTime AuditedAtUtc);
 }

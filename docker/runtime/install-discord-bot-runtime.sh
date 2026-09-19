@@ -7,7 +7,9 @@ if [ ! -f /app/tools/discord-bot/package-lock.json ]; then
 fi
 
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl gnupg libcap2
+# libgomp1 is whisper.cpp's OpenMP runtime: Whisper.net's native libraries link it
+# and the aspnet base image does not carry it.
+apt-get install -y --no-install-recommends ca-certificates curl gnupg libcap2 libgomp1
 curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
 apt-get install -y --no-install-recommends nodejs
 

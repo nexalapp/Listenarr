@@ -30,6 +30,12 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
     {
         Task<TagJob?> GetAsync(Guid id, CancellationToken cancellationToken = default);
 
+        /// <summary>The active job of one kind for a book, if any.</summary>
+        Task<TagJob?> GetActiveForAudiobookAsync(
+            int audiobookId,
+            TagJobKind kind,
+            CancellationToken cancellationToken = default);
+
         Task<TagJob?> GetActiveForAudiobookAsync(
             int audiobookId,
             CancellationToken cancellationToken = default);

@@ -39,6 +39,8 @@ export interface TrackedTagJob {
    */
   holdingUnpublishedFile: boolean
   trigger: string
+  /** `Tags` or `Chapters`. */
+  kind: string
 }
 
 const terminalStatuses = new Set<ConversionJobStatus>([
@@ -99,6 +101,7 @@ function toTracked(update: TagJobUpdate, existing?: TrackedTagJob): TrackedTagJo
     holdingUnpublishedFile:
       update.holdingUnpublishedFile ?? existing?.holdingUnpublishedFile ?? false,
     trigger: update.trigger ?? existing?.trigger ?? 'Automatic',
+    kind: update.kind ?? existing?.kind ?? 'Tags',
   }
 }
 
@@ -173,6 +176,24 @@ export const useTagJobsStore = defineStore('tagJobs', () => {
     return response
   }
 
+  async function repairChapters(audiobookId: number, fileIds?: number[]) {
+    const response = await apiService.repairChapters(audiobookId, fileIds)
+    if (response.queued) {
+      await refresh()
+    }
+
+    return response
+  }
+
+  async function auditAudio(audiobookId: number) {
+    const response = await apiService.auditAudio(audiobookId)
+    if (response.queued) {
+      await refresh()
+    }
+
+    return response
+  }
+
   async function retry(jobId: string) {
     const response = await apiService.retryTagWrite(jobId)
     if (response.queued) {
@@ -204,6 +225,8 @@ export const useTagJobsStore = defineStore('tagJobs', () => {
     forget,
     refresh,
     write,
+    repairChapters,
+    auditAudio,
     retry,
     start,
     stop,

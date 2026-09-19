@@ -74,6 +74,16 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20260917122653_AddMaxNarratorsInNames";
     private const string FileSeriesUnderFirstAuthorMigrationId =
         "20260917154313_AddSeriesAuthorSettings";
+    private const string ChapterHealthAndChapterJobsMigrationId =
+        "20260917222758_AddChapterHealthAndChapterJobs";
+    private const string TranscriptionSettingsMigrationId =
+        "20260918020743_AddTranscriptionSettings";
+    private const string AudioAuditMigrationId =
+        "20260918031633_AddAudioAudit";
+    private const string ChapterRepairableMigrationId =
+        "20260919012607_AddChapterRepairable";
+    private const string ChapterPlanMigrationId =
+        "20260919013914_AddChapterPlan";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -215,7 +225,12 @@ public class SqliteMigrationSchemaTests : BaseTests
                 LibraryTagCacheEntriesMigrationId,
                 AuthorAliasesMigrationId,
                 MaxNarratorsInNamesMigrationId,
-                FileSeriesUnderFirstAuthorMigrationId
+                FileSeriesUnderFirstAuthorMigrationId,
+                ChapterHealthAndChapterJobsMigrationId,
+                TranscriptionSettingsMigrationId,
+                AudioAuditMigrationId,
+                ChapterRepairableMigrationId,
+                ChapterPlanMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

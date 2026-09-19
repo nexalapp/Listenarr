@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Persistence.Repositories
@@ -112,6 +113,112 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             }
 
             return resulting;
+        }
+        public async Task SetChapterHealthAsync(
+            IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
+            CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(verdicts);
+            if (verdicts.Count == 0)
+            {
+                return;
+            }
+
+            var byId = verdicts.ToDictionary(verdict => verdict.FileId);
+            var ids = byId.Keys.ToList();
+            var files = await _db.AudiobookFiles
+                .Where(file => ids.Contains(file.Id))
+                .ToListAsync(ct);
+
+            var changed = false;
+            foreach (var file in files)
+            {
+                var verdict = byId[file.Id];
+                if (file.ChapterHealth == verdict.Health
+                    && file.ChapterReason == verdict.Reason
+                    && file.ChapterCount == verdict.ChapterCount
+                    && file.ChapterRepairable == verdict.Repairable)
+                {
+                    continue;
+                }
+
+                file.ChapterHealth = verdict.Health;
+                file.ChapterReason = verdict.Reason;
+                file.ChapterCount = verdict.ChapterCount;
+                file.ChapterRepairable = verdict.Repairable;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        public async Task SetChapterPlanAsync(int fileId, string planJson, string planKey, bool repairable, DateTime plannedAtUtc, CancellationToken ct = default)
+        {
+            var file = await _db.AudiobookFiles.FirstOrDefaultAsync(candidate => candidate.Id == fileId, ct);
+            if (file == null)
+            {
+                return;
+            }
+
+            file.ChapterPlanJson = planJson;
+            file.ChapterPlanKey = planKey;
+            file.ChapterPlannedAt = plannedAtUtc;
+            // A plan is the definitive word on repairability; the cheap guess gives way.
+            file.ChapterRepairable = repairable;
+            await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task ClearChapterPlanAsync(IReadOnlyCollection<int> fileIds, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(fileIds);
+            if (fileIds.Count == 0)
+            {
+                return;
+            }
+
+            var ids = fileIds.ToList();
+            var files = await _db.AudiobookFiles.Where(file => ids.Contains(file.Id)).ToListAsync(ct);
+            foreach (var file in files)
+            {
+                file.ChapterPlanJson = null;
+                file.ChapterPlanKey = null;
+                file.ChapterPlannedAt = null;
+            }
+
+            await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default)
+        {
+            var rows = await _db.AudiobookFiles
+                .AsNoTracking()
+                .Where(file => file.ChapterHealth != ChapterHealth.Unknown)
+                .Select(file => new { file.AudiobookId, file.ChapterHealth, file.ChapterRepairable })
+                .ToListAsync(ct);
+
+            // The worst verdict names the book's problem; repairable means every flagged
+            // file can be fixed, because a book is only as fixable as its stuck file.
+            // Red must not be hidden behind amber, whichever file earned it.
+            var worst = new Dictionary<int, AudiobookChapterSummary>();
+            foreach (var row in rows)
+            {
+                var issue = ChapterHealthSeverity.IsRepairableKind(row.ChapterHealth);
+                if (!worst.TryGetValue(row.AudiobookId, out var current))
+                {
+                    worst[row.AudiobookId] = new AudiobookChapterSummary(row.ChapterHealth, !issue || row.ChapterRepairable);
+                    continue;
+                }
+
+                var health = ChapterHealthSeverity.Rank(row.ChapterHealth) > ChapterHealthSeverity.Rank(current.Health)
+                    ? row.ChapterHealth
+                    : current.Health;
+                worst[row.AudiobookId] = new AudiobookChapterSummary(health, current.Repairable && (!issue || row.ChapterRepairable));
+            }
+
+            return worst;
         }
     }
 }

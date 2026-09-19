@@ -51,6 +51,19 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 return ExecutionOutcome.Failed(TagWriteFailureKind.Transient, conflict.SafeDetail);
             }
 
+            // Listening and planning read files of any format and publish nothing, so
+            // they take none of the road below: no pending publication to resume, no
+            // narrowing to the M4Bs a tag write could rewrite.
+            if (job.Kind == TagJobKind.Plan)
+            {
+                return await ExecuteChapterPlanAsync(job, audiobook, services, queue, cancellationToken);
+            }
+
+            if (job.Kind == TagJobKind.Audit)
+            {
+                return await ExecuteAudioAuditAsync(job, audiobook, services, queue, cancellationToken);
+            }
+
             var tagsWritten = 0;
             var filesWritten = 0;
 
@@ -88,6 +101,19 @@ namespace Listenarr.Infrastructure.Library.Tagging
                         fileScope == null
                             ? "This book no longer has any M4B files to write tags into."
                             : "None of the files this run was queued for is still an M4B here.");
+            }
+
+            if (job.Kind == TagJobKind.Chapters)
+            {
+                return await ExecuteChapterRepairAsync(
+                    job,
+                    audiobook,
+                    files,
+                    resumed != null,
+                    filesWritten,
+                    services,
+                    queue,
+                    cancellationToken);
             }
 
             var settings = await services.GetRequiredService<IConfigurationService>()

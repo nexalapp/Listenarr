@@ -36,6 +36,13 @@
         >
           {{ organizeCount }} misorganized
         </span>
+        <span
+          v-if="chapterIssueCount > 0"
+          class="count-badge count-badge--warn"
+          title="Files whose chapter atom is broken or whose chapters are CD tracks"
+        >
+          {{ chapterIssueCount }} bad chapters
+        </span>
         <span v-if="selectedFiles.size > 0" class="count-badge count-badge--selected">
           {{ selectedFiles.size }} file{{ selectedFiles.size === 1 ? '' : 's' }} selected
         </span>
@@ -60,6 +67,22 @@
           <input type="checkbox" v-model="onlyMismatched" />
           <span>Needs work</span>
         </label>
+
+        <!--
+          Chapter verdicts are their own filter rather than part of "needs work": nothing
+          on this page writes chapters yet, and mixing a file that needs a chapter repair
+          into a list of files a tag write would fix would make the Apply button lie.
+        -->
+        <select
+          v-model="chapterFilter"
+          class="toolbar-select"
+          aria-label="Filter by chapter health"
+          title="Show only files whose chapters have this verdict"
+        >
+          <option v-for="option in CHAPTER_FILTERS" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
 
         <!--
           Second, so the first `.toolbar-toggle` stays the filter. Every row is a fixed
@@ -115,6 +138,35 @@
             </label>
           </div>
         </div>
+
+        <!--
+          Its own button rather than a third Apply scope: a repair is not a write of
+          Listenarr's values into the file, it is a rebuild of the file's own structure,
+          and it only applies to the rows whose Chapters cell is red.
+        -->
+        <button
+          v-if="repairableSelection.length > 0"
+          type="button"
+          class="toolbar-btn"
+          :disabled="working"
+          :title="`Rebuild the chapters of ${repairableSelection.length} selected file(s)`"
+          @click="repairOpen = true"
+        >
+          <PhListNumbers :size="16" />
+          Repair chapters ({{ repairableSelection.length }})
+        </button>
+
+        <button
+          v-if="selectedBookIds.size > 0"
+          type="button"
+          class="toolbar-btn"
+          :disabled="working"
+          :title="`Transcribe the opening and closing of ${selectedBookIds.size} selected book(s) and check them against the record`"
+          @click="auditSelected"
+        >
+          <PhEar :size="16" />
+          Transcribe ({{ selectedBookIds.size }})
+        </button>
 
         <div class="columns-menu" ref="columnsMenuEl">
           <button
@@ -231,7 +283,12 @@
               </template>
 
               <template v-else>
-                <button type="button" class="tags-th-label" @click="sortBy(column.key)">
+                <button
+                  type="button"
+                  class="tags-th-label"
+                  :title="headerHint(column.key)"
+                  @click="sortBy(column.key)"
+                >
                   <span>{{ column.label }}</span>
                   <PhCaretUp v-if="sort.key === column.key && sort.ascending" :size="11" />
                   <PhCaretDown v-else-if="sort.key === column.key" :size="11" />
@@ -432,6 +489,14 @@
       @done="onOrganized"
     />
 
+    <ChapterRepairModal
+      v-if="repairOpen"
+      :visible="repairOpen"
+      :scopes="repairScopes"
+      @close="repairOpen = false"
+      @confirm="repairSelected"
+    />
+
     <!--
       One sprite for the whole table rather than an icon component per cell: a padlock on
       every cell of a windowed table is several hundred of them, and several hundred
@@ -486,16 +551,26 @@ import {
   PhCaretUp,
   PhCheck,
   PhColumns,
+  PhEar,
+  PhListNumbers,
   PhMagnifyingGlass,
   PhSpinner,
   PhTag,
   PhWarningCircle,
 } from '@phosphor-icons/vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
+import ChapterRepairModal from '@/components/domain/tagging/ChapterRepairModal.vue'
+import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepairModal.vue'
 import { apiService } from '@/services/api'
 import { useTagJobsStore } from '@/stores/tagJobs'
 import { logger } from '@/utils/logger'
-import type { LibraryTagColumn, LibraryTagRow, RenameOperation } from '@/types'
+import type {
+  AudioAuditVerdict,
+  ChapterHealth,
+  LibraryTagColumn,
+  LibraryTagRow,
+  RenameOperation,
+} from '@/types'
 
 /**
  * The columns that are not tags: which books an action is for, the file, and where it
@@ -504,7 +579,43 @@ import type { LibraryTagColumn, LibraryTagRow, RenameOperation } from '@/types'
 const SELECT_KEY = '__select'
 const AUDIO_KEY = '__audio'
 const PATH_KEY = '__path'
+const CHAPTERS_KEY = '__chapters'
+const AUDIT_KEY = '__audit'
+
+const AUDIO_AUDIT_LABELS: Record<AudioAuditVerdict, string> = {
+  match: 'Matches',
+  'narrator-mismatch': 'Narrator differs',
+  mismatch: 'Different book',
+  inconclusive: 'Unclear',
+}
 const FILENAME_KEY = 'fileName'
+
+/** How each chapter verdict reads in a cell, a filter and a tooltip. */
+const CHAPTER_HEALTH_LABELS: Record<ChapterHealth, string> = {
+  unknown: '',
+  healthy: 'Healthy',
+  corrupt: 'Corrupt',
+  oversegmented: 'Over-segmented',
+  'generic-titles': 'Generic titles',
+  none: 'No chapters',
+}
+
+type ChapterFilter = 'all' | 'issues' | ChapterHealth | 'audio-mismatch' | 'audio-unheard'
+
+const CHAPTER_FILTERS: { value: ChapterFilter; label: string }[] = [
+  { value: 'all', label: 'Any chapters' },
+  { value: 'issues', label: 'Chapter issues' },
+  { value: 'corrupt', label: 'Corrupt' },
+  { value: 'oversegmented', label: 'Over-segmented' },
+  { value: 'generic-titles', label: 'Generic titles' },
+  { value: 'none', label: 'No chapters' },
+  { value: 'healthy', label: 'Healthy' },
+  { value: 'audio-mismatch', label: 'Audio mismatch' },
+  { value: 'audio-unheard', label: 'Not listened to' },
+]
+
+/** The verdicts worth a repair, as opposed to a retitle or a shrug. */
+const CHAPTER_ISSUES: ReadonlySet<ChapterHealth> = new Set(['corrupt', 'oversegmented'])
 
 /**
  * Tags pulled to the front of the catalog's own order.
@@ -532,6 +643,8 @@ const DEFAULT_COLUMN_WIDTH = 200
 const LONG_TEXT_COLUMN_WIDTH = 360
 const FILENAME_COLUMN_WIDTH = 380
 const PATH_COLUMN_WIDTH = 320
+const CHAPTERS_COLUMN_WIDTH = 150
+const AUDIT_COLUMN_WIDTH = 130
 
 /** Wide enough for a checkbox and nothing else; not resizable, so it is not a preference. */
 const SELECT_COLUMN_WIDTH = 34
@@ -547,6 +660,7 @@ const SHOW_PATH_KEY = 'listenarr.tagsView.showPath'
 const PROPOSALS_KEY = 'listenarr.tagsView.proposals'
 const APPLY_SCOPE_KEY = 'listenarr.tagsView.applyScope'
 const NEEDS_WORK_KEY = 'listenarr.tagsView.needsWork'
+const CHAPTER_FILTER_KEY = 'listenarr.tagsView.chapterFilter'
 const SORT_KEY = 'listenarr.tagsView.sort'
 
 const router = useRouter()
@@ -643,6 +757,7 @@ watch(
 
 const search = ref('')
 const onlyMismatched = ref(false)
+const chapterFilter = ref<ChapterFilter>('all')
 const columnsOpen = ref(false)
 const columnsMenuEl = ref<HTMLElement | null>(null)
 const showPath = ref(true)
@@ -728,6 +843,8 @@ const activeColumns = computed<ActiveColumn[]>(() => [
   { key: AUDIO_KEY, label: '' },
   { key: FILENAME_KEY, label: 'Filename' },
   ...(showPath.value ? [{ key: PATH_KEY, label: 'Path' }] : []),
+  { key: CHAPTERS_KEY, label: 'Chapters' },
+  { key: AUDIT_KEY, label: 'Audio' },
   ...visibleTags.value
     .map((tag) => columnByTag.value.get(tag))
     .filter((column): column is LibraryTagColumn => !!column)
@@ -736,7 +853,12 @@ const activeColumns = computed<ActiveColumn[]>(() => [
 
 /** Whether a column holds a tag, as opposed to the selection, the file or its path. */
 const isTagColumn = (key: string) =>
-  key !== SELECT_KEY && key !== AUDIO_KEY && key !== FILENAME_KEY && key !== PATH_KEY
+  key !== SELECT_KEY &&
+  key !== AUDIO_KEY &&
+  key !== FILENAME_KEY &&
+  key !== PATH_KEY &&
+  key !== CHAPTERS_KEY &&
+  key !== AUDIT_KEY
 
 /**
  * Which columns carry a padlock. The path is lockable for the same reason a tag is —
@@ -774,6 +896,8 @@ const widthFor = (key: string) => {
   if (stored) return stored
   if (key === FILENAME_KEY) return FILENAME_COLUMN_WIDTH
   if (key === PATH_KEY) return PATH_COLUMN_WIDTH
+  if (key === CHAPTERS_KEY) return CHAPTERS_COLUMN_WIDTH
+  if (key === AUDIT_KEY) return AUDIT_COLUMN_WIDTH
   return columnByTag.value.get(key)?.isLongText ? LONG_TEXT_COLUMN_WIDTH : DEFAULT_COLUMN_WIDTH
 }
 
@@ -800,7 +924,34 @@ function cellText(row: LibraryTagRow, key: string) {
   if (key === SELECT_KEY || key === AUDIO_KEY) return ''
   if (key === FILENAME_KEY) return row.fileName
   if (key === PATH_KEY) return row.displayPath ?? row.path ?? ''
+  if (key === CHAPTERS_KEY) return chapterText(row)
+  if (key === AUDIT_KEY) return row.audioAudit ? AUDIO_AUDIT_LABELS[row.audioAudit] : ''
   return row.tags[key] ?? ''
+}
+
+const hasAudioIssue = (row: LibraryTagRow) =>
+  row.audioAudit === 'mismatch' || row.audioAudit === 'narrator-mismatch'
+
+/**
+ * Verdict first, count second, so sorting the column groups the corrupt files together
+ * and orders each group by how many marks it has. Unknown is empty and sorts last.
+ */
+function chapterText(row: LibraryTagRow) {
+  const label = CHAPTER_HEALTH_LABELS[row.chapterHealth]
+  return label ? `${label} · ${row.chapterCount}` : ''
+}
+
+const hasChapterIssue = (row: LibraryTagRow) => CHAPTER_ISSUES.has(row.chapterHealth)
+
+/** What a column is, for the heading's tooltip; the two judged columns say when they are judged. */
+function headerHint(key: string): string | undefined {
+  if (key === CHAPTERS_KEY) {
+    return 'Each M4B’s chapter atom and chapter track, judged when this table loads. Re-read re-inspects the files; tick rows and press Repair chapters to fix them.'
+  }
+  if (key === AUDIT_KEY) {
+    return 'Whether the audio introduces itself as this book. Tick rows and press Transcribe to hear the opening and closing; needs transcription on in Settings.'
+  }
+  return undefined
 }
 
 const isLocked = (row: LibraryTagRow, key: string) =>
@@ -841,6 +992,20 @@ function cellClass(row: LibraryTagRow, key: string) {
     'tags-td--audio': key === AUDIO_KEY,
     'tags-td--sticky': key === FILENAME_KEY,
     'tags-td--mismatch': isMismatched(row, key),
+    // Red: a problem no repair can fix yet. Amber: a problem a repair can fix.
+    'tags-td--chapters-issue':
+      (key === CHAPTERS_KEY &&
+        REPAIRABLE_HEALTH.has(row.chapterHealth) &&
+        !row.chapterRepairable &&
+        !row.chapterPlanPending) ||
+      (key === AUDIT_KEY && hasAudioIssue(row)),
+    'tags-td--chapters-fixable':
+      key === CHAPTERS_KEY &&
+      REPAIRABLE_HEALTH.has(row.chapterHealth) &&
+      (!!row.chapterRepairable || !!row.chapterPlanPending),
+    'tags-td--chapters-note':
+      (key === CHAPTERS_KEY && row.chapterHealth === 'none') ||
+      (key === AUDIT_KEY && row.audioAudit === 'inconclusive'),
     'tags-td--locked': isLocked(row, key),
     'tags-td--empty': isTagColumn(key) && !row.tags[key],
   }
@@ -878,6 +1043,21 @@ function cellTitle(row: LibraryTagRow, key: string): string {
       return `Now: ${row.fileName}\n\nOrganizing would rename it to: ${row.expectedFileName}`
     }
     return row.path ?? row.fileName
+  }
+
+  if (key === CHAPTERS_KEY) {
+    const reason = row.chapterReason ?? 'Chapters have not been inspected.'
+    if (row.chapterPlanPending) return `${reason}\n\nThe fix is being worked out in the background.`
+    if (REPAIRABLE_HEALTH.has(row.chapterHealth)) {
+      return row.chapterRepairable
+        ? `${reason}\n\nA repair can fix this automatically.`
+        : `${reason}\n\nNo automatic fix: the book needs an ASIN match or transcription on.`
+    }
+    return reason
+  }
+
+  if (key === AUDIT_KEY) {
+    return row.audioAuditReason ?? 'Not yet transcribed. Tick the row and press Transcribe.'
   }
 
   if (key === PATH_KEY) {
@@ -925,6 +1105,16 @@ const filteredRows = computed(() => {
 
   if (onlyMismatched.value) {
     result = result.filter((row) => needsWork(row))
+  }
+
+  if (chapterFilter.value === 'issues') {
+    result = result.filter(hasChapterIssue)
+  } else if (chapterFilter.value === 'audio-mismatch') {
+    result = result.filter(hasAudioIssue)
+  } else if (chapterFilter.value === 'audio-unheard') {
+    result = result.filter((row) => !row.audioAudit)
+  } else if (chapterFilter.value !== 'all') {
+    result = result.filter((row) => row.chapterHealth === chapterFilter.value)
   }
 
   if (searchTerms.value.length > 0) {
@@ -979,6 +1169,8 @@ const organizeCount = computed(
     rows.value.filter((row) => (row.pathMismatched || row.fileNameMismatched) && !row.pathLocked)
       .length,
 )
+
+const chapterIssueCount = computed(() => rows.value.filter(hasChapterIssue).length)
 
 const firstVisibleIndex = computed(() =>
   Math.max(0, Math.floor(scrollTop.value / rowHeight.value) - OVERSCAN),
@@ -1206,6 +1398,87 @@ const allVisibleSelected = computed(
 const someVisibleSelected = computed(() =>
   [...visibleFileIds.value].some((id) => selectedFiles.value.has(id)),
 )
+
+/** The ticked rows a chapter repair has something to say about: a broken atom, CD tracks, or placeholder titles. */
+const REPAIRABLE_HEALTH: ReadonlySet<ChapterHealth> = new Set([
+  'corrupt',
+  'oversegmented',
+  'generic-titles',
+])
+
+const repairableSelection = computed(() =>
+  rows.value.filter(
+    (row) => selectedFiles.value.has(row.fileId) && REPAIRABLE_HEALTH.has(row.chapterHealth),
+  ),
+)
+
+const repairOpen = ref(false)
+
+const repairScopes = computed<ChapterRepairScope[]>(() => {
+  const byBook = new Map<number, ChapterRepairScope>()
+  for (const row of repairableSelection.value) {
+    const scope = byBook.get(row.audiobookId)
+    if (scope) scope.fileIds.push(row.fileId)
+    else
+      byBook.set(row.audiobookId, {
+        audiobookId: row.audiobookId,
+        title: row.bookTitle,
+        fileIds: [row.fileId],
+      })
+  }
+  return [...byBook.values()]
+})
+
+async function repairSelected(books: { audiobookId: number; fileIds: number[] }[]) {
+  repairOpen.value = false
+  working.value = true
+  actionMessage.value = null
+
+  let queuedFiles = 0
+  const refusals: string[] = []
+  for (const book of books) {
+    try {
+      const response = await tagJobsStore.repairChapters(book.audiobookId, book.fileIds)
+      if (response.queued) queuedFiles += book.fileIds.length
+      else if (response.reason) refusals.push(response.reason)
+    } catch (err) {
+      logger.warn(`Failed to queue a chapter repair for audiobook ${book.audiobookId}`, err)
+      refusals.push(describe(err))
+    }
+  }
+
+  await tagJobsStore.refresh()
+  working.value = false
+  selectedFiles.value = new Set()
+  actionMessage.value = refusals.length
+    ? `Queued ${queuedFiles} file(s) for chapter repair. ${refusals.length} refused: ${refusals[0]}`
+    : `Queued ${queuedFiles} file${queuedFiles === 1 ? '' : 's'} for chapter repair.`
+}
+
+async function auditSelected() {
+  working.value = true
+  actionMessage.value = null
+
+  let queued = 0
+  const refusals: string[] = []
+  for (const audiobookId of selectedBookIds.value) {
+    try {
+      const response = await tagJobsStore.auditAudio(audiobookId)
+      if (response.queued) queued++
+      else if (response.reason) refusals.push(response.reason)
+    } catch (err) {
+      logger.warn(`Failed to queue an audio audit for audiobook ${audiobookId}`, err)
+      refusals.push(describe(err))
+    }
+  }
+
+  await tagJobsStore.refresh()
+  working.value = false
+  selectedFiles.value = new Set()
+  actionMessage.value = refusals.length
+    ? `Transcribing ${queued} book(s). ${refusals.length} refused: ${refusals[0]}`
+    : `Transcribing ${queued} book${queued === 1 ? '' : 's'}. Verdicts appear in the Audio column.`
+}
 
 /** The books the ticked files belong to, which is what organizing takes. */
 const selectedBookIds = computed(
@@ -1573,6 +1846,11 @@ function restorePreferences() {
     showProposals.value = localStorage.getItem(PROPOSALS_KEY) === 'true'
     onlyMismatched.value = localStorage.getItem(NEEDS_WORK_KEY) === 'true'
 
+    const storedChapterFilter = localStorage.getItem(CHAPTER_FILTER_KEY)
+    if (storedChapterFilter && CHAPTER_FILTERS.some((f) => f.value === storedChapterFilter)) {
+      chapterFilter.value = storedChapterFilter as ChapterFilter
+    }
+
     const storedSort = localStorage.getItem(SORT_KEY)
     if (storedSort) {
       const parsed = JSON.parse(storedSort)
@@ -1626,6 +1904,12 @@ watch(onlyMismatched, (value) => {
   } catch {}
 })
 
+watch(chapterFilter, (value) => {
+  try {
+    localStorage.setItem(CHAPTER_FILTER_KEY, value)
+  } catch {}
+})
+
 watch(
   sort,
   (value) => {
@@ -1670,7 +1954,7 @@ watch(rows, (current) => {
 
 // Scrolling back to the top on a re-filter: the window is an index range, and leaving it
 // where it was would show a blank band below a shorter list.
-watch([search, onlyMismatched, sort], () => {
+watch([search, onlyMismatched, chapterFilter, sort], () => {
   scrollTop.value = 0
   if (scrollEl.value) scrollEl.value.scrollTop = 0
 })
@@ -1759,6 +2043,17 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
+}
+
+.toolbar-select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
 }
 
 .toolbar-btn {
@@ -2254,6 +2549,21 @@ onBeforeUnmount(() => {
 
 .tags-td--sticky.tags-td--mismatch {
   box-shadow: none;
+}
+
+/* A broken or CD-track chapter list is a defect; a missing or placeholder one is a note. */
+.tags-td--chapters-issue {
+  color: var(--danger-500);
+  box-shadow: inset 2px 0 0 currentColor;
+}
+
+.tags-td--chapters-fixable {
+  color: var(--warning-500);
+  box-shadow: inset 2px 0 0 currentColor;
+}
+
+.tags-td--chapters-note {
+  color: var(--text-muted);
 }
 
 /*

@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Audit;
+using Listenarr.Domain.Audiobooks.Chapters;
 
 namespace Listenarr.Application.Audiobooks.Catalog
 {
@@ -69,6 +71,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             // was started on this context instance" under real database latency.
             var fileSummaryRows = await _audiobookFileRepository.GetFormatSummariesAsync();
             var fileCountById = await _audiobookFileRepository.GetCountsByAudiobookIdAsync();
+            var chapterHealthById = await _audiobookFileRepository.GetWorstChapterHealthByAudiobookIdAsync();
             var membershipsByAudiobookId = await _audiobookRepository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync();
             var filesByAudiobookId = fileSummaryRows
                 .GroupBy(f => f.AudiobookId)
@@ -148,6 +151,11 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     QualityProfileId = a.QualityProfileId,
                     AuthorAsins = a.AuthorAsins?.ToArray(),
                     Wanted = wanted,
+                    ChapterHealth = chapterHealthById.TryGetValue(a.Id, out var chapterSummary)
+                        ? ChapterHealthNames.Of(chapterSummary.Health)
+                        : null,
+                    ChapterRepairable = chapterSummary?.Repairable ?? false,
+                    AudioAudit = AudioAuditVerdictNames.Of(a.AudioAuditVerdict),
                     Status = AudiobookStatusEvaluator.ComputeStatus(
                          activeDownloadAudiobookIdSet.Contains(a.Id),
                          hasAnyFile,

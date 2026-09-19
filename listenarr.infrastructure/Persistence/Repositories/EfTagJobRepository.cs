@@ -33,6 +33,16 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public Task<TagJob?> GetActiveForAudiobookAsync(
             int audiobookId,
+            TagJobKind kind,
+            CancellationToken cancellationToken = default) =>
+            db.TagJobs
+                .AsNoTracking()
+                .Where(job => job.AudiobookId == audiobookId && job.Kind == kind && ActiveStatuses.Contains(job.Status))
+                .OrderByDescending(job => job.EnqueuedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+        public Task<TagJob?> GetActiveForAudiobookAsync(
+            int audiobookId,
             CancellationToken cancellationToken = default) =>
             db.TagJobs
                 .AsNoTracking()

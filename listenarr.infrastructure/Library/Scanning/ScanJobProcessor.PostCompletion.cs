@@ -1,3 +1,4 @@
+using Listenarr.Application.Audiobooks.Audit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -101,6 +102,60 @@ public partial class ScanJobProcessor
         if (!converting)
         {
             await QueueTagWriteIfWantedAsync(audiobook, cancellationToken);
+            await JudgeChaptersAsync(audiobook, cancellationToken);
+            await QueueAudioAuditIfWantedAsync(audiobook, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Offer the book to the audio audit. The service refuses on its own when the
+    /// setting is off, which is the common case and costs one settings read.
+    /// </summary>
+    private async Task QueueAudioAuditIfWantedAsync(Audiobook audiobook, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var auditor = scope.ServiceProvider.GetService<IAudioAuditService>();
+            if (auditor == null)
+            {
+                return;
+            }
+
+            var result = await auditor.EnqueueAsync(audiobook.Id, TagTrigger.Automatic, cancellationToken);
+            if (result.Queued)
+            {
+                _logger.LogInformation("Queued audio audit {JobId} for audiobook {AudiobookId} after scan", result.JobId, audiobook.Id);
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            _logger.LogDebug(exception, "Could not offer audiobook {AudiobookId} to the audio audit after its scan", audiobook.Id);
+        }
+    }
+
+    /// <summary>
+    /// Probe the book's files once so its chapter verdict is on the row before anyone
+    /// opens the tag table. The probe is cached, so the table's own load is then free
+    /// for these files; a tag write that follows re-judges them after it publishes.
+    /// </summary>
+    private async Task JudgeChaptersAsync(Audiobook audiobook, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var index = scope.ServiceProvider.GetService<ILibraryTagIndexService>();
+            if (index != null)
+            {
+                await index.BuildAsync(refresh: false, cancellationToken, audiobookIds: [audiobook.Id]);
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            _logger.LogDebug(
+                exception,
+                "Could not judge the chapters of audiobook {AudiobookId} after its scan",
+                audiobook.Id);
         }
     }
 

@@ -17,6 +17,7 @@
  */
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Common;
 
 namespace Listenarr.Domain.Audiobooks
@@ -224,5 +225,40 @@ namespace Listenarr.Domain.Audiobooks
         /// </para>
         /// </summary>
         public bool PathLocked { get; set; }
+
+        /// <summary>
+        /// What this file's chapter marks were last judged to be worth, so the books
+        /// list and the book page can say "corrupt" without building the tag table.
+        ///
+        /// <para>
+        /// Written whenever the tag index probes the file — on a table load, after a tag
+        /// write, after a repair — and never by the scanner, which does not open files
+        /// with ffprobe. <c>Unknown</c> therefore means "not looked at yet" rather than
+        /// "fine", and is shown as nothing rather than as green.
+        /// </para>
+        /// </summary>
+        public ChapterHealth ChapterHealth { get; set; } = ChapterHealth.Unknown;
+
+        /// <summary>Why, in the analyzer's sentence.</summary>
+        [MaxLength(512)]
+        public string? ChapterReason { get; set; }
+
+        public int ChapterCount { get; set; }
+
+        /// <summary>Whether a repair has a source to fix this file's chapters from. Colours the badge: amber fixable, red not.</summary>
+        public bool ChapterRepairable { get; set; }
+
+        /// <summary>
+        /// The fix a repair would write, worked out once in the background and kept: the
+        /// plan, or the reason there is none, as JSON. Valid only while
+        /// <see cref="ChapterPlanKey"/> matches the file and the book — a changed file, a
+        /// changed ASIN or transcription switched on all make it stale.
+        /// </summary>
+        public string? ChapterPlanJson { get; set; }
+
+        [MaxLength(160)]
+        public string? ChapterPlanKey { get; set; }
+
+        public DateTime? ChapterPlannedAt { get; set; }
     }
 }

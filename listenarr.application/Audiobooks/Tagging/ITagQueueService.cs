@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Audiobooks.Chapters;
 
 namespace Listenarr.Application.Audiobooks.Tagging
 {
@@ -74,6 +75,33 @@ namespace Listenarr.Application.Audiobooks.Tagging
             IReadOnlyCollection<string>? selectedTags = null,
             IReadOnlyDictionary<string, string>? values = null,
             IReadOnlyCollection<int>? fileIds = null,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Queue a chapter rewrite for the given files, each with the list it will be
+        /// written with. The same queue and the same one-active-job-per-book rule as a
+        /// tag write, because both replace the book's files through the same path.
+        /// </summary>
+        Task<TagEnqueueResult> EnqueueChapterRepairAsync(
+            int audiobookId,
+            IReadOnlyDictionary<int, ChapterPlan> plans,
+            TagTrigger trigger,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Queue an audio audit for a book. Its own deduplication key, because it writes
+        /// nothing and may wait beside a tag write for the same book.
+        /// </summary>
+        Task<TagEnqueueResult> EnqueueAudioAuditAsync(
+            int audiobookId,
+            TagTrigger trigger,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>Queue the working-out of a chapter fix for a book's files. Writes nothing; its own key.</summary>
+        Task<TagEnqueueResult> EnqueueChapterPlanAsync(
+            int audiobookId,
+            IReadOnlyCollection<int> fileIds,
+            TagTrigger trigger,
             CancellationToken cancellationToken = default);
 
         /// <summary>Re-queue a terminal job that is allowed to retry.</summary>

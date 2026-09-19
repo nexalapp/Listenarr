@@ -133,9 +133,9 @@ namespace Listenarr.Infrastructure.Ffmpeg.Tagging
                 }
             }
 
-            var chapterCount = root.TryGetProperty("chapters", out var chapters)
-                ? chapters.GetArrayLength()
-                : 0;
+            var chapterList = root.TryGetProperty("chapters", out var chapters)
+                ? ReadChapters(chapters)
+                : [];
 
             var hasCoverArt = false;
             if (root.TryGetProperty("streams", out var streams)
@@ -163,7 +163,46 @@ namespace Listenarr.Infrastructure.Ffmpeg.Tagging
             }
 
             tags.TryGetValue("major_brand", out var majorBrand);
-            return new AudiobookFileTags(tags, chapterCount, duration, hasCoverArt, majorBrand);
+            return new AudiobookFileTags(tags, chapterList.Count, duration, hasCoverArt, majorBrand, chapterList);
+        }
+        private static List<EmbeddedChapter> ReadChapters(JsonElement chapters)
+        {
+            var results = new List<EmbeddedChapter>(chapters.GetArrayLength());
+            foreach (var chapter in chapters.EnumerateArray())
+            {
+                if (!TryReadSeconds(chapter, "start_time", out var start)
+                    || !TryReadSeconds(chapter, "end_time", out var end))
+                {
+                    continue;
+                }
+
+                string? title = null;
+                if (chapter.TryGetProperty("tags", out var chapterTags)
+                    && chapterTags.TryGetProperty("title", out var titleValue))
+                {
+                    title = titleValue.GetString();
+                }
+
+                results.Add(new EmbeddedChapter(title, TimeSpan.FromSeconds(start), TimeSpan.FromSeconds(end)));
+            }
+
+            return results;
+        }
+
+        private static bool TryReadSeconds(JsonElement element, string property, out double seconds)
+        {
+            seconds = 0;
+            if (!element.TryGetProperty(property, out var value))
+            {
+                return false;
+            }
+
+            return value.ValueKind switch
+            {
+                JsonValueKind.Number => value.TryGetDouble(out seconds),
+                JsonValueKind.String => double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out seconds),
+                _ => false
+            };
         }
     }
 }

@@ -20,6 +20,9 @@ import type {
   ConversionJobUpdate,
   BulkConversionResponse,
   LibraryTagTable,
+  ChapterRepairPreview,
+  TranscriptionModelStatus,
+  BookChapters,
   TagDefinition,
   TagJobUpdate,
   TagPreview,
@@ -1744,6 +1747,65 @@ class ApiService {
         fileIds: fileIds?.length ? fileIds : null,
       }),
     })
+  }
+
+  /** A book's chapters as its files carry them, with each file's verdict. Reads the files. */
+  async getBookChapters(audiobookId: number): Promise<BookChapters> {
+    return this.request<BookChapters>(`/tagging/audiobooks/${audiobookId}/chapters`)
+  }
+
+  /** What a chapter repair would write into each of a book's files. */
+  async previewChapterRepair(
+    audiobookId: number,
+    fileIds?: number[],
+  ): Promise<ChapterRepairPreview> {
+    const query = fileIds?.length ? `?${fileIds.map((id) => `fileIds=${id}`).join('&')}` : ''
+    return this.request<ChapterRepairPreview>(
+      `/tagging/audiobooks/${audiobookId}/chapters/preview${query}`,
+    )
+  }
+
+  /** Queue a chapter repair. Omit `fileIds` for every corrupt file of the book. */
+  async repairChapters(
+    audiobookId: number,
+    fileIds?: number[],
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/chapters`, {
+      method: 'POST',
+      body: JSON.stringify({ fileIds: fileIds?.length ? fileIds : null }),
+    })
+  }
+
+  /** Forget the stored chapter fix for these files and have it worked out again. */
+  async replanChapters(
+    audiobookId: number,
+    fileIds?: number[],
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/chapters/replan`, {
+      method: 'POST',
+      body: JSON.stringify({ fileIds: fileIds?.length ? fileIds : null }),
+    })
+  }
+
+  /** Where the whisper model stands; the configured model when none is named. */
+  async getTranscriptionModel(model?: string): Promise<TranscriptionModelStatus> {
+    const query = model ? `?model=${encodeURIComponent(model)}` : ''
+    return this.request<TranscriptionModelStatus>(`/tagging/transcription/model${query}`)
+  }
+
+  /** Start downloading a whisper model so the first transcription does not wait on it. */
+  async downloadTranscriptionModel(model: string): Promise<TranscriptionModelStatus> {
+    return this.request<TranscriptionModelStatus>('/tagging/transcription/model', {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    })
+  }
+
+  /** Queue an audio audit: listen to the book and judge it against its record. */
+  async auditAudio(
+    audiobookId: number,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/audit`, { method: 'POST' })
   }
 
   /** Re-run a tag write that failed. */

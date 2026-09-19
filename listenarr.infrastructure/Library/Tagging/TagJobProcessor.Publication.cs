@@ -192,7 +192,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 }
 
                 await queue.ClearPendingPublicationAsync(job.Id, CancellationToken.None);
-                await RecordPublishedTagsAsync(destinationPath, services);
+                await RecordPublishedTagsAsync(destinationPath, file.Id, services);
                 return PublicationOutcome.Published();
             }
             catch (OperationCanceledException)
@@ -219,14 +219,14 @@ namespace Listenarr.Infrastructure.Library.Tagging
         /// load shows the write without probing the file mid-request. Best effort: the
         /// cache notices the changed file on its own if this fails.
         /// </summary>
-        private async Task RecordPublishedTagsAsync(string destinationPath, IServiceProvider services)
+        private async Task RecordPublishedTagsAsync(string destinationPath, int fileId, IServiceProvider services)
         {
             try
             {
                 var index = services.GetService<ILibraryTagIndexService>();
                 if (index != null)
                 {
-                    await index.RecordFileAsync(destinationPath, CancellationToken.None);
+                    await index.RecordFileAsync(destinationPath, fileId, CancellationToken.None);
                 }
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)

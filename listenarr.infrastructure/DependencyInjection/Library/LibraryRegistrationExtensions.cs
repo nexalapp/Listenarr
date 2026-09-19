@@ -7,7 +7,11 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Audiobooks.Audit;
 using Listenarr.Application.Audiobooks.Authors;
+using Listenarr.Application.Audiobooks.Chapters;
+using Listenarr.Application.Audiobooks.Transcription;
+using Listenarr.Infrastructure.Library.Transcription;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Infrastructure.Library.Suggestions;
 using Listenarr.Application.Audiobooks.Deletion;
@@ -111,6 +115,16 @@ internal static class LibraryRegistrationExtensions
         services.AddSingleton<LibraryTagCache>();
         services.AddScoped<ILibraryTagCacheStore, EfLibraryTagCacheStore>();
         services.AddScoped<ILibraryTagIndexService, LibraryTagIndexService>();
+        // Chapter repair rides the tag queue: same job table, same publication path.
+        services.AddScoped<IChapterAtomRecovery, ChapterAtomRecovery>();
+        services.AddScoped<IChapterRewriter, FfmpegChapterRewriter>();
+        services.AddScoped<IChapterRepairService, ChapterRepairService>();
+        // The loaded whisper model is the expensive part, so the transcriber outlives a
+        // request; what it has heard is remembered for the same reason.
+        services.AddSingleton<WhisperTranscriber>();
+        services.AddSingleton<ITranscriber>(provider => provider.GetRequiredService<WhisperTranscriber>());
+        services.AddSingleton<TranscriptCache>();
+        services.AddScoped<IAudioAuditService, AudioAuditService>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
         services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();

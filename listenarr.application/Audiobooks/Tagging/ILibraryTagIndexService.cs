@@ -16,6 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Domain.Audiobooks.Audit;
+using Listenarr.Domain.Audiobooks.Chapters;
+
 namespace Listenarr.Application.Audiobooks.Tagging
 {
     /// <summary>
@@ -47,6 +50,12 @@ namespace Listenarr.Application.Audiobooks.Tagging
     /// alone — the filename is already <c>FileName</c>, and repeating it would spend a
     /// column on a value the row carries twice.
     /// </para>
+    /// <para>
+    /// <c>ChapterHealth</c> is the same kind of evidence about the file's chapter marks:
+    /// what the container carries, judged against what a book of that length should
+    /// carry. <c>ChapterReason</c> says why in a sentence, so the table can show a verdict
+    /// without the reader having to open the file.
+    /// </para>
     /// </remarks>
     public sealed record LibraryTagRow(
         int AudiobookId,
@@ -66,7 +75,14 @@ namespace Listenarr.Application.Audiobooks.Tagging
         bool PathMismatched = false,
         bool PathLocked = false,
         string? ExpectedFileName = null,
-        bool FileNameMismatched = false);
+        bool FileNameMismatched = false,
+        ChapterHealth ChapterHealth = ChapterHealth.Unknown,
+        string? ChapterReason = null,
+        int ChapterCount = 0,
+        bool ChapterRepairable = false,
+        bool ChapterPlanPending = false,
+        AudioAuditVerdict AudioAudit = AudioAuditVerdict.NotAudited,
+        string? AudioAuditReason = null);
 
     /// <summary>
     /// The whole library's tag table, plus what it cost to build.
@@ -109,6 +125,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// published it: the next table load then answers for it from the cache
         /// instead of noticing the changed file and probing it during the request.
         /// </summary>
-        Task RecordFileAsync(string fullPath, CancellationToken cancellationToken = default);
+        /// <param name="fullPath">The file as published.</param>
+        /// <param name="fileId">The file's row, so its chapter verdict can be recorded beside the cache.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        Task RecordFileAsync(string fullPath, int? fileId = null, CancellationToken cancellationToken = default);
     }
 }

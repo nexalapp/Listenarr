@@ -17,6 +17,7 @@
  */
 using Listenarr.Domain.Common;
 
+using Listenarr.Domain.Audiobooks.Chapters;
 namespace Listenarr.Application.Audiobooks.Contracts.Repositories
 {
     public sealed record AudiobookBasePathMutation(
@@ -118,5 +119,34 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             CancellationToken ct = default);
         Task<List<AudiobookFormatSummary>> GetFormatSummariesAsync(CancellationToken ct = default);
         Task<Dictionary<int, int>> GetCountsByAudiobookIdAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// Record what each file's chapters were judged to be, so the books list and the
+        /// book page can show it without a probe. A dedicated write for the same reason
+        /// as the locks: three columns, not a whole entity round-trip.
+        /// </summary>
+        Task SetChapterHealthAsync(
+            IReadOnlyCollection<AudiobookFileChapterHealth> verdicts,
+            CancellationToken ct = default);
+
+        /// <summary>Store the chapter fix worked out for a file, with the key it holds for.</summary>
+        Task SetChapterPlanAsync(int fileId, string planJson, string planKey, bool repairable, DateTime plannedAtUtc, CancellationToken ct = default);
+
+        /// <summary>Forget the stored fix for these files, so the next look plans them afresh.</summary>
+        Task ClearChapterPlanAsync(IReadOnlyCollection<int> fileIds, CancellationToken ct = default);
+
+        /// <summary>The worst chapter verdict among each book's files, and whether every flagged file is repairable, for books that have one.</summary>
+        Task<Dictionary<int, AudiobookChapterSummary>> GetWorstChapterHealthByAudiobookIdAsync(CancellationToken ct = default);
     }
+
+    /// <summary>One file's chapter verdict, as the tag index decided it.</summary>
+    public sealed record AudiobookFileChapterHealth(
+        int FileId,
+        ChapterHealth Health,
+        string? Reason,
+        int ChapterCount,
+        bool Repairable = false);
+
+    /// <summary>A book's worst chapter verdict and whether a repair can do something about it.</summary>
+    public sealed record AudiobookChapterSummary(ChapterHealth Health, bool Repairable);
 }
