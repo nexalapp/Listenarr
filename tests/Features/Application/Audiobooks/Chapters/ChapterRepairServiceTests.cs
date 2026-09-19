@@ -356,7 +356,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             Assert.Equal("Chapter 2: Stockings", file.Plan.Chapters[1].Title);
             Assert.Equal("Chapter 3: Peace", file.Plan.Chapters[2].Title);
             Assert.Equal("Chapter 4", file.Plan.Chapters[3].Title);
-            // Ten marks, not thirty.
+            // Ten marks, not thirty. (The mark after each would be listened to as well
+            // were it within the lead-in window; these tracks are three minutes apart.)
             _transcriber.Verify(t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Exactly(10));
         }
 

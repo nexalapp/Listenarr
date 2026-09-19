@@ -107,6 +107,52 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Chapters
         }
 
         [Fact]
+        public void SnapToMarks_MovesChapterOneToTheMarkWhereItIsAnnounced()
+        {
+            // Audible starts chapter 1 at 0:00, credits included; the rip split the
+            // credits off, and the narrator says "1. Saint Nick" at 0:38.
+            var marks = new List<EmbeddedChapter>
+            {
+                new("Chapter 001", TimeSpan.Zero, TimeSpan.FromSeconds(38)),
+                new("Chapter 002", TimeSpan.FromSeconds(38), TimeSpan.FromMinutes(8)),
+                new("Chapter 003", TimeSpan.FromMinutes(8), TimeSpan.FromMinutes(24)),
+                new("Chapter 004", TimeSpan.FromMinutes(24), TimeSpan.FromMinutes(30))
+            };
+            var edition = new List<EmbeddedChapter>
+            {
+                new("Chapter 1", TimeSpan.Zero, TimeSpan.FromMinutes(24)),
+                new("Chapter 2", TimeSpan.FromMinutes(24), TimeSpan.FromMinutes(30))
+            };
+            var heard = new string?[] { "[Music]", "1. Saint Nick\nZach Morgan sat attentively.", null, "2. Enders stocking\nPeter Wiggin was supposed to." };
+
+            var plan = ChapterRebuildPlanner.SnapToMarks(edition, marks, heard, TimeSpan.FromMinutes(30));
+
+            Assert.NotNull(plan);
+            Assert.Equal(["Introduction", "Chapter 1: Saint Nick", "Chapter 2: Enders stocking"], plan.Chapters.Select(c => c.Title));
+            Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(38), TimeSpan.FromMinutes(24)], plan.Chapters.Select(c => c.Start));
+        }
+
+        [Fact]
+        public void SnapToMarks_LeavesAChapterWhereItIsWhenTheNextMarkAnnouncesADifferentOne()
+        {
+            var marks = new List<EmbeddedChapter>
+            {
+                new("A", TimeSpan.Zero, TimeSpan.FromMinutes(1)),
+                new("B", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10))
+            };
+            var edition = new List<EmbeddedChapter>
+            {
+                new("Chapter 1", TimeSpan.Zero, TimeSpan.FromMinutes(1)),
+                new("Chapter 2", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10))
+            };
+            var heard = new string?[] { "Chapter one.", "Chapter two." };
+
+            var plan = ChapterRebuildPlanner.SnapToMarks(edition, marks, heard, TimeSpan.FromMinutes(10));
+
+            Assert.Equal(["Chapter 1", "Chapter 2"], plan!.Chapters.Select(c => c.Title));
+        }
+
+        [Fact]
         public void Retitle_KeepsEveryMarkAndNamesTheAnnouncedOnes()
         {
             var marks = new List<EmbeddedChapter>

@@ -107,6 +107,34 @@ namespace Listenarr.Domain.Audiobooks.Chapters
         /// <summary>At least this share of the edition's marks must land on the rip's marks for the edition to be this file.</summary>
         public const double MinimumSnapShare = 0.5;
 
+        /// <summary>How far after an edition's mark the rip may place the announcement and still mean the same chapter.</summary>
+        public static readonly TimeSpan LeadInTolerance = TimeSpan.FromSeconds(90);
+
+        /// <summary>The rip mark nearest a time, or -1 when there are none.</summary>
+        public static int NearestMark(IReadOnlyList<EmbeddedChapter> marks, TimeSpan at)
+        {
+            var nearest = -1;
+            var distance = TimeSpan.MaxValue;
+            for (var index = 0; index < marks.Count; index++)
+            {
+                var gap = (marks[index].Start - at).Duration();
+                if (gap < distance)
+                {
+                    distance = gap;
+                    nearest = index;
+                }
+            }
+
+            return nearest;
+        }
+
+        private static string? Said(IReadOnlyList<string?>? heard, int index) =>
+            heard != null && index >= 0 && index < heard.Count ? heard[index] : null;
+
+        /// <summary>An announcement of this chapter number, or an unnumbered one (a prologue is chapter one of a kind).</summary>
+        private static bool Matches(ChapterAnnouncement? announcement, int number) =>
+            announcement != null && (announcement.Number == number || announcement.Number == null);
+
         /// <summary>
         /// Lay an edition's chapter list (Audnexus) over a rip's marks. Where an edition
         /// mark lands within <see cref="SnapTolerance"/> of a rip mark, the rip's mark
@@ -129,38 +157,52 @@ namespace Listenarr.Domain.Audiobooks.Chapters
                 return null;
             }
 
-            var snapped = new List<EmbeddedChapter>(edition.Count);
-            var snappedHeard = new List<string?>(edition.Count);
+            var snapped = new List<EmbeddedChapter>(edition.Count + 1);
+            var snappedHeard = new List<string?>(edition.Count + 1);
             var landed = 0;
             var named = 0;
-            foreach (var chapter in edition)
+            for (var number = 0; number < edition.Count; number++)
             {
-                var nearest = -1;
-                var distance = TimeSpan.MaxValue;
-                for (var index = 0; index < marks.Count; index++)
-                {
-                    var gap = (marks[index].Start - chapter.Start).Duration();
-                    if (gap < distance)
-                    {
-                        distance = gap;
-                        nearest = index;
-                    }
-                }
-
-                var onMark = nearest >= 0 && distance <= SnapTolerance;
+                var chapter = edition[number];
+                var nearest = NearestMark(marks, chapter.Start);
+                var onMark = nearest >= 0 && (marks[nearest].Start - chapter.Start).Duration() <= SnapTolerance;
                 if (onMark)
                 {
                     landed++;
                 }
 
-                var start = onMark ? marks[nearest].Start : chapter.Start;
-                var said = onMark && heard != null && nearest < heard.Count ? heard[nearest] : null;
+                // The edition may start a chapter at the credits the rip split off in
+                // front of it: Audible counts the opening announcement as part of
+                // chapter one, the rip does not. When the narrator announces this very
+                // chapter at the next mark, a breath later, the next mark is the chapter.
+                var chosen = nearest;
+                var said = Said(heard, nearest);
                 var announced = ChapterAnnouncementParser.Parse(said);
+                if (onMark && nearest + 1 < marks.Count && marks[nearest + 1].Start - marks[nearest].Start <= LeadInTolerance)
+                {
+                    var nextSaid = Said(heard, nearest + 1);
+                    var nextAnnounced = ChapterAnnouncementParser.Parse(nextSaid);
+                    var thisNumber = number + 1;
+                    if (!Matches(announced, thisNumber) && Matches(nextAnnounced, thisNumber))
+                    {
+                        if (number == 0 && marks[nearest].Start < marks[nearest + 1].Start)
+                        {
+                            snapped.Add(new EmbeddedChapter("Introduction", marks[nearest].Start, marks[nearest + 1].Start));
+                            snappedHeard.Add(said);
+                        }
+
+                        chosen = nearest + 1;
+                        said = nextSaid;
+                        announced = nextAnnounced;
+                    }
+                }
+
                 if (announced != null)
                 {
                     named++;
                 }
 
+                var start = onMark ? marks[chosen].Start : chapter.Start;
                 snapped.Add(new EmbeddedChapter(announced?.Title ?? chapter.Title, start, chapter.End));
                 snappedHeard.Add(said);
             }

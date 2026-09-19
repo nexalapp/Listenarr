@@ -161,13 +161,19 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 IReadOnlyList<string?>? heardAtMarks = null;
                 if (listening)
                 {
+                    // The edition's mark, and the rip's next one when it is a breath
+                    // later: the announcement may sit on either.
                     var wanted = new HashSet<int>();
                     foreach (var chapter in matched.Chapters)
                     {
-                        var nearest = NearestMark(marks, chapter.Start);
+                        var nearest = ChapterRebuildPlanner.NearestMark(marks, chapter.Start);
                         if (nearest >= 0 && (marks[nearest].Start - chapter.Start).Duration() <= ChapterRebuildPlanner.SnapTolerance)
                         {
                             wanted.Add(nearest);
+                            if (nearest + 1 < marks.Count && marks[nearest + 1].Start - marks[nearest].Start <= ChapterRebuildPlanner.LeadInTolerance)
+                            {
+                                wanted.Add(nearest + 1);
+                            }
                         }
                     }
 
@@ -217,23 +223,6 @@ namespace Listenarr.Application.Audiobooks.Chapters
             }
 
             return ChapterRebuildPlanner.Merge(marks, heard, tags.Duration, edition?.Chapters.Count);
-        }
-
-        private static int NearestMark(IReadOnlyList<EmbeddedChapter> marks, TimeSpan at)
-        {
-            var nearest = -1;
-            var distance = TimeSpan.MaxValue;
-            for (var index = 0; index < marks.Count; index++)
-            {
-                var gap = (marks[index].Start - at).Duration();
-                if (gap < distance)
-                {
-                    distance = gap;
-                    nearest = index;
-                }
-            }
-
-            return nearest;
         }
 
         private async Task<string?> HearAsync(string fullPath, TimeSpan start, CancellationToken cancellationToken)
