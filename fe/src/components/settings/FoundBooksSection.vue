@@ -21,25 +21,57 @@
     <div class="form-body">
       <FormRow
         label="Watch Folders"
-        help="Folders scanned for complete books that are not in the library: a pack that arrived with more than was asked for, a manual download, an import that was left behind. One per line. Leave empty to watch every enabled download client's completed path, translated through its remote path mappings."
+        help="Folders scanned for complete books that are not in the library: a pack that arrived with more than was asked for, a manual download, an import that was left behind. Leave empty to watch every enabled download client's completed path, translated through its remote path mappings."
       >
-        <textarea
-          class="watch-folders"
-          rows="3"
-          :value="(settings.foundBooksWatchFolders ?? []).join('\n')"
-          placeholder="Leave empty to use your download clients' completed folders"
-          spellcheck="false"
-          @input="
-            (e) =>
-              updateField(
-                'foundBooksWatchFolders',
-                (e.target as HTMLTextAreaElement).value
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter(Boolean),
-              )
-          "
-        ></textarea>
+        <ul v-if="folders.length > 0" class="watch-list">
+          <li v-for="(folder, index) in folders" :key="folder" class="watch-item">
+            <span class="watch-path" :title="folder">{{ folder }}</span>
+            <button
+              type="button"
+              class="icon-btn btn-secondary"
+              title="Stop watching this folder"
+              aria-label="Stop watching this folder"
+              @click="removeFolder(index)"
+            >
+              <PhX :size="14" />
+            </button>
+          </li>
+        </ul>
+        <p v-else class="found-note">
+          No watch folders: your download clients' completed folders are used.
+        </p>
+        <div class="path-input-row">
+          <input
+            v-model="draft"
+            type="text"
+            class="form-input"
+            placeholder="Select or enter a folder..."
+            @keydown.enter.prevent="addFolder(draft)"
+          />
+          <button
+            type="button"
+            class="icon-btn btn-secondary btn-inline-browse"
+            title="Browse for folder"
+            aria-label="Browse for folder"
+            @click="showBrowser = true"
+          >
+            <PhFolder :size="16" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :disabled="!draft.trim()"
+            @click="addFolder(draft)"
+          >
+            Add
+          </button>
+        </div>
+        <FolderBrowserModal
+          v-model:visible="showBrowser"
+          v-model:modelValue="draft"
+          :show-input="false"
+          @update:modelValue="(value: string) => addFolder(value)"
+        />
       </FormRow>
 
       <FormRow
@@ -85,7 +117,9 @@
 </template>
 
 <script setup lang="ts">
-import { PhFolderOpen } from '@phosphor-icons/vue'
+import { computed, ref } from 'vue'
+import { PhFolder, PhFolderOpen, PhX } from '@phosphor-icons/vue'
+import FolderBrowserModal from '@/components/feedback/FolderBrowserModal.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import type { ApplicationSettings } from '@/types'
 
@@ -100,14 +134,59 @@ const updateField = <K extends keyof ApplicationSettings>(
 ) => {
   emit('update:settings', { ...props.settings, [key]: value })
 }
+
+const folders = computed(() => props.settings.foundBooksWatchFolders ?? [])
+const draft = ref('')
+const showBrowser = ref(false)
+
+function addFolder(value: string) {
+  const path = value.trim()
+  if (!path) return
+  if (!folders.value.includes(path)) {
+    updateField('foundBooksWatchFolders', [...folders.value, path])
+  }
+  draft.value = ''
+}
+
+function removeFolder(index: number) {
+  updateField(
+    'foundBooksWatchFolders',
+    folders.value.filter((_, i) => i !== index),
+  )
+}
 </script>
 
 <style scoped>
-.watch-folders {
-  width: 100%;
+.watch-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+}
+
+.watch-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.watch-path {
+  flex: 1;
   font-family: var(--font-mono, monospace);
   font-size: 0.85rem;
-  resize: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.path-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.path-input-row .form-input {
+  flex: 1;
 }
 
 .found-toggle {
