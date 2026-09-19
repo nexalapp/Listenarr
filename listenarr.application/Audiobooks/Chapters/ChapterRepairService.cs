@@ -149,6 +149,42 @@ namespace Listenarr.Application.Audiobooks.Chapters
             return new ChapterRepairPreview(audiobookId, previews);
         }
 
+        public async Task<IReadOnlyList<ChapterDescription>?> DescribeAsync(int audiobookId, CancellationToken cancellationToken = default)
+        {
+            var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
+            if (audiobook == null)
+            {
+                return null;
+            }
+
+            var descriptions = new List<ChapterDescription>();
+            foreach (var file in (audiobook.Files ?? [])
+                         .Where(file => TaggableFile.IsTaggable(file.Path))
+                         .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase))
+            {
+                var fullPath = AudiobookFilePaths.ResolveFullPath(audiobook, file);
+                var fileName = Path.GetFileName(fullPath ?? file.Path ?? string.Empty);
+                if (fullPath == null || !fileSystem.FileExists(fullPath))
+                {
+                    descriptions.Add(new ChapterDescription(file.Id, fileName, ChapterHealth.Unknown, null, [], null, TimeSpan.Zero, "The file is not readable from here."));
+                    continue;
+                }
+
+                try
+                {
+                    var tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
+                    var health = ChapterHealthAnalyzer.Analyze(tags.Chapters, tags.Atoms, tags.Duration, Path.GetFileNameWithoutExtension(fileName));
+                    descriptions.Add(new ChapterDescription(file.Id, fileName, health.Health, health.Reason, tags.Chapters ?? [], tags.Atoms, tags.Duration, null));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    descriptions.Add(new ChapterDescription(file.Id, fileName, ChapterHealth.Unknown, null, [], null, TimeSpan.Zero, $"The file could not be read: {ex.Message}"));
+                }
+            }
+
+            return descriptions;
+        }
+
         public async Task<TagEnqueueResult> EnqueueAsync(
             int audiobookId,
             IReadOnlyCollection<int>? fileIds = null,

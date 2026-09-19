@@ -79,6 +79,50 @@ namespace Listenarr.Api.Features.Library
         }
 
         /// <summary>
+        /// A book's chapters as its files carry them, with each file's verdict and what
+        /// the container's atoms say. Reads the files; writes nothing.
+        /// </summary>
+        /// <response code="200">The chapters per file.</response>
+        /// <response code="404">No such audiobook.</response>
+        [HttpGet("audiobooks/{audiobookId:int}/chapters")]
+        public async Task<IActionResult> GetChapters(
+            int audiobookId,
+            [FromServices] IChapterRepairService repairService,
+            CancellationToken cancellationToken = default)
+        {
+            var files = await repairService.DescribeAsync(audiobookId, cancellationToken);
+            if (files == null)
+            {
+                return NotFound(new { reason = "That audiobook no longer exists." });
+            }
+
+            return Ok(new
+            {
+                audiobookId,
+                files = files.Select(file => new
+                {
+                    fileId = file.FileId,
+                    name = file.FileName,
+                    chapterHealth = ChapterHealthNames.Of(file.Health),
+                    chapterReason = file.Reason,
+                    error = file.Error,
+                    durationSeconds = file.Duration.TotalSeconds,
+                    // What the bytes say, so the page can explain a verdict rather than assert it.
+                    neroAtom = file.Atoms == null ? null : file.Atoms.HasNeroAtom ? (file.Atoms.NeroAtomError == null ? "ok" : "broken") : "missing",
+                    neroAtomError = file.Atoms?.NeroAtomError,
+                    chapterTrack = file.Atoms?.HasChapterTrack,
+                    chapters = file.Chapters.Select(chapter => new
+                    {
+                        title = chapter.Title,
+                        startSeconds = chapter.Start.TotalSeconds,
+                        endSeconds = chapter.End.TotalSeconds,
+                        placeholder = ChapterHealthAnalyzer.IsPlaceholderTitle(chapter.Title, Path.GetFileNameWithoutExtension(file.FileName))
+                    })
+                })
+            });
+        }
+
+        /// <summary>
         /// Queue a chapter repair for a book's corrupt files.
         /// </summary>
         /// <response code="202">The repair was queued.</response>

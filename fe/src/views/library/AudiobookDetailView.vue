@@ -297,6 +297,14 @@
             <PhFile />
             Files
           </button>
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'chapters' }"
+            @click="activeTab = 'chapters'"
+          >
+            <PhListNumbers />
+            Chapters
+          </button>
           <button class="tab" :class="{ active: activeTab === 'tags' }" @click="activeTab = 'tags'">
             <PhTag />
             Tags
@@ -496,53 +504,6 @@
           </div>
         </div>
         <!--
-          The chapter verdict, always shown, so "checked and fine" and "never checked"
-          do not look the same. Checking reads the files' atoms; it writes nothing.
-        -->
-        <div
-          v-if="audiobook.files && audiobook.files.length"
-          class="audio-audit"
-          :class="chapterPanelClass"
-        >
-          <PhListNumbers class="audio-audit-icon" />
-          <div class="audio-audit-body">
-            <div class="audio-audit-verdict">{{ chapterSummary.headline }}</div>
-            <div class="audio-audit-reason">{{ chapterSummary.detail }}</div>
-          </div>
-          <div class="audio-audit-actions">
-            <button
-              v-if="chapterSummary.repairableFileIds.length > 0"
-              type="button"
-              class="file-repair-btn"
-              :disabled="tagWriteInFlight"
-              title="Preview and rebuild the chapters of the files that need it"
-              @click="openChapterRepair(...chapterSummary.repairableFileIds)"
-            >
-              Repair chapters
-            </button>
-            <button
-              type="button"
-              class="file-repair-btn file-repair-btn--quiet"
-              :disabled="checkingChapters"
-              :title="
-                checkingChapters
-                  ? 'Reading the files…'
-                  : 'Read each file’s chapter atom and chapter track and judge them'
-              "
-              @click="checkChapters"
-            >
-              {{
-                checkingChapters
-                  ? 'Checking…'
-                  : chapterSummary.checked
-                    ? 'Check again'
-                    : 'Check chapters'
-              }}
-            </button>
-          </div>
-        </div>
-
-        <!--
           What the audio says it is, beside the files that say it. A verdict of "match"
           is a line, not a badge; a mismatch is the one thing on this page that says the
           record may be the wrong book, so it is loud and it offers the way out.
@@ -724,6 +685,65 @@
           <p>No files available</p>
           <p class="hint">This audiobook hasn't been downloaded yet</p>
         </div>
+      </div>
+
+      <!-- Chapters Tab -->
+      <div id="chapters" v-if="activeTab === 'chapters'" class="chapters-content">
+        <!--
+          The chapter verdict, always shown, so "checked and fine" and "never checked"
+          do not look the same. Checking reads the files' atoms; it writes nothing.
+        -->
+        <div
+          v-if="audiobook && audiobook.files && audiobook.files.length"
+          class="audio-audit audio-audit--summary"
+          :class="chapterPanelClass"
+        >
+          <PhListNumbers class="audio-audit-icon" />
+          <div class="audio-audit-body">
+            <div class="audio-audit-verdict">{{ chapterSummary.headline }}</div>
+            <div class="audio-audit-reason">{{ chapterSummary.detail }}</div>
+          </div>
+          <div class="audio-audit-actions">
+            <button
+              v-if="chapterSummary.repairableFileIds.length > 0"
+              type="button"
+              class="file-repair-btn"
+              :disabled="tagWriteInFlight"
+              title="Preview and rebuild the chapters of the files that need it"
+              @click="openChapterRepair(...chapterSummary.repairableFileIds)"
+            >
+              Repair chapters
+            </button>
+            <button
+              type="button"
+              class="file-repair-btn file-repair-btn--quiet"
+              :disabled="checkingChapters"
+              :title="
+                checkingChapters
+                  ? 'Reading the files…'
+                  : 'Read each file’s chapter atom and chapter track and judge them'
+              "
+              @click="checkChapters"
+            >
+              {{
+                checkingChapters
+                  ? 'Checking…'
+                  : chapterSummary.checked
+                    ? 'Check again'
+                    : 'Check chapters'
+              }}
+            </button>
+          </div>
+        </div>
+
+        <ChapterListPanel
+          v-if="audiobook"
+          ref="chapterPanel"
+          :audiobookId="audiobook.id"
+          :disabled="tagWriteInFlight"
+          :disabledReason="writeTagsTitle"
+          @repair="(fileId) => openChapterRepair(fileId)"
+        />
       </div>
 
       <!-- Tags Tab -->
@@ -959,6 +979,7 @@ import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal
 import LibraryImportSearchModal from '@/components/domain/audiobook/LibraryImportSearchModal.vue'
 import TagPreviewModal from '@/components/domain/tagging/TagPreviewModal.vue'
 import ChapterRepairModal from '@/components/domain/tagging/ChapterRepairModal.vue'
+import ChapterListPanel from '@/components/domain/tagging/ChapterListPanel.vue'
 import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepairModal.vue'
 import AudiobookTagsPanel from '@/components/domain/tagging/AudiobookTagsPanel.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
@@ -1017,7 +1038,7 @@ const conversionJobsStore = useConversionJobsStore()
 const tagJobsStore = useTagJobsStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
-type DetailTab = 'details' | 'files' | 'tags' | 'history'
+type DetailTab = 'details' | 'files' | 'chapters' | 'tags' | 'history'
 
 const audiobook = ref<Audiobook | null>(null)
 const loading = ref(true)
@@ -1199,6 +1220,7 @@ const expandedFileAccordions = ref<Set<number>>(new Set())
 const mobileTabOptions = computed(() => [
   { value: 'details', label: 'Details', icon: PhInfo },
   { value: 'files', label: 'Files', icon: PhFile },
+  { value: 'chapters', label: 'Chapters', icon: PhListNumbers },
   { value: 'tags', label: 'Tags', icon: PhTag },
   { value: 'history', label: 'History', icon: PhClockCounterClockwise },
 ])
@@ -1616,6 +1638,7 @@ function normalizeDetailTabCandidate(value: unknown): DetailTab | null {
   if (
     normalized === 'details' ||
     normalized === 'files' ||
+    normalized === 'chapters' ||
     normalized === 'tags' ||
     normalized === 'history'
   ) {
@@ -2006,6 +2029,7 @@ watch(
       // whatever the server now says.
       if (activeTagWrite.value?.kind === 'Chapters') {
         void loadAudiobook()
+        void chapterPanel.value?.load()
       }
     }
   },
@@ -2229,6 +2253,7 @@ const chapterPanelClass = computed(() => {
   }
 })
 
+const chapterPanel = ref<InstanceType<typeof ChapterListPanel> | null>(null)
 const checkingChapters = ref(false)
 
 /**
@@ -2243,6 +2268,7 @@ async function checkChapters() {
   try {
     await apiService.getLibraryTags(false, [audiobook.value.id])
     await loadAudiobook()
+    await chapterPanel.value?.load()
   } catch (err) {
     toast.error('Could not check chapters', err instanceof Error ? err.message : String(err))
   } finally {
@@ -3751,6 +3777,7 @@ a.identifier-link:hover {
 }
 
 .files-content,
+.chapters-content,
 .tags-content,
 .history-content {
   background-color: #2a2a2a;
@@ -3873,6 +3900,16 @@ a.identifier-link:hover {
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.chapters-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.audio-audit--summary {
+  margin-bottom: 0;
 }
 
 .audio-audit--mismatch,

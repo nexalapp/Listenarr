@@ -640,6 +640,35 @@ export interface ChapterRepairFile {
   chapters?: ChapterRepairChapter[] | null
 }
 
+/** One chapter as a file carries it. */
+export interface BookChapter {
+  title: string | null
+  startSeconds: number
+  endSeconds: number
+  /** The title is a ripping tool's — "Chapter 001 - 00:06:20" — not the author's. */
+  placeholder: boolean
+}
+
+/** One file's chapters, verdict, and what its atoms say. */
+export interface BookChapterFile {
+  fileId: number
+  name: string
+  chapterHealth: ChapterHealth
+  chapterReason?: string | null
+  error?: string | null
+  durationSeconds: number
+  /** `ok`, `broken` or `missing`; null when the container was not inspected. */
+  neroAtom?: 'ok' | 'broken' | 'missing' | null
+  neroAtomError?: string | null
+  chapterTrack?: boolean | null
+  chapters: BookChapter[]
+}
+
+export interface BookChapters {
+  audiobookId: number
+  files: BookChapterFile[]
+}
+
 export interface ChapterRepairPreview {
   audiobookId: number
   repairable: boolean

@@ -40,6 +40,20 @@ namespace Listenarr.Application.Audiobooks.Chapters
         IReadOnlyList<ChapterRepairFilePreview> Files);
 
     /// <summary>
+    /// One file's chapters as they are: the list it plays, the verdict, and what the
+    /// atoms say — for a page that shows chapters rather than deciding anything.
+    /// </summary>
+    public sealed record ChapterDescription(
+        int FileId,
+        string FileName,
+        ChapterHealth Health,
+        string? Reason,
+        IReadOnlyList<Domain.Audiobooks.Conversion.EmbeddedChapter> Chapters,
+        ChapterAtomState? Atoms,
+        TimeSpan Duration,
+        string? Error);
+
+    /// <summary>
     /// Decides what a chapter repair would write and queues it.
     ///
     /// <para>
@@ -57,6 +71,9 @@ namespace Listenarr.Application.Audiobooks.Chapters
             int audiobookId,
             IReadOnlyCollection<int>? fileIds = null,
             CancellationToken cancellationToken = default);
+
+        /// <summary>Read every M4B of the book and describe its chapters. Nothing is planned or written.</summary>
+        Task<IReadOnlyList<ChapterDescription>?> DescribeAsync(int audiobookId, CancellationToken cancellationToken = default);
 
         /// <summary>Queue a repair for every repairable file in scope.</summary>
         Task<TagEnqueueResult> EnqueueAsync(

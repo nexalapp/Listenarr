@@ -21,6 +21,7 @@ import type {
   BulkConversionResponse,
   LibraryTagTable,
   ChapterRepairPreview,
+  BookChapters,
   TagDefinition,
   TagJobUpdate,
   TagPreview,
@@ -1745,6 +1746,11 @@ class ApiService {
         fileIds: fileIds?.length ? fileIds : null,
       }),
     })
+  }
+
+  /** A book's chapters as its files carry them, with each file's verdict. Reads the files. */
+  async getBookChapters(audiobookId: number): Promise<BookChapters> {
+    return this.request<BookChapters>(`/tagging/audiobooks/${audiobookId}/chapters`)
   }
 
   /** What a chapter repair would write into each of a book's files. */
