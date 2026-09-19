@@ -96,7 +96,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
         }
 
         /// <summary>What a stored plan for this file holds for; null when the file cannot be stat'ed.</summary>
-        private string? PlanKey(string fullPath, Audiobook audiobook, bool transcriptionEnabled)
+        private string? PlanKey(string fullPath, Audiobook audiobook, ApplicationSettings settings)
         {
             try
             {
@@ -104,7 +104,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     fileSystem.GetFileLength(fullPath),
                     fileSystem.GetLastWriteTimeUtc(fullPath),
                     audiobook.Asin,
-                    transcriptionEnabled);
+                    ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -203,7 +203,16 @@ namespace Listenarr.Application.Audiobooks.Chapters
 
             try
             {
-                return await ListenAndPlanAsync(audiobook, fullPath, tags, health, marks, listening, edition, progress, cancellationToken);
+                return await ListenAndPlanAsync(
+                    audiobook,
+                    fullPath,
+                    tags,
+                    health,
+                    marks,
+                    listening ? ChapterPlanKeys.ModelFor(true, settings.TranscriptionModel) : null,
+                    edition,
+                    progress,
+                    cancellationToken);
             }
             catch (TranscriptionFailedException ex)
             {
@@ -217,12 +226,13 @@ namespace Listenarr.Application.Audiobooks.Chapters
             AudiobookFileTags tags,
             ChapterHealth health,
             IReadOnlyList<EmbeddedChapter> marks,
-            bool listening,
+            string? model,
             (IReadOnlyList<EmbeddedChapter> Chapters, TimeSpan Runtime)? edition,
             PlanProgress progress,
             CancellationToken cancellationToken)
         {
-
+            // The model that would listen; none means transcription is off.
+            var listening = model != null;
             if (edition is { } matched)
             {
                 // Listen only where the edition puts a chapter, for its name.
@@ -250,7 +260,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     foreach (var index in wanted)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        partial[index] = await HearAsync(fullPath, marks[index].Start, cancellationToken);
+                        partial[index] = await HearAsync(fullPath, marks[index].Start, model, cancellationToken);
                         progress.Heard(++heardSoFar, wanted.Count);
                     }
 
@@ -276,7 +286,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
             foreach (var mark in marks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                heard.Add(await HearAsync(fullPath, mark.Start, cancellationToken));
+                heard.Add(await HearAsync(fullPath, mark.Start, model, cancellationToken));
                 progress.Heard(heard.Count, marks.Count);
             }
 
@@ -320,7 +330,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
             return PlanAttempt.From(ChapterRebuildPlanner.Merge(marks, heard, tags.Duration, edition?.Chapters.Count));
         }
 
-        private async Task<string?> HearAsync(string fullPath, TimeSpan start, CancellationToken cancellationToken)
+        private async Task<string?> HearAsync(string fullPath, TimeSpan start, string? model, CancellationToken cancellationToken)
         {
             long length = 0;
             var lastWrite = DateTime.MinValue;
@@ -328,7 +338,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
             {
                 length = fileSystem.GetFileLength(fullPath);
                 lastWrite = fileSystem.GetLastWriteTimeUtc(fullPath);
-                var cached = transcripts?.TryGet(fullPath, length, lastWrite, start, ListenWindow);
+                var cached = transcripts?.TryGet(fullPath, length, lastWrite, start, ListenWindow, model);
                 if (cached != null)
                 {
                     return cached.Text;
@@ -349,7 +359,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     transcript.Text);
                 if (length > 0)
                 {
-                    transcripts?.Set(fullPath, length, lastWrite, start, ListenWindow, transcript);
+                    transcripts?.Set(fullPath, length, lastWrite, start, ListenWindow, transcript, model);
                 }
 
                 return transcript.Text;

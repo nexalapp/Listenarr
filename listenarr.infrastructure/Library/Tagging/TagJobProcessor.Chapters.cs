@@ -17,6 +17,7 @@
  */
 using Listenarr.Application.Audiobooks.Audit;
 using Listenarr.Application.Audiobooks.Chapters;
+using Listenarr.Application.Audiobooks.Transcription;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -166,6 +167,10 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     result.Reason);
                 return ExecutionOutcome.Succeeded(0, job.FileCount, audiobook.Title);
             }
+            catch (TranscriptionUnavailableException ex)
+            {
+                return ExecutionOutcome.Failed(TagWriteFailureKind.Transient, ex.Message);
+            }
             catch (InvalidOperationException ex)
             {
                 return ExecutionOutcome.Failed(TagWriteFailureKind.WriterUnavailable, ex.Message);
@@ -196,7 +201,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
             catch (ChapterSourceUnavailableException ex)
             {
                 // Nothing was stored for the files concerned; the retry asks again.
-                return ExecutionOutcome.Failed(TagWriteFailureKind.WriterUnavailable, ex.Message);
+                return ExecutionOutcome.Failed(TagWriteFailureKind.Transient, ex.Message);
             }
         }
     }

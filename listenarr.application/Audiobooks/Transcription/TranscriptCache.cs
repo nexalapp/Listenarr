@@ -21,7 +21,7 @@ namespace Listenarr.Application.Audiobooks.Transcription
 {
     /// <summary>
     /// Remembers what a stretch of a file sounded like, keyed by the file's identity
-    /// (path, length, last write) and the stretch.
+    /// (path, length, last write), the stretch, and the model that listened.
     ///
     /// <para>
     /// A chapter-repair preview transcribes ten seconds after every mark of a ninety-mark
@@ -37,20 +37,20 @@ namespace Listenarr.Application.Audiobooks.Transcription
 
         private readonly ConcurrentDictionary<string, Transcript> _entries = new(StringComparer.Ordinal);
 
-        public Transcript? TryGet(string path, long length, DateTime lastWriteUtc, TimeSpan start, TimeSpan window) =>
-            _entries.TryGetValue(Key(path, length, lastWriteUtc, start, window), out var transcript) ? transcript : null;
+        public Transcript? TryGet(string path, long length, DateTime lastWriteUtc, TimeSpan start, TimeSpan window, string? model = null) =>
+            _entries.TryGetValue(Key(path, length, lastWriteUtc, start, window, model), out var transcript) ? transcript : null;
 
-        public void Set(string path, long length, DateTime lastWriteUtc, TimeSpan start, TimeSpan window, Transcript transcript)
+        public void Set(string path, long length, DateTime lastWriteUtc, TimeSpan start, TimeSpan window, Transcript transcript, string? model = null)
         {
             if (_entries.Count >= MaxEntries)
             {
                 _entries.Clear();
             }
 
-            _entries[Key(path, length, lastWriteUtc, start, window)] = transcript;
+            _entries[Key(path, length, lastWriteUtc, start, window, model)] = transcript;
         }
 
-        private static string Key(string path, long length, DateTime lastWriteUtc, TimeSpan start, TimeSpan window) =>
-            $"{path}|{length}|{lastWriteUtc.Ticks}|{start.Ticks}|{window.Ticks}";
+        private static string Key(string path, long length, DateTime lastWriteUtc, TimeSpan start, TimeSpan window, string? model) =>
+            $"{path}|{length}|{lastWriteUtc.Ticks}|{start.Ticks}|{window.Ticks}|{model?.Trim().ToLowerInvariant()}";
     }
 }

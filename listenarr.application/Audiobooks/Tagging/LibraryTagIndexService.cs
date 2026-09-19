@@ -161,7 +161,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                         mappings,
                         tags,
                         error,
-                        settings.TranscriptionEnabled,
+                        settings,
                         libraryRoots,
                         pathExpectations.GetValueOrDefault(item.File.Id));
                 }
@@ -258,7 +258,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
             IReadOnlyList<TagMapping> mappings,
             AudiobookFileTags? tags,
             string? error,
-            bool transcriptionEnabled,
+            ApplicationSettings settings,
             IReadOnlyList<string> libraryRoots,
             PathExpectation? pathExpectation)
         {
@@ -329,10 +329,10 @@ namespace Listenarr.Application.Audiobooks.Tagging
             // A flagged file whose stored fix does not hold for the file, the ASIN and
             // the transcription setting as they are now needs planning again.
             var planPending = false;
-            var repairable = ChapterHealthSeverity.LikelyRepairable(chapters.Health, tags?.Atoms, !string.IsNullOrWhiteSpace(audiobook.Asin), transcriptionEnabled);
+            var repairable = ChapterHealthSeverity.LikelyRepairable(chapters.Health, tags?.Atoms, !string.IsNullOrWhiteSpace(audiobook.Asin), settings.TranscriptionEnabled);
             if (ChapterHealthSeverity.IsRepairableKind(chapters.Health) && fullPath != null)
             {
-                var key = PlanKey(fullPath, audiobook.Asin, transcriptionEnabled);
+                var key = PlanKey(fullPath, audiobook.Asin, ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel));
                 var fresh = key != null && string.Equals(file.ChapterPlanKey, key, StringComparison.Ordinal) && file.ChapterPlanJson != null;
                 planPending = !fresh;
                 if (fresh)

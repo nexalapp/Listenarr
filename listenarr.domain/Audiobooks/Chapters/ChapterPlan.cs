@@ -83,8 +83,16 @@ namespace Listenarr.Domain.Audiobooks.Chapters
         /// </summary>
         public const int PlannerVersion = 2;
 
-        public static string For(long length, DateTime lastWriteUtc, string? asin, bool transcriptionEnabled) =>
-            $"{length}|{lastWriteUtc.Ticks}|{asin?.Trim().ToUpperInvariant()}|{(transcriptionEnabled ? 1 : 0)}|v{PlannerVersion}";
+        /// <param name="length">The file's length in bytes.</param>
+        /// <param name="lastWriteUtc">The file's last write.</param>
+        /// <param name="asin">The book's ASIN, which chooses the edition.</param>
+        /// <param name="transcriptionModel">The whisper model that would listen, or null when transcription is off. A bigger model hears different names.</param>
+        public static string For(long length, DateTime lastWriteUtc, string? asin, string? transcriptionModel) =>
+            $"{length}|{lastWriteUtc.Ticks}|{asin?.Trim().ToUpperInvariant()}|{transcriptionModel?.Trim().ToLowerInvariant()}|v{PlannerVersion}";
+
+        /// <summary>The model a plan would listen with under these settings: none when transcription is off.</summary>
+        public static string? ModelFor(bool transcriptionEnabled, string? transcriptionModel) =>
+            transcriptionEnabled ? (string.IsNullOrWhiteSpace(transcriptionModel) ? "base.en" : transcriptionModel) : null;
     }
 
     /// <summary>A stored planning outcome: the plan, or why there is none.</summary>

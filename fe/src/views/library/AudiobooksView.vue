@@ -133,7 +133,9 @@
               <PhListNumbers />
               <span
                 ><strong>Check Chapters</strong
-                ><small
+                ><small v-if="bulkProgress"
+                  >Checking {{ bulkProgress.done }} of {{ bulkProgress.total }}…</small
+                ><small v-else
                   >Judge each file's chapters; work out fixes for anything flagged</small
                 ></span
               >
@@ -2365,6 +2367,8 @@ async function initializeVirtualScroller() {
 }
 
 onMounted(async () => {
+  // Idempotent; the badges this list shows follow the tag queue's jobs.
+  tagJobsStore.start()
   await Promise.all([
     libraryStore.fetchLibrary(),
     configStore.loadApplicationSettings(),
@@ -2750,6 +2754,8 @@ const convertSelectedTitle = computed(
 
 const actionsOpen = ref(false)
 const actionsMenuEl = ref<HTMLElement | null>(null)
+/** Where a long-running bulk action is, shown on the menu item while it runs. */
+const bulkProgress = ref<{ done: number; total: number } | null>(null)
 const bulkBusy = ref(false)
 const tagJobsStore = useTagJobsStore()
 
@@ -2763,6 +2769,27 @@ function onActionsDocumentClick(event: MouseEvent) {
   }
 }
 onMounted(() => document.addEventListener('click', onActionsDocumentClick))
+
+// A finished repair, plan or audit changed a badge this list shows; fetch once the
+// burst is over rather than once per job.
+let badgeRefresh: ReturnType<typeof setTimeout> | null = null
+watch(
+  () =>
+    tagJobsStore.jobs.filter(
+      (job) => ['Chapters', 'Plan', 'Audit'].includes(job.kind) && job.status === 'Completed',
+    ).length,
+  (count, previous) => {
+    if (previous === undefined || count <= previous) return
+    if (badgeRefresh) clearTimeout(badgeRefresh)
+    badgeRefresh = setTimeout(() => {
+      badgeRefresh = null
+      void libraryStore.fetchLibrary()
+    }, 1500)
+  },
+)
+onUnmounted(() => {
+  if (badgeRefresh) clearTimeout(badgeRefresh)
+})
 onUnmounted(() => document.removeEventListener('click', onActionsDocumentClick))
 
 /** Close the menu, then run the action. */
@@ -2771,18 +2798,27 @@ function pick(action: () => unknown) {
   void action()
 }
 
+/** How many books one chapter-check request probes. Each file is opened and read; a request that covers hundreds would sit behind a proxy timeout. */
+const CHECK_CHAPTERS_BATCH = 8
+
 /** Judge the selection's chapters now; anything flagged gets its fix worked out in the background. */
 async function bulkCheckChapters() {
   const ids = Array.from(libraryStore.selectedIds)
   if (ids.length === 0) return
   bulkBusy.value = true
+  bulkProgress.value = { done: 0, total: ids.length }
   try {
-    const table = await apiService.getLibraryTags(false, ids)
-    const flagged = new Set(
-      table.rows
-        .filter((row) => ['corrupt', 'oversegmented', 'generic-titles'].includes(row.chapterHealth))
-        .map((row) => row.audiobookId),
-    )
+    const flagged = new Set<number>()
+    for (let offset = 0; offset < ids.length; offset += CHECK_CHAPTERS_BATCH) {
+      const batch = ids.slice(offset, offset + CHECK_CHAPTERS_BATCH)
+      const table = await apiService.getLibraryTags(false, batch)
+      for (const row of table.rows) {
+        if (['corrupt', 'oversegmented', 'generic-titles'].includes(row.chapterHealth)) {
+          flagged.add(row.audiobookId)
+        }
+      }
+      bulkProgress.value = { done: Math.min(ids.length, offset + batch.length), total: ids.length }
+    }
     toast.success(
       'Chapters checked',
       flagged.size
@@ -2795,6 +2831,7 @@ async function bulkCheckChapters() {
     toast.error('Could not check chapters', err instanceof Error ? err.message : String(err))
   } finally {
     bulkBusy.value = false
+    bulkProgress.value = null
   }
 }
 

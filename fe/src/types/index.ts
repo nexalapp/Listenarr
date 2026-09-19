@@ -692,6 +692,15 @@ export interface ChapterRepairPreview {
   files: ChapterRepairFile[]
 }
 
+/** One whisper model as the settings page shows it. */
+export interface TranscriptionModelStatus {
+  model: string
+  state: 'missing' | 'downloading' | 'ready' | 'failed'
+  /** Bytes on disk when ready; bytes so far when downloading. */
+  sizeBytes: number | null
+  error?: string | null
+}
+
 /** The whole library's tags, with the columns to show them under. */
 export interface LibraryTagTable {
   generatedAt: string

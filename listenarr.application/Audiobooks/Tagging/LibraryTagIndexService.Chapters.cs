@@ -26,11 +26,11 @@ namespace Listenarr.Application.Audiobooks.Tagging
     /// </summary>
     public sealed partial class LibraryTagIndexService
     {
-        private string? PlanKey(string fullPath, string? asin, bool transcriptionEnabled)
+        private string? PlanKey(string fullPath, string? asin, string? transcriptionModel)
         {
             try
             {
-                return ChapterPlanKeys.For(fileSystem.GetFileLength(fullPath), fileSystem.GetLastWriteTimeUtc(fullPath), asin, transcriptionEnabled);
+                return ChapterPlanKeys.For(fileSystem.GetFileLength(fullPath), fileSystem.GetLastWriteTimeUtc(fullPath), asin, transcriptionModel);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

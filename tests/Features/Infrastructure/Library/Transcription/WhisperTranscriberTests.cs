@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Transcription;
 using Listenarr.Infrastructure.Library.Transcription;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
@@ -67,6 +68,43 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Transcription
             using var transcriber = Build(enabled: false);
             Assert.False(await transcriber.IsAvailableAsync());
             Assert.False(Directory.Exists(Path.Combine(_workingDirectory, "ggml-base.en.bin")));
+        }
+
+        [Fact]
+        public async Task GetModelStatusAsync_ReportsAModelThatIsNotThereWithoutFetchingIt()
+        {
+            using var transcriber = Build(enabled: true);
+
+            var status = await transcriber.GetModelStatusAsync();
+
+            Assert.Equal("base.en", status.Model);
+            Assert.Equal(TranscriptionModelState.Missing, status.State);
+            Assert.False(File.Exists(Path.Combine(_workingDirectory, "ggml-base.en.bin")));
+        }
+
+        [Fact]
+        public async Task IsAvailableAsync_IsTrueOnceTheModelIsOnDisk()
+        {
+            // Only the bytes on disk matter; the settings page shows the size.
+            Directory.CreateDirectory(_workingDirectory);
+            await File.WriteAllBytesAsync(Path.Combine(_workingDirectory, "ggml-base.en.bin"), new byte[64]);
+            using var transcriber = Build(enabled: true);
+
+            Assert.True(await transcriber.IsAvailableAsync());
+            var status = await transcriber.GetModelStatusAsync("base.en");
+            Assert.Equal(TranscriptionModelState.Ready, status.State);
+            Assert.Equal(64, status.SizeBytes);
+        }
+
+        [Fact]
+        public async Task GetModelStatusAsync_NamesAModelItDoesNotKnow()
+        {
+            using var transcriber = Build(enabled: true);
+
+            var status = await transcriber.GetModelStatusAsync("large-v3");
+
+            Assert.Equal(TranscriptionModelState.Failed, status.State);
+            Assert.Contains("not a whisper model", status.Error);
         }
 
         [WhisperFact]

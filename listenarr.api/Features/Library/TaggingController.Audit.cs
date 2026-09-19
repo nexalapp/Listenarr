@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Audiobooks.Audit;
+using Listenarr.Application.Audiobooks.Transcription;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
@@ -39,5 +40,66 @@ namespace Listenarr.Api.Features.Library
             logger.LogInformation("Audio audit request for audiobook {AudiobookId}: {Outcome}", audiobookId, result.Outcome);
             return ToResponse(result);
         }
+
+        /// <summary>
+        /// Where the whisper model stands: on disk, downloading, missing, or failed. Asks
+        /// about the configured model unless <c>model</c> names another.
+        /// </summary>
+        /// <response code="200">The model's status.</response>
+        [HttpGet("transcription/model")]
+        public async Task<IActionResult> GetTranscriptionModel(
+            [FromServices] ITranscriber? transcriber,
+            [FromQuery] string? model = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (transcriber == null)
+            {
+                return Ok(new { model, state = "missing", sizeBytes = (long?)null, error = "Transcription is not built into this server." });
+            }
+
+            return Ok(ToModelResponse(await transcriber.GetModelStatusAsync(model, cancellationToken)));
+        }
+
+        /// <summary>
+        /// Start downloading a whisper model so the first transcription does not wait on
+        /// it. Returns at once with the model's status; poll the GET to watch it land.
+        /// </summary>
+        /// <response code="200">The download is running, or the model is already on disk.</response>
+        /// <response code="400">Not a model this server knows.</response>
+        [HttpPost("transcription/model")]
+        public async Task<IActionResult> DownloadTranscriptionModel(
+            [FromServices] ITranscriber? transcriber,
+            [FromBody] DownloadModelRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (transcriber == null)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { reason = "Transcription is not built into this server." });
+            }
+
+            try
+            {
+                var status = await transcriber.DownloadModelAsync(request.Model, cancellationToken);
+                logger.LogInformation("Whisper model {Model} download requested: {State}", request.Model, status.State);
+                return Ok(ToModelResponse(status));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { reason = ex.Message });
+            }
+        }
+
+        private static object ToModelResponse(TranscriptionModelStatus status) => new
+        {
+            model = status.Model,
+            state = status.State.ToString().ToLowerInvariant(),
+            sizeBytes = status.SizeBytes,
+            error = status.Error
+        };
+    }
+
+    public sealed class DownloadModelRequest
+    {
+        public string Model { get; set; } = "base.en";
     }
 }

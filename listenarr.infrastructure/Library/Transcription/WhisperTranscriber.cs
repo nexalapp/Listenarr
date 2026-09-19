@@ -52,6 +52,13 @@ namespace Listenarr.Infrastructure.Library.Transcription
         private readonly SemaphoreSlim _gate = new(1, 1);
         private readonly Dictionary<string, WhisperFactory> _factories = new(StringComparer.Ordinal);
 
+        // One download at a time, off any caller's thread; its failure is kept for the
+        // settings page to show rather than for the next caller to trip over.
+        private readonly object _downloadLock = new();
+        private Task? _download;
+        private string? _downloadingModel;
+        private string? _downloadError;
+
         public string ModelRoot => paths.ResolveFromConfig("whisper");
 
         public async Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)
@@ -62,17 +69,106 @@ namespace Listenarr.Infrastructure.Library.Transcription
                 return false;
             }
 
-            try
+            if (ModelPath(model) is { } ready && IsOnDisk(ready))
             {
-                await EnsureModelAsync(model, cancellationToken);
                 return true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+
+            StartDownload(model);
+            return false;
+        }
+
+        public async Task<TranscriptionModelStatus> GetModelStatusAsync(string? model = null, CancellationToken cancellationToken = default)
+        {
+            var name = string.IsNullOrWhiteSpace(model) ? (await ReadSettingsAsync()).Model : model.Trim();
+            return Status(name);
+        }
+
+        public Task<TranscriptionModelStatus> DownloadModelAsync(string model, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(model);
+            var name = model.Trim();
+            ModelType(name);
+            if (!IsOnDisk(ModelPath(name)))
             {
-                logger.LogWarning(ex, "The whisper model {Model} is not available", model);
-                return false;
+                StartDownload(name);
+            }
+
+            return Task.FromResult(Status(name));
+        }
+
+        private TranscriptionModelStatus Status(string model)
+        {
+            string path;
+            try
+            {
+                path = ModelPath(model);
+            }
+            catch (ArgumentException ex)
+            {
+                return new TranscriptionModelStatus(model, TranscriptionModelState.Failed, null, ex.Message);
+            }
+
+            if (IsOnDisk(path))
+            {
+                return new TranscriptionModelStatus(model, TranscriptionModelState.Ready, new FileInfo(path).Length, null);
+            }
+
+            lock (_downloadLock)
+            {
+                if (_download is { IsCompleted: false } && string.Equals(_downloadingModel, model, StringComparison.Ordinal))
+                {
+                    var partial = path + ".part";
+                    var soFar = File.Exists(partial) ? new FileInfo(partial).Length : 0;
+                    return new TranscriptionModelStatus(model, TranscriptionModelState.Downloading, soFar, null);
+                }
+
+                if (_downloadError != null && string.Equals(_downloadingModel, model, StringComparison.Ordinal))
+                {
+                    return new TranscriptionModelStatus(model, TranscriptionModelState.Failed, null, _downloadError);
+                }
+            }
+
+            return new TranscriptionModelStatus(model, TranscriptionModelState.Missing, null, null);
+        }
+
+        /// <summary>Begin downloading, unless a download is already running. Never waits.</summary>
+        private void StartDownload(string model)
+        {
+            lock (_downloadLock)
+            {
+                if (_download is { IsCompleted: false })
+                {
+                    return;
+                }
+
+                _downloadingModel = model;
+                _downloadError = null;
+                _download = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await EnsureModelAsync(model, CancellationToken.None);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        logger.LogWarning(ex, "The whisper model {Model} could not be downloaded", model);
+                        lock (_downloadLock)
+                        {
+                            _downloadError = ex.Message;
+                        }
+                    }
+                });
             }
         }
+
+        private string ModelPath(string model)
+        {
+            ModelType(model);
+            return Path.Combine(ModelRoot, $"ggml-{model}.bin");
+        }
+
+        private static bool IsOnDisk(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
 
         public async Task<Transcript> TranscribeAsync(
             string path,
@@ -92,7 +188,13 @@ namespace Listenarr.Infrastructure.Library.Transcription
                 throw new InvalidOperationException("Transcription is switched off.");
             }
 
-            var modelPath = await EnsureModelAsync(model, cancellationToken);
+            var modelPath = ModelPath(model);
+            if (!IsOnDisk(modelPath))
+            {
+                StartDownload(model);
+                throw new TranscriptionUnavailableException($"The whisper model {model} is still downloading; try again when it has landed.");
+            }
+
             var audio = await DecodeAsync(path, start, length, cancellationToken);
             if (audio.Length == 0)
             {
@@ -135,14 +237,13 @@ namespace Listenarr.Infrastructure.Library.Transcription
             return (settings.TranscriptionEnabled, model);
         }
 
-        /// <summary>The model file, downloading it the first time it is asked for.</summary>
+        /// <summary>The model file, downloaded if it is not there. Blocks; only the background download calls it.</summary>
         private async Task<string> EnsureModelAsync(string model, CancellationToken cancellationToken)
         {
             var type = ModelType(model);
-            var fileName = $"ggml-{model}.bin";
             Directory.CreateDirectory(ModelRoot);
-            var modelPath = Path.Combine(ModelRoot, fileName);
-            if (File.Exists(modelPath) && new FileInfo(modelPath).Length > 0)
+            var modelPath = ModelPath(model);
+            if (IsOnDisk(modelPath))
             {
                 return modelPath;
             }
@@ -150,7 +251,7 @@ namespace Listenarr.Infrastructure.Library.Transcription
             await _gate.WaitAsync(cancellationToken);
             try
             {
-                if (File.Exists(modelPath) && new FileInfo(modelPath).Length > 0)
+                if (IsOnDisk(modelPath))
                 {
                     return modelPath;
                 }

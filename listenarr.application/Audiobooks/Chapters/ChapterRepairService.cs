@@ -75,7 +75,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     continue;
                 }
 
-                var key = PlanKey(fullPath!, audiobook, settings.TranscriptionEnabled);
+                var key = PlanKey(fullPath!, audiobook, settings);
                 var outcome = key != null ? ReadStoredPlan(file, key) : null;
                 if (outcome == null)
                 {
@@ -127,7 +127,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     var planPending = false;
                     if (ChapterHealthSeverity.IsRepairableKind(health.Health))
                     {
-                        var key = PlanKey(fullPath, audiobook, settings.TranscriptionEnabled);
+                        var key = PlanKey(fullPath, audiobook, settings);
                         proposal = key != null ? ReadStoredPlan(file, key) : null;
                         planPending = proposal == null;
                     }
@@ -193,7 +193,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
 
                 var health = read.Health!;
                 var tags = read.Tags!;
-                var key = PlanKey(fullPath!, audiobook, settings.TranscriptionEnabled);
+                var key = PlanKey(fullPath!, audiobook, settings);
                 var outcome = key != null ? ReadStoredPlan(file, key) : null;
                 if (outcome == null)
                 {

@@ -481,7 +481,11 @@ async function replan(fileId: number) {
     }
     emit('replan', { fileId, queued: response.queued, reason: response.reason })
   } catch (err) {
-    emit('replan', { fileId, queued: false, reason: err instanceof Error ? err.message : String(err) })
+    emit('replan', {
+      fileId,
+      queued: false,
+      reason: err instanceof Error ? err.message : String(err),
+    })
   } finally {
     const next = new Set(replanning.value)
     next.delete(fileId)

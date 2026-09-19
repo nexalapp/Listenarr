@@ -43,6 +43,22 @@ vi.mock('@/services/api', () => ({
     convertAudiobooksBulk: (...args: unknown[]) =>
       convertAudiobooksBulkMock(...(args as [number[]])),
     getConversionJobs: vi.fn(async () => []),
+    getTagJobs: vi.fn(async () => []),
+  },
+}))
+
+vi.mock('@/services/signalr', () => ({
+  signalRService: {
+    connect: vi.fn(async () => undefined),
+    onQueueUpdate: vi.fn(() => () => undefined),
+    onFilesRemoved: vi.fn(() => () => undefined),
+    onToast: vi.fn(() => () => undefined),
+    onAudiobookUpdate: vi.fn(() => () => undefined),
+    onDownloadUpdate: vi.fn(() => () => undefined),
+    onDownloadsList: vi.fn(() => () => undefined),
+    onScanJobUpdate: vi.fn(() => () => undefined),
+    onConversionJobUpdate: vi.fn(() => () => undefined),
+    onTagJobUpdate: vi.fn(() => () => undefined),
   },
 }))
 

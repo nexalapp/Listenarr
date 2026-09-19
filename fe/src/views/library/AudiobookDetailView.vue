@@ -727,11 +727,13 @@
               <button
                 type="button"
                 class="file-repair-btn"
-                :disabled="audioAuditInFlight"
+                :disabled="audioAuditInFlight || transcriptionOff"
                 :title="
                   audioAuditInFlight
                     ? 'Transcribing…'
-                    : 'Hear the opening and closing and check them against the record'
+                    : transcriptionOff
+                      ? 'Transcription is off. Turn it on in Settings → Metadata Tags.'
+                      : 'Hear the opening and closing and check them against the record'
                 "
                 @click="auditAudio"
               >
@@ -1754,6 +1756,12 @@ onMounted(async () => {
   conversionJobsStore.start()
   tagJobsStore.start()
 
+  // The Transcribe button reads the transcription setting; App.vue may not have
+  // loaded settings yet on a deep link.
+  if (!configStore.applicationSettings) {
+    void configStore.loadApplicationSettings()
+  }
+
   await loadAudiobook()
 
   // Keep the shared scan notification store current when this detail view is mounted.
@@ -2123,7 +2131,10 @@ watch(
 function onReplan(payload: { fileId: number; queued: boolean; reason?: string }) {
   const toast = useToast()
   if (payload.queued) {
-    toast.success('Re-checking', 'The fix is being worked out again; this tab refreshes when it is ready.')
+    toast.success(
+      'Re-checking',
+      'The fix is being worked out again; this tab refreshes when it is ready.',
+    )
   } else {
     toast.error('Not re-checked', payload.reason ?? 'The fix could not be queued for planning.')
   }
@@ -2242,6 +2253,11 @@ const creditRecommendations = computed(() => {
   }
   return recs
 })
+
+/** Known off, as against not yet loaded: the button is only disabled on a definite no. */
+const transcriptionOff = computed(
+  () => configStore.applicationSettings?.transcriptionEnabled === false,
+)
 
 const audioAuditInFlight = computed(() => {
   const job = tagJobsStore.jobs.find(

@@ -18,6 +18,7 @@
 using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Application.Audiobooks.Transcription;
 using Listenarr.Domain.Audiobooks.Audit;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -76,9 +77,16 @@ namespace Listenarr.Application.Audiobooks.Audit
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId)
                 ?? throw new InvalidOperationException("That audiobook no longer exists.");
 
-            if (transcriber == null || !await transcriber.IsAvailableAsync(cancellationToken))
+            if (transcriber == null)
             {
                 throw new InvalidOperationException("Transcription is not available.");
+            }
+
+            if (!await transcriber.IsAvailableAsync(cancellationToken))
+            {
+                // Enqueue refused while transcription was off, so this is the model still
+                // on its way down — worth coming back to, not a verdict.
+                throw new TranscriptionUnavailableException("The whisper model is still downloading; the audit will be tried again when it has landed.");
             }
 
             var files = (audiobook.Files ?? [])
@@ -93,10 +101,13 @@ namespace Listenarr.Application.Audiobooks.Audit
                 throw new InvalidOperationException("This book has no audio files here to listen to.");
             }
 
+            var settings = await configurationService.GetApplicationSettingsAsync();
+            var model = ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel);
+
             // Two stretches to hear, so two steps of progress; whisper gives no rate to
             // estimate from, and a bar that moves twice beats one that does not move.
             progress?.Report(0.1);
-            var opening = await HearAsync(files[0].FullPath!, TimeSpan.Zero, OpeningWindow, cancellationToken);
+            var opening = await HearAsync(files[0].FullPath!, TimeSpan.Zero, OpeningWindow, model, cancellationToken);
             progress?.Report(0.55);
 
             var last = files[^1];
@@ -105,7 +116,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             {
                 var duration = TimeSpan.FromSeconds(seconds);
                 var (start, window) = await ClosingWindowFor(last.FullPath!, duration, cancellationToken);
-                closing = await HearAsync(last.FullPath!, start, window, cancellationToken);
+                closing = await HearAsync(last.FullPath!, start, window, model, cancellationToken);
             }
 
             progress?.Report(0.9);
@@ -114,7 +125,6 @@ namespace Listenarr.Application.Audiobooks.Audit
             var heard = string.IsNullOrWhiteSpace(closing)
                 ? opening ?? string.Empty
                 : $"{opening}{AudioAuditTranscript.ClosingMarker}{closing}";
-            var settings = await configurationService.GetApplicationSettingsAsync();
             var aliases = AuthorAliases.Parse(settings.AuthorAliasesJson);
 
             var result = AudioIdentityMatcher.Judge(heard, audiobook.Title, audiobook.Authors, audiobook.Narrators, aliases);
@@ -171,7 +181,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             }
         }
 
-        private async Task<string?> HearAsync(string fullPath, TimeSpan start, TimeSpan window, CancellationToken cancellationToken)
+        private async Task<string?> HearAsync(string fullPath, TimeSpan start, TimeSpan window, string? model, CancellationToken cancellationToken)
         {
             long length = 0;
             var lastWrite = DateTime.MinValue;
@@ -179,7 +189,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             {
                 length = fileSystem.GetFileLength(fullPath);
                 lastWrite = fileSystem.GetLastWriteTimeUtc(fullPath);
-                var cached = transcripts?.TryGet(fullPath, length, lastWrite, start, window);
+                var cached = transcripts?.TryGet(fullPath, length, lastWrite, start, window, model);
                 if (cached != null)
                 {
                     return cached.Text;
@@ -193,7 +203,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             var transcript = await transcriber!.TranscribeAsync(fullPath, start, window, cancellationToken);
             if (length > 0)
             {
-                transcripts?.Set(fullPath, length, lastWrite, start, window, transcript);
+                transcripts?.Set(fullPath, length, lastWrite, start, window, transcript, model);
             }
 
             return transcript.Text;

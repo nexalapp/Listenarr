@@ -60,10 +60,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             new TranscriptCache(),
             _files.Object);
 
-        private void GivenTranscription(bool enabled)
+        private void GivenTranscription(bool enabled, string model = "base.en")
         {
             var settings = new ApplicationSettingsBuilder().Build();
             settings.TranscriptionEnabled = enabled;
+            settings.TranscriptionModel = model;
             _configuration.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
             _transcriber.Setup(t => t.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(enabled);
         }
@@ -597,6 +598,26 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
             _files.Verify(f => f.ClearChapterPlanAsync(It.Is<IReadOnlyCollection<int>>(ids => ids.Single() == 41), It.IsAny<CancellationToken>()), Times.Once);
             _queue.Verify(q => q.EnqueueChapterPlanAsync(7, It.Is<IReadOnlyCollection<int>>(ids => ids.Single() == 41), TagTrigger.Manual, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task PlanAsync_ListensAgainWithABiggerModel()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true, model: "base.en");
+            var marks = Tracks(30, TimeSpan.FromMinutes(3));
+            GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
+            GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one.", [15] = "Chapter two." });
+
+            var service = BuildService();
+            await service.PlanAsync(7);
+            GivenTranscription(enabled: true, model: "small.en");
+            await service.PlanAsync(7);
+
+            // A different model hears different names, so the stored plan does not hold.
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+                Times.Exactly(60));
         }
 
         [Fact]

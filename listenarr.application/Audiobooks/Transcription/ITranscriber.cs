@@ -52,10 +52,17 @@ namespace Listenarr.Application.Audiobooks.Transcription
     public interface ITranscriber
     {
         /// <summary>
-        /// Whether transcription is switched on and the model can be had. Downloading the
-        /// model on first use is part of "can be had", so this may take a while once.
+        /// Whether transcription is switched on and the model is on disk. A model that is
+        /// not starts downloading in the background and this answers false until it has
+        /// landed: nothing that asks waits on a 150 MB download.
         /// </summary>
         Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>Where the named model stands — the configured one when null.</summary>
+        Task<TranscriptionModelStatus> GetModelStatusAsync(string? model = null, CancellationToken cancellationToken = default);
+
+        /// <summary>Start downloading the named model if it is not on disk. Returns at once; idempotent.</summary>
+        Task<TranscriptionModelStatus> DownloadModelAsync(string model, CancellationToken cancellationToken = default);
 
         Task<Transcript> TranscribeAsync(
             string path,
@@ -63,4 +70,25 @@ namespace Listenarr.Application.Audiobooks.Transcription
             TimeSpan length,
             CancellationToken cancellationToken = default);
     }
+
+    public enum TranscriptionModelState
+    {
+        Missing,
+        Downloading,
+        Ready,
+        Failed
+    }
+
+    /// <summary>One model as the settings page shows it.</summary>
+    public sealed record TranscriptionModelStatus(
+        string Model,
+        TranscriptionModelState State,
+        long? SizeBytes,
+        string? Error);
+
+    /// <summary>
+    /// Transcription was asked for while the model was not yet there. A moment, not a
+    /// verdict: the job that hit it is worth retrying once the download lands.
+    /// </summary>
+    public sealed class TranscriptionUnavailableException(string message) : InvalidOperationException(message);
 }

@@ -21,6 +21,7 @@ import type {
   BulkConversionResponse,
   LibraryTagTable,
   ChapterRepairPreview,
+  TranscriptionModelStatus,
   BookChapters,
   TagDefinition,
   TagJobUpdate,
@@ -1783,6 +1784,20 @@ class ApiService {
     return this.request(`/tagging/audiobooks/${audiobookId}/chapters/replan`, {
       method: 'POST',
       body: JSON.stringify({ fileIds: fileIds?.length ? fileIds : null }),
+    })
+  }
+
+  /** Where the whisper model stands; the configured model when none is named. */
+  async getTranscriptionModel(model?: string): Promise<TranscriptionModelStatus> {
+    const query = model ? `?model=${encodeURIComponent(model)}` : ''
+    return this.request<TranscriptionModelStatus>(`/tagging/transcription/model${query}`)
+  }
+
+  /** Start downloading a whisper model so the first transcription does not wait on it. */
+  async downloadTranscriptionModel(model: string): Promise<TranscriptionModelStatus> {
+    return this.request<TranscriptionModelStatus>('/tagging/transcription/model', {
+      method: 'POST',
+      body: JSON.stringify({ model }),
     })
   }
 
