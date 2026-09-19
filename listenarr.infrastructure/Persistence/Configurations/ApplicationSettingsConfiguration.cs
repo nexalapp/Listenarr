@@ -97,6 +97,15 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.TranscriptionModel).HasMaxLength(32).HasDefaultValue("base.en");
             builder.Property(e => e.AudioAuditOnImport).HasDefaultValue(false);
 
+            builder.Property(e => e.FoundBooksWatchFolders)
+                .HasConversion(
+                    v => string.Join("|", v ?? new List<string>()),
+                    v => string.IsNullOrWhiteSpace(v) ? new List<string>() : v.Split('|', System.StringSplitOptions.RemoveEmptyEntries).ToList()
+                );
+            builder.Property(e => e.FoundBooksWatchFolders)
+                .Metadata.SetValueComparer(StringListComparer());
+            builder.Property(e => e.FoundBooksScanIntervalMinutes).HasDefaultValue(60);
+
             // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
             // written before this feature existed has no mapping, and that has to read
             // back as "use the shipped defaults" rather than as "write no tags".

@@ -128,6 +128,16 @@ namespace Listenarr.Domain.Configuration
         // judged against its record. Needs transcription; a minute of CPU per book.
         public bool AudioAuditOnImport { get; set; } = false;
 
+        // Folders scanned for complete books that are not in the library: a pack that
+        // arrived with more than was asked for, a manual download, an import that was
+        // left behind. Empty means every enabled download client's completed path,
+        // translated through its remote path mappings.
+        public List<string> FoundBooksWatchFolders { get; set; } = new();
+
+        // How often the watch folders are scanned. Zero turns the periodic scan off;
+        // the Found tab's own scan button still works.
+        public int FoundBooksScanIntervalMinutes { get; set; } = 60;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

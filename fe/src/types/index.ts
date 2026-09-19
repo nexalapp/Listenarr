@@ -770,6 +770,8 @@ export interface ApplicationSettings {
   transcriptionModel?: string
   /** Whether every newly scanned book is listened to and judged against its record. */
   audioAuditOnImport?: boolean
+  foundBooksWatchFolders?: string[]
+  foundBooksScanIntervalMinutes?: number
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean
   // What goes into each tag and whether it may be overwritten. Absent means the

@@ -35,6 +35,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<MoveScanHandoff> MoveScanHandoffs { get; set; } = null!;
         public DbSet<ConversionJob> ConversionJobs { get; set; } = null!;
         public DbSet<TagJob> TagJobs { get; set; } = null!;
+        public DbSet<Listenarr.Domain.FoundBooks.FoundBook> FoundBooks { get; set; } = null!;
         public DbSet<ApplicationSettings> ApplicationSettings { get; set; } = null!;
         public DbSet<History> History { get; set; } = null!;
         public DbSet<Indexer> Indexers { get; set; } = null!;

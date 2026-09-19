@@ -7,6 +7,8 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.FoundBooks.Contracts;
+using Listenarr.Infrastructure.FoundBooks.Workers;
 using Listenarr.Infrastructure.Library.Series;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Infrastructure.Search.NzbKing;
@@ -77,6 +79,13 @@ internal static class WorkerRegistrationExtensions
             TagBackgroundService>(services);
 
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
+
+        // Found books: a periodic read-only look at the download folders for complete
+        // books the library does not have.
+        AddHostedProcessor<
+            FoundBookScanProcessor,
+            IFoundBookScanProcessor,
+            FoundBookScanBackgroundService>(services);
         return services;
     }
 

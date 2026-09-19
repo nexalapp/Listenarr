@@ -14,6 +14,7 @@ using Listenarr.Infrastructure.DependencyInjection.Notifications;
 using Listenarr.Infrastructure.DependencyInjection.Search;
 using Listenarr.Infrastructure.DependencyInjection.Security;
 using Listenarr.Infrastructure.DependencyInjection.SystemDiagnostics;
+using Listenarr.Infrastructure.DependencyInjection.FoundBooks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -32,6 +33,7 @@ public static class AppServiceRegistrationExtensions
         services.AddSearchServices();
         services.AddMetadataServices();
         services.AddLibraryServices();
+        services.AddFoundBookServices();
         services.AddDownloadServices(configuration);
         services.AddNotificationAndRealtimeServices();
         services.AddSystemDiagnosticServices();
