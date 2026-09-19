@@ -275,7 +275,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             var fresh = Directory.CreateDirectory(Path.Join(watch, "just created"));
             Directory.SetLastWriteTimeUtc(fresh.FullName, _clock.GetUtcNow().UtcDateTime.AddMinutes(-1));
             await File.WriteAllTextAsync(Path.Join(watch, ".DS_Store"), "junk");
-            await File.WriteAllTextAsync(Path.Join(watch, "keep", "book.nfo").Replace("keep/book.nfo", "keep.nfo"), "note");
+            await File.WriteAllTextAsync(Path.Join(watch, "keep.nfo"), "note");
             _scanner.Next = [];
 
             await BuildService(watch).ScanAllAsync();
