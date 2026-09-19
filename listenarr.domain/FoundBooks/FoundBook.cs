@@ -52,6 +52,25 @@ namespace Listenarr.Domain.FoundBooks
         Wanted
     }
 
+    /// <summary>Why a <see cref="FoundBookState.Blocked"/> row is not offered.</summary>
+    public enum FoundBookBlockedKind
+    {
+        None,
+
+        /// <summary>The files changed since the last scan, or were written too recently.</summary>
+        Settling,
+
+        /// <summary>A download client is still writing into the folder.</summary>
+        Downloading,
+
+        /// <summary>
+        /// A Listenarr download record still owns the files: the import pipeline has not
+        /// finished with them, or they are a copy kept for seeding. Nothing here may
+        /// move or delete them.
+        /// </summary>
+        OwnedByDownload
+    }
+
     public enum FoundBookState
     {
         /// <summary>Offered on the Found tab and waiting for a decision.</summary>
@@ -149,6 +168,8 @@ namespace Listenarr.Domain.FoundBooks
         public int? MatchedAudiobookId { get; set; }
 
         public FoundBookState State { get; set; } = FoundBookState.Blocked;
+
+        public FoundBookBlockedKind BlockedKind { get; set; } = FoundBookBlockedKind.None;
 
         [MaxLength(500)]
         public string? BlockedReason { get; set; }

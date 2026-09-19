@@ -32,7 +32,9 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
     [Trait("Category", "FoundBooks")]
     public sealed class FoundBookScanServiceTests : BaseTests
     {
-        private const string Watch = "/downloads/completed";
+        // A native absolute path: the ownership check canonicalises under the host's own
+        // syntax, and a Unix spelling is not a valid Windows path.
+        private static readonly string Watch = Path.Join(Path.GetTempPath(), "listenarr-found-tests", "completed");
 
         private readonly Mock<IHubBroadcaster> _broadcaster = new();
         private readonly FakeScanner _scanner = new();
@@ -50,6 +52,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             _scanner,
             _repository,
             _audiobookRepository,
+            _downloadRepository,
             _broadcaster.Object,
             _clock,
             NullLogger<FoundBookScanService>.Instance);
@@ -62,10 +65,10 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             string title = "Wool",
             string author = "Hugh Howey") => new(
             Watch,
-            $"{Watch}/{key}",
+            Path.Join(Watch, key),
             key,
             signature,
-            [new FoundBookFileEntry($"{Watch}/{key}/01.mp3", 100, _clock.GetUtcNow().UtcDateTime - (age ?? TimeSpan.FromHours(1)), true,
+            [new FoundBookFileEntry(Path.Join(Watch, key, "01.mp3"), 100, _clock.GetUtcNow().UtcDateTime - (age ?? TimeSpan.FromHours(1)), true,
                 new FoundBookProbeSnapshot(true, null, 600, 0, 1, 1, null, title, author, null, null, null, null, null, null, null))],
             title,
             author,
@@ -199,6 +202,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
                 _scanner,
                 _repository,
                 _audiobookRepository,
+                _downloadRepository,
                 _broadcaster.Object,
                 _clock,
                 NullLogger<FoundBookScanService>.Instance);
@@ -220,6 +224,42 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             await service.ScanAllAsync();
 
             Assert.Single(await _repository.GetAllAsync());
+        }
+
+        [Fact]
+        public async Task ClusterInsideAnActiveDownload_IsBlockedAsOwned()
+        {
+            await _downloadRepository.AddAsync(new Download
+            {
+                Title = "Wool pack",
+                Status = DownloadStatus.ImportPending,
+                FinalPath = Path.Join(Watch, "a")
+            });
+            _scanner.Next = [Candidate("a")];
+
+            await BuildService().ScanAllAsync();
+
+            var row = Assert.Single(await _repository.GetAllAsync());
+            Assert.Equal(FoundBookState.Blocked, row.State);
+            Assert.Equal(FoundBookBlockedKind.OwnedByDownload, row.BlockedKind);
+            Assert.Contains("Wool pack", row.BlockedReason);
+        }
+
+        [Fact]
+        public async Task ClusterOfAnImportBlockedDownload_IsOffered()
+        {
+            // A failed import is exactly the leftover this feature is for.
+            await _downloadRepository.AddAsync(new Download
+            {
+                Title = "Wool pack",
+                Status = DownloadStatus.ImportBlocked,
+                FinalPath = Path.Join(Watch, "a")
+            });
+            _scanner.Next = [Candidate("a")];
+
+            await BuildService().ScanAllAsync();
+
+            Assert.Equal(FoundBookState.Pending, Assert.Single(await _repository.GetAllAsync()).State);
         }
 
         [Fact]
@@ -247,7 +287,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             _scanner.Next = [Candidate("a")];
             await service.ScanAllAsync();
 
-            Assert.Contains($"{Watch}/a/01.mp3", _scanner.LastKnownFiles.Keys);
+            Assert.Contains(Path.Join(Watch, "a", "01.mp3"), _scanner.LastKnownFiles.Keys);
         }
 
         private sealed class FakeResolver(IReadOnlyList<string> folders, IReadOnlyList<string>? unavailable = null) : IFoundBookWatchFolderResolver

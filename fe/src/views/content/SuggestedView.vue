@@ -79,7 +79,10 @@
       </button>
     </div>
 
-    <LoadingState v-if="loading" message="Working out what you're missing..." />
+    <!-- Found on disk: its own data, not the catalogue snapshot -->
+    <FoundBooksTab v-if="activeTab === 'found'" />
+
+    <LoadingState v-else-if="loading" message="Working out what you're missing..." />
 
     <EmptyState v-else-if="error" title="Could not load suggestions" :message="error" />
 
@@ -178,7 +181,7 @@
       </template>
 
       <!-- Authors like yours -->
-      <template v-else>
+      <template v-else-if="activeTab === 'related'">
         <EmptyState
           v-if="snapshot.relatedAuthors.length === 0"
           title="No related authors yet"
@@ -218,6 +221,8 @@ import { EmptyState, LoadingState, Pill } from '@/components/base'
 import { Checkbox } from '@/components/form'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.vue'
+import FoundBooksTab from '@/components/domain/audiobook/FoundBooksTab.vue'
+import { useFoundBooksStore } from '@/stores/foundBooks'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import { buildCatalogMetadata } from '@/utils/catalogMetadata'
@@ -229,9 +234,10 @@ import type {
   SuggestionSnapshot,
 } from '@/types'
 
-type TabId = 'authors' | 'series' | 'related'
+type TabId = 'authors' | 'series' | 'related' | 'found'
 
 const toast = useToast()
+const foundBooks = useFoundBooksStore()
 
 const snapshot = ref<SuggestionSnapshot | null>(null)
 const loading = ref(true)
@@ -278,6 +284,11 @@ const tabs = computed(() => [
     id: 'related' as TabId,
     label: 'Authors like yours',
     count: snapshot.value?.relatedAuthors.length ?? 0,
+  },
+  {
+    id: 'found' as TabId,
+    label: 'Found on disk',
+    count: foundBooks.counts.pending,
   },
 ])
 
@@ -423,7 +434,9 @@ function handleAdded() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), pollRefresh()])
+  // The Found pill counts what is offered on disk; loading it here means the count
+  // is right before the tab is opened, and the tab's own mount reuses the store.
+  await Promise.all([load(), pollRefresh(), foundBooks.load()])
 })
 
 onBeforeUnmount(stopPolling)
