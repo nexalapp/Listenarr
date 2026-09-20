@@ -478,16 +478,32 @@
                 <PhStar />
                 {{ getQualityProfileName(audiobook.qualityProfileId) }}
               </div>
-              <div
+              <component
+                :is="audiobook.inLibrary ? 'button' : 'div'"
+                :type="audiobook.inLibrary ? 'button' : undefined"
                 class="monitored-badge"
-                :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+                :class="{
+                  unmonitored: !audiobook.inLibrary || !audiobook.monitored,
+                  toggleable: audiobook.inLibrary,
+                }"
+                :title="getMonitoringToggleTitle(audiobook)"
+                :disabled="audiobook.inLibrary && monitoringToggleBusy.has(audiobook.id)"
+                @click.stop="toggleAudiobookMonitored(audiobook)"
               >
                 <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
                 {{ getMonitoringLabel(audiobook) }}
-              </div>
+              </component>
             </div>
 
             <div class="list-actions">
+              <button
+                v-if="canManualSearch(audiobook)"
+                class="action-btn search-btn-small"
+                @click.stop="openManualSearch(audiobook)"
+                title="Search for this book"
+              >
+                <PhMagnifyingGlass />
+              </button>
               <button
                 v-if="audiobook.inLibrary"
                 class="action-btn edit-btn-small"
@@ -606,15 +622,33 @@
                     <PhStar />
                     {{ getQualityProfileName(audiobook.qualityProfileId) }}
                   </div>
-                  <div
+                  <component
+                    :is="audiobook.inLibrary ? 'button' : 'div'"
+                    :type="audiobook.inLibrary ? 'button' : undefined"
                     class="monitored-badge"
-                    :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+                    :class="{
+                      unmonitored: !audiobook.inLibrary || !audiobook.monitored,
+                      toggleable: audiobook.inLibrary,
+                    }"
+                    :title="getMonitoringToggleTitle(audiobook)"
+                    :disabled="audiobook.inLibrary && monitoringToggleBusy.has(audiobook.id)"
+                    @click.stop="toggleAudiobookMonitored(audiobook)"
                   >
                     <component
                       :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash"
                     />
                     {{ getMonitoringLabel(audiobook) }}
-                  </div>
+                  </component>
+                  <button
+                    v-if="canManualSearch(audiobook)"
+                    type="button"
+                    class="overlay-search-btn"
+                    title="Search for this book"
+                    :aria-label="`Search for ${audiobook.title}`"
+                    @click.stop="openManualSearch(audiobook)"
+                  >
+                    <PhMagnifyingGlass />
+                  </button>
                 </div>
               </div>
               <!-- Bottom placard (only show when item details are enabled) -->
@@ -701,6 +735,13 @@
       :audiobook="editingAudiobook"
       @close="editingAudiobook = null"
       @saved="onAudiobookSaved"
+    />
+
+    <ManualSearchModal
+      :is-open="showManualSearchModal"
+      :audiobook="manualSearchAudiobook"
+      @close="closeManualSearch"
+      @downloaded="handleManualSearchDownloaded"
     />
 
     <DeleteConfirmationModal
@@ -798,6 +839,7 @@ import {
   PhPlus,
   PhGlobe,
   PhFolderOpen,
+  PhMagnifyingGlass,
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
@@ -812,6 +854,7 @@ import { buildCatalogMetadata } from '@/utils/catalogMetadata'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
+import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -827,6 +870,7 @@ import type {
   MonitoredAuthor,
   MonitoredSeries,
   RelatedAuthorItem,
+  SearchResult,
   SeriesCatalogBook,
   SeriesCatalogResponse,
   SeriesLookupResponse,
@@ -2375,9 +2419,69 @@ function getAudiobookStatus(audiobook: CollectionDisplayItem): CollectionStatus 
   return computeAudiobookStatus(audiobook, activeDownloadAudiobookIds.value)
 }
 
+// A book with nothing on disk and no download under way is the one worth
+// searching for from here; the rest already have their file or are getting it.
+function canManualSearch(audiobook: CollectionDisplayItem): boolean {
+  return audiobook.inLibrary && getAudiobookStatus(audiobook) === 'no-file'
+}
+
+const showManualSearchModal = ref(false)
+const manualSearchAudiobook = ref<Audiobook | null>(null)
+
+function openManualSearch(audiobook: CollectionDisplayItem) {
+  manualSearchAudiobook.value = audiobook
+  showManualSearchModal.value = true
+}
+
+function closeManualSearch() {
+  showManualSearchModal.value = false
+  manualSearchAudiobook.value = null
+}
+
+function handleManualSearchDownloaded(result: SearchResult) {
+  toast.success('Download Added', `${result.title} has been sent to your download client`)
+  closeManualSearch()
+  void downloadsStore.loadDownloads().catch((e) => {
+    errorTracking.captureException(e as Error, {
+      component: 'CollectionView',
+      operation: 'handleManualSearchDownloaded',
+    })
+  })
+}
+
 function getMonitoringLabel(audiobook: CollectionDisplayItem): string {
   if (!audiobook.inLibrary) return 'Not Added'
   return audiobook.monitored ? 'Monitored' : 'Unmonitored'
+}
+
+function getMonitoringToggleTitle(audiobook: CollectionDisplayItem): string | undefined {
+  if (!audiobook.inLibrary) return undefined
+  return audiobook.monitored ? 'Stop monitoring this book' : 'Monitor this book'
+}
+
+// The badge is the toggle. Ids in flight keep a double-click from racing two
+// opposite writes; the store shows the flip at once and puts it back on failure.
+const monitoringToggleBusy = ref(new Set<number>())
+
+async function toggleAudiobookMonitored(audiobook: CollectionDisplayItem) {
+  if (!audiobook.inLibrary || monitoringToggleBusy.value.has(audiobook.id)) return
+  monitoringToggleBusy.value = new Set(monitoringToggleBusy.value).add(audiobook.id)
+  try {
+    await libraryStore.setMonitored(audiobook.id, !audiobook.monitored)
+  } catch (e) {
+    toast.error(
+      'Monitoring not updated',
+      `${audiobook.title} was left ${audiobook.monitored ? 'monitored' : 'unmonitored'}.`,
+    )
+    errorTracking.captureException(e as Error, {
+      component: 'CollectionView',
+      operation: 'toggleAudiobookMonitored',
+    })
+  } finally {
+    const next = new Set(monitoringToggleBusy.value)
+    next.delete(audiobook.id)
+    monitoringToggleBusy.value = next
+  }
 }
 
 function handleCheckboxKeydown(audiobook: CollectionDisplayItem, event: KeyboardEvent) {
@@ -3601,6 +3705,33 @@ defineExpose({
   padding: 80px 8px 8px;
 }
 
+/* Bottom-right of the cover, level with the monitored badge on the left. */
+.overlay-search-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.overlay-search-btn:hover {
+  background: rgba(52, 152, 219, 0.9);
+  border-color: rgba(41, 128, 185, 0.6);
+}
+
 /* When 'show-details' class is present, render overlay expanded */
 .collection-cover.show-details .status-overlay {
   padding: 80px 8px 8px;
@@ -3790,6 +3921,32 @@ defineExpose({
   flex-shrink: 0;
 }
 
+/* The badge doubles as the toggle for a library book; a button inherits none of
+   the badge's type, so it is restated here. */
+.monitored-badge.toggleable {
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.monitored-badge.toggleable:hover:not(:disabled) {
+  background-color: rgba(46, 204, 113, 0.32);
+  border-color: rgba(46, 204, 113, 0.6);
+}
+
+.monitored-badge.toggleable.unmonitored:hover:not(:disabled) {
+  background-color: rgba(148, 163, 184, 0.28);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.monitored-badge.toggleable:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
 .action-buttons {
   position: absolute;
   top: 8px;
@@ -3829,6 +3986,15 @@ defineExpose({
 }
 
 .edit-btn-small:hover {
+  background-color: rgba(41, 128, 185, 1);
+}
+
+.search-btn-small {
+  background-color: rgba(52, 152, 219, 0.9);
+  border-color: rgba(41, 128, 185, 0.5);
+}
+
+.search-btn-small:hover {
   background-color: rgba(41, 128, 185, 1);
 }
 
@@ -4288,6 +4454,32 @@ defineExpose({
 .monitored-badge i {
   font-size: 12px;
   flex-shrink: 0;
+}
+
+/* The badge doubles as the toggle for a library book; a button inherits none of
+   the badge's type, so it is restated here. */
+.monitored-badge.toggleable {
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.monitored-badge.toggleable:hover:not(:disabled) {
+  background-color: rgba(46, 204, 113, 0.32);
+  border-color: rgba(46, 204, 113, 0.6);
+}
+
+.monitored-badge.toggleable.unmonitored:hover:not(:disabled) {
+  background-color: rgba(148, 163, 184, 0.28);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.monitored-badge.toggleable:disabled {
+  cursor: progress;
+  opacity: 0.7;
 }
 
 .monitored-badge.unmonitored {

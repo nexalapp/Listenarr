@@ -58,6 +58,15 @@
         >
           <PhPlus weight="bold" /> {{ adding ? 'Adding…' : 'Add' }}
         </button>
+        <button
+          class="search"
+          :title="added ? 'Search for this book' : 'Add to library and search for it'"
+          aria-label="Search for this book"
+          :disabled="adding"
+          @click.stop="emit('search')"
+        >
+          <PhMagnifyingGlass />
+        </button>
       </div>
 
       <div class="facts">
@@ -85,7 +94,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { PhCheck, PhPlus, PhX } from '@phosphor-icons/vue'
+import { PhCheck, PhMagnifyingGlass, PhPlus, PhX } from '@phosphor-icons/vue'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { formatRuntime } from '@/utils/searchResultFormatting'
@@ -103,6 +112,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** The Add button: add straight away, no modal. */
   add: []
+  /** The magnifying glass: add if needed, then open manual search. */
+  search: []
   ignore: []
   /** The card itself: show the details and the add form. */
   open: []
@@ -242,6 +253,32 @@ function compactCount(count: number): string {
   color: #e8eaed;
   border-color: rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.search {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c9d1d9;
+  cursor: pointer;
+}
+
+.search:hover:not(:disabled) {
+  color: #fff;
+  border-color: rgba(52, 152, 219, 0.6);
+  background: rgba(52, 152, 219, 0.35);
+}
+
+.search:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .added-badge {

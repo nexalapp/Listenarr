@@ -172,6 +172,30 @@ export const useLibraryStore = defineStore('library', () => {
 
   // Apply a safe, local-only update when the server tells us files were removed for an audiobook
   // Payload shape: { audiobookId: number, removed: Array<{ id: number, path: string }> }
+  function patchAudiobook(id: number, patch: Partial<Audiobook>) {
+    const index = audiobooks.value.findIndex((book) => book.id === id)
+    if (index === -1) return
+    const prev = audiobooks.value[index]
+    if (!prev) return
+    audiobooks.value = audiobooks.value.slice()
+    audiobooks.value[index] = { ...prev, ...patch }
+  }
+
+  /**
+   * Flips monitoring on one book, shown before the server confirms and put back
+   * if it refuses. Throws so a caller can say why the badge snapped back.
+   */
+  async function setMonitored(id: number, monitored: boolean) {
+    const previous = audiobooks.value.find((book) => book.id === id)?.monitored
+    patchAudiobook(id, { monitored })
+    try {
+      await apiService.updateAudiobook(id, { monitored })
+    } catch (e) {
+      if (previous !== undefined) patchAudiobook(id, { monitored: previous })
+      throw e
+    }
+  }
+
   function applyFilesRemoved(
     payload:
       | { audiobookId: number; removed?: Array<{ id?: number; path?: string }> }
@@ -323,6 +347,7 @@ export const useLibraryStore = defineStore('library', () => {
     fetchLibrary,
     removeFromLibrary,
     bulkRemoveFromLibrary,
+    setMonitored,
     toggleSelection,
     selectAll,
     clearSelection,

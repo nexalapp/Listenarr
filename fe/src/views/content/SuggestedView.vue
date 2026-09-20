@@ -126,6 +126,7 @@
               :added="addedKeys.has(bookKey(book))"
               :adding="addingKeys.has(bookKey(book))"
               @add="quickAdd(book)"
+              @search="searchFor(book)"
               @open="openAdd(book)"
               @ignore="ignore(book)"
             />
@@ -177,6 +178,7 @@
               :added="addedKeys.has(bookKey(book))"
               :adding="addingKeys.has(bookKey(book))"
               @add="quickAdd(book)"
+              @search="searchFor(book)"
               @open="openAdd(book)"
               @ignore="ignore(book)"
             />
@@ -207,6 +209,13 @@
       </template>
     </template>
 
+    <ManualSearchModal
+      :is-open="manualSearchAudiobook !== null"
+      :audiobook="manualSearchAudiobook"
+      @close="manualSearchAudiobook = null"
+      @downloaded="handleManualSearchDownloaded"
+    />
+
     <AddLibraryModal
       v-if="pendingAddBook"
       :visible="true"
@@ -224,15 +233,18 @@ import { PhArrowsClockwise, PhSparkle } from '@phosphor-icons/vue'
 import { EmptyState, LoadingState, Pill } from '@/components/base'
 import { Checkbox } from '@/components/form'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
+import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.vue'
 import FoundBooksTab from '@/components/domain/audiobook/FoundBooksTab.vue'
 import { useFoundBooksStore } from '@/stores/foundBooks'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import { buildCatalogMetadata, enrichCatalogMetadata } from '@/utils/catalogMetadata'
-import { describeApiError } from '@/utils/apiError'
+import { describeApiError, getAlreadyExistingAudiobook } from '@/utils/apiError'
 import type {
   AudibleBookMetadata,
+  Audiobook,
+  SearchResult,
   SuggestedBook,
   SuggestionRefreshStatus,
   SuggestionSnapshot,
@@ -435,21 +447,39 @@ function openAdd(book: SuggestedBook) {
  * record the modal would build. Opening the card is how to change anything first.
  */
 async function quickAdd(book: SuggestedBook) {
+  await addSuggestion(book, { autoSearch: searchOnAdd.value })
+}
+
+/**
+ * Adds the book monitored and returns the library record - the freshly created one,
+ * or the one the server says it already holds. Null when the add failed; the toast
+ * has already said why.
+ */
+async function addSuggestion(
+  book: SuggestedBook,
+  options: { autoSearch: boolean },
+): Promise<Audiobook | null> {
   const key = bookKey(book)
-  if (addingKeys.value.has(key)) return
+  if (addingKeys.value.has(key)) return null
   addingKeys.value = new Set(addingKeys.value).add(key)
   try {
     const metadata = await enrichCatalogMetadata(book)
-    await apiService.addToLibrary(metadata, { monitored: true, autoSearch: searchOnAdd.value })
+    const result = await apiService.addToLibrary(metadata, {
+      monitored: true,
+      autoSearch: options.autoSearch,
+    })
     toast.success('Added', `"${metadata.title}" has been added to your library.`)
-    addedKeys.value = new Set(addedKeys.value).add(key)
+    markAdded(key, result.audiobook)
+    return result.audiobook
   } catch (e) {
-    if (isAlreadyInLibrary(e)) {
+    const existing = getAlreadyExistingAudiobook(e)
+    if (existing) {
       toast.success('Already added', `"${book.title}" is already in your library.`)
-      addedKeys.value = new Set(addedKeys.value).add(key)
-      return
+      markAdded(key, existing)
+      return existing
     }
     toast.error('Not added', describeApiError(e, 'The book could not be added.'))
+    return null
   } finally {
     const next = new Set(addingKeys.value)
     next.delete(key)
@@ -457,13 +487,36 @@ async function quickAdd(book: SuggestedBook) {
   }
 }
 
-function isAlreadyInLibrary(error: unknown): boolean {
-  return error instanceof Error && (error as Error & { status?: number }).status === 409
+// The library record behind each card added this visit, so a search after the
+// add can name the book without another round trip.
+const addedAudiobooks = new Map<string, Audiobook>()
+
+function markAdded(key: string, audiobook: Audiobook) {
+  addedAudiobooks.set(key, audiobook)
+  addedKeys.value = new Set(addedKeys.value).add(key)
 }
 
-function handleAdded() {
+const manualSearchAudiobook = ref<Audiobook | null>(null)
+
+/**
+ * The card's magnifying glass. A suggestion is not in the library yet, and a
+ * manual grab needs a book to attach to, so this adds it first - monitored, with
+ * the automatic search left off because the person is about to run their own.
+ */
+async function searchFor(book: SuggestedBook) {
+  const audiobook =
+    addedAudiobooks.get(bookKey(book)) ?? (await addSuggestion(book, { autoSearch: false }))
+  if (audiobook) manualSearchAudiobook.value = audiobook
+}
+
+function handleManualSearchDownloaded(result: SearchResult) {
+  toast.success('Download Added', `${result.title} has been sent to your download client`)
+  manualSearchAudiobook.value = null
+}
+
+function handleAdded(audiobook: Audiobook) {
   if (pendingAddKey) {
-    addedKeys.value = new Set(addedKeys.value).add(pendingAddKey)
+    markAdded(pendingAddKey, audiobook)
   }
   pendingAddKey = null
   pendingAddBook.value = null

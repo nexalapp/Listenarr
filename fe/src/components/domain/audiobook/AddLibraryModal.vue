@@ -457,6 +457,7 @@ import type {
 } from '@/types'
 import { apiService } from '@/services/api'
 import { getApiValidationError } from '@/services/apiErrors'
+import { getAlreadyExistingAudiobook } from '@/utils/apiError'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
@@ -1375,21 +1376,6 @@ onBeforeUnmount(() => {
   ++addGeneration
   document.removeEventListener('keydown', onKeyDown, { capture: true })
 })
-
-const getAlreadyExistingAudiobook = (error: unknown): Audiobook | null => {
-  if (!(error instanceof Error)) return null
-  const candidate = error as Error & { status?: number; body?: string }
-  if (candidate.status !== 409 || !candidate.body) return null
-
-  try {
-    const payload = JSON.parse(candidate.body) as { audiobook?: unknown }
-    if (!payload.audiobook || typeof payload.audiobook !== 'object') return null
-    const audiobook = payload.audiobook as Partial<Audiobook>
-    return typeof audiobook.id === 'number' ? (payload.audiobook as Audiobook) : null
-  } catch {
-    return null
-  }
-}
 
 const addToLibrary = async () => {
   if (!props.book) return
