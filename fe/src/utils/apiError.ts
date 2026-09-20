@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+import type { Audiobook } from '@/types'
 
 /**
  * The sentence to put in front of someone when an API call failed.
@@ -52,6 +53,20 @@ function readBody(body: unknown): Record<string, unknown> | null {
     const text = body.trim()
     return text ? { detail: text } : null
   }
+}
+
+/**
+ * The library add answers 409 with the book it already holds. Returns that book
+ * when the error is that answer, so a caller can carry on with it as though the
+ * add had succeeded.
+ */
+export function getAlreadyExistingAudiobook(error: unknown): Audiobook | null {
+  const candidate = error as ApiErrorLike | undefined
+  if (candidate?.status !== 409) return null
+  const parsed = readBody(candidate.body)
+  const audiobook = parsed?.audiobook
+  if (!audiobook || typeof audiobook !== 'object') return null
+  return typeof (audiobook as Partial<Audiobook>).id === 'number' ? (audiobook as Audiobook) : null
 }
 
 /**
