@@ -124,7 +124,9 @@
               :key="bookKey(book)"
               :book="book"
               :added="addedKeys.has(bookKey(book))"
-              @add="openAdd(book)"
+              :adding="addingKeys.has(bookKey(book))"
+              @add="quickAdd(book)"
+              @open="openAdd(book)"
               @ignore="ignore(book)"
             />
           </div>
@@ -173,7 +175,9 @@
               :book="book"
               show-position
               :added="addedKeys.has(bookKey(book))"
-              @add="openAdd(book)"
+              :adding="addingKeys.has(bookKey(book))"
+              @add="quickAdd(book)"
+              @open="openAdd(book)"
               @ignore="ignore(book)"
             />
           </div>
@@ -225,7 +229,7 @@ import FoundBooksTab from '@/components/domain/audiobook/FoundBooksTab.vue'
 import { useFoundBooksStore } from '@/stores/foundBooks'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
-import { buildCatalogMetadata } from '@/utils/catalogMetadata'
+import { buildCatalogMetadata, enrichCatalogMetadata } from '@/utils/catalogMetadata'
 import { describeApiError } from '@/utils/apiError'
 import type {
   AudibleBookMetadata,
@@ -314,6 +318,7 @@ function visibleBooks(key: string, books: SuggestedBook[]): SuggestedBook[] {
 // Books added during this visit stay in place, marked, rather than vanishing
 // from under the cursor; the next load drops them.
 const addedKeys = ref(new Set<string>())
+const addingKeys = ref(new Set<string>())
 const showIgnored = ref(false)
 
 async function ignore(book: SuggestedBook) {
@@ -423,6 +428,37 @@ async function startRefresh() {
 function openAdd(book: SuggestedBook) {
   pendingAddKey = bookKey(book)
   pendingAddBook.value = buildCatalogMetadata(book)
+}
+
+/**
+ * The card's Add button: add the book now with the page's defaults, the same
+ * record the modal would build. Opening the card is how to change anything first.
+ */
+async function quickAdd(book: SuggestedBook) {
+  const key = bookKey(book)
+  if (addingKeys.value.has(key)) return
+  addingKeys.value = new Set(addingKeys.value).add(key)
+  try {
+    const metadata = await enrichCatalogMetadata(book)
+    await apiService.addToLibrary(metadata, { monitored: true, autoSearch: searchOnAdd.value })
+    toast.success('Added', `"${metadata.title}" has been added to your library.`)
+    addedKeys.value = new Set(addedKeys.value).add(key)
+  } catch (e) {
+    if (isAlreadyInLibrary(e)) {
+      toast.success('Already added', `"${book.title}" is already in your library.`)
+      addedKeys.value = new Set(addedKeys.value).add(key)
+      return
+    }
+    toast.error('Not added', describeApiError(e, 'The book could not be added.'))
+  } finally {
+    const next = new Set(addingKeys.value)
+    next.delete(key)
+    addingKeys.value = next
+  }
+}
+
+function isAlreadyInLibrary(error: unknown): boolean {
+  return error instanceof Error && (error as Error & { status?: number }).status === 409
 }
 
 function handleAdded() {
