@@ -497,6 +497,14 @@
 
             <div class="list-actions">
               <button
+                v-if="canManualSearch(audiobook)"
+                class="action-btn search-btn-small"
+                @click.stop="openManualSearch(audiobook)"
+                title="Search for this book"
+              >
+                <PhMagnifyingGlass />
+              </button>
+              <button
                 v-if="audiobook.inLibrary"
                 class="action-btn edit-btn-small"
                 @click.stop="editAudiobook(audiobook)"
@@ -631,6 +639,16 @@
                     />
                     {{ getMonitoringLabel(audiobook) }}
                   </component>
+                  <button
+                    v-if="canManualSearch(audiobook)"
+                    type="button"
+                    class="overlay-search-btn"
+                    title="Search for this book"
+                    :aria-label="`Search for ${audiobook.title}`"
+                    @click.stop="openManualSearch(audiobook)"
+                  >
+                    <PhMagnifyingGlass />
+                  </button>
                 </div>
               </div>
               <!-- Bottom placard (only show when item details are enabled) -->
@@ -717,6 +735,13 @@
       :audiobook="editingAudiobook"
       @close="editingAudiobook = null"
       @saved="onAudiobookSaved"
+    />
+
+    <ManualSearchModal
+      :is-open="showManualSearchModal"
+      :audiobook="manualSearchAudiobook"
+      @close="closeManualSearch"
+      @downloaded="handleManualSearchDownloaded"
     />
 
     <DeleteConfirmationModal
@@ -814,6 +839,7 @@ import {
   PhPlus,
   PhGlobe,
   PhFolderOpen,
+  PhMagnifyingGlass,
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
@@ -828,6 +854,7 @@ import { buildCatalogMetadata } from '@/utils/catalogMetadata'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
+import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -843,6 +870,7 @@ import type {
   MonitoredAuthor,
   MonitoredSeries,
   RelatedAuthorItem,
+  SearchResult,
   SeriesCatalogBook,
   SeriesCatalogResponse,
   SeriesLookupResponse,
@@ -2391,6 +2419,36 @@ function getAudiobookStatus(audiobook: CollectionDisplayItem): CollectionStatus 
   return computeAudiobookStatus(audiobook, activeDownloadAudiobookIds.value)
 }
 
+// A book with nothing on disk and no download under way is the one worth
+// searching for from here; the rest already have their file or are getting it.
+function canManualSearch(audiobook: CollectionDisplayItem): boolean {
+  return audiobook.inLibrary && getAudiobookStatus(audiobook) === 'no-file'
+}
+
+const showManualSearchModal = ref(false)
+const manualSearchAudiobook = ref<Audiobook | null>(null)
+
+function openManualSearch(audiobook: CollectionDisplayItem) {
+  manualSearchAudiobook.value = audiobook
+  showManualSearchModal.value = true
+}
+
+function closeManualSearch() {
+  showManualSearchModal.value = false
+  manualSearchAudiobook.value = null
+}
+
+function handleManualSearchDownloaded(result: SearchResult) {
+  toast.success('Download Added', `${result.title} has been sent to your download client`)
+  closeManualSearch()
+  void downloadsStore.loadDownloads().catch((e) => {
+    errorTracking.captureException(e as Error, {
+      component: 'CollectionView',
+      operation: 'handleManualSearchDownloaded',
+    })
+  })
+}
+
 function getMonitoringLabel(audiobook: CollectionDisplayItem): string {
   if (!audiobook.inLibrary) return 'Not Added'
   return audiobook.monitored ? 'Monitored' : 'Unmonitored'
@@ -3647,6 +3705,33 @@ defineExpose({
   padding: 80px 8px 8px;
 }
 
+/* Bottom-right of the cover, level with the monitored badge on the left. */
+.overlay-search-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.overlay-search-btn:hover {
+  background: rgba(52, 152, 219, 0.9);
+  border-color: rgba(41, 128, 185, 0.6);
+}
+
 /* When 'show-details' class is present, render overlay expanded */
 .collection-cover.show-details .status-overlay {
   padding: 80px 8px 8px;
@@ -3901,6 +3986,15 @@ defineExpose({
 }
 
 .edit-btn-small:hover {
+  background-color: rgba(41, 128, 185, 1);
+}
+
+.search-btn-small {
+  background-color: rgba(52, 152, 219, 0.9);
+  border-color: rgba(41, 128, 185, 0.5);
+}
+
+.search-btn-small:hover {
   background-color: rgba(41, 128, 185, 1);
 }
 
