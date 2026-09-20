@@ -1,6 +1,6 @@
 {
   "name": "listenarr",
-  "version": "1.35.1",
+  "version": "1.36.0",
   "private": true,
   "description": "Listenarr - Automated audiobook downloading and management",
   "engines": {
