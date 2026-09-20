@@ -121,26 +121,9 @@ namespace Listenarr.Infrastructure.FoundBooks.Scanning
             }
         }
 
-        private static readonly Regex NumberingToken = new(
-            @"^(?:\d+|of|part|pt|ch|chapter|cd|disc|disk|track|(?:part|pt|ch|chapter|cd|disc|disk|track|c)\d+|\(\d+\)|\[\d+\])$",
-            RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
         internal static string LooseStem(string path)
         {
-            var tokens = Regex.Split(Path.GetFileNameWithoutExtension(path), @"[\s\-_\.]+")
-                .Where(t => t.Length > 0)
-                .ToList();
-            while (tokens.Count > 0 && NumberingToken.IsMatch(tokens[^1]))
-            {
-                tokens.RemoveAt(tokens.Count - 1);
-            }
-
-            while (tokens.Count > 0 && NumberingToken.IsMatch(tokens[0]))
-            {
-                tokens.RemoveAt(0);
-            }
-
-            var stem = FileUtils.NormalizeComparisonValue(string.Join(' ', tokens));
+            var stem = FileUtils.NormalizeComparisonValue(StemText(path));
             return stem.Length > 0
                 ? stem
                 : FileUtils.NormalizeComparisonValue(Path.GetFileName(Path.GetDirectoryName(path)));
@@ -223,7 +206,7 @@ namespace Listenarr.Infrastructure.FoundBooks.Scanning
                     .Select(c => new FoundBookFileEntry(c.Path, c.Length, c.LastWriteUtc, false, null)))
                 .ToList();
 
-            var hint = FolderHint(bookFolder, root, semantics);
+            var hint = FolderHint(bookFolder, root, semantics, ordered.FirstOrDefault().File?.Path);
             var title = TidyTitle(cluster.First(p => p.Album)) ?? hint.Title;
             var author = cluster.First(p => p.AlbumArtist) ?? cluster.First(p => p.Artist) ?? hint.Author;
             var series = cluster.First(p => p.Series) ?? hint.Series;
@@ -345,12 +328,80 @@ namespace Listenarr.Infrastructure.FoundBooks.Scanning
         /// What the folder name says when the tags say nothing: "Author - Title",
         /// "Author - Series 03 - Title", "Author - [Series 03] - Title (2016)".
         /// </summary>
-        private static FolderHintResult FolderHint(string bookFolder, string root, FileSystemPathSemantics semantics)
+        private static readonly FolderHintResult NoHint = new(null, null, null, null, null);
+
+        // A download client's job id, a torrent hash: a folder named by a machine says
+        // nothing about the book, and the filenames inside usually do.
+        private static readonly Regex OpaqueName = new(@"^[0-9a-fA-F]{16,}$|^[A-Za-z0-9]{12,}$", RegexOptions.Compiled);
+        private static readonly Regex EditionWord = new(@"[\s\-_]*\b(?:unabridged|abridged)\b[\s\-_]*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex TrailingNumbering = new(
+            @"(?:[\s\-_\.]+(?:\d+|of|part|pt|ch|chapter|cd|disc|disk|track|(?:part|pt|ch|chapter|cd|disc|disk|track|c)\s*\d+|\d+\s*(?:of|/)\s*\d+)|[\s\-_\.]*(?:\(\s*\d+\s*(?:(?:of|/)\s*\d+)?\s*\)|\[\s*\d+\s*(?:(?:of|/)\s*\d+)?\s*\]))$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// What the names say when the tags say nothing. The folder is asked first;
+        /// when it is a machine's name — a hash, a job id — or says less than the files
+        /// do, the shared stem of the filenames is read the same way.
+        /// </summary>
+        private static FolderHintResult FolderHint(string bookFolder, string root, FileSystemPathSemantics semantics, string? firstAudioPath = null)
+        {
+            var folderHint = FolderNameHint(bookFolder, root, semantics);
+            if (firstAudioPath == null)
+            {
+                return folderHint;
+            }
+
+            var folderName = Path.GetFileName(bookFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ?? string.Empty;
+            var fileHint = NameHint(StemText(firstAudioPath));
+            var folderIsOpaque = OpaqueName.IsMatch(folderName) || semantics.Comparer.Equals(bookFolder, root);
+            if (folderIsOpaque || Score(fileHint) > Score(folderHint))
+            {
+                return fileHint with { Year = fileHint.Year ?? folderHint.Year };
+            }
+
+            return folderHint;
+        }
+
+        private static int Score(FolderHintResult hint) =>
+            (hint.Author != null ? 2 : 0) + (hint.Series != null ? 1 : 0) + (hint.Title != null ? 1 : 0);
+
+        /// <summary>
+        /// The filename without its extension, part numbering, and edition word:
+        /// "Jack Campbell - The Lost Fleet 02 - Fearless - Unabridged - Part 1" becomes
+        /// "Jack Campbell - The Lost Fleet 02 - Fearless".
+        /// </summary>
+        internal static string StemText(string path)
+        {
+            var text = Path.GetFileNameWithoutExtension(path);
+            string previous;
+            do
+            {
+                previous = text;
+                text = TrailingNumbering.Replace(text, string.Empty);
+                text = EditionWord.Replace(text, string.Empty);
+                text = text.TrimEnd(' ', '-', '_', '.');
+            }
+            while (text != previous && text.Length > 0);
+            return text;
+        }
+
+        private static FolderHintResult FolderNameHint(string bookFolder, string root, FileSystemPathSemantics semantics)
         {
             var name = Path.GetFileName(bookFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (string.IsNullOrWhiteSpace(name) || semantics.Comparer.Equals(bookFolder, root))
             {
-                return new FolderHintResult(null, null, null, null, null);
+                return NoHint;
+            }
+
+            return NameHint(name);
+        }
+
+        /// <summary>"Author - Title", "Author - Series 03 - Title", "Author - [Series 03] - Title (2016)".</summary>
+        private static FolderHintResult NameHint(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return NoHint;
             }
 
             string? year = null;
@@ -360,6 +411,14 @@ namespace Listenarr.Infrastructure.FoundBooks.Scanning
             var parts = name.Split(" - ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parts.Length == 1)
             {
+                // "Isaac Asimov, Foundation and Earth": a name of two or three words, a
+                // comma, then the title.
+                var comma = parts[0].Split(", ", 2, StringSplitOptions.TrimEntries);
+                if (comma.Length == 2 && comma[0].Split(' ').Length is >= 2 and <= 3 && !comma[0].Any(char.IsDigit))
+                {
+                    return new FolderHintResult(comma[0], comma[1], null, null, year);
+                }
+
                 var bracket = BracketSeries.Match(parts[0]);
                 return bracket.Success
                     ? new FolderHintResult(null, bracket.Groups["title"].Value, bracket.Groups["series"].Value, bracket.Groups["pos"].Value, year)

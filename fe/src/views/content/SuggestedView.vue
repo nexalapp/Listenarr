@@ -288,7 +288,7 @@ const tabs = computed(() => [
   {
     id: 'found' as TabId,
     label: 'Found on disk',
-    count: foundBooks.counts.pending,
+    count: foundBooks.readyItems.length,
   },
 ])
 

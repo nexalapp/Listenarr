@@ -22,32 +22,42 @@ import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import { addAndImportBook } from '@/utils/libraryImportAdd'
 import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
+import { matchConfidence } from '@/utils/foundBookMatch'
 import type { FoundBook, FoundBookState, FoundBookWatchFolders, SearchResult } from '@/types'
 
 /** Per-row UI state that the server does not know about: the catalogue match and its lookup. */
 export interface FoundBookMatchState {
   selectedMatch: SearchResult | null
+  /** Every candidate the last lookup returned, best first. */
+  candidates: SearchResult[]
+  /** How sure the selected match is, 0–1, or null without one. */
+  confidence: number | null
   hasSearched: boolean
   searchFailed: boolean
   isSearching: boolean
   separateBook: boolean
   busy: boolean
   error: string | null
+  /** Ticked in the bulk-select bar. */
+  selected: boolean
 }
 
-export type FoundBookFilter = 'pending' | 'blocked' | 'ignored' | 'done'
+export type FoundBookFilter = 'found' | 'ignored' | 'imported'
 
 const LOOKUP_CAP = 5
 
 function emptyMatchState(): FoundBookMatchState {
   return {
     selectedMatch: null,
+    candidates: [],
+    confidence: null,
     hasSearched: false,
     searchFailed: false,
     isSearching: false,
     separateBook: false,
     busy: false,
     error: null,
+    selected: false,
   }
 }
 
@@ -75,16 +85,26 @@ export function folderName(path: string): string {
 
 export function stateFilter(state: FoundBookState): FoundBookFilter {
   switch (state) {
-    case 'Pending':
-    case 'Importing':
-      return 'pending'
-    case 'Blocked':
-      return 'blocked'
     case 'Ignored':
       return 'ignored'
+    case 'Imported':
+    case 'Discarded':
+      return 'imported'
     default:
-      return 'done'
+      return 'found'
   }
+}
+
+/**
+ * Whether a found row can be imported as it stands: offered, and either whole or
+ * with nothing saying it is not. A row with a known gap, an unreadable file, or
+ * something still owning its files waits in the Incomplete section instead.
+ */
+export function isReady(item: FoundBook): boolean {
+  return (
+    item.state === 'Pending' &&
+    (item.completeness === 'Complete' || item.completeness === 'Unknown')
+  )
 }
 
 export const useFoundBooksStore = defineStore('foundBooks', () => {
@@ -97,7 +117,7 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const watchFolders = ref<FoundBookWatchFolders | null>(null)
-  const filter = ref<FoundBookFilter>('pending')
+  const filter = ref<FoundBookFilter>('found')
 
   let lookupQueue: number[] = []
   let lookupRunning = false
@@ -108,19 +128,27 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
   )
 
   const counts = computed(() => {
-    const result: Record<FoundBookFilter, number> = { pending: 0, blocked: 0, ignored: 0, done: 0 }
+    const result: Record<FoundBookFilter, number> = { found: 0, ignored: 0, imported: 0 }
     for (const item of items.value) result[stateFilter(item.state)]++
     return result
   })
 
-  /** Rows that can be added right now: offered, complete, with a match, and not in the library. */
+  /** The Found tab's two sections: what can be imported now, and what waits. */
+  const readyItems = computed(() => items.value.filter((item) => isReady(item)))
+  const incompleteItems = computed(() =>
+    items.value.filter((item) => stateFilter(item.state) === 'found' && !isReady(item)),
+  )
+
+  /** Rows that can be added right now: ready, with a match, and not in the library. */
   const addableItems = computed(() =>
-    visibleItems.value.filter(
+    readyItems.value.filter(
       (item) =>
-        item.state === 'Pending' &&
-        item.libraryStatus !== 'InLibrary' &&
-        matchStates.value[item.id]?.selectedMatch != null,
+        item.libraryStatus !== 'InLibrary' && matchStates.value[item.id]?.selectedMatch != null,
     ),
+  )
+
+  const selectedItems = computed(() =>
+    readyItems.value.filter((item) => matchStates.value[item.id]?.selected),
   )
 
   function matchState(id: number): FoundBookMatchState {
@@ -233,7 +261,9 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
         isSearching: false,
         hasSearched: true,
         searchFailed: false,
+        candidates: results,
         selectedMatch: best,
+        confidence: best ? matchConfidence(best, item) : null,
       })
     } catch (e) {
       // A failed lookup is not "not on Audible": keep hasSearched false so a retry asks again.
@@ -249,8 +279,29 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     queueLookups()
   }
 
-  function selectMatch(id: number, result: SearchResult | null) {
-    setMatchState(id, { selectedMatch: result, hasSearched: true, searchFailed: false })
+  function selectMatch(id: number, result: SearchResult | null, candidates?: SearchResult[]) {
+    const item = items.value.find((candidate) => candidate.id === id)
+    setMatchState(id, {
+      selectedMatch: result,
+      hasSearched: true,
+      searchFailed: false,
+      confidence: result && item ? matchConfidence(result, item) : null,
+      ...(candidates ? { candidates } : {}),
+    })
+  }
+
+  function setSelected(id: number, value: boolean) {
+    setMatchState(id, { selected: value })
+  }
+
+  function selectAllReady() {
+    for (const item of readyItems.value) setMatchState(item.id, { selected: true })
+  }
+
+  function clearSelection() {
+    for (const item of items.value) {
+      if (matchStates.value[item.id]?.selected) setMatchState(item.id, { selected: false })
+    }
   }
 
   function setSeparateBook(id: number, value: boolean) {
@@ -311,6 +362,7 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
 
       const finished = await apiService.finishFoundBookImport(id, result.audiobookId)
       replaceItem(finished.book)
+      setMatchState(id, { selected: false })
       if (finished.skipped.length > 0) {
         setMatchState(id, {
           error: `Imported; ${finished.skipped.length} leftover file(s) could not be removed.`,
@@ -336,17 +388,27 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     }
   }
 
-  async function addAll(
+  /** Add the given rows in sequence; each failure stays on its row. */
+  async function addMany(
+    ids: number[],
     rootFolderPath: string,
     monitored: boolean,
   ): Promise<{ added: number; failed: number }> {
     let added = 0
     let failed = 0
-    for (const item of addableItems.value) {
-      if (await add(item.id, rootFolderPath, monitored)) added++
+    for (const id of ids) {
+      if (await add(id, rootFolderPath, monitored)) added++
       else failed++
     }
     return { added, failed }
+  }
+
+  async function ignoreMany(ids: number[]): Promise<number> {
+    let done = 0
+    for (const id of ids) {
+      if (await decide(id, 'ignore')) done++
+    }
+    return done
   }
 
   // ─── Realtime ──────────────────────────────────────────────────────────────
@@ -377,17 +439,24 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     filter,
     visibleItems,
     counts,
+    readyItems,
+    incompleteItems,
     addableItems,
+    selectedItems,
     matchState,
     load,
     loadWatchFolders,
     scan,
     retryLookups,
     selectMatch,
+    setSelected,
+    selectAllReady,
+    clearSelection,
     setSeparateBook,
     decide,
     add,
-    addAll,
+    addMany,
+    ignoreMany,
     subscribe,
     unsubscribe,
   }

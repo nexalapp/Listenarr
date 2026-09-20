@@ -246,6 +246,49 @@ namespace Listenarr.Tests.Features.Infrastructure.FoundBooks
         }
 
         [Fact]
+        public async Task HashNamedFolder_IsNamedFromItsFilenames()
+        {
+            // A download client's job folder says nothing; the files inside say everything.
+            await Audio("5da8cead8779ae4719256549/Jack Campbell - The Lost Fleet 02 - Fearless - Unabridged - Part 1.mp3", null, null);
+            await Audio("5da8cead8779ae4719256549/Jack Campbell - The Lost Fleet 02 - Fearless - Unabridged - Part 2.mp3", null, null);
+
+            var report = await BuildScanner().ScanAsync(Folder, new Dictionary<string, FoundBookKnownFile>());
+
+            var book = Assert.Single(report.Candidates);
+            Assert.Equal("Fearless", book.Title);
+            Assert.Equal("Jack Campbell", book.Author);
+            Assert.Equal("The Lost Fleet", book.Series);
+            Assert.Equal("02", book.SeriesPosition);
+        }
+
+        [Fact]
+        public async Task UntaggedPartsNumberedInParentheses_AreOneBook()
+        {
+            for (var i = 1; i <= 3; i++)
+            {
+                await Audio($"Foundation and Earth/Isaac Asimov, Foundation and Earth ({i:00} of 03).mp3", null, null);
+            }
+
+            var report = await BuildScanner().ScanAsync(Folder, new Dictionary<string, FoundBookKnownFile>());
+
+            var book = Assert.Single(report.Candidates);
+            Assert.Equal(3, book.AudioFileCount);
+            Assert.Equal("Foundation and Earth", book.Title);
+            Assert.Equal("Isaac Asimov", book.Author);
+            Assert.Equal(FoundBookCompleteness.Complete, book.Completeness);
+        }
+
+        [Theory]
+        [InlineData("Isaac Asimov, Foundation and Earth (01 of 26).mp3", "Isaac Asimov, Foundation and Earth")]
+        [InlineData("Jack Campbell - The Lost Fleet 02 - Fearless - Unabridged - Part 1.mp3", "Jack Campbell - The Lost Fleet 02 - Fearless")]
+        [InlineData("Hugh Howey - Wool 01-34.mp3", "Hugh Howey - Wool")]
+        [InlineData("Z09387_001_C000.mp3", "Z09387")]
+        [InlineData("Ithaca-Part01.mp3", "Ithaca")]
+        [InlineData("01 - Swamp Spirits.mp3", "01 - Swamp Spirits")]
+        public void StemText_StripsNumberingAndEdition(string file, string expected) =>
+            Assert.Equal(expected, FoundBookScanner.StemText(file));
+
+        [Fact]
         public async Task UnchangedFiles_AreNotProbedAgain()
         {
             var path = await Audio("Hugh Howey - Wool (2012)/01 - Wool.mp3", "Wool", "Hugh Howey");
