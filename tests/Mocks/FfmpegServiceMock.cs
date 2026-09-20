@@ -51,6 +51,11 @@ namespace Listenarr.Tests.Mocks
             return Task.FromResult<IReadOnlyList<EmbeddedChapter>>([]);
         }
 
+        public Task<TimeSpan?> MeasureDecodedDurationAsync(
+            string filePath,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<TimeSpan?>(null);
+
         public async Task<string> GetLicenseAsync()
         {
             return "LICENSED Listenarr mock corp. V0";

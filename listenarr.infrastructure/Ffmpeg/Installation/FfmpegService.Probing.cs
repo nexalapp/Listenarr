@@ -222,6 +222,98 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
             }
         }
 
+        public async Task<TimeSpan?> MeasureDecodedDurationAsync(
+            string filePath,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+            if (!File.Exists(_ffmpegPath) || !File.Exists(filePath))
+            {
+                return null;
+            }
+
+            if (!FileSystemSafety.TryValidateMutationTarget(
+                    _ffmpegPath,
+                    [_baseDir],
+                    out var safeFfmpegPath,
+                    out _))
+            {
+                return null;
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = safeFfmpegPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-v");
+            startInfo.ArgumentList.Add("error");
+            startInfo.ArgumentList.Add("-nostats");
+            startInfo.ArgumentList.Add("-i");
+            startInfo.ArgumentList.Add(Path.GetFullPath(filePath));
+            startInfo.ArgumentList.Add("-map");
+            startInfo.ArgumentList.Add("0:a:0");
+            // The decoded time is read from the progress report, which ends with the
+            // final out_time; the null muxer discards the samples themselves.
+            startInfo.ArgumentList.Add("-progress");
+            startInfo.ArgumentList.Add("pipe:1");
+            startInfo.ArgumentList.Add("-f");
+            startInfo.ArgumentList.Add("null");
+            startInfo.ArgumentList.Add("-");
+
+            ProcessResult decode;
+            try
+            {
+                decode = await _processRunner.RunAsync(startInfo, DecodeTimeoutMilliseconds, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Could not decode {File} to measure it", LogRedaction.SanitizeFilePath(filePath));
+                return null;
+            }
+
+            if (decode.TimedOut || decode.ExitCode != 0 || string.IsNullOrWhiteSpace(decode.Stdout))
+            {
+                _logger.LogDebug(
+                    "Decoding {File} to measure it ended with exit code {ExitCode}{TimedOut}",
+                    LogRedaction.SanitizeFilePath(filePath),
+                    decode.ExitCode,
+                    decode.TimedOut ? " (timed out)" : string.Empty);
+                return null;
+            }
+
+            return ParseFinalOutTime(decode.Stdout);
+        }
+
+        /// <summary>A day of audio at a slow decode; the encode that follows takes longer.</summary>
+        private const int DecodeTimeoutMilliseconds = 60 * 60 * 1000;
+
+        /// <summary>
+        /// The last <c>out_time_us</c> line of an ffmpeg progress report, in microseconds
+        /// (<c>out_time_ms</c> is misnamed and also in microseconds, kept as a fallback).
+        /// </summary>
+        internal static TimeSpan? ParseFinalOutTime(string progress)
+        {
+            long? micros = null;
+            foreach (var rawLine in progress.Split('\n'))
+            {
+                var line = rawLine.Trim();
+                if ((line.StartsWith("out_time_us=", StringComparison.Ordinal)
+                        || line.StartsWith("out_time_ms=", StringComparison.Ordinal))
+                    && long.TryParse(line[12..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+                    && value >= 0)
+                {
+                    micros = value;
+                }
+            }
+
+            return micros.HasValue ? TimeSpan.FromMicroseconds(micros.Value) : null;
+        }
+
         private static bool TryReadSeconds(JsonElement element, string property, out double seconds)
         {
             seconds = 0;

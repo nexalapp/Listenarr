@@ -24,10 +24,23 @@ namespace Listenarr.Infrastructure.Library.Conversion
         /// <summary>
         /// Read every source file and build the plan.
         ///
-        /// Probing is a real cost — one ffprobe per file over a NAS share — but the
-        /// chapter marks are computed from the decoded durations, and a duration guessed
-        /// from the bitrate would put every mark after the first in the wrong place.
+        /// Probing is a real cost — one ffprobe per file over a NAS share, and for an
+        /// MP3 a full decode on top — but the chapter marks are computed from the
+        /// durations, and an MP3's declared duration is an estimate that has been seen
+        /// eighty seconds short on a five-hour part. Every mark after the first would
+        /// land that far out, and the finished file would be refused for not matching
+        /// the plan. An M4B or FLAC header states its length exactly and is trusted.
         /// </summary>
+        /// <summary>
+        /// Whether the container's duration is a guess. MP3 has no length field: the
+        /// demuxer trusts a Xing/Info frame when there is one and otherwise divides the
+        /// byte count by the bitrate, and either can be wrong by a minute. MP4 and FLAC
+        /// carry an exact sample count.
+        /// </summary>
+        private static bool DeclaredDurationIsAnEstimate(AudioMetadata metadata) =>
+            (metadata.Format ?? string.Empty).Contains("mp3", StringComparison.OrdinalIgnoreCase)
+            || (metadata.Codec ?? string.Empty).Contains("mp3", StringComparison.OrdinalIgnoreCase);
+
         private async Task<PlanningOutcome> BuildPlanAsync(
             Audiobook audiobook,
             IReadOnlyList<AudiobookFile> sourceFiles,
@@ -76,10 +89,29 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 // stops the conversion from flattening that book into one chapter.
                 var embeddedChapters = await ffmpegService.ReadChaptersAsync(path, cancellationToken);
 
+                var duration = metadata.Duration;
+                if (DeclaredDurationIsAnEstimate(metadata))
+                {
+                    var decoded = await ffmpegService.MeasureDecodedDurationAsync(path, cancellationToken);
+                    if (decoded is { } measured && measured > TimeSpan.Zero)
+                    {
+                        if ((measured - duration).Duration() > TimeSpan.FromSeconds(1))
+                        {
+                            logger.LogInformation(
+                                "Source {File} declares {Declared} but decodes to {Decoded}; the plan uses the decoded length",
+                                LogRedaction.SanitizeFilePath(path),
+                                duration,
+                                measured);
+                        }
+
+                        duration = measured;
+                    }
+                }
+
                 sources.Add(new ConversionSource(
                     path,
                     BuildRelativePath(audiobook, path),
-                    metadata.Duration,
+                    duration,
                     metadata.BitRate,
                     metadata.SampleRate,
                     metadata.Channels,
