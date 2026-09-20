@@ -37,8 +37,15 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase)]
         private static partial Regex LineBreak();
 
-        [GeneratedRegex(@"</(p|div|tr|li|h[1-6]|blockquote)\s*>", RegexOptions.IgnoreCase)]
+        [GeneratedRegex(@"</(p|div|tr|li|h[1-6]|blockquote|pre|code)\s*>", RegexOptions.IgnoreCase)]
         private static partial Regex BlockEnd();
+
+        // Opening tags break lines too. The payload block is written without any line
+        // breaks of its own - "Search:" runs straight into the code header's div, and
+        // the code element straight into "Password:" - so closing tags alone leave the
+        // search string glued to its labels on one line, where nothing recognises it.
+        [GeneratedRegex(@"<(p|div|tr|li|h[1-6]|blockquote|pre|code)\b[^>]*>", RegexOptions.IgnoreCase)]
+        private static partial Regex BlockStart();
 
         [GeneratedRegex(@"<[^>]+>")]
         private static partial Regex AnyTag();
@@ -116,6 +123,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             var text = ScriptOrStyle().Replace(html, "\n");
 
             text = LineBreak().Replace(text, "\n");
+            text = BlockStart().Replace(text, "\n");
             text = BlockEnd().Replace(text, "\n");
             text = AnyTag().Replace(text, string.Empty);
             text = WebUtility.HtmlDecode(text);

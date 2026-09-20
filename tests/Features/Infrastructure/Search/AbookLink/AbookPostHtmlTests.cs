@@ -1,3 +1,4 @@
+using Listenarr.Application.Search.AbookLink;
 using Listenarr.Infrastructure.Search.AbookLink;
 using Listenarr.Tests.Common;
 
@@ -72,6 +73,28 @@ public sealed class AbookPostHtmlTests : BaseTests
 
         Assert.Contains("The Real Book", text, StringComparison.Ordinal);
         Assert.DoesNotContain("alice", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void APayloadWrittenWithoutLineBreaksStillParses()
+    {
+        // Topic 78402 as served: the labels, code headers and code elements follow one
+        // another with no <br> or newline between them. Only the tags separate them, so
+        // the text conversion has to break lines at opening tags as well as closing ones,
+        // or "Search:Code: [Copy]" arrives as one line the payload reader cannot name.
+        const string html =
+            "<div class=\"post\" id=\"msg_100\"><div class=\"inner\">Title: Fleet of Stars<br/>"
+            + "<div class=\"unhiddenbox\"><h6>Hidden content:</h6>Search:"
+            + "<div class=\"codeheader\">Code: <a class=\"codeoperation\">[Copy]</a></div>"
+            + "<code class=\"bbc_code\">abook.link - SCRUBBEDSEARCH0000000001</code>Password:"
+            + "<div class=\"codeheader\">Code: <a class=\"codeoperation\">[Copy]</a></div>"
+            + "<code class=\"bbc_code\">Finite.Illusive.Velcro.Enclose</code></div></div></div>";
+
+        var post = AbookPostParser.Parse(AbookPostHtml.ToText(AbookPostHtml.FirstPost(html)));
+
+        Assert.Equal("abook.link - SCRUBBEDSEARCH0000000001", post.SearchString);
+        Assert.Equal("Finite.Illusive.Velcro.Enclose", post.Password);
+        Assert.True(post.CanGrab);
     }
 
     [Fact]

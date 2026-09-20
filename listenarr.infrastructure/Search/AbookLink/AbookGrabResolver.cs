@@ -108,7 +108,8 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             {
                 return Failed(topicId, "Read payload",
                     "The post was thanked but no search string could be read from it. "
-                    + "Open the topic and copy the search string in by hand.",
+                    + "Its payload is laid out in a way the reader does not recognise; "
+                    + "open the topic to check it, and report the layout so it can be supported.",
                     post, thanked);
             }
 
