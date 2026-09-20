@@ -17,9 +17,10 @@
 -->
 <template>
   <div class="form-section">
-    <h3><PhDownload /> Download Settings</h3>
+    <h3><PhDownload /> {{ heading }}</h3>
     <div class="form-body">
       <FormRow
+        v-if="showDownloads"
         label="Max Concurrent Downloads"
         help="Maximum number of simultaneous downloads (1-10)"
       >
@@ -39,6 +40,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showScanConcurrency"
         label="Unmatched Scan Concurrency"
         help="Number of concurrent ffprobe processes during an unmatched scan (1-8). Lower values reduce NAS/disk pressure; higher values speed up large libraries."
       >
@@ -58,6 +60,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showDownloads"
         label="Polling Interval (seconds)"
         help="How often to check download status (10-300 seconds)"
       >
@@ -77,6 +80,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showDownloads"
         label="Download Completion Stability (seconds)"
         help="How long (seconds) a download must be seen as complete on the client before finalization begins. Increase for clients that post-process/extract after completion."
       >
@@ -96,6 +100,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showDownloads"
         label="Missing-source Retry Initial Delay (seconds)"
         help="Initial retry delay (seconds) used when files are not yet available at finalization time."
       >
@@ -115,6 +120,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showDownloads"
         label="Missing-source Max Retries"
         help="Maximum number of retries to attempt if the finalized download's source files are missing."
       >
@@ -134,6 +140,7 @@
       </FormRow>
 
       <CheckboxCard
+        v-if="showDownloads"
         :modelValue="settings.failedDownloadHandlingEnabled"
         @update:modelValue="updateFailedDownloadHandlingEnabled"
         title="Enable Failed Download Handling"
@@ -141,6 +148,7 @@
       />
 
       <CheckboxCard
+        v-if="showDownloads"
         :modelValue="settings.failedDownloadAutoSearch"
         @update:modelValue="updateFailedDownloadAutoSearch"
         :disabled="!settings.failedDownloadHandlingEnabled"
@@ -152,12 +160,29 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ApplicationSettings } from '@/types'
 import { PhDownload } from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 
-const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
+const props = withDefaults(
+  defineProps<{
+    settings: Partial<ApplicationSettings>
+    /** Which rows to show: the download pipeline's, the scan budget, or all. */
+    part?: 'downloads' | 'scan' | 'all'
+  }>(),
+  { part: 'all' },
+)
+const showDownloads = computed(() => props.part !== 'scan')
+const showScanConcurrency = computed(() => props.part !== 'downloads')
+const heading = computed(() =>
+  props.part === 'scan'
+    ? 'Scanning'
+    : props.part === 'downloads'
+      ? 'Download Pipeline'
+      : 'Download Settings',
+)
 const emit = defineEmits<{
   'update:settings': [value: Partial<ApplicationSettings>]
 }>()

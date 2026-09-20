@@ -17,9 +17,13 @@
 -->
 <template>
   <div class="form-section">
-    <h3><PhFolder /> File Management</h3>
+    <h3><PhFolder /> {{ heading }}</h3>
     <div class="form-body">
-      <FormRow label="Folder Naming Pattern" help="Pattern for organizing audiobook folders">
+      <FormRow
+        v-if="showNaming"
+        label="Folder Naming Pattern"
+        help="Pattern for organizing audiobook folders"
+      >
         <div class="input-group">
           <input
             v-model="folderPattern"
@@ -40,6 +44,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showNaming"
         label="Single File Naming Pattern"
         help="Pattern for naming audiobooks as single files"
       >
@@ -61,6 +66,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showNaming"
         label="Multi-File Naming Pattern"
         help="Pattern for naming audiobooks split across multiple files"
       >
@@ -84,6 +90,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showNaming"
         label="Series Words to Drop"
         help="Words removed from the end of a series name wherever it is written into a folder, file or tag. Audible calls most series 'X Series' or 'X Trilogy'; a library rarely wants a folder that says so. The stored series name is never changed. Comma-separated; leave empty to keep names as they are."
       >
@@ -106,6 +113,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showNaming"
         label="Series Author"
         help="File every book of a series under the author of its first book — the earliest published one in your library — so a series that changed hands stays in one folder and on one author page, and the next book is where a reader looks for it. {Author} follows this; the book's own credit still goes wherever {Authors} is written. Off, {Author} is each book's own first author."
       >
@@ -157,6 +165,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showNaming"
         label="Narrators in Names"
         help="How many narrators a folder, file or tag names before the list is cut and ends in 'et al.'. 0 names every narrator. A full-cast production can credit fifteen readers, and a name that long cannot exist on disk — whatever this says, a name is always cut to what the filesystem allows."
       >
@@ -198,6 +207,7 @@
       </div>
 
       <FormRow
+        v-if="showNaming"
         label="Completed File Action"
         help="Choose whether completed downloads should be moved into the library output path or copied and left in the client's folder."
       >
@@ -212,6 +222,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showConversion"
         label="Convert MP3 Audiobooks to M4B"
         help="Fold a book's MP3 files into a single M4B with one chapter per file. Conversion runs as a background job, and the originals are left alone until the result is verified."
       >
@@ -229,6 +240,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showConversion"
         label="After Conversion"
         help="What happens to the source MP3s once the M4B has been read back and its chapters verified. Nothing here runs if the conversion fails."
       >
@@ -245,7 +257,7 @@
       </FormRow>
 
       <FormRow
-        v-if="(settings.conversionSourceDisposition ?? 'Archive') === 'Archive'"
+        v-if="showConversion && (settings.conversionSourceDisposition ?? 'Archive') === 'Archive'"
         label="Conversion Archive Path"
         help="Where source MP3s are moved after a verified conversion. Each book gets its own folder. Leave this empty and the MP3s stay where they are."
       >
@@ -278,6 +290,7 @@
       </FormRow>
 
       <FormRow
+        v-if="showNaming"
         label="Import Blacklist Extensions"
         help="Extensions to skip during library import and completed-download import. Separate values with commas or new lines, for example: .nfo, .sfv, .jpg"
       >
@@ -380,7 +393,23 @@ import { PhFolder, PhQuestion, PhX, PhWarning, PhPlus } from '@phosphor-icons/vu
 import FormRow from '@/components/settings/FormRow.vue'
 import FolderBrowserModal from '@/components/feedback/FolderBrowserModal.vue'
 
-const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
+const props = withDefaults(
+  defineProps<{
+    settings: Partial<ApplicationSettings>
+    /** Which rows to show: naming and import, conversion, or everything. */
+    part?: 'naming' | 'conversion' | 'all'
+  }>(),
+  { part: 'all' },
+)
+const showNaming = computed(() => props.part !== 'conversion')
+const showConversion = computed(() => props.part !== 'naming')
+const heading = computed(() =>
+  props.part === 'naming'
+    ? 'Naming & Import'
+    : props.part === 'conversion'
+      ? 'Conversion'
+      : 'File Management',
+)
 const emit = defineEmits<{
   'update:settings': [value: Partial<ApplicationSettings>]
 }>()

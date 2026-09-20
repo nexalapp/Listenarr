@@ -773,6 +773,7 @@ export interface ApplicationSettings {
   foundBooksWatchFolders?: string[]
   foundBooksScanIntervalMinutes?: number
   foundBooksAutoAdd?: boolean
+  historyRetentionDays?: number
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean
   // What goes into each tag and whether it may be overwritten. Absent means the

@@ -414,7 +414,10 @@
             <RouterLink
               to="/settings"
               class="nav-item"
-              :class="{ 'router-link-active': pendingNavPath === '/settings' }"
+              :class="{
+                'router-link-active':
+                  pendingNavPath === '/settings' || route.path.startsWith('/settings'),
+              }"
               @mouseenter="onPrimaryNavMouseEnter('settings', 'settings')"
               @mouseleave="onNavMouseLeave('settings')"
               @focus="onPrimaryNavFocus('settings', 'settings')"
@@ -436,64 +439,18 @@
                 open:
                   hoverNav === 'settings' ||
                   persistentNav === 'settings' ||
-                  route.path === '/settings',
+                  route.path.startsWith('/settings'),
               }"
             >
               <RouterLink
-                :to="{ path: '/settings', hash: '#rootfolders' }"
+                v-for="page in settingsPages"
+                :key="page.name"
+                :to="{ name: page.name }"
                 class="nav-subitem"
+                :class="{ active: route.name === page.name }"
                 @click="closeMobileMenu"
-                :class="{ active: route.hash === '#rootfolders' }"
               >
-                <span>Root Folders</span>
-              </RouterLink>
-              <RouterLink
-                :to="{ path: '/settings', hash: '#indexers' }"
-                class="nav-subitem"
-                @click="closeMobileMenu"
-                :class="{ active: route.hash === '#indexers' }"
-              >
-                <span>Indexers</span>
-              </RouterLink>
-              <RouterLink
-                :to="{ path: '/settings', hash: '#clients' }"
-                class="nav-subitem"
-                @click="closeMobileMenu"
-                :class="{ active: route.hash === '#clients' }"
-              >
-                <span>Clients</span>
-              </RouterLink>
-              <RouterLink
-                :to="{ path: '/settings', hash: '#quality-profiles' }"
-                class="nav-subitem"
-                @click="closeMobileMenu"
-                :class="{ active: route.hash === '#quality-profiles' }"
-              >
-                <span>Quality Profiles</span>
-              </RouterLink>
-              <RouterLink
-                :to="{ path: '/settings', hash: '#notifications' }"
-                class="nav-subitem"
-                @click="closeMobileMenu"
-                :class="{ active: route.hash === '#notifications' }"
-              >
-                <span>Notifications</span>
-              </RouterLink>
-              <RouterLink
-                :to="{ path: '/settings', hash: '#bot' }"
-                class="nav-subitem"
-                @click="closeMobileMenu"
-                :class="{ active: route.hash === '#bot' }"
-              >
-                <span>Discord Bot</span>
-              </RouterLink>
-              <RouterLink
-                :to="{ path: '/settings', hash: '#general' }"
-                class="nav-subitem"
-                @click="closeMobileMenu"
-                :class="{ active: route.hash === '#general' }"
-              >
-                <span>General</span>
+                <span>{{ page.label }}</span>
               </RouterLink>
             </div>
             <RouterLink
@@ -790,6 +747,20 @@ const confirmCancelText = computed(() => confirm.cancelText.value)
 const confirmDanger = computed(() => confirm.danger.value)
 
 // Preload helper for route components on user intent (hover/focus/touch)
+/** The settings pages, in the order a setup runs: library, acquisition, processing, integrations, system. */
+const settingsPages = [
+  { name: 'settings-media', label: 'Media Management' },
+  { name: 'settings-processing', label: 'Conversion & Tags' },
+  { name: 'settings-metadata', label: 'Metadata' },
+  { name: 'settings-indexers', label: 'Indexers' },
+  { name: 'settings-download-clients', label: 'Download Clients' },
+  { name: 'settings-found', label: 'Found Books' },
+  { name: 'settings-quality', label: 'Quality Profiles' },
+  { name: 'settings-connect', label: 'Connect' },
+  { name: 'settings-security', label: 'Security' },
+  { name: 'settings-general', label: 'General' },
+]
+
 function preload(name: string) {
   try {
     preloadRoute(name)

@@ -17,9 +17,10 @@
 -->
 <template>
   <div class="form-section">
-    <h3><PhToggleLeft /> Features</h3>
+    <h3><PhToggleLeft /> {{ heading }}</h3>
     <div class="form-body">
       <CheckboxCard
+        v-if="show('enableMetadataProcessing')"
         :modelValue="settings.enableMetadataProcessing"
         @update:modelValue="updateEnableMetadataProcessing"
         title="Enable Metadata Processing"
@@ -27,6 +28,7 @@
       />
 
       <CheckboxCard
+        v-if="show('enableCoverArtDownload')"
         :modelValue="settings.enableCoverArtDownload"
         @update:modelValue="updateEnableCoverArtDownload"
         title="Enable Cover Art Download"
@@ -34,6 +36,7 @@
       />
 
       <CheckboxCard
+        v-if="show('enableNotifications')"
         :modelValue="settings.enableNotifications"
         @update:modelValue="updateEnableNotifications"
         title="Enable Notifications"
@@ -41,6 +44,7 @@
       />
 
       <CheckboxCard
+        v-if="show('showCompletedExternalDownloads')"
         :modelValue="settings.showCompletedExternalDownloads"
         @update:modelValue="updateShowCompletedExternalDownloads"
         title="Show completed external downloads in Activity"
@@ -56,7 +60,22 @@ import { PhToggleLeft } from '@phosphor-icons/vue'
 // Checkbox controls are provided via `CheckboxCard` wrapper where used
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 
-const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
+type FeatureKey =
+  | 'enableMetadataProcessing'
+  | 'enableCoverArtDownload'
+  | 'enableNotifications'
+  | 'showCompletedExternalDownloads'
+
+const props = withDefaults(
+  defineProps<{
+    settings: Partial<ApplicationSettings>
+    /** The toggles to show; each settings page shows the ones that belong to it. */
+    only?: FeatureKey[]
+    heading?: string
+  }>(),
+  { only: undefined, heading: 'Features' },
+)
+const show = (key: FeatureKey) => !props.only || props.only.includes(key)
 const emit = defineEmits<{
   'update:settings': [value: Partial<ApplicationSettings>]
 }>()

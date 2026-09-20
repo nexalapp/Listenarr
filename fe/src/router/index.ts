@@ -39,6 +39,17 @@ const normalizeLibraryGroup = (value: unknown): LibraryGroup =>
     ? (value as LibraryGroup)
     : 'books'
 
+/** The hash each tab of the old single settings page answered to, and the page it became. */
+const legacySettingsHashRoutes: Record<string, string> = {
+  rootfolders: 'settings-media',
+  indexers: 'settings-indexers',
+  clients: 'settings-download-clients',
+  'quality-profiles': 'settings-quality',
+  notifications: 'settings-connect',
+  bot: 'settings-connect',
+  general: 'settings-general',
+}
+
 const routes = [
   {
     path: '/',
@@ -142,9 +153,64 @@ const routes = [
   },
   {
     path: '/settings',
-    name: 'settings',
     component: () => import('../views/SettingsView.vue'),
     meta: { requiresAuth: true },
+    // The old single page used a hash per tab; those links live in bookmarks.
+    redirect: (to: RouteLocationGeneric) => ({
+      name: legacySettingsHashRoutes[to.hash.replace('#', '')] ?? 'settings-media',
+    }),
+    children: [
+      {
+        path: 'media',
+        name: 'settings-media',
+        component: () => import('../views/settings/pages/MediaManagementPage.vue'),
+      },
+      {
+        path: 'processing',
+        name: 'settings-processing',
+        component: () => import('../views/settings/pages/ProcessingPage.vue'),
+      },
+      {
+        path: 'metadata',
+        name: 'settings-metadata',
+        component: () => import('../views/settings/pages/MetadataPage.vue'),
+      },
+      {
+        path: 'indexers',
+        name: 'settings-indexers',
+        component: () => import('../views/settings/pages/IndexersPage.vue'),
+      },
+      {
+        path: 'download-clients',
+        name: 'settings-download-clients',
+        component: () => import('../views/settings/pages/DownloadClientsPage.vue'),
+      },
+      {
+        path: 'found',
+        name: 'settings-found',
+        component: () => import('../views/settings/pages/FoundBooksPage.vue'),
+      },
+      {
+        path: 'quality',
+        name: 'settings-quality',
+        component: () => import('../views/settings/pages/QualityProfilesPage.vue'),
+      },
+      {
+        path: 'connect',
+        name: 'settings-connect',
+        component: () => import('../views/settings/pages/ConnectPage.vue'),
+      },
+      {
+        path: 'security',
+        name: 'settings-security',
+        component: () => import('../views/settings/pages/SecurityPage.vue'),
+      },
+      {
+        path: 'general',
+        name: 'settings-general',
+        component: () => import('../views/settings/pages/GeneralPage.vue'),
+      },
+    ],
   },
   {
     path: '/system',
