@@ -478,13 +478,21 @@
                 <PhStar />
                 {{ getQualityProfileName(audiobook.qualityProfileId) }}
               </div>
-              <div
+              <component
+                :is="audiobook.inLibrary ? 'button' : 'div'"
+                :type="audiobook.inLibrary ? 'button' : undefined"
                 class="monitored-badge"
-                :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+                :class="{
+                  unmonitored: !audiobook.inLibrary || !audiobook.monitored,
+                  toggleable: audiobook.inLibrary,
+                }"
+                :title="getMonitoringToggleTitle(audiobook)"
+                :disabled="audiobook.inLibrary && monitoringToggleBusy.has(audiobook.id)"
+                @click.stop="toggleAudiobookMonitored(audiobook)"
               >
                 <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
                 {{ getMonitoringLabel(audiobook) }}
-              </div>
+              </component>
             </div>
 
             <div class="list-actions">
@@ -606,15 +614,23 @@
                     <PhStar />
                     {{ getQualityProfileName(audiobook.qualityProfileId) }}
                   </div>
-                  <div
+                  <component
+                    :is="audiobook.inLibrary ? 'button' : 'div'"
+                    :type="audiobook.inLibrary ? 'button' : undefined"
                     class="monitored-badge"
-                    :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+                    :class="{
+                      unmonitored: !audiobook.inLibrary || !audiobook.monitored,
+                      toggleable: audiobook.inLibrary,
+                    }"
+                    :title="getMonitoringToggleTitle(audiobook)"
+                    :disabled="audiobook.inLibrary && monitoringToggleBusy.has(audiobook.id)"
+                    @click.stop="toggleAudiobookMonitored(audiobook)"
                   >
                     <component
                       :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash"
                     />
                     {{ getMonitoringLabel(audiobook) }}
-                  </div>
+                  </component>
                 </div>
               </div>
               <!-- Bottom placard (only show when item details are enabled) -->
@@ -2380,6 +2396,36 @@ function getMonitoringLabel(audiobook: CollectionDisplayItem): string {
   return audiobook.monitored ? 'Monitored' : 'Unmonitored'
 }
 
+function getMonitoringToggleTitle(audiobook: CollectionDisplayItem): string | undefined {
+  if (!audiobook.inLibrary) return undefined
+  return audiobook.monitored ? 'Stop monitoring this book' : 'Monitor this book'
+}
+
+// The badge is the toggle. Ids in flight keep a double-click from racing two
+// opposite writes; the store shows the flip at once and puts it back on failure.
+const monitoringToggleBusy = ref(new Set<number>())
+
+async function toggleAudiobookMonitored(audiobook: CollectionDisplayItem) {
+  if (!audiobook.inLibrary || monitoringToggleBusy.value.has(audiobook.id)) return
+  monitoringToggleBusy.value = new Set(monitoringToggleBusy.value).add(audiobook.id)
+  try {
+    await libraryStore.setMonitored(audiobook.id, !audiobook.monitored)
+  } catch (e) {
+    toast.error(
+      'Monitoring not updated',
+      `${audiobook.title} was left ${audiobook.monitored ? 'monitored' : 'unmonitored'}.`,
+    )
+    errorTracking.captureException(e as Error, {
+      component: 'CollectionView',
+      operation: 'toggleAudiobookMonitored',
+    })
+  } finally {
+    const next = new Set(monitoringToggleBusy.value)
+    next.delete(audiobook.id)
+    monitoringToggleBusy.value = next
+  }
+}
+
 function handleCheckboxKeydown(audiobook: CollectionDisplayItem, event: KeyboardEvent) {
   if (!audiobook.inLibrary) return
   if (event.key === ' ') {
@@ -3790,6 +3836,32 @@ defineExpose({
   flex-shrink: 0;
 }
 
+/* The badge doubles as the toggle for a library book; a button inherits none of
+   the badge's type, so it is restated here. */
+.monitored-badge.toggleable {
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.monitored-badge.toggleable:hover:not(:disabled) {
+  background-color: rgba(46, 204, 113, 0.32);
+  border-color: rgba(46, 204, 113, 0.6);
+}
+
+.monitored-badge.toggleable.unmonitored:hover:not(:disabled) {
+  background-color: rgba(148, 163, 184, 0.28);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.monitored-badge.toggleable:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
 .action-buttons {
   position: absolute;
   top: 8px;
@@ -4288,6 +4360,32 @@ defineExpose({
 .monitored-badge i {
   font-size: 12px;
   flex-shrink: 0;
+}
+
+/* The badge doubles as the toggle for a library book; a button inherits none of
+   the badge's type, so it is restated here. */
+.monitored-badge.toggleable {
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.monitored-badge.toggleable:hover:not(:disabled) {
+  background-color: rgba(46, 204, 113, 0.32);
+  border-color: rgba(46, 204, 113, 0.6);
+}
+
+.monitored-badge.toggleable.unmonitored:hover:not(:disabled) {
+  background-color: rgba(148, 163, 184, 0.28);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.monitored-badge.toggleable:disabled {
+  cursor: progress;
+  opacity: 0.7;
 }
 
 .monitored-badge.unmonitored {
