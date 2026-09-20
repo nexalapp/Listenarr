@@ -47,22 +47,34 @@ namespace Listenarr.Application.FoundBooks.Services
             new(failure, error, null, []);
     }
 
+    /// <summary>A person's Add as the import worker will run it, kept on the row.</summary>
+    /// <param name="RequestJson">The request, serialised by <see cref="FoundBookImportService"/>.</param>
+    /// <param name="Attempt">How many runs this one is; the first is 1.</param>
+    /// <param name="NotBefore">A retry after a transient failure waits until here.</param>
+    public sealed record FoundBookQueuedImport(string RequestJson, int Attempt, DateTime? NotBefore);
+
     public interface IFoundBookDecisionService
     {
         Task<FoundBookDecisionResult> IgnoreAsync(int id, CancellationToken cancellationToken = default);
         Task<FoundBookDecisionResult> RestoreAsync(int id, CancellationToken cancellationToken = default);
 
-        /// <summary>Mark a row as being imported so a scan in the meantime leaves it alone.</summary>
-        Task<FoundBookDecisionResult> BeginImportAsync(int id, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Mark a row as being imported so a scan in the meantime leaves it alone. With
+        /// a <paramref name="queued"/> request the row is also the import worker's
+        /// queue entry; without one the caller is importing it right now.
+        /// </summary>
+        Task<FoundBookDecisionResult> BeginImportAsync(int id, FoundBookQueuedImport? queued = null, CancellationToken cancellationToken = default);
 
-        Task<FoundBookDecisionResult> AbortImportAsync(int id, CancellationToken cancellationToken = default);
+        /// <summary>Put the row back, with why the import did not happen.</summary>
+        Task<FoundBookDecisionResult> AbortImportAsync(int id, string? error = null, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Put back every row still marked importing. An import runs inside one
-        /// process and puts its own row back when it fails; a row found importing at
-        /// startup belonged to a process that did not get to. Returns the ids reset.
+        /// Put back every row that has been importing with no queued request for longer
+        /// than <paramref name="olderThan"/>. Such a row belongs to an import running
+        /// in this process; one that has outlived any import, or is found at startup
+        /// when none is running, was stranded. Returns the ids reset.
         /// </summary>
-        Task<IReadOnlyList<int>> RecoverStrandedImportsAsync(CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<int>> RecoverStrandedImportsAsync(TimeSpan olderThan, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// After the manual import moved the audio: confirm it is gone, clear what it
@@ -103,26 +115,55 @@ namespace Listenarr.Application.FoundBooks.Services
                 row.BlockedReason = "Restored; offered again after the next scan.";
             });
 
-        public Task<FoundBookDecisionResult> BeginImportAsync(int id, CancellationToken cancellationToken = default) =>
-            TransitionAsync(id, [FoundBookState.Pending], FoundBookState.Importing, cancellationToken);
+        public Task<FoundBookDecisionResult> BeginImportAsync(int id, FoundBookQueuedImport? queued = null, CancellationToken cancellationToken = default) =>
+            TransitionAsync(id, [FoundBookState.Pending], FoundBookState.Importing, cancellationToken, row =>
+            {
+                row.ImportStartedAt = timeProvider.GetUtcNow().UtcDateTime;
+                row.ImportRequestJson = queued?.RequestJson;
+                row.ImportNotBefore = queued?.NotBefore;
+                row.ImportAttempts = queued?.Attempt ?? 0;
+            });
 
-        public Task<FoundBookDecisionResult> AbortImportAsync(int id, CancellationToken cancellationToken = default) =>
-            TransitionAsync(id, [FoundBookState.Importing], FoundBookState.Pending, cancellationToken);
+        public Task<FoundBookDecisionResult> AbortImportAsync(int id, string? error = null, CancellationToken cancellationToken = default) =>
+            TransitionAsync(id, [FoundBookState.Importing], FoundBookState.Pending, cancellationToken, row =>
+            {
+                ClearImport(row);
+                row.LastImportError = Truncate(error);
+            });
 
-        public async Task<IReadOnlyList<int>> RecoverStrandedImportsAsync(CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<int>> RecoverStrandedImportsAsync(TimeSpan olderThan, CancellationToken cancellationToken = default)
         {
+            var cutoff = timeProvider.GetUtcNow().UtcDateTime - olderThan;
             var stranded = (await repository.GetAllAsync(cancellationToken))
-                .Where(row => row.State == FoundBookState.Importing)
+                .Where(row => row.State == FoundBookState.Importing
+                    && row.ImportRequestJson == null
+                    && (row.ImportStartedAt ?? DateTime.MinValue) <= cutoff)
                 .Select(row => row.Id)
                 .ToList();
             foreach (var id in stranded)
             {
-                await repository.UpdateAsync(id, row => row.State = FoundBookState.Pending, cancellationToken);
+                await repository.UpdateAsync(id, row =>
+                {
+                    row.State = FoundBookState.Pending;
+                    ClearImport(row);
+                    row.LastImportError = "The import was interrupted before it finished; nothing was imported.";
+                }, cancellationToken);
                 logger.LogWarning("Found book {Id} was left importing by an earlier run; offered again", id);
             }
 
             return stranded;
         }
+
+        private static void ClearImport(FoundBook row)
+        {
+            row.ImportStartedAt = null;
+            row.ImportRequestJson = null;
+            row.ImportNotBefore = null;
+            row.ImportAttempts = 0;
+        }
+
+        private static string? Truncate(string? error) =>
+            error == null || error.Length <= 1000 ? error : error[..1000];
 
         public async Task<FoundBookDecisionResult> FinishImportAsync(int id, int audiobookId, bool autoAdded = false, CancellationToken cancellationToken = default)
         {
@@ -144,7 +185,12 @@ namespace Listenarr.Application.FoundBooks.Services
                 // The import did not take everything. The row goes back to Pending so
                 // the operator sees exactly what is still here, rather than cleanup
                 // deleting companions from under a book that is still on disk.
-                await repository.UpdateAsync(id, r => r.State = FoundBookState.Pending, cancellationToken);
+                await repository.UpdateAsync(id, r =>
+                {
+                    r.State = FoundBookState.Pending;
+                    ClearImport(r);
+                    r.LastImportError = $"{remaining.Count} audio file(s) are still in the watch folder after the import.";
+                }, cancellationToken);
                 return FoundBookDecisionResult.Fail(
                     FoundBookDecisionFailure.FilesRemain,
                     $"{remaining.Count} audio file(s) are still in the watch folder.");
@@ -167,6 +213,8 @@ namespace Listenarr.Application.FoundBooks.Services
                 r.LibraryStatus = FoundBookLibraryStatus.InLibrary;
                 r.AutoAdded = autoAdded;
                 r.DecidedAt = now;
+                ClearImport(r);
+                r.LastImportError = null;
             }, cancellationToken);
 
             await RecordAsync(new History

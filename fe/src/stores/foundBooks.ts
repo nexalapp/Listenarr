@@ -18,6 +18,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { apiService } from '@/services/api'
+import { describeApiError } from '@/utils/apiError'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
@@ -436,10 +437,12 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
   }
 
   /**
-   * Add one found book to the library. One server-side call does the whole
-   * sequence - mark the row, add or reuse the record, move the files, finish - and
-   * puts the row back itself if any step fails, so nothing here has to run after a
-   * failure for the row to be recoverable. What comes back is the row as it stands.
+   * Add one found book to the library. The server queues it and the import worker
+   * does the rest - add or reuse the record, move the files, finish the row - and
+   * puts the row back with the reason if anything fails, retrying a database outage
+   * first. Nothing here has to run after this call for the row to end up right: the
+   * outcome arrives on the row over FoundBooksChanged, and a reload shows it.
+   * Resolves true when the import was queued.
    */
   async function add(id: number, rootFolderPath: string, monitored: boolean): Promise<boolean> {
     const item = items.value.find((candidate) => candidate.id === id)
@@ -455,22 +458,17 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
         separateBook: state.separateBook,
       })
       if (result.book) replaceItem(result.book)
-      if (!result.success) {
+      if (!result.queued) {
         setMatchState(id, { error: result.error ?? 'Import failed' })
         return false
       }
       setMatchState(id, { selected: false })
-      if (result.skipped.length > 0) {
-        setMatchState(id, {
-          error: `Imported; ${result.skipped.length} leftover file(s) could not be removed.`,
-        })
-      }
       return true
     } catch (e) {
-      // The request itself failed - a dropped connection, a 5xx - so the server's
-      // own answer never arrived. The row is whatever the server left it; reload
-      // rather than guess.
-      setMatchState(id, { error: (e as Error)?.message ?? 'Import failed' })
+      // A refusal is a 409 whose body carries the reason; anything else means the
+      // server's answer never arrived, so the row is whatever it left it. Either way
+      // a reload is the truth.
+      setMatchState(id, { error: describeApiError(e, 'Import failed') })
       await load()
       return false
     } finally {

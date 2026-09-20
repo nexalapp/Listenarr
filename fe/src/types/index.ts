@@ -1897,6 +1897,10 @@ export interface FoundBook {
   heardAuthor?: string | null
   heardNarrator?: string | null
   heardAt?: string | null
+  /** When the row entered Importing; null otherwise. */
+  importStartedAt?: string | null
+  /** Why the last import of this row failed; cleared by the next success. */
+  lastImportError?: string | null
 }
 
 export interface FoundBookListenResponse {
@@ -1937,12 +1941,13 @@ export type FoundBookImportFailure =
   | 'FinishFailed'
   | 'Persistence'
 
-/** The outcome of a server-side import; `book` is the row as it stands now, whatever happened. */
+/**
+ * Whether the import was queued; `book` is the row as it stands either way. The
+ * outcome itself arrives later on the row, over the FoundBooksChanged event.
+ */
 export interface FoundBookImportResponse {
-  success: boolean
-  audiobookId: number | null
+  queued: boolean
   failure: FoundBookImportFailure | null
   error: string | null
-  skipped: string[]
   book: FoundBook | null
 }

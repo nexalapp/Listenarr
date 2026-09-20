@@ -23,7 +23,6 @@ const getFoundBooks = vi.fn()
 const getFoundWatchFolders = vi.fn()
 const scanFoundBooks = vi.fn()
 const foundBookDecision = vi.fn()
-const finishFoundBookImport = vi.fn()
 const importFoundBook = vi.fn()
 const advancedSearch = vi.fn()
 const setFoundBookMatch = vi.fn()
@@ -40,7 +39,6 @@ vi.mock('@/services/api', () => ({
     getFoundWatchFolders,
     scanFoundBooks,
     foundBookDecision,
-    finishFoundBookImport,
     importFoundBook,
     advancedSearch,
     setFoundBookMatch,
@@ -137,17 +135,11 @@ describe('found books store', () => {
       }),
       skipped: [],
     }))
-    finishFoundBookImport.mockResolvedValue({
-      book: book({ state: 'Imported', matchedAudiobookId: 42 }),
-      skipped: [],
-    })
     importFoundBook.mockResolvedValue({
-      success: true,
-      audiobookId: 42,
+      queued: true,
       failure: null,
       error: null,
-      skipped: [],
-      book: book({ state: 'Imported', matchedAudiobookId: 42 }),
+      book: book({ state: 'Importing' }),
     })
   })
 
@@ -234,7 +226,7 @@ describe('found books store', () => {
     expect(store.addableItems).toHaveLength(0)
   })
 
-  it('imports in one server-side call with the chosen match, root and options', async () => {
+  it('queues the import server-side with the chosen match, root and options', async () => {
     const { useFoundBooksStore } = await import('@/stores/foundBooks')
     const store = useFoundBooksStore()
     await store.load()
@@ -252,17 +244,15 @@ describe('found books store', () => {
     })
     expect(foundBookDecision).not.toHaveBeenCalled()
     expect(startManualImport).not.toHaveBeenCalled()
-    expect(store.items[0]?.state).toBe('Imported')
+    expect(store.items[0]?.state).toBe('Importing')
     expect(store.matchState(1).selected).toBe(false)
   })
 
-  it("keeps the server's reason and the row it handed back when the import fails", async () => {
+  it('keeps the reason and the row the server handed back when it refuses to queue', async () => {
     importFoundBook.mockResolvedValue({
-      success: false,
-      audiobookId: null,
-      failure: 'Persistence',
-      error: 'The database was unavailable, so the import stopped; nothing was imported.',
-      skipped: [],
+      queued: false,
+      failure: 'NoMatch',
+      error: 'Choose a catalogue match for this book first.',
       book: book({ state: 'Pending' }),
     })
     const { useFoundBooksStore } = await import('@/stores/foundBooks')
@@ -274,7 +264,26 @@ describe('found books store', () => {
 
     expect(ok).toBe(false)
     expect(store.items[0]?.state).toBe('Pending')
-    expect(store.matchState(1).error).toContain('database was unavailable')
+    expect(store.matchState(1).error).toContain('catalogue match')
+  })
+
+  it('reads the reason out of a refusal and reloads', async () => {
+    const refusal = Object.assign(new Error('API error: 409'), {
+      status: 409,
+      body: JSON.stringify({ queued: false, failure: 'WrongState', error: 'The book is Ignored.' }),
+    })
+    importFoundBook.mockRejectedValue(refusal)
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+    await store.load()
+    await flush()
+    getFoundBooks.mockClear()
+
+    const ok = await store.add(1, '/library', true)
+
+    expect(ok).toBe(false)
+    expect(getFoundBooks).toHaveBeenCalledTimes(1)
+    expect(store.matchState(1).error).toBe('The book is Ignored.')
   })
 
   it('reloads rather than guesses when the request itself fails', async () => {
@@ -290,24 +299,6 @@ describe('found books store', () => {
     expect(ok).toBe(false)
     expect(getFoundBooks).toHaveBeenCalledTimes(1)
     expect(store.matchState(1).error).toContain('network down')
-  })
-
-  it('surfaces leftovers the finish could not remove', async () => {
-    importFoundBook.mockResolvedValue({
-      success: true,
-      audiobookId: 42,
-      failure: null,
-      error: null,
-      skipped: ['cover.jpg'],
-      book: book({ state: 'Imported', matchedAudiobookId: 42 }),
-    })
-    const { useFoundBooksStore } = await import('@/stores/foundBooks')
-    const store = useFoundBooksStore()
-    await store.load()
-    await flush()
-
-    expect(await store.add(1, '/library', true)).toBe(true)
-    expect(store.matchState(1).error).toContain('1 leftover file(s)')
   })
 
   it('refuses to add without a match', async () => {

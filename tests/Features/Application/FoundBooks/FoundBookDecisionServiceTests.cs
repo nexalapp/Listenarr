@@ -232,21 +232,73 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         }
 
         [Fact]
-        public async Task RecoverStrandedImports_PutsBackOnlyTheRowsLeftImporting()
+        public async Task RecoverStrandedImports_PutsBackOnlyTheRowsLeftImportingWithNoQueuedRequest()
         {
             var a = await Write("A/01.mp3");
             var b = await Write("B/01.mp3");
             var c = await Write("C/01.mp3");
+            var d = await Write("D/01.mp3");
             var stranded = await Row(Path.Join(_watch, "A"), [(a, true)], state: FoundBookState.Importing);
             var pending = await Row(Path.Join(_watch, "B"), [(b, true)]);
             var ignored = await Row(Path.Join(_watch, "C"), [(c, true)], state: FoundBookState.Ignored);
+            var queued = await Row(Path.Join(_watch, "D"), [(d, true)], state: FoundBookState.Importing);
+            await _repository.UpdateAsync(queued.Id, r => r.ImportRequestJson = "{}");
 
-            var reset = await BuildService().RecoverStrandedImportsAsync();
+            var reset = await BuildService().RecoverStrandedImportsAsync(TimeSpan.Zero);
 
             Assert.Equal([stranded.Id], reset);
-            Assert.Equal(FoundBookState.Pending, (await _repository.GetAsync(stranded.Id))!.State);
+            var recovered = (await _repository.GetAsync(stranded.Id))!;
+            Assert.Equal(FoundBookState.Pending, recovered.State);
+            Assert.Contains("interrupted", recovered.LastImportError);
             Assert.Equal(FoundBookState.Pending, (await _repository.GetAsync(pending.Id))!.State);
             Assert.Equal(FoundBookState.Ignored, (await _repository.GetAsync(ignored.Id))!.State);
+            // The worker resumes a queued request; recovery must not take it away.
+            Assert.Equal(FoundBookState.Importing, (await _repository.GetAsync(queued.Id))!.State);
+        }
+
+        [Fact]
+        public async Task RecoverStrandedImports_LeavesAnImportYoungerThanTheAge()
+        {
+            var a = await Write("A/01.mp3");
+            var running = await Row(Path.Join(_watch, "A"), [(a, true)], state: FoundBookState.Importing);
+            await _repository.UpdateAsync(running.Id, r => r.ImportStartedAt = DateTime.UtcNow.AddMinutes(-5));
+
+            var reset = await BuildService().RecoverStrandedImportsAsync(TimeSpan.FromHours(1));
+
+            Assert.Empty(reset);
+            Assert.Equal(FoundBookState.Importing, (await _repository.GetAsync(running.Id))!.State);
+        }
+
+        [Fact]
+        public async Task BeginAbortAndFinish_KeepTheImportFieldsInStep()
+        {
+            var a = await Write("A/01.mp3");
+            var row = await Row(Path.Join(_watch, "A"), [(a, true)]);
+            var service = BuildService();
+
+            var begun = await service.BeginImportAsync(row.Id, new FoundBookQueuedImport("{\"asin\":\"X\"}", 2, DateTime.UtcNow.AddMinutes(1)));
+            Assert.True(begun.Success, begun.Error);
+            Assert.NotNull(begun.Book!.ImportStartedAt);
+            Assert.Equal("{\"asin\":\"X\"}", begun.Book.ImportRequestJson);
+            Assert.Equal(2, begun.Book.ImportAttempts);
+            Assert.NotNull(begun.Book.ImportNotBefore);
+
+            var aborted = await service.AbortImportAsync(row.Id, "disk full");
+            Assert.True(aborted.Success, aborted.Error);
+            Assert.Equal(FoundBookState.Pending, aborted.Book!.State);
+            Assert.Null(aborted.Book.ImportStartedAt);
+            Assert.Null(aborted.Book.ImportRequestJson);
+            Assert.Null(aborted.Book.ImportNotBefore);
+            Assert.Equal(0, aborted.Book.ImportAttempts);
+            Assert.Equal("disk full", aborted.Book.LastImportError);
+
+            // A second begin, then a finish with the file gone, clears the error too.
+            await service.BeginImportAsync(row.Id);
+            File.Delete(a);
+            var finished = await service.FinishImportAsync(row.Id, 42);
+            Assert.True(finished.Success, finished.Error);
+            Assert.Null(finished.Book!.LastImportError);
+            Assert.Null(finished.Book.ImportStartedAt);
         }
     }
 }

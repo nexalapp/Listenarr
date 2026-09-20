@@ -87,6 +87,8 @@ internal static class WorkerRegistrationExtensions
             FoundBookScanProcessor,
             IFoundBookScanProcessor,
             FoundBookScanBackgroundService>(services);
+        // The imports a person queues from the Found tab; the row is the queue.
+        services.AddHostedService<FoundBookImportBackgroundService>();
 
         // Suggested: one missing author or series catalog per interval, so the cache
         // fills without the burst a refresh makes.

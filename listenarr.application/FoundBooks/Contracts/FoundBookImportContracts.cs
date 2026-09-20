@@ -58,6 +58,10 @@ namespace Listenarr.Application.FoundBooks.Contracts
         public static FoundBookImportResult Ok(int audiobookId, FoundBook book, IReadOnlyList<string>? skipped = null) =>
             new(FoundBookImportFailure.None, null, audiobookId, book, skipped ?? []);
 
+        /// <summary>Accepted and queued: no audiobook yet, the row now importing.</summary>
+        public static FoundBookImportResult Queued(FoundBook book) =>
+            new(FoundBookImportFailure.None, null, null, book, []);
+
         public static FoundBookImportResult Fail(FoundBookImportFailure failure, string error, FoundBook? book = null) =>
             new(failure, error, null, book, []);
     }
@@ -71,8 +75,12 @@ namespace Listenarr.Application.FoundBooks.Contracts
     /// </summary>
     public interface ILibraryDestinationPlanner
     {
-        Task<string> PlanBookFolderAsync(AudibleBookMetadata metadata, string rootPath, CancellationToken cancellationToken = default);
+        Task<LibraryDestinationPlan> PlanBookFolderAsync(AudibleBookMetadata metadata, string rootPath, CancellationToken cancellationToken = default);
     }
+
+    /// <param name="FullPath">The folder, under the root.</param>
+    /// <param name="RelativePath">The part the naming pattern produced; empty when the plan fell back to the root.</param>
+    public sealed record LibraryDestinationPlan(string FullPath, string RelativePath);
 
     /// <summary>
     /// The one sequence that takes a found book into the library: mark the row,
@@ -97,8 +105,34 @@ namespace Listenarr.Application.FoundBooks.Contracts
     /// <param name="SeparateBook">Add as its own record even if the library already holds the ASIN.</param>
     public sealed record FoundBookManualImportRequest(string? Asin, string? RootPath, bool Monitored, bool SeparateBook);
 
+    /// <summary>What one pass of the import worker did, and when it next has something to do.</summary>
+    public sealed record FoundBookImportDrain(int Ran, DateTime? NextDueAt);
+
+    /// <summary>
+    /// A person's Add, as a queue the row itself holds. Queueing marks the row and
+    /// keeps the request on it; the worker runs whatever is due, retries a transient
+    /// failure a few times with a wait between, and leaves a final failure on the
+    /// row for the person to read. Nothing depends on the request that queued it
+    /// staying open, and a restart resumes what was queued.
+    /// </summary>
     public interface IFoundBookImportService
     {
-        Task<FoundBookImportResult> ImportAsync(int id, FoundBookManualImportRequest request, CancellationToken cancellationToken = default);
+        /// <summary>
+        /// Queue the import. Success means accepted, with the row now importing; a
+        /// refusal leaves the row untouched.
+        /// </summary>
+        Task<FoundBookImportResult> EnqueueAsync(int id, FoundBookManualImportRequest request, CancellationToken cancellationToken = default);
+
+        /// <summary>Run every queued request whose time has come, oldest first.</summary>
+        Task<FoundBookImportDrain> RunDueAsync(CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>How the queue tells its worker there is something to do.</summary>
+    public interface IFoundBookImportSignal
+    {
+        void Wake();
+
+        /// <summary>Waits for a wake or the timeout; true when woken.</summary>
+        Task<bool> WaitAsync(TimeSpan timeout, CancellationToken cancellationToken = default);
     }
 }

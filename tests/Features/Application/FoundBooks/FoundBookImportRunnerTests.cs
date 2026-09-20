@@ -37,6 +37,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         private readonly Mock<ILibraryDestinationPlanner> _planner = new();
         private readonly FakeImporter _importer = new();
         private readonly List<string> _states = [];
+        private readonly List<string?> _abortErrors = [];
 
         private static readonly FoundBook Row = new()
         {
@@ -60,17 +61,17 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         public override async Task InitializeAsync()
         {
             await base.InitializeAsync();
-            _decisions.Setup(d => d.BeginImportAsync(Row.Id, It.IsAny<CancellationToken>()))
+            _decisions.Setup(d => d.BeginImportAsync(Row.Id, null, It.IsAny<CancellationToken>()))
                 .Callback(() => _states.Add("begin"))
                 .ReturnsAsync(FoundBookDecisionResult.Ok(new FoundBook { Id = Row.Id, State = FoundBookState.Importing }));
-            _decisions.Setup(d => d.AbortImportAsync(Row.Id, It.IsAny<CancellationToken>()))
-                .Callback(() => _states.Add("abort"))
+            _decisions.Setup(d => d.AbortImportAsync(Row.Id, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .Callback((int _, string? error, CancellationToken _) => { _states.Add("abort"); _abortErrors.Add(error); })
                 .ReturnsAsync(FoundBookDecisionResult.Ok(new FoundBook { Id = Row.Id, State = FoundBookState.Pending }));
             _decisions.Setup(d => d.FinishImportAsync(Row.Id, It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .Callback(() => _states.Add("finish"))
                 .ReturnsAsync(FoundBookDecisionResult.Ok(new FoundBook { Id = Row.Id, State = FoundBookState.Imported }, ["cover.jpg"]));
             _planner.Setup(p => p.PlanBookFolderAsync(It.IsAny<AudibleBookMetadata>(), "/library", It.IsAny<CancellationToken>()))
-                .ReturnsAsync("/library/Hugh Howey/Wool");
+                .ReturnsAsync(new LibraryDestinationPlan("/library/Hugh Howey/Wool", "Hugh Howey/Wool"));
             GivenAdd(new LibraryAddOperationResult { Added = true, Audiobook = new Audiobook { Id = 42, Title = "Wool" } });
         }
 
@@ -117,7 +118,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         [Fact]
         public async Task RowNotOffered_IsRefusedBeforeAnythingIsAdded()
         {
-            _decisions.Setup(d => d.BeginImportAsync(Row.Id, It.IsAny<CancellationToken>()))
+            _decisions.Setup(d => d.BeginImportAsync(Row.Id, null, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(FoundBookDecisionResult.Fail(FoundBookDecisionFailure.WrongState, "The book is Ignored."));
 
             var result = await Build().RunAsync(Row, Metadata, Manual());
@@ -137,6 +138,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             Assert.Equal(FoundBookImportFailure.AddRefused, result.Failure);
             Assert.Contains("DestinationPath is invalid", result.Error);
             Assert.Equal(["begin", "abort"], _states);
+            Assert.Equal([result.Error], _abortErrors);
             Assert.Equal(FoundBookState.Pending, result.Book!.State);
             Assert.Empty(_importer.Calls);
         }
@@ -164,6 +166,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             Assert.Contains("database was unavailable", result.Error);
             Assert.Contains("nothing was imported", result.Error);
             Assert.Equal(["begin", "abort"], _states);
+            Assert.Equal([result.Error], _abortErrors);
             Assert.Equal(FoundBookState.Pending, result.Book!.State);
         }
 
@@ -184,7 +187,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         {
             _importer.Fail = "disk full";
             var attempts = 0;
-            _decisions.Setup(d => d.AbortImportAsync(Row.Id, It.IsAny<CancellationToken>()))
+            _decisions.Setup(d => d.AbortImportAsync(Row.Id, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
                     attempts++;
@@ -239,7 +242,18 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             var result = await Build().RunAsync(Row, Metadata, Manual());
 
             Assert.Equal(FoundBookImportFailure.FinishFailed, result.Failure);
-            _decisions.Verify(d => d.AbortImportAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+            _decisions.Verify(d => d.AbortImportAsync(It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task AQueuedRow_IsAlreadyImporting_AndIsNotMarkedAgain()
+        {
+            var queued = new FoundBook { Id = Row.Id, BookFolder = Row.BookFolder, FilesJson = Row.FilesJson, State = FoundBookState.Importing, ImportRequestJson = "{}" };
+
+            var result = await Build().RunAsync(queued, Metadata, Manual());
+
+            Assert.True(result.Success, result.Error);
+            Assert.Equal(["finish"], _states);
         }
 
         [Fact]

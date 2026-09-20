@@ -19,10 +19,28 @@ using Listenarr.Application.FoundBooks.Contracts;
 
 namespace Listenarr.Application.FoundBooks.Services
 {
-    /// <summary>The planner a host registers when it has no naming service: the root itself.</summary>
-    public sealed class RootLibraryDestinationPlanner : ILibraryDestinationPlanner
+    /// <summary>
+    /// One flag, set by whoever queues and cleared by the worker when it looks. A wake
+    /// that arrives while the worker is busy is not lost: the flag stays set and the
+    /// next wait returns at once.
+    /// </summary>
+    public sealed class FoundBookImportSignal : IFoundBookImportSignal
     {
-        public Task<LibraryDestinationPlan> PlanBookFolderAsync(AudibleBookMetadata metadata, string rootPath, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new LibraryDestinationPlan(rootPath, string.Empty));
+        private readonly SemaphoreSlim _wake = new(0, 1);
+
+        public void Wake()
+        {
+            try
+            {
+                _wake.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Already signalled; one wake is as good as many.
+            }
+        }
+
+        public Task<bool> WaitAsync(TimeSpan timeout, CancellationToken cancellationToken = default) =>
+            _wake.WaitAsync(timeout, cancellationToken);
     }
 }

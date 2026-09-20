@@ -18,20 +18,20 @@
 using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Domain.Common;
 
-namespace Listenarr.Api.Features.FoundBooks
+namespace Listenarr.Api.Features.Library
 {
     /// <summary>
-    /// The folder a found book's record is created with: the same answer the Add
-    /// modal's path preview gives, so an import from the Found tab and one from the
-    /// modal record the same base path. Falls back to the root when the pattern
-    /// cannot be applied, so an add is never blocked on it.
+    /// The folder a record is created with under a root: the naming pattern applied
+    /// to the book's metadata. One answer for the Add modal's path preview and for a
+    /// found book's import, so both record the same base path. Falls back to the
+    /// root when the pattern cannot be applied, so an add is never blocked on it.
     /// </summary>
-    public sealed class FoundBookLibraryDestinationPlanner(
+    public sealed class LibraryDestinationPlanner(
         IConfigurationService configurationService,
         IFileNamingService fileNamingService,
-        ILogger<FoundBookLibraryDestinationPlanner> logger) : ILibraryDestinationPlanner
+        ILogger<LibraryDestinationPlanner> logger) : ILibraryDestinationPlanner
     {
-        public async Task<string> PlanBookFolderAsync(AudibleBookMetadata metadata, string rootPath, CancellationToken cancellationToken = default)
+        public async Task<LibraryDestinationPlan> PlanBookFolderAsync(AudibleBookMetadata metadata, string rootPath, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(metadata);
             try
@@ -52,12 +52,14 @@ namespace Listenarr.Api.Features.FoundBooks
                     namingPattern,
                     fileNamingService);
                 var planned = FileUtils.CombineWithOptionalBase(rootPath, relativePath);
-                return string.IsNullOrWhiteSpace(planned) ? rootPath : planned;
+                return string.IsNullOrWhiteSpace(planned)
+                    ? new LibraryDestinationPlan(rootPath, string.Empty)
+                    : new LibraryDestinationPlan(planned, relativePath);
             }
             catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not StackOverflowException)
             {
                 logger.LogWarning(ex, "Could not plan a folder for {Asin} under {Root}; using the root", metadata.Asin, rootPath);
-                return rootPath;
+                return new LibraryDestinationPlan(rootPath, string.Empty);
             }
         }
     }

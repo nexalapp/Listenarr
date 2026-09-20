@@ -52,12 +52,17 @@ namespace Listenarr.Application.FoundBooks.Services
                 return FoundBookImportResult.Fail(FoundBookImportFailure.Unavailable, "No importer is available in this host.");
             }
 
-            var begun = await decisions.BeginImportAsync(row.Id, cancellationToken);
-            if (!begun.Success)
+            // A queued request arrives already importing: the row was marked when it
+            // was queued, so a restart in between finds it. Anything else is marked here.
+            if (row.State != FoundBookState.Importing)
             {
-                return FoundBookImportResult.Fail(
-                    begun.Failure == FoundBookDecisionFailure.NotFound ? FoundBookImportFailure.NotFound : FoundBookImportFailure.WrongState,
-                    begun.Error ?? "The book cannot be imported in its current state.");
+                var begun = await decisions.BeginImportAsync(row.Id, null, cancellationToken);
+                if (!begun.Success)
+                {
+                    return FoundBookImportResult.Fail(
+                        begun.Failure == FoundBookDecisionFailure.NotFound ? FoundBookImportFailure.NotFound : FoundBookImportFailure.WrongState,
+                        begun.Error ?? "The book cannot be imported in its current state.");
+                }
             }
 
             try
@@ -67,19 +72,17 @@ namespace Listenarr.Application.FoundBooks.Services
             catch (Exception ex) when (ex is not OperationCanceledException && WorkerExceptionClassifier.IsNonFatal(ex))
             {
                 logger.LogError(ex, "Import of found book {Id} failed", row.Id);
-                var book = await AbortAsync(row.Id, cancellationToken);
-                return IsPersistenceFailure(ex)
-                    ? FoundBookImportResult.Fail(
-                        FoundBookImportFailure.Persistence,
-                        "The database was unavailable, so the import stopped; nothing was imported. Try again in a moment.",
-                        book)
-                    : FoundBookImportResult.Fail(FoundBookImportFailure.ImportFailed, ex.Message, book);
+                var (failure, error) = IsPersistenceFailure(ex)
+                    ? (FoundBookImportFailure.Persistence, "The database was unavailable, so the import stopped; nothing was imported. Try again in a moment.")
+                    : (FoundBookImportFailure.ImportFailed, ex.Message);
+                var book = await AbortAsync(row.Id, error, cancellationToken);
+                return FoundBookImportResult.Fail(failure, error, book);
             }
             catch (OperationCanceledException)
             {
                 // A cancelled request must not leave the row importing forever; the
                 // abort gets a token of its own because the caller's is already signalled.
-                await AbortAsync(row.Id, CancellationToken.None);
+                await AbortAsync(row.Id, "The import was cancelled before it finished.", CancellationToken.None);
                 throw;
             }
         }
@@ -95,7 +98,7 @@ namespace Listenarr.Application.FoundBooks.Services
             {
                 Metadata = metadata,
                 Monitored = options.Monitored,
-                DestinationPath = destination,
+                DestinationPath = destination.FullPath,
                 AllowDuplicateEdition = options.AllowDuplicateEdition,
                 HistorySource = HistorySource
             }, cancellationToken);
@@ -103,11 +106,8 @@ namespace Listenarr.Application.FoundBooks.Services
             var audiobook = add.Audiobook;
             if (audiobook == null || (!add.Added && !add.AlreadyExists))
             {
-                var book = await AbortAsync(row.Id, cancellationToken);
-                return FoundBookImportResult.Fail(
-                    FoundBookImportFailure.AddRefused,
-                    $"Could not add the record ({add.ValidationMessage ?? add.Message}).",
-                    book);
+                var error = $"Could not add the record ({add.ValidationMessage ?? add.Message}).";
+                return FoundBookImportResult.Fail(FoundBookImportFailure.AddRefused, error, await AbortAsync(row.Id, error, cancellationToken));
             }
 
             var alreadyHasFile = !string.IsNullOrWhiteSpace(audiobook.FilePath) || (audiobook.Files?.Count ?? 0) > 0;
@@ -117,11 +117,8 @@ namespace Listenarr.Application.FoundBooks.Services
                 // library match missed it (a different spelling, most likely); a person
                 // should decide whether this is a second copy. A person's Add is that
                 // decision, so it goes on and the file joins the held record.
-                var book = await AbortAsync(row.Id, cancellationToken);
-                return FoundBookImportResult.Fail(
-                    FoundBookImportFailure.AddRefused,
-                    $"The library already holds {metadata.Asin}; left for review.",
-                    book);
+                var error = $"The library already holds {metadata.Asin}; left for review.";
+                return FoundBookImportResult.Fail(FoundBookImportFailure.AddRefused, error, await AbortAsync(row.Id, error, cancellationToken));
             }
 
             // A record that already exists is the retry case: a previous attempt got as
@@ -130,12 +127,9 @@ namespace Listenarr.Application.FoundBooks.Services
             var import = await importer.ImportAsync(row, audiobook.Id, options.IncludeCompanions, cancellationToken);
             if (!import.Success)
             {
-                var book = await AbortAsync(row.Id, cancellationToken);
-                logger.LogWarning("Import of found book {Id} into audiobook {AudiobookId} failed: {Error}", row.Id, audiobook.Id, import.Error);
-                return FoundBookImportResult.Fail(
-                    FoundBookImportFailure.ImportFailed,
-                    import.Error ?? $"{import.ImportedCount} of {import.TotalCount} files imported.",
-                    book);
+                var error = import.Error ?? $"{import.ImportedCount} of {import.TotalCount} files imported.";
+                logger.LogWarning("Import of found book {Id} into audiobook {AudiobookId} failed: {Error}", row.Id, audiobook.Id, error);
+                return FoundBookImportResult.Fail(FoundBookImportFailure.ImportFailed, error, await AbortAsync(row.Id, error, cancellationToken));
             }
 
             var finished = await decisions.FinishImportAsync(row.Id, audiobook.Id, options.AutoAdded, cancellationToken);
@@ -143,22 +137,23 @@ namespace Listenarr.Application.FoundBooks.Services
             {
                 // Finish already put the row back when files remain; any other refusal
                 // leaves it importing, which the abort undoes.
+                var error = finished.Error ?? "The import could not be finished.";
                 var book = finished.Failure == FoundBookDecisionFailure.FilesRemain
                     ? finished.Book
-                    : await AbortAsync(row.Id, cancellationToken);
-                return FoundBookImportResult.Fail(FoundBookImportFailure.FinishFailed, finished.Error ?? "The import could not be finished.", book);
+                    : await AbortAsync(row.Id, error, cancellationToken);
+                return FoundBookImportResult.Fail(FoundBookImportFailure.FinishFailed, error, book);
             }
 
             return FoundBookImportResult.Ok(audiobook.Id, finished.Book!, finished.Skipped);
         }
 
-        private async Task<FoundBook?> AbortAsync(int id, CancellationToken cancellationToken)
+        private async Task<FoundBook?> AbortAsync(int id, string error, CancellationToken cancellationToken)
         {
             for (var attempt = 0; ; attempt++)
             {
                 try
                 {
-                    var aborted = await decisions.AbortImportAsync(id, cancellationToken);
+                    var aborted = await decisions.AbortImportAsync(id, error, cancellationToken);
                     return aborted.Book;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && WorkerExceptionClassifier.IsNonFatal(ex))

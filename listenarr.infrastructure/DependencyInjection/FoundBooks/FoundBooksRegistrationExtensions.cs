@@ -41,6 +41,7 @@ internal static class FoundBooksRegistrationExtensions
         services.AddScoped<IFoundBookAutoAddService, FoundBookAutoAddService>();
         services.AddScoped<IFoundBookImportRunner, FoundBookImportRunner>();
         services.AddScoped<IFoundBookImportService, FoundBookImportService>();
+        services.AddSingleton<IFoundBookImportSignal, FoundBookImportSignal>();
         // The host that owns a manual-import workflow and a naming service replaces
         // these; a test host keeps them.
         services.TryAddScoped<IFoundBookImporter, UnavailableFoundBookImporter>();

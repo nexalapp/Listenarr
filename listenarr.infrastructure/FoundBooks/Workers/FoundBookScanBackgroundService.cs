@@ -40,7 +40,7 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
         {
             logger.LogInformation("FoundBookScanBackgroundService started");
 
-            await RecoverStrandedImportsAsync(stoppingToken);
+            await RecoverStrandedImportsAsync(TimeSpan.Zero, stoppingToken);
 
             await cycleRunner.RunPeriodicAsync(
                 nameof(FoundBookScanBackgroundService),
@@ -53,19 +53,20 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
         }
 
         /// <summary>
-        /// A row marked importing belongs to an import running in this process. At
-        /// startup there is none, so any row still marked that way was stranded by a
-        /// crash, a restart or a database outage that outlasted the import's own abort,
-        /// and would otherwise spin as "Importing…" on the Found tab forever.
+        /// A row marked importing with no queued request belongs to an import running
+        /// in this process. At startup there is none, so any such row was stranded by
+        /// a crash, a restart or a database outage that outlasted the import's own
+        /// abort, and would otherwise spin as "Importing…" on the Found tab forever.
+        /// Queued requests are not touched: the import worker resumes those.
         /// </summary>
-        private async Task RecoverStrandedImportsAsync(CancellationToken cancellationToken)
+        private async Task RecoverStrandedImportsAsync(TimeSpan olderThan, CancellationToken cancellationToken)
         {
             try
             {
                 using var scope = serviceScopeFactory.CreateScope();
                 var reset = await scope.ServiceProvider
                     .GetRequiredService<IFoundBookDecisionService>()
-                    .RecoverStrandedImportsAsync(cancellationToken);
+                    .RecoverStrandedImportsAsync(olderThan, cancellationToken);
                 if (reset.Count > 0)
                 {
                     logger.LogWarning("Reset {Count} found book(s) left importing by an earlier run", reset.Count);
@@ -84,6 +85,9 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
         IHostApplicationLifetime applicationLifetime,
         TimeProvider timeProvider) : IFoundBookScanProcessor
     {
+        /// <summary>Longer than any single import takes; a row importing past this was stranded.</summary>
+        public static readonly TimeSpan StrandedImportAge = TimeSpan.FromHours(1);
+
         private readonly SemaphoreSlim _gate = new(1, 1);
         private DateTime? _lastScanCompletedAt;
         private DateTime? _lastScanStartedAt;
@@ -151,6 +155,18 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
             {
                 _lastScanStartedAt = timeProvider.GetUtcNow().UtcDateTime;
                 using var scope = serviceScopeFactory.CreateScope();
+
+                // An import that this process is running holds its row for minutes at
+                // most; one held for longer was stranded by an abort that could not be
+                // written, and the next start would be a long time to wait for.
+                var stranded = await scope.ServiceProvider
+                    .GetRequiredService<IFoundBookDecisionService>()
+                    .RecoverStrandedImportsAsync(StrandedImportAge, cancellationToken);
+                if (stranded.Count > 0)
+                {
+                    logger.LogWarning("Reset {Count} found book(s) importing for over {Age}", stranded.Count, StrandedImportAge);
+                }
+
                 var summary = await scope.ServiceProvider
                     .GetRequiredService<IFoundBookScanService>()
                     .ScanAllAsync(cancellationToken);
