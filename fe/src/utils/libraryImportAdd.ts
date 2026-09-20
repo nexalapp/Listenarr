@@ -122,6 +122,27 @@ export async function enrichMetadata(match: SearchResult): Promise<AudibleBookMe
   }
 }
 
+/**
+ * The folder the book will live in under the chosen root, from the naming pattern:
+ * what the Add modal shows as the destination. The add records it as the book's
+ * base path from the start. Recording the bare root instead — an earlier shape of
+ * this — meant every book sat at the root until its import moved it, and a second
+ * add in that window was refused because the root was "already assigned". Falls
+ * back to the root only when the preview itself fails, so an add is never blocked
+ * on it.
+ */
+async function plannedBookFolder(
+  metadata: AudibleBookMetadata,
+  rootFolderPath: string,
+): Promise<string> {
+  try {
+    const preview = await apiService.previewLibraryPath(metadata, rootFolderPath)
+    return preview.fullPath?.trim() || rootFolderPath
+  } catch {
+    return rootFolderPath
+  }
+}
+
 export type LibraryImportAction = 'none' | 'move' | 'hardlink/copy'
 
 export interface AddAndImportRequest {
@@ -155,11 +176,11 @@ export interface AddAndImportResult {
 export async function addAndImportBook(request: AddAndImportRequest): Promise<AddAndImportResult> {
   const { match } = request
   let audiobookId: number
+  // A file-metadata import has no catalogue match to enrich or send, and is
+  // never monitored: the book is already on disk, and without an ASIN an
+  // automatic search cannot identify a release for it.
+  const metadata = match ? await enrichMetadata(match) : request.fileMetadata!
   try {
-    // A file-metadata import has no catalogue match to enrich or send, and is
-    // never monitored: the book is already on disk, and without an ASIN an
-    // automatic search cannot identify a release for it.
-    const metadata = match ? await enrichMetadata(match) : request.fileMetadata!
     const sanitizedMatch = match
       ? {
           ...match,
@@ -169,9 +190,13 @@ export async function addAndImportBook(request: AddAndImportRequest): Promise<Ad
             : match.series,
         }
       : undefined
+    const destinationPath =
+      request.action === 'none'
+        ? request.folderPath
+        : await plannedBookFolder(metadata, request.rootFolderPath)
     const { audiobook } = await apiService.addToLibrary(metadata, {
       monitored: request.monitored,
-      destinationPath: request.action === 'none' ? request.folderPath : request.rootFolderPath,
+      destinationPath,
       searchResult: sanitizedMatch,
       allowDuplicateEdition: request.separateBook,
     })
@@ -205,7 +230,9 @@ export async function addAndImportBook(request: AddAndImportRequest): Promise<Ad
         // the existing file has to belong to the audiobook's current managed folder.
         if (request.action !== 'none' && request.rootFolderPath) {
           try {
-            await apiService.updateAudiobook(audiobookId, { basePath: request.rootFolderPath })
+            await apiService.updateAudiobook(audiobookId, {
+              basePath: await plannedBookFolder(metadata, request.rootFolderPath),
+            })
           } catch {
             // Non-critical — import continues, file may go to OutputPath fallback
           }
