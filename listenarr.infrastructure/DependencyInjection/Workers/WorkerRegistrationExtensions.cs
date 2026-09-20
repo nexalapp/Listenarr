@@ -9,6 +9,7 @@
  */
 using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Infrastructure.FoundBooks.Workers;
+using Listenarr.Infrastructure.Library.Suggestions.Workers;
 using Listenarr.Infrastructure.Library.Series;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Infrastructure.Search.NzbKing;
@@ -86,6 +87,13 @@ internal static class WorkerRegistrationExtensions
             FoundBookScanProcessor,
             IFoundBookScanProcessor,
             FoundBookScanBackgroundService>(services);
+
+        // Suggested: one missing author or series catalog per interval, so the cache
+        // fills without the burst a refresh makes.
+        AddHostedProcessor<
+            SuggestionCatalogProcessor,
+            ISuggestionCatalogProcessor,
+            SuggestionCatalogBackgroundService>(services);
         return services;
     }
 

@@ -106,6 +106,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .Metadata.SetValueComparer(StringListComparer());
             builder.Property(e => e.FoundBooksScanIntervalMinutes).HasDefaultValue(60);
             builder.Property(e => e.FoundBooksAutoAdd).HasDefaultValue(false);
+            builder.Property(e => e.SuggestionsBackgroundFetchIntervalMinutes).HasDefaultValue(1);
 
             // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
             // written before this feature existed has no mapping, and that has to read

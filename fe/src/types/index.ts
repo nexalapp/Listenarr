@@ -773,6 +773,7 @@ export interface ApplicationSettings {
   foundBooksWatchFolders?: string[]
   foundBooksScanIntervalMinutes?: number
   foundBooksAutoAdd?: boolean
+  suggestionsBackgroundFetchIntervalMinutes?: number
   historyRetentionDays?: number
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean

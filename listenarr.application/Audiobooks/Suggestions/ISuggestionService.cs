@@ -31,9 +31,10 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
     /// <summary>
     /// Fills the catalog caches the suggestions are computed from. This is the only part
-    /// of the feature that goes to the network, and it runs only when asked: from the
-    /// page's refresh button, or when a book is added and its author or series has no
-    /// catalog yet.
+    /// of the feature that goes to the network. It runs when asked — from the page's
+    /// refresh button, or when a book is added and its author or series has no catalog
+    /// yet — and one name at a time from the background worker, which fills in the rest
+    /// slowly enough that a person's own searches are not throttled behind it.
     /// </summary>
     public interface ISuggestionRefreshService
     {
@@ -51,5 +52,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// on every add; it does nothing for names already covered.
         /// </summary>
         void QueueIfMissing(IEnumerable<string> authors, IEnumerable<string> series);
+
+        /// <summary>
+        /// Fetch one catalog that a refresh would fetch — the first library author or
+        /// series with none, or with a stale one — and return its name. Returns null
+        /// when nothing is missing, or when a refresh is already fetching, so the
+        /// caller never adds to a burst.
+        /// </summary>
+        Task<string?> FetchNextNeededAsync(CancellationToken cancellationToken = default);
     }
 }
