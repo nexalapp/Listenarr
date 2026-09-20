@@ -176,11 +176,11 @@ export interface AddAndImportResult {
 export async function addAndImportBook(request: AddAndImportRequest): Promise<AddAndImportResult> {
   const { match } = request
   let audiobookId: number
+  // A file-metadata import has no catalogue match to enrich or send, and is
+  // never monitored: the book is already on disk, and without an ASIN an
+  // automatic search cannot identify a release for it.
+  const metadata = match ? await enrichMetadata(match) : request.fileMetadata!
   try {
-    // A file-metadata import has no catalogue match to enrich or send, and is
-    // never monitored: the book is already on disk, and without an ASIN an
-    // automatic search cannot identify a release for it.
-    const metadata = match ? await enrichMetadata(match) : request.fileMetadata!
     const sanitizedMatch = match
       ? {
           ...match,
