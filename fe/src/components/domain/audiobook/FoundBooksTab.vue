@@ -519,7 +519,7 @@ onBeforeUnmount(() => {
 
 .ft-head {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 190px 210px 236px;
+  grid-template-columns: 34px minmax(260px, 2fr) minmax(190px, 1fr) minmax(220px, 1.2fr) 236px;
   gap: 0 16px;
   padding: 10px 22px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);

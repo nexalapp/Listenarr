@@ -24,7 +24,7 @@
   of how long a preview is.
 -->
 <template>
-  <div class="preview" :class="{ 'preview-open': isActive }">
+  <div class="preview" :class="{ 'preview-open': isActive && !compact }">
     <button
       class="btn-preview"
       :class="{ active: isActive, 'has-label': !!label }"
@@ -39,8 +39,9 @@
       <span v-if="label" class="btn-preview-label">{{ label }}</span>
     </button>
 
-    <div v-if="isActive" class="preview-bar">
+    <div v-if="isActive" class="preview-bar" :class="{ compact }">
       <input
+        v-if="!compact"
         class="preview-seek"
         type="range"
         min="0"
@@ -50,7 +51,10 @@
         :aria-label="`Seek within the ${PREVIEW_SECONDS}-second preview`"
         @input="seek"
       />
-      <span class="preview-time">{{ formatTime(currentTime) }} / {{ formatTime(seekMax) }}</span>
+      <span class="preview-time">
+        <template v-if="compact">{{ formatTime(currentTime) }}</template>
+        <template v-else>{{ formatTime(currentTime) }} / {{ formatTime(seekMax) }}</template>
+      </span>
       <button class="preview-close" title="Stop preview" aria-label="Stop preview" @click="stop">
         <PhX :size="12" />
       </button>
@@ -87,6 +91,8 @@ const props = defineProps<{
   label?: string
   /** Why the button is inert, shown in its tooltip when `src` is empty. */
   disabledTitle?: string
+  /** Just the button and the elapsed time while playing — for a table cell with no room for a scrubber. */
+  compact?: boolean
 }>()
 
 const toast = useToast()
@@ -208,6 +214,16 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.preview-bar.compact {
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+}
+
+.preview-bar.compact .preview-time {
+  font-size: 11px;
+}
+
 .preview {
   display: inline-flex;
   align-items: center;
