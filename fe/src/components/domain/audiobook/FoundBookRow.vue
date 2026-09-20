@@ -201,14 +201,7 @@
           ⋯
         </button>
         <div v-if="menuOpen" class="fr-menu" @click.stop>
-          <button
-            type="button"
-            class="fr-menu-item"
-            @click="
-              showFiles = !showFiles
-              menuOpen = false
-            "
-          >
+          <button type="button" class="fr-menu-item" @click="toggleFiles">
             {{ showFiles ? 'Hide files' : 'Show files' }}
           </button>
           <button type="button" class="fr-menu-item" @click="copyFolder">Copy folder path</button>
@@ -217,10 +210,7 @@
             v-if="item.state !== 'Ignored' && item.blockedKind !== 'OwnedByDownload'"
             type="button"
             class="fr-menu-item"
-            @click="
-              store.decide(item.id, 'ignore')
-              menuOpen = false
-            "
+            @click="ignoreFromMenu"
           >
             Ignore — hide, keep files
           </button>
@@ -228,10 +218,7 @@
             v-if="item.blockedKind !== 'OwnedByDownload' && item.blockedKind !== 'Downloading'"
             type="button"
             class="fr-menu-item danger"
-            @click="
-              emit('discard', item.id)
-              menuOpen = false
-            "
+            @click="discardFromMenu"
           >
             Delete files from disk
           </button>
@@ -370,6 +357,21 @@ async function copyFolder() {
 
 function closeMenu() {
   menuOpen.value = false
+}
+
+function toggleFiles() {
+  showFiles.value = !showFiles.value
+  menuOpen.value = false
+}
+
+function ignoreFromMenu() {
+  menuOpen.value = false
+  void store.decide(props.item.id, 'ignore')
+}
+
+function discardFromMenu() {
+  menuOpen.value = false
+  emit('discard', props.item.id)
 }
 
 onMounted(() => document.addEventListener('click', closeMenu))
