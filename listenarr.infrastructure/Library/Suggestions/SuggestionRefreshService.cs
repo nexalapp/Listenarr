@@ -51,6 +51,7 @@ namespace Listenarr.Infrastructure.Library.Suggestions
         private int _total;
         private int _failed;
         private string? _current;
+        private string? _background;
         private DateTime? _startedAt;
         private DateTime? _finishedAt;
 
@@ -86,6 +87,73 @@ namespace Listenarr.Infrastructure.Library.Suggestions
                 _startedAt = _time.GetUtcNow().UtcDateTime;
             }
 
+            var (needed, authors, series) = await ListNeededAsync(staleAfter, cancellationToken);
+            var queued = needed.Count(Enqueue);
+
+            logger.LogInformation(
+                "Suggestion refresh queued {Queued} catalog fetch(es) for {Authors} author(s) and {Series} series",
+                queued,
+                authors,
+                series);
+
+            if (queued == 0)
+            {
+                lock (_gate)
+                {
+                    _finishedAt = _time.GetUtcNow().UtcDateTime;
+                }
+            }
+
+            return true;
+        }
+
+        public async Task<string?> FetchNextNeededAsync(CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                // A refresh or an add's queue is already fetching as fast as is polite;
+                // adding a second request to the same window is what this must not do.
+                if (_pending.Count > 0 || _background != null)
+                {
+                    return null;
+                }
+            }
+
+            var (needed, _, _) = await ListNeededAsync(null, cancellationToken);
+            var item = needed.FirstOrDefault();
+            if (item == null)
+            {
+                return null;
+            }
+
+            lock (_gate)
+            {
+                _background = item.Name;
+            }
+
+            try
+            {
+                await FetchAsync(item);
+                return item.Name;
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    _background = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Every library author and series with no cached catalog, or one older than the
+        /// window, in library order: authors first, then series. Shared by the refresh
+        /// button and the background worker so the two agree on what is missing.
+        /// </summary>
+        private async Task<(List<WorkItem> Needed, int Authors, int Series)> ListNeededAsync(
+            TimeSpan? staleAfter,
+            CancellationToken cancellationToken)
+        {
             var cutoff = _time.GetUtcNow().UtcDateTime - (staleAfter ?? DefaultStaleAfter);
             using var scope = scopeFactory.CreateScope();
             var repository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
@@ -111,50 +179,40 @@ namespace Listenarr.Infrastructure.Library.Suggestions
                 .DistinctBy(SuggestionNames.Normalize)
                 .ToList();
 
-            var queued = 0;
+            var needed = new List<WorkItem>();
             foreach (var author in authors)
             {
-                var fresh = cachedAuthors.TryGetValue(SuggestionNames.Normalize(author), out var entry)
-                    && entry.CatalogBooks is { Count: > 0 }
-                    && (entry.LastFetchedAt ?? entry.UpdatedAt) >= cutoff
-                    // Cached before ratings and descriptions were kept: worth one more fetch.
-                    && entry.CatalogBooks.Any(book => book.RatingOverall != null)
-                    && entry.CatalogBooks.Any(book => book.Description != null);
-                if (!fresh && Enqueue(new WorkItem(false, author, Force: entry != null)))
+                cachedAuthors.TryGetValue(SuggestionNames.Normalize(author), out var entry);
+                if (!IsFresh(entry, cutoff))
                 {
-                    queued++;
+                    needed.Add(new WorkItem(false, author, Force: entry != null));
                 }
             }
 
             foreach (var name in series)
             {
-                var fresh = cachedSeries.TryGetValue(SuggestionNames.Normalize(name), out var entry)
-                    && entry.CatalogBooks is { Count: > 0 }
-                    && (entry.LastFetchedAt ?? entry.UpdatedAt) >= cutoff
-                    && entry.CatalogBooks.Any(book => book.RatingOverall != null)
-                    && entry.CatalogBooks.Any(book => book.Description != null);
-                if (!fresh && Enqueue(new WorkItem(true, name, Force: entry != null)))
+                cachedSeries.TryGetValue(SuggestionNames.Normalize(name), out var entry);
+                if (!IsFresh(entry, cutoff))
                 {
-                    queued++;
+                    needed.Add(new WorkItem(true, name, Force: entry != null));
                 }
             }
 
-            logger.LogInformation(
-                "Suggestion refresh queued {Queued} catalog fetch(es) for {Authors} author(s) and {Series} series",
-                queued,
-                authors.Count,
-                series.Count);
-
-            if (queued == 0)
-            {
-                lock (_gate)
-                {
-                    _finishedAt = _time.GetUtcNow().UtcDateTime;
-                }
-            }
-
-            return true;
+            return (needed, authors.Count, series.Count);
         }
+
+        private static bool IsFresh(AuthorCacheEntry? entry, DateTime cutoff) =>
+            entry?.CatalogBooks is { Count: > 0 } books
+            && (entry.LastFetchedAt ?? entry.UpdatedAt) >= cutoff
+            // Cached before ratings and descriptions were kept: worth one more fetch.
+            && books.Any(book => book.RatingOverall != null)
+            && books.Any(book => book.Description != null);
+
+        private static bool IsFresh(SeriesCacheEntry? entry, DateTime cutoff) =>
+            entry?.CatalogBooks is { Count: > 0 } books
+            && (entry.LastFetchedAt ?? entry.UpdatedAt) >= cutoff
+            && books.Any(book => book.RatingOverall != null)
+            && books.Any(book => book.Description != null);
 
         public void QueueIfMissing(IEnumerable<string> authors, IEnumerable<string> series)
         {

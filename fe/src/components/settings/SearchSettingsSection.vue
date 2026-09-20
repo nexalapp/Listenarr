@@ -62,6 +62,27 @@
         </div>
       </div>
 
+      <div class="form-row">
+        <div class="form-group">
+          <label for="suggestions-background-fetch">Suggested Catalog Fetch Interval</label>
+          <input
+            id="suggestions-background-fetch"
+            :value="settings.suggestionsBackgroundFetchIntervalMinutes ?? 1"
+            type="number"
+            min="0"
+            max="1440"
+            class="form-input"
+            @input="updateSuggestionsBackgroundFetchInterval"
+          />
+          <small class="form-help">
+            Minutes between background fetches of one author or series catalog that Suggested is
+            missing. One a minute fills in a library of a few hundred over a few hours without
+            getting in the way of your own searches. Zero turns it off; the page's Fetch catalogs
+            button still works.
+          </small>
+        </div>
+      </div>
+
       <CheckboxCard
         :modelValue="settings.enableOpenLibrarySearch"
         @update:modelValue="updateEnableOpenLibrarySearch"
@@ -133,6 +154,13 @@ function updateLibraryLanguages(event: Event) {
     libraryLanguagesJson: JSON.stringify(selected),
     defaultSearchLanguage: selected[0] ?? 'all',
   } as Partial<ApplicationSettings>)
+}
+
+function updateSuggestionsBackgroundFetchInterval(event: Event) {
+  updateField(
+    'suggestionsBackgroundFetchIntervalMinutes',
+    Math.max(0, Number((event.target as HTMLInputElement).value || 0)),
+  )
 }
 
 function updateDefaultSearchRegion(event: Event) {

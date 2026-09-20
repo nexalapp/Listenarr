@@ -143,6 +143,12 @@ namespace Listenarr.Domain.Configuration
         // exactly) is added without asking. Anything less certain waits for a person.
         public bool FoundBooksAutoAdd { get; set; } = false;
 
+        // Minutes between background fetches of one missing author or series catalog
+        // for Suggested. One a minute fills a library of a few hundred in a few hours
+        // without ever standing in the way of a search. Zero turns it off, leaving the
+        // page's own Fetch button as the only way catalogs arrive.
+        public int SuggestionsBackgroundFetchIntervalMinutes { get; set; } = 1;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.
