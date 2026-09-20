@@ -230,5 +230,23 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
 
             Assert.Equal(FoundBookDecisionFailure.WrongState, result.Failure);
         }
+
+        [Fact]
+        public async Task RecoverStrandedImports_PutsBackOnlyTheRowsLeftImporting()
+        {
+            var a = await Write("A/01.mp3");
+            var b = await Write("B/01.mp3");
+            var c = await Write("C/01.mp3");
+            var stranded = await Row(Path.Join(_watch, "A"), [(a, true)], state: FoundBookState.Importing);
+            var pending = await Row(Path.Join(_watch, "B"), [(b, true)]);
+            var ignored = await Row(Path.Join(_watch, "C"), [(c, true)], state: FoundBookState.Ignored);
+
+            var reset = await BuildService().RecoverStrandedImportsAsync();
+
+            Assert.Equal([stranded.Id], reset);
+            Assert.Equal(FoundBookState.Pending, (await _repository.GetAsync(stranded.Id))!.State);
+            Assert.Equal(FoundBookState.Pending, (await _repository.GetAsync(pending.Id))!.State);
+            Assert.Equal(FoundBookState.Ignored, (await _repository.GetAsync(ignored.Id))!.State);
+        }
     }
 }

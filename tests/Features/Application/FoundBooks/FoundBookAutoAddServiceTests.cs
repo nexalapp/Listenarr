@@ -84,13 +84,19 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             _matcher.Setup(m => m.MatchAsync(It.IsAny<FoundBook>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new FoundBookCatalogueMatch(new AudibleBookMetadata { Asin = "B00ABCDEF1", Title = "Wool" }, high, high ? "exact" : "nearest"));
 
+        // The real runner, so these tests cover the whole sequence the automatic add
+        // drives, not a stand-in for it.
         private FoundBookAutoAddService BuildService() => new(
             _repository,
             _provider.GetRequiredService<IConfigurationService>(),
             _matcher.Object,
-            _libraryAdd.Object,
             _importer,
-            _decisions.Object,
+            new FoundBookImportRunner(
+                _libraryAdd.Object,
+                new RootLibraryDestinationPlanner(),
+                _importer,
+                _decisions.Object,
+                NullLogger<FoundBookImportRunner>.Instance),
             _rootFolderRepository,
             NullLogger<FoundBookAutoAddService>.Instance);
 

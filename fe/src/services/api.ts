@@ -81,6 +81,7 @@ import type {
   FoundBooksResponse,
   FoundBookWatchFolders,
   FoundBookDecisionResponse,
+  FoundBookImportResponse,
   FoundBook,
   FoundBookListenResponse,
 } from '@/types'
@@ -1203,6 +1204,26 @@ class ApiService {
     return this.request<FoundBookDecisionResponse>(`/found/${id}/finish-import`, {
       method: 'POST',
       body: JSON.stringify({ audiobookId }),
+    })
+  }
+
+  /**
+   * The whole import in one server-side call: mark, add or reuse the record, move,
+   * finish — and put the row back on any failure. Always 200 with the outcome; a
+   * refusal is in `failure`/`error`, not an HTTP error.
+   */
+  async importFoundBook(
+    id: number,
+    request: {
+      asin?: string | null
+      rootFolderPath?: string | null
+      monitored: boolean
+      separateBook: boolean
+    },
+  ): Promise<FoundBookImportResponse> {
+    return this.request<FoundBookImportResponse>(`/found/${id}/import`, {
+      method: 'POST',
+      body: JSON.stringify(request),
     })
   }
 

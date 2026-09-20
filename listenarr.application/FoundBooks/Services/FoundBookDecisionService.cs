@@ -58,6 +58,13 @@ namespace Listenarr.Application.FoundBooks.Services
         Task<FoundBookDecisionResult> AbortImportAsync(int id, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Put back every row still marked importing. An import runs inside one
+        /// process and puts its own row back when it fails; a row found importing at
+        /// startup belonged to a process that did not get to. Returns the ids reset.
+        /// </summary>
+        Task<IReadOnlyList<int>> RecoverStrandedImportsAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// After the manual import moved the audio: confirm it is gone, clear what it
         /// left behind, and record the row as imported into <paramref name="audiobookId"/>.
         /// </summary>
@@ -101,6 +108,21 @@ namespace Listenarr.Application.FoundBooks.Services
 
         public Task<FoundBookDecisionResult> AbortImportAsync(int id, CancellationToken cancellationToken = default) =>
             TransitionAsync(id, [FoundBookState.Importing], FoundBookState.Pending, cancellationToken);
+
+        public async Task<IReadOnlyList<int>> RecoverStrandedImportsAsync(CancellationToken cancellationToken = default)
+        {
+            var stranded = (await repository.GetAllAsync(cancellationToken))
+                .Where(row => row.State == FoundBookState.Importing)
+                .Select(row => row.Id)
+                .ToList();
+            foreach (var id in stranded)
+            {
+                await repository.UpdateAsync(id, row => row.State = FoundBookState.Pending, cancellationToken);
+                logger.LogWarning("Found book {Id} was left importing by an earlier run; offered again", id);
+            }
+
+            return stranded;
+        }
 
         public async Task<FoundBookDecisionResult> FinishImportAsync(int id, int audiobookId, bool autoAdded = false, CancellationToken cancellationToken = default)
         {

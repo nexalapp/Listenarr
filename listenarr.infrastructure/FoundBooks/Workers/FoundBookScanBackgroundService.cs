@@ -30,7 +30,8 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
     public class FoundBookScanBackgroundService(
         ILogger<FoundBookScanBackgroundService> logger,
         IFoundBookScanProcessor processor,
-        IWorkerCycleRunner cycleRunner) : BackgroundService
+        IWorkerCycleRunner cycleRunner,
+        IServiceScopeFactory serviceScopeFactory) : BackgroundService
     {
         /// <summary>How often the loop wakes to check whether a scan is due.</summary>
         private static readonly TimeSpan Tick = TimeSpan.FromMinutes(1);
@@ -38,6 +39,8 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             logger.LogInformation("FoundBookScanBackgroundService started");
+
+            await RecoverStrandedImportsAsync(stoppingToken);
 
             await cycleRunner.RunPeriodicAsync(
                 nameof(FoundBookScanBackgroundService),
@@ -47,6 +50,31 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
                 stoppingToken);
 
             logger.LogInformation("FoundBookScanBackgroundService stopped");
+        }
+
+        /// <summary>
+        /// A row marked importing belongs to an import running in this process. At
+        /// startup there is none, so any row still marked that way was stranded by a
+        /// crash, a restart or a database outage that outlasted the import's own abort,
+        /// and would otherwise spin as "Importing…" on the Found tab forever.
+        /// </summary>
+        private async Task RecoverStrandedImportsAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var scope = serviceScopeFactory.CreateScope();
+                var reset = await scope.ServiceProvider
+                    .GetRequiredService<IFoundBookDecisionService>()
+                    .RecoverStrandedImportsAsync(cancellationToken);
+                if (reset.Count > 0)
+                {
+                    logger.LogWarning("Reset {Count} found book(s) left importing by an earlier run", reset.Count);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && WorkerExceptionClassifier.IsNonFatal(ex))
+            {
+                logger.LogError(ex, "Could not recover stranded found-book imports; the next start will try again");
+            }
         }
     }
 

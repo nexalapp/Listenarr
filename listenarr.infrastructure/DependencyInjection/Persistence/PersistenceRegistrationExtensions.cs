@@ -29,6 +29,7 @@ internal static class PersistenceRegistrationExtensions
         services.TryAddSingleton<IApplicationSettingsSnapshot, ApplicationSettingsSnapshot>();
         services.TryAddSingleton<ISeriesAuthorSnapshot, SeriesAuthorSnapshot>();
         services.AddSingleton<AuthorAliasSaveInterceptor>();
+        services.AddSingleton<SqliteIoErrorPoolResetInterceptor>();
         if (configureDb != null)
         {
             services.AddDbContextFactory<ListenArrDbContext>(
@@ -36,7 +37,9 @@ internal static class PersistenceRegistrationExtensions
                 {
                     configureDb(options);
                     // The alias setting is applied at save time, whichever path saves.
-                    options.AddInterceptors(provider.GetRequiredService<AuthorAliasSaveInterceptor>());
+                    options.AddInterceptors(
+                        provider.GetRequiredService<AuthorAliasSaveInterceptor>(),
+                        provider.GetRequiredService<SqliteIoErrorPoolResetInterceptor>());
                 },
                 ServiceLifetime.Singleton);
         }

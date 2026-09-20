@@ -42,6 +42,7 @@ namespace Listenarr.Api.Features.FoundBooks
         IFoundBookWatchFolderResolver watchFolderResolver,
         IFoundBookDecisionService decisions,
         IFoundBookMatchService matches,
+        IFoundBookImportService imports,
         IFileSystem fileSystem) : ControllerBase
     {
         [HttpGet]
@@ -101,6 +102,39 @@ namespace Listenarr.Api.Features.FoundBooks
         [HttpPost("{id:int}/restore")]
         public async Task<ActionResult<FoundBookDecisionResponse>> Restore(int id, CancellationToken cancellationToken = default) =>
             Respond(await decisions.RestoreAsync(id, cancellationToken));
+
+        /// <summary>
+        /// Add the book to the library in one call: mark the row, add or reuse the
+        /// record, move the files, finish the row. A failure at any step puts the row
+        /// back here, server-side, so nothing depends on a follow-up request. 200 with
+        /// the outcome either way; the row in the response is its state now.
+        /// </summary>
+        [HttpPost("{id:int}/import")]
+        public async Task<ActionResult<FoundBookImportResponse>> Import(
+            int id,
+            [FromBody] ImportRequest? request,
+            CancellationToken cancellationToken = default)
+        {
+            request ??= new ImportRequest(null, null, true, false);
+            var result = await imports.ImportAsync(
+                id,
+                new FoundBookManualImportRequest(request.Asin, request.RootFolderPath, request.Monitored, request.SeparateBook),
+                cancellationToken);
+
+            if (result.Failure == FoundBookImportFailure.NotFound)
+            {
+                return NotFound(new { message = result.Error });
+            }
+
+            var book = result.Book ?? await repository.GetAsync(id, cancellationToken);
+            return Ok(new FoundBookImportResponse(
+                result.Success,
+                result.AudiobookId,
+                result.Failure == FoundBookImportFailure.None ? null : result.Failure.ToString(),
+                result.Error,
+                result.Skipped,
+                book == null ? null : FoundBookDto.From(book)));
+        }
 
         [HttpPost("{id:int}/begin-import")]
         public async Task<ActionResult<FoundBookDecisionResponse>> BeginImport(int id, CancellationToken cancellationToken = default) =>
@@ -229,6 +263,16 @@ namespace Listenarr.Api.Features.FoundBooks
     }
 
     public sealed record FinishImportRequest(int AudiobookId);
+
+    public sealed record ImportRequest(string? Asin, string? RootFolderPath, bool Monitored = true, bool SeparateBook = false);
+
+    public sealed record FoundBookImportResponse(
+        bool Success,
+        int? AudiobookId,
+        string? Failure,
+        string? Error,
+        IReadOnlyList<string> Skipped,
+        FoundBookDto? Book);
 
     public sealed record SetMatchRequest(
         string? Asin,

@@ -1926,3 +1926,23 @@ export interface FoundBookDecisionResponse {
   book: FoundBook
   skipped: string[]
 }
+
+export type FoundBookImportFailure =
+  | 'NotFound'
+  | 'WrongState'
+  | 'NoMatch'
+  | 'Unavailable'
+  | 'AddRefused'
+  | 'ImportFailed'
+  | 'FinishFailed'
+  | 'Persistence'
+
+/** The outcome of a server-side import; `book` is the row as it stands now, whatever happened. */
+export interface FoundBookImportResponse {
+  success: boolean
+  audiobookId: number | null
+  failure: FoundBookImportFailure | null
+  error: string | null
+  skipped: string[]
+  book: FoundBook | null
+}

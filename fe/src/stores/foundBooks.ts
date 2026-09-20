@@ -20,7 +20,6 @@ import { computed, ref } from 'vue'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
-import { addAndImportBook } from '@/utils/libraryImportAdd'
 import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
 import { matchConfidence } from '@/utils/foundBookMatch'
 import type { FoundBook, FoundBookState, FoundBookWatchFolders, SearchResult } from '@/types'
@@ -437,9 +436,10 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
   }
 
   /**
-   * Add one found book to the library: mark it importing, add the matched record,
-   * move the files through the manual import, then tell the server to clear what
-   * the move left behind.
+   * Add one found book to the library. One server-side call does the whole
+   * sequence - mark the row, add or reuse the record, move the files, finish - and
+   * puts the row back itself if any step fails, so nothing here has to run after a
+   * failure for the row to be recoverable. What comes back is the row as it stands.
    */
   async function add(id: number, rootFolderPath: string, monitored: boolean): Promise<boolean> {
     const item = items.value.find((candidate) => candidate.id === id)
@@ -447,48 +447,31 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     if (!item || !state.selectedMatch) return false
 
     setMatchState(id, { busy: true, error: null })
-    let began = false
     try {
-      const begun = await apiService.foundBookDecision(id, 'begin-import')
-      replaceItem(begun.book)
-      began = true
-
-      const result = await addAndImportBook({
-        folderPath: item.bookFolder,
-        sourceFiles: item.files.filter((f) => f.isAudio).map((f) => f.path),
-        match: state.selectedMatch,
-        fileMetadata: null,
+      const result = await apiService.importFoundBook(id, {
+        asin: state.selectedMatch.asin ?? item.matchAsin ?? null,
         rootFolderPath,
-        action: 'move',
         monitored,
         separateBook: state.separateBook,
-        // A pack's loose files share one directory; the companion pass would sweep the
-        // neighbours' covers and notes into this book, so it stays off for those.
-        includeCompanionFiles: !item.sharesFolder,
       })
-
-      const finished = await apiService.finishFoundBookImport(id, result.audiobookId)
-      replaceItem(finished.book)
+      if (result.book) replaceItem(result.book)
+      if (!result.success) {
+        setMatchState(id, { error: result.error ?? 'Import failed' })
+        return false
+      }
       setMatchState(id, { selected: false })
-      if (finished.skipped.length > 0) {
+      if (result.skipped.length > 0) {
         setMatchState(id, {
-          error: `Imported; ${finished.skipped.length} leftover file(s) could not be removed.`,
+          error: `Imported; ${result.skipped.length} leftover file(s) could not be removed.`,
         })
       }
       return true
     } catch (e) {
-      const message = (e as Error)?.message ?? 'Import failed'
-      setMatchState(id, { error: message })
-      if (began) {
-        // finish-import already put the row back when files remain; abort covers the
-        // case where the import never ran. Either way a failure here is not ours to hide.
-        try {
-          const aborted = await apiService.foundBookDecision(id, 'abort-import')
-          replaceItem(aborted.book)
-        } catch {
-          await load()
-        }
-      }
+      // The request itself failed - a dropped connection, a 5xx - so the server's
+      // own answer never arrived. The row is whatever the server left it; reload
+      // rather than guess.
+      setMatchState(id, { error: (e as Error)?.message ?? 'Import failed' })
+      await load()
       return false
     } finally {
       setMatchState(id, { busy: false })
