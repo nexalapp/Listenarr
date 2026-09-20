@@ -2,7 +2,7 @@ services:
   listenarr:
     # Pinned to an immutable SHA-suffixed tag, not the rolling :beta tag, so the
     # server only moves when this file changes. Roll back by editing this line.
-    image: ghcr.io/nexalapp/listenarr:deploy-1.29.9-d3771d3
+    image: ghcr.io/nexalapp/listenarr:deploy-1.36.0-04354cf
     container_name: listenarr
 
     # Listenarr shares gluetun's network namespace, as every other *arr here does.
