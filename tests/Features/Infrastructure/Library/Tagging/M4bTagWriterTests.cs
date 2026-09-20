@@ -587,6 +587,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
                 CancellationToken cancellationToken = default) =>
                 Task.FromResult<IReadOnlyList<EmbeddedChapter>>([]);
 
+            public Task<TimeSpan?> MeasureDecodedDurationAsync(
+                string filePath,
+                CancellationToken cancellationToken = default) =>
+                Task.FromResult<TimeSpan?>(null);
+
             public Task<AudioMetadata> RunFfprobeAsync(string filePath) =>
                 throw new NotSupportedException();
 

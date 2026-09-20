@@ -76,6 +76,21 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
             CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// The length of a file's audio as decoded, by decoding all of it.
+        ///
+        /// A container's declared duration is a claim, and an MP3's is often wrong: a
+        /// bare stream has none and ffprobe estimates one from the bitrate and the
+        /// byte count, tags included, so a file with a large cover embedded reads
+        /// short or long by a minute. A conversion places every chapter mark after the
+        /// first by the lengths of the files before it, so it needs the truth. Costs a
+        /// full decode — minutes for a long book, far less than the encode. Returns
+        /// null when it cannot be measured.
+        /// </summary>
+        Task<TimeSpan?> MeasureDecodedDurationAsync(
+            string filePath,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Give license notice content from FFprobe
         /// </summary>
         /// <returns>Content of the license file if any or empty string</returns>

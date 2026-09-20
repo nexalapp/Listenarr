@@ -399,5 +399,69 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             var result = await runner.RunAsync(startInfo, 30_000);
             Assert.Equal(0, result.ExitCode);
         }
+
+        [Fact]
+        public async Task MeasureDecodedDurationAsync_DecodesToNullAndReadsTheFinalOutTime()
+        {
+            var ffmpegDirectory = FileService.GetTempDirectory("ffmpeg-measure-root");
+            var ffmpegPath = Path.Join(ffmpegDirectory, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
+            await File.WriteAllTextAsync(ffmpegPath, "fake");
+            var source = await FileService.GetTempFileAsync("part1.mp3");
+            System.Diagnostics.ProcessStartInfo? captured = null;
+            var processRunner = new Mock<IProcessRunner>();
+            processRunner.Setup(runner => runner.RunAsync(
+                    It.IsAny<System.Diagnostics.ProcessStartInfo>(),
+                    It.IsAny<int>(),
+                    It.IsAny<CancellationToken>()))
+                .Callback<System.Diagnostics.ProcessStartInfo, int, CancellationToken>((startInfo, _, _) => captured = startInfo)
+                .ReturnsAsync(new ProcessResult(
+                    0,
+                    "frame=0\nout_time_us=5000000\nprogress=continue\nout_time_us=17234120000\nprogress=end\n",
+                    string.Empty,
+                    false));
+            var service = new FfmpegService(
+                new Mock<ILogger<FfmpegService>>().Object,
+                new HttpClient(),
+                _provider.GetRequiredService<IStartupConfigService>(),
+                processRunner.Object,
+                Mock.Of<IApplicationPathService>(paths => paths.FfmpegRootPath == ffmpegDirectory));
+
+            var measured = await service.MeasureDecodedDurationAsync(source);
+
+            Assert.Equal(TimeSpan.FromSeconds(17234.12), measured);
+            Assert.NotNull(captured);
+            Assert.Contains("null", captured.ArgumentList);
+            Assert.Contains("pipe:1", captured.ArgumentList);
+            Assert.Equal(Path.GetFullPath(source), captured.ArgumentList[captured.ArgumentList.IndexOf("-i") + 1]);
+        }
+
+        [Theory]
+        [InlineData("out_time_ms=1500000\nprogress=end\n", 1.5)]
+        [InlineData("out_time_us=N/A\nprogress=end\n", null)]
+        [InlineData("", null)]
+        public void ParseFinalOutTime_ReadsMicrosecondsOrNothing(string progress, double? seconds)
+        {
+            var parsed = FfmpegService.ParseFinalOutTime(progress);
+            Assert.Equal(seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : null, parsed);
+        }
+
+        [Fact]
+        public async Task MeasureDecodedDurationAsync_ReturnsNullWhenTheDecodeFails()
+        {
+            var ffmpegDirectory = FileService.GetTempDirectory("ffmpeg-measure-fail");
+            await File.WriteAllTextAsync(Path.Join(ffmpegDirectory, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg"), "fake");
+            var source = await FileService.GetTempFileAsync("part1.mp3");
+            var processRunner = new Mock<IProcessRunner>();
+            processRunner.Setup(runner => runner.RunAsync(It.IsAny<System.Diagnostics.ProcessStartInfo>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ProcessResult(1, "out_time_us=100\n", "broken", false));
+            var service = new FfmpegService(
+                new Mock<ILogger<FfmpegService>>().Object,
+                new HttpClient(),
+                _provider.GetRequiredService<IStartupConfigService>(),
+                processRunner.Object,
+                Mock.Of<IApplicationPathService>(paths => paths.FfmpegRootPath == ffmpegDirectory));
+
+            Assert.Null(await service.MeasureDecodedDurationAsync(source));
+        }
     }
 }
