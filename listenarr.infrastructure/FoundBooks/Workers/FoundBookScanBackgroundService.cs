@@ -136,6 +136,18 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
 
                 if (summary.Pending > 0)
                 {
+                    var identified = await scope.ServiceProvider
+                        .GetRequiredService<IFoundBookAutoMatchService>()
+                        .RunAsync(cancellationToken);
+                    if (identified.Considered > 0)
+                    {
+                        logger.LogInformation(
+                            "Found-book automatic match: {Matched} matched, {Listened} listened to, of {Considered}",
+                            identified.Matched,
+                            identified.Listened,
+                            identified.Considered);
+                    }
+
                     var auto = await scope.ServiceProvider
                         .GetRequiredService<IFoundBookAutoAddService>()
                         .RunAsync(cancellationToken);

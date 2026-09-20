@@ -61,10 +61,13 @@ namespace Listenarr.Infrastructure.Library.Transcription
 
         public string ModelRoot => paths.ResolveFromConfig("whisper");
 
-        public async Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)
+        public Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default) =>
+            IsAvailableAsync(TranscriptionPolicy.WhenEnabled, cancellationToken);
+
+        public async Task<bool> IsAvailableAsync(TranscriptionPolicy policy, CancellationToken cancellationToken = default)
         {
             var (enabled, model) = await ReadSettingsAsync();
-            if (!enabled)
+            if (!enabled && policy == TranscriptionPolicy.WhenEnabled)
             {
                 return false;
             }
@@ -170,10 +173,18 @@ namespace Listenarr.Infrastructure.Library.Transcription
 
         private static bool IsOnDisk(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
 
+        public Task<Transcript> TranscribeAsync(
+            string path,
+            TimeSpan start,
+            TimeSpan length,
+            CancellationToken cancellationToken = default) =>
+            TranscribeAsync(path, start, length, TranscriptionPolicy.WhenEnabled, cancellationToken);
+
         public async Task<Transcript> TranscribeAsync(
             string path,
             TimeSpan start,
             TimeSpan length,
+            TranscriptionPolicy policy,
             CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -183,7 +194,7 @@ namespace Listenarr.Infrastructure.Library.Transcription
             }
 
             var (enabled, model) = await ReadSettingsAsync();
-            if (!enabled)
+            if (!enabled && policy == TranscriptionPolicy.WhenEnabled)
             {
                 throw new InvalidOperationException("Transcription is switched off.");
             }

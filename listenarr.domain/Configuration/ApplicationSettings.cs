@@ -117,6 +117,7 @@ namespace Listenarr.Domain.Configuration
         // repair find the author's chapters inside a CD-rip's tracks and put names on
         // placeholder titles: it hears "Chapter Four" at a mark and keeps it. Off by
         // default because it costs CPU minutes per book and downloads a 150MB model.
+        // Found books listen whatever this says (see TranscriptionPolicy).
         public bool TranscriptionEnabled { get; set; } = false;
 
         // Which whisper model to transcribe with. "base.en" hears chapter announcements
