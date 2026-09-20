@@ -41,6 +41,22 @@
         <div class="fr-meta" :class="{ dim: !metaLine }">
           {{ metaLine || 'No usable tags — grouped by folder only' }}
         </div>
+        <div
+          v-if="item.heardTitle || item.heardAuthor"
+          class="fr-heard"
+          title="What the narrator says in the opening credits"
+        >
+          <PhEar :size="12" /> Heard:
+          {{
+            [
+              item.heardTitle,
+              item.heardAuthor ? `by ${item.heardAuthor}` : null,
+              item.heardNarrator ? `read by ${item.heardNarrator}` : null,
+            ]
+              .filter(Boolean)
+              .join(' ')
+          }}
+        </div>
         <div class="fr-folder" :title="item.bookFolder">
           {{ folderLabel
           }}<template v-if="folderCount > 1"> · {{ folderCount }} folders grouped by tags</template>
@@ -54,9 +70,18 @@
         }}<template v-if="item.format"> · {{ item.format }}</template></span
       >
       <span>{{ sizeLabel }} · {{ clock(item.totalDurationSeconds) }}</span>
-      <button type="button" class="fr-link" @click="showFiles = !showFiles">
-        {{ showFiles ? 'Hide files' : 'Show files' }}
-      </button>
+      <span class="fr-files-actions">
+        <AudioPreviewPlayer
+          :preview-id="`found-${item.id}`"
+          :src="
+            firstAudioIndex >= 0 ? apiService.buildFoundBookAudioUrl(item.id, firstAudioIndex) : ''
+          "
+          disabled-title="No audio file to play"
+        />
+        <button type="button" class="fr-link" @click="showFiles = !showFiles">
+          {{ showFiles ? 'Hide files' : 'Show files' }}
+        </button>
+      </span>
     </div>
 
     <div class="fr-match">
@@ -228,12 +253,17 @@
 
     <div v-if="showFiles" class="fr-filelist">
       <div
-        v-for="file in item.files"
+        v-for="(file, i) in item.files"
         :key="file.path"
         class="fr-file"
         :class="{ companion: !file.isAudio, broken: !!file.error }"
         :title="file.path"
       >
+        <AudioPreviewPlayer
+          v-if="file.isAudio"
+          :preview-id="`found-${item.id}-${i}`"
+          :src="apiService.buildFoundBookAudioUrl(item.id, audioIndexOf(i))"
+        />
         <span class="fr-file-name">{{ fileName(file.path) }}</span>
         <span class="fr-file-meta">
           <template v-if="file.error">{{ file.error }}</template>
@@ -249,8 +279,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { PhSpinner } from '@phosphor-icons/vue'
+import { PhEar, PhSpinner } from '@phosphor-icons/vue'
 import { Pill } from '@/components/base'
+import AudioPreviewPlayer from '@/components/ui/AudioPreviewPlayer.vue'
+import { apiService } from '@/services/api'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { useToast } from '@/services/toastService'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -268,6 +300,12 @@ const placeholderUrl = getPlaceholderUrl()
 
 const showFiles = ref(false)
 const menuOpen = ref(false)
+
+// The audio endpoint counts audio files only; the list shows companions too.
+const firstAudioIndex = computed(() => (props.item.files.some((f) => f.isAudio) ? 0 : -1))
+function audioIndexOf(listIndex: number): number {
+  return props.item.files.slice(0, listIndex).filter((f) => f.isAudio).length
+}
 
 const match = computed(() => store.matchState(props.item.id))
 const ready = computed(() => isReady(props.item))
@@ -485,6 +523,20 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 
 .fr-files-main {
   color: #c3cad2;
+}
+
+.fr-files-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-heard {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #8fd39f;
 }
 
 .fr-link {
@@ -710,8 +762,8 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 
 .fr-file {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
   padding: 2px 0;
   color: #c3cad2;
 }
@@ -725,6 +777,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 }
 
 .fr-file-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

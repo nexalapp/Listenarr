@@ -25,6 +25,9 @@ const scanFoundBooks = vi.fn()
 const foundBookDecision = vi.fn()
 const finishFoundBookImport = vi.fn()
 const advancedSearch = vi.fn()
+const setFoundBookMatch = vi.fn()
+const clearFoundBookMatch = vi.fn()
+const listenFoundBook = vi.fn()
 const addToLibrary = vi.fn()
 const updateAudiobook = vi.fn()
 const startManualImport = vi.fn()
@@ -38,6 +41,9 @@ vi.mock('@/services/api', () => ({
     foundBookDecision,
     finishFoundBookImport,
     advancedSearch,
+    setFoundBookMatch,
+    clearFoundBookMatch,
+    listenFoundBook,
     addToLibrary,
     updateAudiobook,
     startManualImport,
@@ -107,6 +113,11 @@ describe('found books store', () => {
     setActivePinia(createPinia())
     getFoundBooks.mockResolvedValue({ items: [book()], pending: 1, blocked: 0, scanning: false })
     advancedSearch.mockResolvedValue([match])
+    setFoundBookMatch.mockImplementation(
+      async (id: number, m: { asin?: string | null; title?: string | null }) =>
+        book({ id, matchAsin: m.asin ?? null, matchTitle: m.title ?? null }),
+    )
+    clearFoundBookMatch.mockImplementation(async (id: number) => book({ id }))
     addToLibrary.mockResolvedValue({ audiobook: { id: 42 } })
     updateAudiobook.mockResolvedValue({})
     startManualImport.mockResolvedValue({ importedCount: 2, totalCount: 2, results: [] })
@@ -142,6 +153,58 @@ describe('found books store', () => {
     )
     expect(store.matchState(1).selectedMatch?.asin).toBe('B00ABCDEF1')
     expect(store.addableItems).toHaveLength(1)
+  })
+
+  it('remembers the match on the server once a lookup finds one', async () => {
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+
+    await store.load()
+    await flush()
+
+    expect(setFoundBookMatch).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ asin: 'B00ABCDEF1', title: 'Wool', author: 'Hugh Howey' }),
+    )
+  })
+
+  it('uses a remembered match instead of looking up again', async () => {
+    getFoundBooks.mockResolvedValue({
+      items: [
+        book({
+          matchAsin: 'B00REMEMBER',
+          matchTitle: 'Wool',
+          matchAuthor: 'Hugh Howey',
+          matchConfidence: 0.9,
+        }),
+      ],
+      pending: 1,
+      blocked: 0,
+      scanning: false,
+    })
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+
+    await store.load()
+    await flush()
+
+    expect(advancedSearch).not.toHaveBeenCalled()
+    expect(store.matchState(1).selectedMatch?.asin).toBe('B00REMEMBER')
+    expect(store.matchState(1).confidence).toBe(0.9)
+    expect(store.addableItems).toHaveLength(1)
+  })
+
+  it('clears the remembered match when the operator clears it', async () => {
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+    await store.load()
+    await flush()
+
+    store.selectMatch(1, null)
+    await flush()
+
+    expect(clearFoundBookMatch).toHaveBeenCalledWith(1)
+    expect(store.matchState(1).selectedMatch).toBeNull()
   })
 
   it('does not look up books already in the library', async () => {

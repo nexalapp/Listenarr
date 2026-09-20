@@ -52,6 +52,18 @@
           {{ candidates.length }} candidate{{ candidates.length === 1 ? '' : 's' }}
         </span>
         <span v-else>Results from the last lookup</span>
+        <span v-if="heardLine" class="fm-heard"><PhEar :size="12" /> Heard: {{ heardLine }}</span>
+        <button
+          type="button"
+          class="fm-listen"
+          :disabled="listening"
+          title="Transcribe the first minute and a half and read the spoken credits; needs transcription on in Settings"
+          @click="listen"
+        >
+          <PhSpinner v-if="listening" class="ph-spin" :size="12" />
+          <PhEar v-else :size="12" />
+          {{ listening ? 'Listening…' : heardLine ? 'Listen again' : 'Listen to the credits' }}
+        </button>
         <span class="fm-hint">An ASIN on its own (B0…) goes straight to that edition.</span>
       </div>
     </div>
@@ -139,13 +151,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { PhMagnifyingGlass, PhSpinner, PhWarningCircle } from '@phosphor-icons/vue'
+import { PhEar, PhMagnifyingGlass, PhSpinner, PhWarningCircle } from '@phosphor-icons/vue'
 import { Modal } from '@/components/feedback'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { apiService } from '@/services/api'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { clock, describeRuntimeDelta, matchConfidence } from '@/utils/foundBookMatch'
-import { folderName } from '@/stores/foundBooks'
+import { folderName, useFoundBooksStore } from '@/stores/foundBooks'
+import { useToast } from '@/services/toastService'
 import type { FoundBook, SearchResult } from '@/types'
 
 const props = defineProps<{
@@ -172,6 +185,51 @@ const candidates = ref<SearchResult[]>([...props.candidates])
 const searching = ref(false)
 const searched = ref(false)
 const chosenKey = ref<string | null>(props.selected ? keyOf(props.selected) : null)
+
+const store = useFoundBooksStore()
+const toast = useToast()
+const listening = ref(false)
+const heard = ref<{ title?: string | null; author?: string | null; narrator?: string | null }>({
+  title: props.item.heardTitle,
+  author: props.item.heardAuthor,
+  narrator: props.item.heardNarrator,
+})
+const heardLine = computed(() =>
+  [
+    heard.value.title,
+    heard.value.author ? `by ${heard.value.author}` : null,
+    heard.value.narrator ? `read by ${heard.value.narrator}` : null,
+  ]
+    .filter(Boolean)
+    .join(' '),
+)
+
+/**
+ * Ask the server to hear the opening credits. What the narrator says becomes the
+ * search — a spoken "Fearless, by Jack Campbell" beats a folder called by a hash.
+ */
+async function listen() {
+  listening.value = true
+  try {
+    const result = await store.listen(props.item.id)
+    if (!result) {
+      toast.error(
+        'Could not listen',
+        store.matchState(props.item.id).error ?? 'Transcription is not available.',
+      )
+      return
+    }
+    heard.value = result
+    if (!result.title && !result.author) {
+      toast.info('Nothing heard', 'No credits were recognised in the first minute and a half.')
+      return
+    }
+    query.value = [result.author, result.title].filter(Boolean).join(' ')
+    await search()
+  } finally {
+    listening.value = false
+  }
+}
 
 const folderLabel = computed(() => folderName(props.item.bookFolder))
 const audioCount = computed(() => props.item.files.filter((f) => f.isAudio).length)
@@ -339,6 +397,31 @@ onMounted(() => {
 .fm-hint {
   margin-left: auto;
   color: #5aa2f5;
+}
+
+.fm-heard {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8fd39f;
+}
+
+.fm-listen {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: none;
+  color: #c3cad2;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.fm-listen:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .fm-results {

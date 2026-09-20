@@ -78,6 +78,18 @@ function pickBestMatch(
   return scored.find((s) => s.match)?.r ?? results[0] ?? null
 }
 
+/** The remembered match as the search result shape the rest of the store works with. */
+export function persistedMatch(item: FoundBook): SearchResult {
+  return {
+    id: item.matchAsin ?? `found-${item.id}`,
+    title: item.matchTitle ?? '',
+    asin: item.matchAsin ?? undefined,
+    authors: item.matchAuthor ? [{ name: item.matchAuthor }] : [],
+    imageUrl: item.matchImageUrl ?? undefined,
+    metadataSource: item.matchSource ?? undefined,
+  } as SearchResult
+}
+
 export function folderName(path: string): string {
   const parts = path.replace(/\\/g, '/').split('/').filter(Boolean)
   return parts[parts.length - 1] ?? path
@@ -166,6 +178,23 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     items.value = items.value.map((item) => (item.id === book.id ? book : item))
   }
 
+  /** Take only the match fields from a row the server sent back; the rest is already current. */
+  function mergeMatchFields(book: FoundBook) {
+    items.value = items.value.map((item) =>
+      item.id === book.id
+        ? {
+            ...item,
+            matchAsin: book.matchAsin,
+            matchTitle: book.matchTitle,
+            matchAuthor: book.matchAuthor,
+            matchSource: book.matchSource,
+            matchImageUrl: book.matchImageUrl,
+            matchConfidence: book.matchConfidence,
+          }
+        : item,
+    )
+  }
+
   async function load() {
     loading.value = items.value.length === 0
     error.value = null
@@ -182,6 +211,21 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
       matchStates.value = Object.fromEntries(
         Object.entries(matchStates.value).filter(([id]) => alive.has(Number(id))),
       )
+      // A match the server remembers — chosen earlier, or by an earlier lookup — is the
+      // row's match; it is not looked up again.
+      for (const item of response.items) {
+        const state = matchStates.value[item.id]
+        if (item.matchAsin || item.matchTitle) {
+          if (!state?.selectedMatch) {
+            setMatchState(item.id, {
+              selectedMatch: persistedMatch(item),
+              confidence: item.matchConfidence ?? null,
+              hasSearched: true,
+              searchFailed: false,
+            })
+          }
+        }
+      }
       queueLookups()
     } catch (e) {
       error.value = (e as Error)?.message ?? 'Failed to load found books'
@@ -257,14 +301,16 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
       const results = await apiService.advancedSearch(params)
       // ASIN results are authoritative; otherwise prefer the author the files name.
       const best = params.asin ? (results[0] ?? null) : pickBestMatch(results, item.author)
+      const confidence = best ? matchConfidence(best, item) : null
       setMatchState(item.id, {
         isSearching: false,
         hasSearched: true,
         searchFailed: false,
         candidates: results,
         selectedMatch: best,
-        confidence: best ? matchConfidence(best, item) : null,
+        confidence,
       })
+      if (best) void persistMatch(item.id, best, confidence)
     } catch (e) {
       // A failed lookup is not "not on Audible": keep hasSearched false so a retry asks again.
       logger.debug('[foundBooks] lookup failed:', e)
@@ -281,13 +327,61 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
 
   function selectMatch(id: number, result: SearchResult | null, candidates?: SearchResult[]) {
     const item = items.value.find((candidate) => candidate.id === id)
+    const confidence = result && item ? matchConfidence(result, item) : null
     setMatchState(id, {
       selectedMatch: result,
       hasSearched: true,
       searchFailed: false,
-      confidence: result && item ? matchConfidence(result, item) : null,
+      confidence,
       ...(candidates ? { candidates } : {}),
     })
+    if (result) void persistMatch(id, result, confidence)
+    else void clearPersistedMatch(id)
+  }
+
+  /** Write the match to the row so a refresh, or a scan, does not lose it. */
+  async function persistMatch(id: number, result: SearchResult, confidence: number | null) {
+    try {
+      const book = await apiService.setFoundBookMatch(id, {
+        asin: result.asin ?? null,
+        title: result.title ?? null,
+        author: result.authors?.[0]?.name ?? null,
+        source: result.metadataSource ?? null,
+        imageUrl: result.imageUrl ?? null,
+        confidence,
+      })
+      mergeMatchFields(book)
+    } catch (e) {
+      logger.debug('[foundBooks] could not persist match:', e)
+    }
+  }
+
+  async function clearPersistedMatch(id: number) {
+    try {
+      mergeMatchFields(await apiService.clearFoundBookMatch(id))
+    } catch (e) {
+      logger.debug('[foundBooks] could not clear match:', e)
+    }
+  }
+
+  /**
+   * Hear the opening credits of a row's first file. Returns what was heard; the row
+   * comes back with heardTitle/heardAuthor filled in for the match search to use.
+   */
+  async function listen(
+    id: number,
+  ): Promise<{ title?: string | null; author?: string | null; narrator?: string | null } | null> {
+    setMatchState(id, { busy: true, error: null })
+    try {
+      const heard = await apiService.listenFoundBook(id)
+      if (heard.book) replaceItem(heard.book)
+      return { title: heard.title, author: heard.author, narrator: heard.narrator }
+    } catch (e) {
+      setMatchState(id, { error: (e as Error)?.message ?? 'Could not listen' })
+      return null
+    } finally {
+      setMatchState(id, { busy: false })
+    }
   }
 
   function setSelected(id: number, value: boolean) {
@@ -449,6 +543,7 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     scan,
     retryLookups,
     selectMatch,
+    listen,
     setSelected,
     selectAllReady,
     clearSelection,
