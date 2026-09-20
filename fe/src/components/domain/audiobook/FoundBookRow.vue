@@ -263,6 +263,7 @@
           v-if="file.isAudio"
           :preview-id="`found-${item.id}-${i}`"
           :src="apiService.buildFoundBookAudioUrl(item.id, audioIndexOf(i))"
+          compact
         />
         <span class="fr-file-name">{{ fileName(file.path) }}</span>
         <span class="fr-file-meta">
@@ -419,7 +420,9 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 <style scoped>
 .fr {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 190px 210px 236px;
+  /* The book column takes what is left but no more than a title needs; on a wide
+     screen the files and match columns grow instead of a sea of space after the title. */
+  grid-template-columns: 34px minmax(260px, 2fr) minmax(190px, 1fr) minmax(220px, 1.2fr) 236px;
   gap: 0 16px;
   padding: 16px 22px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -529,6 +532,8 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .fr-heard {

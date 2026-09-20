@@ -39,7 +39,13 @@ beforeAll(() => {
 })
 
 function mountPreview(
-  overrides: Partial<{ previewId: string; src: string; label: string; disabledTitle: string }>,
+  overrides: Partial<{
+    previewId: string
+    src: string
+    label: string
+    disabledTitle: string
+    compact: boolean
+  }>,
 ) {
   return mount(AudioPreviewPlayer, {
     props: {
@@ -74,6 +80,16 @@ describe('AudioPreviewPlayer', () => {
     expect(wrapper.get('audio').attributes('src')).toBe(
       '/api/v1/rootfolders/3/audio-preview?path=%2Fbooks%2FAlpha%2Fbook.m4b',
     )
+  })
+
+  it('shows only the button and the clock in compact mode, with no scrubber to push the row', async () => {
+    const wrapper = mountPreview({ compact: true })
+
+    await wrapper.get('.btn-preview').trigger('click')
+
+    expect(wrapper.find('.preview-seek').exists()).toBe(false)
+    expect(wrapper.get('.preview-time').text()).not.toContain('/')
+    expect(wrapper.get('.preview').classes()).not.toContain('preview-open')
   })
 
   it('stops at the two-minute mark rather than playing on into the book', async () => {
