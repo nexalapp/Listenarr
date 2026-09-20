@@ -3278,7 +3278,7 @@ const addToLibrary = async (book: AudibleBookMetadata) => {
       'Root folder not configured',
       'Please configure the root folder in Settings before adding audiobooks.',
     )
-    router.push('/settings')
+    router.push('/settings/media')
     return
   }
 

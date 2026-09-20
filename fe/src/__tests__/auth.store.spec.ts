@@ -115,7 +115,7 @@ describe('auth store cross-tab sync', () => {
     const store = useAuthStore()
     store.user = { authenticated: true, name: 'cross-tab-user' }
     store.loaded = true // prevent router guard from re-calling loadCurrentUser() and resetting auth state
-    await router.replace('/settings')
+    await router.replace('/settings/general')
 
     const logoutEvent = new Event('storage')
     Object.defineProperty(logoutEvent, 'key', { value: 'listenarr_session_event' })
@@ -127,7 +127,7 @@ describe('auth store cross-tab sync', () => {
 
     await vi.waitFor(() => {
       expect(router.currentRoute.value.name).toBe('login')
-      expect(router.currentRoute.value.query.redirect).toBe('/settings')
+      expect(router.currentRoute.value.query.redirect).toBe('/settings/general')
       expect(store.user.authenticated).toBe(false)
     })
   })

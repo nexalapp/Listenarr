@@ -245,7 +245,7 @@
       </template>
       <template #action>
         <router-link
-          :to="!hasRootFolderConfigured ? '/settings' : '/add-new'"
+          :to="!hasRootFolderConfigured ? '/settings/media' : '/add-new'"
           class="btn btn-primary"
         >
           <PhGear v-if="!hasRootFolderConfigured" />
