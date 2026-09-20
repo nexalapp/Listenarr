@@ -16,135 +16,209 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-  <div class="found-tab">
-    <div class="found-toolbar">
-      <div class="found-filters">
+  <div class="ft">
+    <div class="ft-top">
+      <div class="ft-tabs">
         <button
           v-for="f in filters"
           :key="f.id"
-          class="filter"
+          type="button"
+          class="ft-tab"
           :class="{ active: store.filter === f.id }"
           @click="store.filter = f.id"
         >
           {{ f.label }}
-          <Pill v-if="store.counts[f.id] > 0" variant="count" size="small">{{
-            store.counts[f.id]
-          }}</Pill>
+          <span v-if="f.id === 'found' && store.readyItems.length > 0" class="ft-count">{{
+            store.readyItems.length
+          }}</span>
         </button>
       </div>
-
-      <div class="found-controls">
-        <label class="control">
-          <span>Library folder</span>
-          <select v-model="selectedFolderId" class="folder-select">
-            <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">
-              {{ f.name || f.path }}
-            </option>
-          </select>
-        </label>
-        <Checkbox v-model="monitorOnAdd">Monitor added books</Checkbox>
-        <button
-          class="btn btn-primary btn-sm"
-          :disabled="!selectedFolder || store.addableItems.length === 0 || addingAll"
-          :title="
-            store.addableItems.length === 0 ? 'Nothing matched and complete to add' : undefined
-          "
-          @click="addAll"
-        >
-          <PhSpinner v-if="addingAll" class="ph-spin" :size="14" />
-          <PhPlus v-else :size="14" />
-          Add {{ store.addableItems.length }} matched
-        </button>
-        <button
-          class="btn btn-secondary btn-sm"
-          :disabled="store.scanning"
-          title="Look through the watch folders now"
-          @click="store.scan()"
-        >
-          <PhSpinner v-if="store.scanning" class="ph-spin" :size="14" />
-          <PhMagnifyingGlass v-else :size="14" />
+      <div class="ft-controls">
+        <span class="ft-label">Import into</span>
+        <select v-model="selectedFolderId" class="ft-select" aria-label="Library folder">
+          <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">
+            {{ f.name || f.path }}
+          </option>
+        </select>
+        <button type="button" class="ft-btn" :disabled="store.scanning" @click="store.scan()">
+          <PhSpinner v-if="store.scanning" class="ph-spin" :size="13" />
           {{ store.scanning ? 'Scanning…' : 'Scan now' }}
         </button>
       </div>
     </div>
 
-    <p class="watch-line" v-if="store.watchFolders">
-      <template v-if="store.watchFolders.folders.length > 0">
-        Watching
-        <span
-          v-for="(f, i) in store.watchFolders.folders"
-          :key="f.path"
-          class="watch-path"
-          :title="f.path"
-          >{{ folderName(f.path)
-          }}<template v-if="i < store.watchFolders.folders.length - 1">, </template></span
-        >
-        <template v-if="!store.watchFolders.fromSettings"> (from your download clients)</template>.
+    <div class="ft-watch">
+      <span
+        class="ft-dot"
+        :class="{ off: !store.watchFolders || store.watchFolders.folders.length === 0 }"
+      ></span>
+      <template v-if="store.watchFolders && store.watchFolders.folders.length > 0">
+        <span>
+          Watching
+          <span class="ft-path" :title="store.watchFolders.folders[0]!.path">{{
+            store.watchFolders.folders[0]!.path
+          }}</span>
+          <template v-if="store.watchFolders.folders.length > 1">
+            and {{ store.watchFolders.folders.length - 1 }} other folder{{
+              store.watchFolders.folders.length > 2 ? 's' : ''
+            }}
+          </template>
+        </span>
       </template>
-      <template v-else
-        >No watch folders: add one in Settings, or enable a download client with a download
-        path.</template
+      <span v-else
+        >No watch folders — add one, or enable a download client with a download path.</span
       >
-      <span v-if="store.lastScanCompletedAt" class="scan-meta">
-        Last scan {{ timeAgo(store.lastScanCompletedAt) }}.</span
-      >
-      <span v-for="w in store.watchFolders.warnings" :key="w" class="watch-warning"> {{ w }}</span>
-    </p>
+      <template v-if="store.lastScanCompletedAt">
+        <span class="ft-sep">·</span><span>last scan {{ timeAgo(store.lastScanCompletedAt) }}</span>
+      </template>
+      <span v-for="w in store.watchFolders?.warnings ?? []" :key="w" class="ft-warning">{{
+        w
+      }}</span>
+      <RouterLink class="ft-manage" :to="{ name: 'settings-found' }">Manage folders</RouterLink>
+    </div>
+
+    <div v-if="store.filter === 'found' && store.selectedItems.length > 0" class="ft-bulk">
+      <span class="ft-bulk-check">✓</span>
+      <span class="ft-bulk-count">{{ store.selectedItems.length }} selected</span>
+      <button type="button" class="ft-link" @click="store.selectAllReady()">
+        Select all {{ store.readyItems.length }} ready
+      </button>
+      <button type="button" class="ft-link" @click="store.clearSelection()">Clear</button>
+      <div class="ft-bulk-actions">
+        <Checkbox v-model="monitorOnAdd">Monitor after import</Checkbox>
+        <button type="button" class="ft-btn" :disabled="bulkBusy" @click="ignoreSelected">
+          Ignore
+        </button>
+        <button
+          type="button"
+          class="ft-btn primary"
+          :disabled="bulkBusy || !selectedFolder || selectedAddable.length === 0"
+          :title="
+            selectedAddable.length === 0 ? 'None of the selected books has a match yet' : undefined
+          "
+          @click="importSelected"
+        >
+          <PhSpinner v-if="bulkBusy" class="ph-spin" :size="13" />
+          Import {{ selectedAddable.length }} book{{ selectedAddable.length === 1 ? '' : 's' }}
+        </button>
+      </div>
+    </div>
 
     <LoadingState v-if="store.loading" message="Looking through the watch folders..." />
     <EmptyState v-else-if="store.error" title="Could not load found books" :message="store.error" />
-    <EmptyState
-      v-else-if="store.visibleItems.length === 0"
-      :title="emptyTitle"
-      :message="emptyMessage"
-    />
-    <div v-else class="table-wrap">
-      <table class="found-table">
-        <thead>
-          <tr>
-            <th>Book</th>
-            <th>Files</th>
-            <th>Complete</th>
-            <th>Library</th>
-            <th>Match</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
+
+    <template v-else-if="store.filter === 'found'">
+      <div
+        v-if="store.readyItems.length === 0 && store.incompleteItems.length === 0"
+        class="ft-empty"
+      >
+        <EmptyState
+          title="Nothing found"
+          message="Every complete book in the watch folders is either in the library or has been decided on. Scan now to look again."
+        />
+      </div>
+      <template v-else>
+        <div class="ft-head">
+          <span></span><span>Book</span><span>Files</span><span>Match</span><span></span>
+        </div>
+        <FoundBookRow
+          v-for="item in store.readyItems"
+          :key="item.id"
+          :item="item"
+          :can-import-into="!!selectedFolder"
+          @add="addOne"
+          @fix="openFix"
+          @discard="discard"
+        />
+        <div v-if="store.incompleteItems.length > 0" class="ft-section">
+          <span class="ft-section-title">Incomplete</span>
+          <span class="ft-section-count">{{ store.incompleteItems.length }}</span>
+          <span class="ft-section-note"
+            >Missing parts, unreadable files, or still owned by a download. Import stays disabled
+            until every part is present.</span
+          >
+          <button
+            type="button"
+            class="ft-link ft-section-toggle"
+            @click="showIncomplete = !showIncomplete"
+          >
+            {{ showIncomplete ? 'Collapse' : 'Expand' }}
+          </button>
+        </div>
+        <template v-if="showIncomplete">
           <FoundBookRow
-            v-for="item in store.visibleItems"
+            v-for="item in store.incompleteItems"
             :key="item.id"
             :item="item"
-            :can-import="!!selectedFolder"
+            :can-import-into="!!selectedFolder"
             @add="addOne"
+            @fix="openFix"
             @discard="discard"
           />
-        </tbody>
-      </table>
-    </div>
+        </template>
+      </template>
+    </template>
+
+    <template v-else>
+      <EmptyState
+        v-if="store.visibleItems.length === 0"
+        :title="store.filter === 'ignored' ? 'Nothing ignored' : 'Nothing imported yet'"
+        :message="
+          store.filter === 'ignored'
+            ? 'Books you chose to leave where they are appear here, and can be restored.'
+            : 'Imported and discarded books stay here until the next scan confirms they are gone.'
+        "
+      />
+      <template v-else>
+        <div class="ft-head">
+          <span></span><span>Book</span><span>Files</span><span>Match</span><span></span>
+        </div>
+        <FoundBookRow
+          v-for="item in store.visibleItems"
+          :key="item.id"
+          :item="item"
+          :can-import-into="!!selectedFolder"
+          @add="addOne"
+          @fix="openFix"
+          @discard="discard"
+        />
+      </template>
+    </template>
+
+    <FoundBookMatchModal
+      v-if="fixing"
+      :item="fixing"
+      :candidates="store.matchState(fixing.id).candidates"
+      :selected="store.matchState(fixing.id).selectedMatch"
+      :can-import="isReady(fixing) && !!selectedFolder"
+      @close="fixing = null"
+      @save="saveMatch"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { PhMagnifyingGlass, PhPlus, PhSpinner } from '@phosphor-icons/vue'
-import { EmptyState, LoadingState, Pill } from '@/components/base'
+import { RouterLink } from 'vue-router'
+import { PhSpinner } from '@phosphor-icons/vue'
+import { EmptyState, LoadingState } from '@/components/base'
 import { Checkbox } from '@/components/form'
 import FoundBookRow from '@/components/domain/audiobook/FoundBookRow.vue'
+import FoundBookMatchModal from '@/components/domain/audiobook/FoundBookMatchModal.vue'
 import { showConfirm } from '@/composables'
 import { useToast } from '@/services/toastService'
-import { folderName, useFoundBooksStore, type FoundBookFilter } from '@/stores/foundBooks'
+import { folderName, isReady, useFoundBooksStore, type FoundBookFilter } from '@/stores/foundBooks'
 import { useRootFoldersStore } from '@/stores/rootFolders'
+import type { FoundBook, SearchResult } from '@/types'
 
 const store = useFoundBooksStore()
 const rootFoldersStore = useRootFoldersStore()
 const toast = useToast()
 
 const filters: { id: FoundBookFilter; label: string }[] = [
-  { id: 'pending', label: 'Offered' },
-  { id: 'blocked', label: 'Waiting' },
+  { id: 'found', label: 'Found' },
   { id: 'ignored', label: 'Ignored' },
-  { id: 'done', label: 'Done' },
+  { id: 'imported', label: 'Imported' },
 ]
 
 const selectedFolderId = ref<number | null>(null)
@@ -152,7 +226,13 @@ const selectedFolder = computed(
   () => rootFoldersStore.folders.find((f) => f.id === selectedFolderId.value) ?? null,
 )
 const monitorOnAdd = ref(true)
-const addingAll = ref(false)
+const bulkBusy = ref(false)
+const showIncomplete = ref(true)
+const fixing = ref<FoundBook | null>(null)
+
+const selectedAddable = computed(() =>
+  store.selectedItems.filter((item) => store.matchState(item.id).selectedMatch != null),
+)
 
 watch(
   () => rootFoldersStore.folders,
@@ -164,59 +244,52 @@ watch(
   { immediate: true },
 )
 
-const emptyTitle = computed(() => {
-  switch (store.filter) {
-    case 'pending':
-      return 'Nothing found'
-    case 'blocked':
-      return 'Nothing waiting'
-    case 'ignored':
-      return 'Nothing ignored'
-    default:
-      return 'Nothing decided yet'
-  }
-})
-const emptyMessage = computed(() => {
-  switch (store.filter) {
-    case 'pending':
-      return 'Every complete book in the watch folders is either in the library or has been decided on. Scan now to look again.'
-    case 'blocked':
-      return 'Books still downloading, still settling, or still owned by a download appear here.'
-    case 'ignored':
-      return 'Books you chose to leave where they are appear here, and can be restored.'
-    default:
-      return 'Imported and discarded books stay here until the next scan confirms they are gone.'
-  }
-})
-
 async function addOne(id: number) {
   if (!selectedFolder.value) return
   const ok = await store.add(id, selectedFolder.value.path, monitorOnAdd.value)
-  if (ok) toast.success('Added', 'The book was added and its files moved into the library.')
-  else toast.error('Not added', store.matchState(id).error ?? 'The import failed.')
+  if (ok) toast.success('Imported', 'The book was added and its files moved into the library.')
+  else toast.error('Not imported', store.matchState(id).error ?? 'The import failed.')
 }
 
-async function addAll() {
+function openFix(id: number) {
+  fixing.value = store.items.find((i) => i.id === id) ?? null
+}
+
+async function saveMatch(result: SearchResult, candidates: SearchResult[], andImport: boolean) {
+  const item = fixing.value
+  fixing.value = null
+  if (!item) return
+  store.selectMatch(item.id, result, candidates)
+  if (andImport) await addOne(item.id)
+}
+
+async function importSelected() {
   if (!selectedFolder.value) return
-  const n = store.addableItems.length
-  const yes = await showConfirm(
-    `Add ${n} matched book${n === 1 ? '' : 's'} to the library and move their files in?`,
-    'Add matched books',
-    { confirmText: 'Add' },
-  )
-  if (!yes) return
-  addingAll.value = true
+  const ids = selectedAddable.value.map((i) => i.id)
+  bulkBusy.value = true
   try {
-    const result = await store.addAll(selectedFolder.value.path, monitorOnAdd.value)
+    const result = await store.addMany(ids, selectedFolder.value.path, monitorOnAdd.value)
     if (result.failed === 0)
-      toast.success('Added', `${result.added} book${result.added === 1 ? '' : 's'} added.`)
+      toast.success('Imported', `${result.added} book${result.added === 1 ? '' : 's'} added.`)
     else
       toast.warning(
-        'Partly added',
+        'Partly imported',
         `${result.added} added, ${result.failed} failed. Each row says why.`,
       )
   } finally {
-    addingAll.value = false
+    bulkBusy.value = false
+  }
+}
+
+async function ignoreSelected() {
+  const ids = store.selectedItems.map((i) => i.id)
+  bulkBusy.value = true
+  try {
+    const done = await store.ignoreMany(ids)
+    store.clearSelection()
+    toast.success('Ignored', `${done} book${done === 1 ? '' : 's'} hidden; files kept.`)
+  } finally {
+    bulkBusy.value = false
   }
 }
 
@@ -228,22 +301,22 @@ async function discard(id: number) {
     names.slice(0, 8).join('\n') + (names.length > 8 ? `\n… and ${names.length - 8} more` : '')
   const yes = await showConfirm(
     `Delete ${item.files.length} file${item.files.length === 1 ? '' : 's'} from ${item.bookFolder}?\n\n${listed}\n\nThis cannot be undone. If a torrent client is still seeding these files, remove it there first.`,
-    `Discard "${item.title ?? folderName(item.bookFolder)}"`,
+    `Delete "${item.title ?? folderName(item.bookFolder)}" from disk`,
     { confirmText: 'Delete files', danger: true },
   )
   if (!yes) return
   const ok = await store.decide(id, 'discard')
-  if (ok) toast.success('Discarded', 'The files were deleted.')
-  else toast.error('Not discarded', store.matchState(id).error ?? 'Nothing was deleted.')
+  if (ok) toast.success('Deleted', 'The files were deleted.')
+  else toast.error('Not deleted', store.matchState(id).error ?? 'Nothing was deleted.')
 }
 
 function timeAgo(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime()
   const minutes = Math.floor(diff / 60000)
   if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
   return `${Math.floor(hours / 24)}d ago`
 }
 
@@ -258,91 +331,251 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.found-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
+.ft {
+  background: #121417;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
-.found-filters {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.filter {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  color: #aaa;
-  padding: 0.3rem 0.75rem;
-  cursor: pointer;
+.ft-top {
+  padding: 16px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-}
-
-.filter.active {
-  color: white;
-  border-color: var(--brand-500);
-}
-
-.found-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
-.control {
+.ft-tabs {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  color: #aaa;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
-.folder-select {
-  background: rgba(255, 255, 255, 0.06);
-  color: inherit;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+.ft-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
   border-radius: 6px;
-  padding: 0.3rem 0.5rem;
+  border: none;
+  background: none;
+  color: #8b939d;
+  font-size: 13px;
+  cursor: pointer;
 }
 
-.watch-line {
-  color: #999;
-  font-size: 0.85rem;
-  margin: 0 0 1rem;
+.ft-tab.active {
+  background: #1f2429;
+  color: #e8eaed;
+  font-weight: 500;
 }
 
-.watch-path {
-  color: #ccc;
+.ft-count {
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: #2a78d6;
+  color: #fff;
+  font:
+    600 11px ui-monospace,
+    Menlo,
+    monospace;
 }
 
-.watch-warning {
-  display: block;
-  color: var(--warning-400, #ffb74d);
+.ft-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.table-wrap {
-  overflow-x: auto;
+.ft-label {
+  font-size: 12.5px;
+  color: #8b939d;
 }
 
-.found-table {
-  width: 100%;
-  border-collapse: collapse;
+.ft-select {
+  padding: 7px 11px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: #c3cad2;
+  font-size: 12.5px;
 }
 
-.found-table th {
-  text-align: left;
+.ft-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 15px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: none;
+  color: #c3cad2;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ft-btn.primary {
+  background: #2a78d6;
+  border-color: #2a78d6;
+  color: #fff;
+  font-weight: 500;
+}
+
+.ft-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ft-watch {
+  padding: 11px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #79828c;
+  flex-wrap: wrap;
+}
+
+.ft-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #5aa269;
+}
+
+.ft-dot.off {
+  background: #e4b64a;
+}
+
+.ft-path {
+  color: #c3cad2;
+}
+
+.ft-sep {
+  opacity: 0.4;
+}
+
+.ft-warning {
+  color: #e4b64a;
+}
+
+.ft-manage {
+  margin-left: auto;
+  color: #5aa2f5;
+}
+
+.ft-bulk {
+  padding: 10px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(42, 120, 214, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.ft-bulk-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: #2a78d6;
+  color: #fff;
+  font:
+    600 11px/16px 'Helvetica Neue',
+    Helvetica,
+    sans-serif;
+  text-align: center;
+}
+
+.ft-bulk-count {
+  font-weight: 500;
+  font-size: 13px;
+  color: #e8eaed;
+}
+
+.ft-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #7fb8ff;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ft-bulk-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.ft-head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 190px 210px 236px;
+  gap: 0 16px;
+  padding: 10px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  font:
+    400 10.5px ui-monospace,
+    Menlo,
+    monospace;
+  color: #69727c;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ft-section {
+  padding: 13px 22px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-wrap: wrap;
+}
+
+.ft-section-title {
   font-weight: 600;
-  font-size: 0.8rem;
-  color: #999;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12.5px;
+  color: #c3cad2;
+}
+
+.ft-section-count {
+  padding: 2px 8px;
+  border-radius: 9px;
+  background: rgba(228, 182, 74, 0.14);
+  color: #e4b64a;
+  font:
+    600 11px ui-monospace,
+    Menlo,
+    monospace;
+}
+
+.ft-section-note {
+  font-size: 12.5px;
+  color: #79828c;
+}
+
+.ft-section-toggle {
+  margin-left: auto;
+  color: #5aa2f5;
+}
+
+.ft-empty {
+  padding: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .ft-head {
+    display: none;
+  }
 }
 </style>
