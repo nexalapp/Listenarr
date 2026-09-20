@@ -35,6 +35,7 @@ internal static class FoundBooksRegistrationExtensions
         services.AddScoped<IFoundBookScanService, FoundBookScanService>();
         services.AddScoped<FoundBookCleanup>();
         services.AddScoped<IFoundBookDecisionService, FoundBookDecisionService>();
+        services.AddScoped<IFoundBookMatchService, FoundBookMatchService>();
         services.AddScoped<IFoundBookCatalogueMatcher, FoundBookCatalogueMatcher>();
         services.AddScoped<IFoundBookAutoAddService, FoundBookAutoAddService>();
         // The host that owns a manual-import workflow replaces this; a test host keeps it.

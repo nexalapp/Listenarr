@@ -17,6 +17,7 @@
  */
 using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Application.FoundBooks.Services;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.FoundBooks;
 using Microsoft.AspNetCore.Mvc;
 
@@ -39,7 +40,9 @@ namespace Listenarr.Api.Features.FoundBooks
         IFoundBookRepository repository,
         IFoundBookScanProcessor scanProcessor,
         IFoundBookWatchFolderResolver watchFolderResolver,
-        IFoundBookDecisionService decisions) : ControllerBase
+        IFoundBookDecisionService decisions,
+        IFoundBookMatchService matches,
+        IFileSystem fileSystem) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<FoundBooksResponse>> List(
@@ -121,6 +124,96 @@ namespace Listenarr.Api.Features.FoundBooks
             return Respond(await decisions.FinishImportAsync(id, request.AudiobookId, autoAdded: false, cancellationToken));
         }
 
+        /// <summary>Remember the catalogue match for a row so it survives a refresh and a scan.</summary>
+        [HttpPut("{id:int}/match")]
+        public async Task<ActionResult<FoundBookDto>> SetMatch(
+            int id,
+            [FromBody] SetMatchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request == null || (string.IsNullOrWhiteSpace(request.Asin) && string.IsNullOrWhiteSpace(request.Title)))
+            {
+                return BadRequest(new { message = "A match needs at least an ASIN or a title." });
+            }
+
+            var row = await matches.SetMatchAsync(
+                id,
+                new FoundBookMatchChoice(request.Asin, request.Title, request.Author, request.Source, request.ImageUrl, request.Confidence),
+                cancellationToken);
+            return row == null ? NotFound() : Ok(FoundBookDto.From(row));
+        }
+
+        [HttpDelete("{id:int}/match")]
+        public async Task<ActionResult<FoundBookDto>> ClearMatch(int id, CancellationToken cancellationToken = default)
+        {
+            var row = await matches.SetMatchAsync(id, null, cancellationToken);
+            return row == null ? NotFound() : Ok(FoundBookDto.From(row));
+        }
+
+        /// <summary>
+        /// Hear the opening credits of the book's first file and read title, author and
+        /// narrator out of them. 409 when transcription is off or the model is still
+        /// downloading.
+        /// </summary>
+        [HttpPost("{id:int}/listen")]
+        public async Task<ActionResult<FoundBookListenResponse>> Listen(int id, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var heard = await matches.ListenAsync(id, cancellationToken);
+                if (heard == null)
+                {
+                    return NotFound();
+                }
+
+                var row = await repository.GetAsync(id, cancellationToken);
+                return Ok(new FoundBookListenResponse(
+                    heard.Credits.Title,
+                    heard.Credits.Author,
+                    heard.Credits.Narrator,
+                    heard.Transcript,
+                    row == null ? null : FoundBookDto.From(row)));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Stream one of the row's audio files for a preview. The file comes from the
+        /// row, never from the request, so nothing outside the watch folder can be
+        /// asked for.
+        /// </summary>
+        [HttpGet("{id:int}/audio")]
+        public async Task<IActionResult> Audio(int id, [FromQuery] int index = 0, CancellationToken cancellationToken = default)
+        {
+            var row = await repository.GetAsync(id, cancellationToken);
+            if (row == null)
+            {
+                return NotFound();
+            }
+
+            var audio = FoundBookFilesJson.Deserialize(row.FilesJson).Where(f => f.IsAudio).ToList();
+            if (index < 0 || index >= audio.Count)
+            {
+                return NotFound(new { message = "No such file on this row." });
+            }
+
+            var path = audio[index].Path;
+            if (!fileSystem.TryValidateMutationTarget(path, [row.WatchFolder], out var safePath, out _)
+                || !FileUtils.IsAudioFile(safePath)
+                || !fileSystem.FileExists(safePath))
+            {
+                return NotFound(new { message = "File not found" });
+            }
+
+            return new PhysicalFileResult(safePath, AudioContentTypes.ForFile(safePath))
+            {
+                EnableRangeProcessing = true
+            };
+        }
+
         /// <summary>Delete the book's files. The UI confirms first; nothing here asks again.</summary>
         [HttpPost("{id:int}/discard")]
         public async Task<ActionResult<FoundBookDecisionResponse>> Discard(int id, CancellationToken cancellationToken = default) =>
@@ -136,6 +229,21 @@ namespace Listenarr.Api.Features.FoundBooks
     }
 
     public sealed record FinishImportRequest(int AudiobookId);
+
+    public sealed record SetMatchRequest(
+        string? Asin,
+        string? Title,
+        string? Author,
+        string? Source,
+        string? ImageUrl,
+        double? Confidence);
+
+    public sealed record FoundBookListenResponse(
+        string? Title,
+        string? Author,
+        string? Narrator,
+        string Transcript,
+        FoundBookDto? Book);
 
     public sealed record FoundBookDecisionResponse(FoundBookDto Book, IReadOnlyList<string> Skipped);
 
@@ -174,7 +282,17 @@ namespace Listenarr.Api.Features.FoundBooks
         DateTime FirstSeenAt,
         DateTime LastSeenAt,
         bool AutoAdded,
-        bool SharesFolder)
+        bool SharesFolder,
+        string? MatchAsin,
+        string? MatchTitle,
+        string? MatchAuthor,
+        string? MatchSource,
+        string? MatchImageUrl,
+        double? MatchConfidence,
+        string? HeardTitle,
+        string? HeardAuthor,
+        string? HeardNarrator,
+        DateTime? HeardAt)
     {
         public static FoundBookDto From(FoundBook row, bool sharesFolder = false) => new(
             row.Id,
@@ -209,6 +327,16 @@ namespace Listenarr.Api.Features.FoundBooks
             row.FirstSeenAt,
             row.LastSeenAt,
             row.AutoAdded,
-            sharesFolder);
+            sharesFolder,
+            row.MatchAsin,
+            row.MatchTitle,
+            row.MatchAuthor,
+            row.MatchSource,
+            row.MatchImageUrl,
+            row.MatchConfidence,
+            row.HeardTitle,
+            row.HeardAuthor,
+            row.HeardNarrator,
+            row.HeardAt);
     }
 }

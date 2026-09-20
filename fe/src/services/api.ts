@@ -81,6 +81,8 @@ import type {
   FoundBooksResponse,
   FoundBookWatchFolders,
   FoundBookDecisionResponse,
+  FoundBook,
+  FoundBookListenResponse,
 } from '@/types'
 import { getStartupConfigCached, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -1166,6 +1168,35 @@ class ApiService {
     decision: 'ignore' | 'restore' | 'begin-import' | 'abort-import' | 'discard',
   ): Promise<FoundBookDecisionResponse> {
     return this.request<FoundBookDecisionResponse>(`/found/${id}/${decision}`, { method: 'POST' })
+  }
+
+  async setFoundBookMatch(
+    id: number,
+    match: {
+      asin?: string | null
+      title?: string | null
+      author?: string | null
+      source?: string | null
+      imageUrl?: string | null
+      confidence?: number | null
+    },
+  ): Promise<FoundBook> {
+    return this.request<FoundBook>(`/found/${id}/match`, {
+      method: 'PUT',
+      body: JSON.stringify(match),
+    })
+  }
+
+  async clearFoundBookMatch(id: number): Promise<FoundBook> {
+    return this.request<FoundBook>(`/found/${id}/match`, { method: 'DELETE' })
+  }
+
+  async listenFoundBook(id: number): Promise<FoundBookListenResponse> {
+    return this.request<FoundBookListenResponse>(`/found/${id}/listen`, { method: 'POST' })
+  }
+
+  buildFoundBookAudioUrl(id: number, index: number): string {
+    return `${API_BASE_URL}/found/${id}/audio?index=${index}`
   }
 
   async finishFoundBookImport(id: number, audiobookId: number): Promise<FoundBookDecisionResponse> {

@@ -48,6 +48,14 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(b => b.State).HasConversion<string>().HasMaxLength(16);
             builder.Property(b => b.BlockedKind).HasConversion<string>().HasMaxLength(20).HasDefaultValue(FoundBookBlockedKind.None);
             builder.Property(b => b.AutoAdded).HasDefaultValue(false);
+            builder.Property(b => b.MatchAsin).HasMaxLength(32);
+            builder.Property(b => b.MatchTitle).HasMaxLength(500);
+            builder.Property(b => b.MatchAuthor).HasMaxLength(500);
+            builder.Property(b => b.MatchSource).HasMaxLength(64);
+            builder.Property(b => b.MatchImageUrl).HasMaxLength(2000);
+            builder.Property(b => b.HeardTitle).HasMaxLength(500);
+            builder.Property(b => b.HeardAuthor).HasMaxLength(500);
+            builder.Property(b => b.HeardNarrator).HasMaxLength(500);
 
             // One row per cluster per watch folder: the key is what a scan uses to find
             // last time's row, and an Ignore decision is remembered against it.

@@ -184,6 +184,42 @@ namespace Listenarr.Domain.FoundBooks
 
         /// <summary>Imported by the automatic add rather than by a person.</summary>
         public bool AutoAdded { get; set; }
+
+        /// <summary>
+        /// The catalogue match chosen for this row — by a lookup, by a person, or by the
+        /// automatic add — kept here so it survives a page refresh and a scan.
+        /// </summary>
+        [MaxLength(32)]
+        public string? MatchAsin { get; set; }
+
+        [MaxLength(500)]
+        public string? MatchTitle { get; set; }
+
+        [MaxLength(500)]
+        public string? MatchAuthor { get; set; }
+
+        [MaxLength(64)]
+        public string? MatchSource { get; set; }
+
+        [MaxLength(2000)]
+        public string? MatchImageUrl { get; set; }
+
+        /// <summary>How sure the match is, 0–1, as judged by whoever chose it.</summary>
+        public double? MatchConfidence { get; set; }
+
+        /// <summary>What the narrator said in the opening credits, when someone asked to listen.</summary>
+        [MaxLength(500)]
+        public string? HeardTitle { get; set; }
+
+        [MaxLength(500)]
+        public string? HeardAuthor { get; set; }
+
+        [MaxLength(500)]
+        public string? HeardNarrator { get; set; }
+
+        public string? HeardTranscript { get; set; }
+
+        public DateTime? HeardAt { get; set; }
     }
 
     /// <summary>One file of a found book, as stored in <see cref="FoundBook.FilesJson"/>.</summary>

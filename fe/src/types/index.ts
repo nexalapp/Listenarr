@@ -1884,6 +1884,26 @@ export interface FoundBook {
   autoAdded: boolean
   /** Another found book shares this one's directory, so a companion pass would take its files too. */
   sharesFolder: boolean
+  /** The catalogue match kept on the row, if one has been chosen. */
+  matchAsin?: string | null
+  matchTitle?: string | null
+  matchAuthor?: string | null
+  matchSource?: string | null
+  matchImageUrl?: string | null
+  matchConfidence?: number | null
+  /** What the narrator said in the opening credits, once someone asked to listen. */
+  heardTitle?: string | null
+  heardAuthor?: string | null
+  heardNarrator?: string | null
+  heardAt?: string | null
+}
+
+export interface FoundBookListenResponse {
+  title?: string | null
+  author?: string | null
+  narrator?: string | null
+  transcript: string
+  book?: FoundBook | null
 }
 
 export interface FoundBooksResponse {
