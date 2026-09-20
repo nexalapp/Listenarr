@@ -230,6 +230,15 @@
             {{ showFiles ? 'Hide files' : 'Show files' }}
           </button>
           <button type="button" class="fr-menu-item" @click="copyFolder">Copy folder path</button>
+          <button
+            v-if="firstAudioIndex >= 0 && item.state === 'Pending'"
+            type="button"
+            class="fr-menu-item"
+            :disabled="match.busy"
+            @click="listenFromMenu"
+          >
+            {{ item.heardAt ? 'Listen to the credits again' : 'Listen to the credits' }}
+          </button>
           <span class="fr-menu-sep"></span>
           <button
             v-if="item.state !== 'Ignored' && item.blockedKind !== 'OwnedByDownload'"
@@ -401,6 +410,21 @@ function closeMenu() {
 function toggleFiles() {
   showFiles.value = !showFiles.value
   menuOpen.value = false
+}
+
+/**
+ * Hear the first minute and a half and search by what the narrator says. The scan
+ * does this by itself for a row whose tags led nowhere; the menu is for asking again,
+ * or for a row whose tags were confidently wrong.
+ */
+async function listenFromMenu() {
+  menuOpen.value = false
+  const heard = await store.listen(props.item.id)
+  if (!heard) {
+    toast.error('Could not listen', match.value.error ?? 'Transcription is not available.')
+  } else if (!heard.title && !heard.author) {
+    toast.info('Nothing heard', 'No credits were recognised in the first minute and a half.')
+  }
 }
 
 function ignoreFromMenu() {
@@ -737,6 +761,11 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   font-size: 13px;
   color: #c3cad2;
   cursor: pointer;
+}
+
+.fr-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .fr-menu-item:hover {

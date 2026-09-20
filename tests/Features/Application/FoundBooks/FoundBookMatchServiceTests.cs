@@ -102,9 +102,9 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             await GivenTranscription(true);
             var audio = await FileService.GetTempFileAsync("part1.mp3");
             var row = await GivenRow(audio);
-            _transcriber.Setup(t => t.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            _transcriber.Setup(t => t.IsAvailableAsync(TranscriptionPolicy.Always, It.IsAny<CancellationToken>())).ReturnsAsync(true);
             _transcriber
-                .Setup(t => t.TranscribeAsync(audio, TimeSpan.Zero, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .Setup(t => t.TranscribeAsync(audio, TimeSpan.Zero, It.IsAny<TimeSpan>(), TranscriptionPolicy.Always, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new Transcript("Fearless, by Jack Campbell. Read by Christian Rummel."));
 
             var heard = await BuildService().ListenAsync(row.Id);
@@ -120,13 +120,24 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         }
 
         [Fact]
-        public async Task Listen_RefusesWhenTranscriptionIsOff()
+        public async Task Listen_ListensEvenWhenTheTranscriptionSettingIsOff()
         {
+            // The setting governs listening to every scanned book. Identifying a found
+            // book is the Found tab's whole promise, so it listens regardless.
             await GivenTranscription(false);
             var audio = await FileService.GetTempFileAsync("part1.mp3");
             var row = await GivenRow(audio);
+            _transcriber.Setup(t => t.IsAvailableAsync(TranscriptionPolicy.Always, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            _transcriber
+                .Setup(t => t.TranscribeAsync(audio, TimeSpan.Zero, It.IsAny<TimeSpan>(), TranscriptionPolicy.Always, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("Fearless, by Jack Campbell."));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => BuildService().ListenAsync(row.Id));
+            var heard = await BuildService().ListenAsync(row.Id);
+
+            Assert.Equal("Fearless", heard!.Credits.Title);
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+                Times.Never);
         }
 
         [Fact]
@@ -135,7 +146,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             await GivenTranscription(true);
             var audio = await FileService.GetTempFileAsync("part1.mp3");
             var row = await GivenRow(audio);
-            _transcriber.Setup(t => t.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+            _transcriber.Setup(t => t.IsAvailableAsync(TranscriptionPolicy.Always, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
             await Assert.ThrowsAsync<TranscriptionUnavailableException>(() => BuildService().ListenAsync(row.Id));
         }

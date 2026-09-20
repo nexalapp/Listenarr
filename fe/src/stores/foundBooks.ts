@@ -285,22 +285,28 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     }
   }
 
-  async function lookup(item: FoundBook) {
+  /**
+   * Ask the catalogue what this row is. By default from the tags; with `fromCredits`,
+   * from what the narrator said instead, for a row whose tags led nowhere.
+   */
+  async function lookup(item: FoundBook, fromCredits = false) {
     setMatchState(item.id, { isSearching: true })
     try {
+      const title = fromCredits ? item.heardTitle : item.title
+      const author = fromCredits ? (item.heardAuthor ?? item.author) : item.author
       const params = buildLibraryImportSearchParams(
         {
           fullPath: item.files.find((f) => f.isAudio)?.path ?? item.bookFolder,
           folderName: folderName(item.bookFolder),
-          detectedTitle: item.title ?? undefined,
-          detectedAuthor: item.author ?? undefined,
-          detectedAsin: item.asin ?? undefined,
+          detectedTitle: title ?? undefined,
+          detectedAuthor: author ?? undefined,
+          detectedAsin: fromCredits ? undefined : (item.asin ?? undefined),
         },
         LOOKUP_CAP,
       )
       const results = await apiService.advancedSearch(params)
       // ASIN results are authoritative; otherwise prefer the author the files name.
-      const best = params.asin ? (results[0] ?? null) : pickBestMatch(results, item.author)
+      const best = params.asin ? (results[0] ?? null) : pickBestMatch(results, author)
       const confidence = best ? matchConfidence(best, item) : null
       setMatchState(item.id, {
         isSearching: false,
@@ -375,6 +381,13 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     try {
       const heard = await apiService.listenFoundBook(id)
       if (heard.book) replaceItem(heard.book)
+      // What was heard is only useful as a search; run it unless the row already has
+      // a sure match, which the credits could only second-guess.
+      const item = items.value.find((candidate) => candidate.id === id)
+      const sure = (matchState(id).confidence ?? 0) >= 0.9
+      if (item && (heard.title || heard.author) && !sure) {
+        await lookup({ ...item, heardTitle: heard.title, heardAuthor: heard.author }, true)
+      }
       return { title: heard.title, author: heard.author, narrator: heard.narrator }
     } catch (e) {
       setMatchState(id, { error: (e as Error)?.message ?? 'Could not listen' })

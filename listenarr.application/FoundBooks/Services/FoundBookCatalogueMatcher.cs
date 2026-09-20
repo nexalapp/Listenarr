@@ -54,15 +54,41 @@ namespace Listenarr.Application.FoundBooks.Services
                 }
             }
 
-            var titleKey = FoundBookLibraryMatcher.TitleKey(row.DetectedTitle);
+            // The tags first; what the narrator said second. A heard title is a fallback
+            // because whisper mishears names, but it beats a folder called by a hash.
+            var fromTags = await MatchByNameAsync(row.DetectedTitle, row.DetectedAuthor, sources, region, cancellationToken);
+            if (fromTags is { HighConfidence: true } || string.IsNullOrWhiteSpace(row.HeardTitle))
+            {
+                return fromTags;
+            }
+
+            var fromEar = await MatchByNameAsync(row.HeardTitle, row.HeardAuthor ?? row.DetectedAuthor, sources, region, cancellationToken);
+            if (fromEar == null)
+            {
+                return fromTags;
+            }
+
+            return fromEar.HighConfidence || fromTags == null
+                ? fromEar with { Reason = fromEar.Reason + " (from the spoken credits)" }
+                : fromTags;
+        }
+
+        private async Task<FoundBookCatalogueMatch?> MatchByNameAsync(
+            string? title,
+            string? author,
+            List<ApiConfiguration> sources,
+            string region,
+            CancellationToken cancellationToken)
+        {
+            var titleKey = FoundBookLibraryMatcher.TitleKey(title);
             if (titleKey.Length == 0)
             {
                 return null;
             }
 
-            var query = string.IsNullOrWhiteSpace(row.DetectedAuthor)
-                ? $"TITLE:{row.DetectedTitle}"
-                : $"AUTHOR:{row.DetectedAuthor} TITLE:{row.DetectedTitle}";
+            var query = string.IsNullOrWhiteSpace(author)
+                ? $"TITLE:{title}"
+                : $"AUTHOR:{author} TITLE:{title}";
             var results = await searchService.IntelligentSearchAsync(
                 query,
                 candidateLimit: CandidateLimit,
@@ -70,7 +96,7 @@ namespace Listenarr.Application.FoundBooks.Services
                 region: region,
                 ct: cancellationToken);
 
-            var authorKey = FileUtils.NormalizeComparisonValue(row.DetectedAuthor);
+            var authorKey = FileUtils.NormalizeComparisonValue(author);
             var exact = results.FirstOrDefault(r =>
                 string.Equals(FoundBookLibraryMatcher.TitleKey(r.Title), titleKey, StringComparison.Ordinal)
                 && (authorKey.Length == 0

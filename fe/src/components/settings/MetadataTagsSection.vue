@@ -58,7 +58,7 @@
 
       <FormRow
         label="Transcription"
-        help="Lets a chapter repair listen to the audio. A CD rip's tracks outnumber its chapters; hearing the narrator announce “Chapter Four” at a track is how the author's chapters are found among them, and how placeholder titles get their names. Runs on the CPU and downloads a 150 MB model the first time it is needed."
+        help="Lets a chapter repair listen to the audio. A CD rip's tracks outnumber its chapters; hearing the narrator announce “Chapter Four” at a track is how the author's chapters are found among them, and how placeholder titles get their names. Runs on the CPU and downloads a 150 MB model the first time it is needed. Found books listen to their own credits whatever this says: identifying a book whose tags say nothing is what the Found tab is for."
       >
         <label class="tags-toggle">
           <input

@@ -51,6 +51,19 @@ namespace Listenarr.Application.FoundBooks.Contracts
             CancellationToken cancellationToken = default);
     }
 
+    public sealed record FoundBookAutoMatchSummary(int Considered, int Matched, int Listened, IReadOnlyList<string> Notes);
+
+    /// <summary>
+    /// Puts a catalogue match on every offered, complete, new row that has none: from
+    /// the tags first, and when they are not enough, by listening to the spoken credits
+    /// once. Runs after each scan, before the automatic add, so both a person and the
+    /// add see the same answer.
+    /// </summary>
+    public interface IFoundBookAutoMatchService
+    {
+        Task<FoundBookAutoMatchSummary> RunAsync(CancellationToken cancellationToken = default);
+    }
+
     public sealed record FoundBookAutoAddSummary(int Considered, int Added, int Skipped, IReadOnlyList<string> Notes);
 
     /// <summary>

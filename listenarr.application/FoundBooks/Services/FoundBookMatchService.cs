@@ -42,8 +42,9 @@ namespace Listenarr.Application.FoundBooks.Services
 
         /// <summary>
         /// Hear the opening of the book's first file and read the spoken credits out of
-        /// it. Throws <see cref="InvalidOperationException"/> when transcription is off
-        /// and <see cref="TranscriptionUnavailableException"/> while the model downloads.
+        /// it. Listens whatever the transcription setting says — the setting governs
+        /// listening to every scanned book, not identifying one whose tags say nothing.
+        /// Throws <see cref="TranscriptionUnavailableException"/> while the model downloads.
         /// </summary>
         Task<FoundBookListenResult?> ListenAsync(int id, CancellationToken cancellationToken = default);
     }
@@ -84,12 +85,12 @@ namespace Listenarr.Application.FoundBooks.Services
             }
 
             var settings = await configurationService.GetApplicationSettingsAsync();
-            if (!settings.TranscriptionEnabled || transcriber == null)
+            if (transcriber == null)
             {
-                throw new InvalidOperationException("Transcription is off. Turn it on under Settings › Conversion & Tags to listen to a book's credits.");
+                throw new InvalidOperationException("Transcription is not available in this host.");
             }
 
-            if (!await transcriber.IsAvailableAsync(cancellationToken))
+            if (!await transcriber.IsAvailableAsync(TranscriptionPolicy.Always, cancellationToken))
             {
                 throw new TranscriptionUnavailableException("The whisper model is still downloading; try again in a minute.");
             }
@@ -97,7 +98,7 @@ namespace Listenarr.Application.FoundBooks.Services
             var first = FoundBookFilesJson.Deserialize(row.FilesJson).FirstOrDefault(f => f.IsAudio && fileSystem.FileExists(f.Path))
                 ?? throw new InvalidOperationException("This book has no audio file here to listen to.");
 
-            var model = ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel);
+            var model = ChapterPlanKeys.ModelFor(transcriptionEnabled: true, settings.TranscriptionModel);
             var text = await HearAsync(first.Path, AudioAuditService.OpeningWindow, model, cancellationToken);
             var credits = AudioCreditsParser.Parse(text);
 
@@ -140,7 +141,7 @@ namespace Listenarr.Application.FoundBooks.Services
                 logger.LogDebug(ex, "Could not stat {Path} for the transcript cache", path);
             }
 
-            var transcript = await transcriber!.TranscribeAsync(path, TimeSpan.Zero, window, cancellationToken);
+            var transcript = await transcriber!.TranscribeAsync(path, TimeSpan.Zero, window, TranscriptionPolicy.Always, cancellationToken);
             if (length > 0)
             {
                 transcripts?.Set(path, length, lastWrite, TimeSpan.Zero, window, transcript, model);

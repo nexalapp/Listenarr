@@ -40,6 +40,23 @@ namespace Listenarr.Application.Audiobooks.Transcription
     }
 
     /// <summary>
+    /// Whether the transcription setting governs a request.
+    ///
+    /// <para>
+    /// The setting exists because listening costs CPU minutes per book and a model
+    /// download, and the chapter and audit features that listen to every scanned book
+    /// respect it. A person clicking "Listen" has already decided that cost is worth
+    /// it, and the Found tab promises to identify a book whose tags say nothing; both
+    /// listen whatever the setting says.
+    /// </para>
+    /// </summary>
+    public enum TranscriptionPolicy
+    {
+        WhenEnabled,
+        Always,
+    }
+
+    /// <summary>
     /// Turns a short stretch of an audio file into text.
     ///
     /// <para>
@@ -58,6 +75,9 @@ namespace Listenarr.Application.Audiobooks.Transcription
         /// </summary>
         Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default);
 
+        /// <summary>As <see cref="IsAvailableAsync(CancellationToken)"/>, under the given policy.</summary>
+        Task<bool> IsAvailableAsync(TranscriptionPolicy policy, CancellationToken cancellationToken = default);
+
         /// <summary>Where the named model stands — the configured one when null.</summary>
         Task<TranscriptionModelStatus> GetModelStatusAsync(string? model = null, CancellationToken cancellationToken = default);
 
@@ -68,6 +88,14 @@ namespace Listenarr.Application.Audiobooks.Transcription
             string path,
             TimeSpan start,
             TimeSpan length,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>As <see cref="TranscribeAsync(string, TimeSpan, TimeSpan, CancellationToken)"/>, under the given policy.</summary>
+        Task<Transcript> TranscribeAsync(
+            string path,
+            TimeSpan start,
+            TimeSpan length,
+            TranscriptionPolicy policy,
             CancellationToken cancellationToken = default);
     }
 
