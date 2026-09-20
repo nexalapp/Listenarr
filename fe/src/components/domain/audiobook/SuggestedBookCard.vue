@@ -16,7 +16,15 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-  <article class="suggested-card" :class="{ added }">
+  <article
+    class="suggested-card"
+    :class="{ added }"
+    role="button"
+    tabindex="0"
+    title="Show details"
+    @click="emit('open')"
+    @keydown.enter.self="emit('open')"
+  >
     <img
       class="cover"
       :src="getProtectedImageSrc(book.imageUrl, getPlaceholderUrl())"
@@ -36,7 +44,7 @@
           class="ignore"
           title="Not interested - stop suggesting this"
           aria-label="Ignore this suggestion"
-          @click="emit('ignore')"
+          @click.stop="emit('ignore')"
         >
           <PhX />
         </button>
@@ -45,9 +53,10 @@
           v-else
           class="btn btn-primary btn-sm add"
           title="Add to library"
-          @click="emit('add')"
+          :disabled="adding"
+          @click.stop="emit('add')"
         >
-          <PhPlus weight="bold" /> Add
+          <PhPlus weight="bold" /> {{ adding ? 'Adding…' : 'Add' }}
         </button>
       </div>
 
@@ -67,7 +76,7 @@
       <p v-if="description" class="description" :class="{ clamped: !expanded }">
         {{ description }}
       </p>
-      <button v-if="description.length > 220" class="link-btn" @click="expanded = !expanded">
+      <button v-if="description.length > 220" class="link-btn" @click.stop="expanded = !expanded">
         {{ expanded ? 'Show less' : 'Show more' }}
       </button>
     </div>
@@ -87,11 +96,16 @@ const props = defineProps<{
   showPosition?: boolean
   /** Added from this page during this visit: keep the card, swap the button. */
   added?: boolean
+  /** An add from the button is in flight. */
+  adding?: boolean
 }>()
 
 const emit = defineEmits<{
+  /** The Add button: add straight away, no modal. */
   add: []
   ignore: []
+  /** The card itself: show the details and the add form. */
+  open: []
 }>()
 
 const { getProtectedImageSrc } = useProtectedImages()
@@ -144,6 +158,13 @@ function compactCount(count: number): string {
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.07);
   min-width: 0;
+  cursor: pointer;
+}
+
+.suggested-card:hover,
+.suggested-card:focus-visible {
+  border-color: rgba(255, 255, 255, 0.18);
+  outline: none;
 }
 
 .cover {
