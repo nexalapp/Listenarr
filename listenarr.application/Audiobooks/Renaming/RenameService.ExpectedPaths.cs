@@ -46,6 +46,9 @@ namespace Listenarr.Application.Audiobooks.Renaming
             if ((string.IsNullOrWhiteSpace(folderPattern) || isCustomBasePath) && isMultiFile && !patternHasNumberTokens)
                 relativePath = FileUtils.AppendSequenceSuffix(relativePath, file.SequenceNumber);
             if (!relativePath.EndsWith(file.Extension, StringComparison.OrdinalIgnoreCase)) relativePath += file.Extension;
+            // Fitted last, after the suffix and extension, so the expected path is one
+            // the filesystem can hold and the same one an import would have written.
+            relativePath = _fileNamingService.EnsurePathWithinLimits(relativePath);
 
             return string.IsNullOrWhiteSpace(basePath) ? NormalizePath(relativePath) : NormalizePath(CombineWithOptionalBase(basePath, relativePath));
         }

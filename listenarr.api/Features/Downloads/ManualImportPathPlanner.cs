@@ -111,6 +111,10 @@ public sealed class ManualImportPathPlanner
             relativePath += extension;
         }
 
+        // The sequence suffix and extension went on after the pattern was fitted to
+        // the name limit, so a full-cast name that just fit can be over again here.
+        relativePath = _fileNamingService.EnsurePathWithinLimits(relativePath);
+
         var destinationPath = string.IsNullOrWhiteSpace(basePath)
             ? relativePath
             : CombineWithOptionalBase(basePath, relativePath);

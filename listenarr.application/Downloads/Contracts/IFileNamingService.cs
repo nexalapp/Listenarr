@@ -35,6 +35,14 @@ namespace Listenarr.Application.Downloads.Contracts
         string ApplyNamingPattern(string pattern, AudibleBookMetadata metadata, bool treatAsFilename = false);
 
         /// <summary>
+        /// Shorten any component of a finished path that is over the filesystem's
+        /// 255-byte name limit, keeping the extension. A pattern's own output is
+        /// already fitted, but a sequence suffix or extension appended afterwards can
+        /// push a fitted name back over; call this last, on the whole path.
+        /// </summary>
+        string EnsurePathWithinLimits(string fullPath);
+
+        /// <summary>
         /// Render one metadata tag's value from its configured pattern.
         /// </summary>
         /// <remarks>
