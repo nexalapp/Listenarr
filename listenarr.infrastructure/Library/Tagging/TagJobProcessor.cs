@@ -15,17 +15,21 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Infrastructure.Library.Transcription;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Tagging
 {
     /// <summary>
-    /// Runs queued tag writes, one at a time.
+    /// Runs queued tag writes one at a time, and chapter planning a few at a time.
     ///
-    /// Deliberately serial for the same reason conversion is: a rewrite pulls a whole
-    /// book across a NAS share and pushes it back, and running several would make every
-    /// one of them slower while starving the imports and scans sharing that share.
+    /// Writes are deliberately serial for the same reason conversion is: a rewrite
+    /// pulls a whole book across a NAS share and pushes it back, and running several
+    /// would make every one of them slower while starving the imports and scans sharing
+    /// that share. Planning writes nothing: it reads a file's tags, asks Audnexus, and
+    /// listens, and the listening is CPU-bound in a way a single run cannot saturate —
+    /// so as many plans run at once as whisper has slots for.
     /// </summary>
     public sealed partial class TagJobProcessor(
         IServiceScopeFactory scopeFactory,
@@ -41,6 +45,9 @@ namespace Listenarr.Infrastructure.Library.Tagging
         /// <summary>Renewed well inside the lease so a slow rewrite is never stolen.</summary>
         private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(2);
 
+        /// <summary>How many planning jobs may run at once: one per whisper slot.</summary>
+        public static int PlanningSlots => TranscriptionParallelism.Slots;
+
         public async Task RunCycleAsync(CancellationToken cancellationToken)
         {
             using var scope = scopeFactory.CreateScope();
@@ -48,22 +55,55 @@ namespace Listenarr.Infrastructure.Library.Tagging
 
             await SweepOrphanedScratchFilesAsync(scope.ServiceProvider, queue, cancellationToken);
 
-            while (!cancellationToken.IsCancellationRequested)
+            // Planning jobs run alongside each other and alongside a write; the writes
+            // themselves never overlap. A claimed plan is handed to a slot and the loop
+            // goes on claiming; the cycle ends only when the queue is empty and every
+            // plan it started has finished.
+            using var planningSlots = new SemaphoreSlim(PlanningSlots, PlanningSlots);
+            var planning = new List<Task>();
+            try
             {
-                // Before every claim, not once per cycle. A cycle runs until the queue is
-                // empty, so a long run is one cycle lasting hours, and a job stranded
-                // inside it would wait out the whole queue before anything looked at it.
-                // This matters more here than for a conversion: an interrupted job may
-                // have removed a library file and be holding its only replacement.
-                await queue.RecoverAbandonedJobsAsync(cancellationToken);
-
-                var job = await queue.ClaimNextAsync(_leaseOwner, cancellationToken);
-                if (job == null)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    return;
-                }
+                    // Before every claim, not once per cycle. A cycle runs until the queue is
+                    // empty, so a long run is one cycle lasting hours, and a job stranded
+                    // inside it would wait out the whole queue before anything looked at it.
+                    // This matters more here than for a conversion: an interrupted job may
+                    // have removed a library file and be holding its only replacement.
+                    await queue.RecoverAbandonedJobsAsync(cancellationToken);
 
+                    var job = await queue.ClaimNextAsync(_leaseOwner, cancellationToken);
+                    if (job == null)
+                    {
+                        return;
+                    }
+
+                    if (job.Kind != TagJobKind.Plan)
+                    {
+                        await RunJobAsync(job, cancellationToken);
+                        continue;
+                    }
+
+                    await planningSlots.WaitAsync(cancellationToken);
+                    planning.RemoveAll(task => task.IsCompleted);
+                    planning.Add(RunInSlotAsync(job, planningSlots, cancellationToken));
+                }
+            }
+            finally
+            {
+                await Task.WhenAll(planning);
+            }
+        }
+
+        private async Task RunInSlotAsync(TagJob job, SemaphoreSlim slot, CancellationToken cancellationToken)
+        {
+            try
+            {
                 await RunJobAsync(job, cancellationToken);
+            }
+            finally
+            {
+                slot.Release();
             }
         }
 
