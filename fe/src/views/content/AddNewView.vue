@@ -701,7 +701,16 @@
           </div>
         </div>
         <div class="title-results">
-          <div v-for="book in displayedTitleResults" :key="book.key" class="title-result-card">
+          <div
+            v-for="book in displayedTitleResults"
+            :key="book.key"
+            class="title-result-card selectable"
+            role="button"
+            tabindex="0"
+            title="Choose where and how to add this book"
+            @click="openResultOptions(book, $event)"
+            @keydown.enter.self="openResultOptions(book, $event)"
+          >
             <div class="result-poster">
               <img
                 :src="getCoverUrl(book)"
@@ -921,16 +930,34 @@
             <div class="result-actions">
               <button
                 :class="['btn', isAdded(book) ? 'btn-success' : 'btn-primary']"
-                @click="selectTitleResult(book)"
-                :disabled="isAdded(book)"
+                @click.stop="monitorResult(book)"
+                :disabled="isAdded(book) || addingKeys.has(book.key)"
                 :title="
                   isAdded(book)
                     ? 'This book is in your library, so Listenarr keeps looking for it'
-                    : 'Add this book to your library and monitor it'
+                    : 'Add this book to your library and monitor it, with the default settings. Click the row to choose.'
                 "
               >
                 <component :is="isAdded(book) ? PhCheck : PhPlus" />
-                {{ isAdded(book) ? 'Monitoring book' : 'Monitor book' }}
+                {{
+                  isAdded(book)
+                    ? 'Monitoring book'
+                    : addingKeys.has(book.key)
+                      ? 'Adding…'
+                      : 'Monitor book'
+                }}
+              </button>
+              <button
+                class="btn btn-secondary result-search-btn"
+                :title="
+                  isAdded(book)
+                    ? 'Search for a release'
+                    : 'Search for a release; added to the library only if you grab one'
+                "
+                :aria-label="`Search for ${book.title}`"
+                @click.stop="searchForResult(book)"
+              >
+                <PhMagnifyingGlass />
               </button>
             </div>
           </div>
@@ -986,6 +1013,14 @@
       </div>
     </div>
   </div>
+
+  <ManualSearchModal
+    :is-open="manualSearch !== null"
+    :audiobook="manualSearch?.audiobook ?? null"
+    :ensure-audiobook-id="manualSearch?.ensureAudiobookId"
+    @close="closeManualSearch"
+    @downloaded="handleManualSearchDownloaded"
+  />
 
   <!-- Add to Library Modal -->
   <AddLibraryModal
@@ -1053,6 +1088,9 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useLibraryStore } from '@/stores/library'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
+import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
+import { useAudiobookActions } from '@/composables/useAudiobookActions'
+import { describeApiError, getAlreadyExistingAudiobook } from '@/utils/apiError'
 import { useToast } from '@/services/toastService'
 import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
 import { isSeriesRestatement } from '@/utils/seriesUtils'
@@ -1172,6 +1210,8 @@ const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const libraryStore = useLibraryStore()
 const toast = useToast()
+const { manualSearch, openManualSearch, closeManualSearch, handleManualSearchDownloaded } =
+  useAudiobookActions('AddNewView')
 const { getProtectedImageSrc } = useProtectedImages()
 
 // Initialize composables
@@ -3040,8 +3080,17 @@ const attemptResolveAsinsForTitleResults = async (): Promise<void> => {
 // Removed manual ASIN helper methods (createAsinSearchHint, openAmazonSearch, useBookForAsinSearch)
 
 // Common methods for both search types
-const selectTitleResult = async (book: TitleSearchResult) => {
-  logger.debug('selectTitleResult called with book:', book)
+/**
+ * The metadata a result resolves to: the enriched result as it stands, else what
+ * the configured sources say about its ASIN, else what OpenLibrary knows by ISBN.
+ * Null when there is nothing to add from, with the reason already shown. The
+ * Monitor button and the search both start here so they cannot disagree about
+ * which book a result is.
+ */
+const resolveMetadataForResult = async (
+  book: TitleSearchResult,
+): Promise<AudibleBookMetadata | null> => {
+  logger.debug('resolveMetadataForResult called with book:', book)
   const asin = resolvedAsins.value[book.key] || book.searchResult?.asin
 
   try {
@@ -3073,8 +3122,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       }
 
       // Add to library directly using the enriched metadata
-      await addToLibrary(metadata)
-      return
+      return metadata
     }
 
     // Fallback: if we have an ASIN, fetch metadata from configured sources
@@ -3148,8 +3196,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
           openLibraryId: result?.id || undefined,
         }
         toast.warning('Metadata unavailable', 'Using search result details to continue.')
-        await addToLibrary(fallbackMetadata)
-        return
+        return fallbackMetadata
       }
 
       toast.success('Metadata retrieved', `Book details fetched from ${metadataSource}`)
@@ -3204,8 +3251,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       }
 
       // Add to library directly
-      await addToLibrary(metadata)
-      return
+      return metadata
     }
 
     // Allow adding any book with a title and ISBN (relaxed, not just OpenLibrary)
@@ -3256,18 +3302,111 @@ const selectTitleResult = async (book: TitleSearchResult) => {
               : undefined,
         metadataSource: book.metadataSource || 'unknown',
       }
-      await addToLibrary(metadata)
-      return
+      return metadata
     }
     // Otherwise, block as before
     logger.error(
       'No ASIN, enriched metadata, or OpenLibrary ISBN+title available for selected book',
     )
     toast.warning('Cannot add', 'Cannot add to library: No ASIN, metadata, or ISBN available')
+    return null
   } catch (error) {
-    logger.error('Failed to add audiobook:', error)
+    logger.error('Failed to resolve the book to add:', error)
     toast.error('Add failed', 'Failed to add audiobook. Please try again.')
+    return null
   }
+}
+
+/**
+ * The row itself: the add with its choices - root folder, quality profile, whether
+ * to search now. A click on a control inside the row is that control's, not this.
+ */
+const openResultOptions = async (book: TitleSearchResult, event: Event) => {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('a, button, input, select, textarea')) return
+  const metadata = await resolveMetadataForResult(book)
+  if (metadata) await addToLibrary(metadata)
+}
+
+const addingKeys = ref(new Set<string>())
+
+/**
+ * The Monitor button: add now, monitored, with the defaults the modal would
+ * use. The row is how to change anything first.
+ */
+const monitorResult = async (book: TitleSearchResult) => {
+  if (isAdded(book) || addingKeys.value.has(book.key)) return
+  if (rootFoldersStore.folders.length === 0 && !configStore.applicationSettings?.outputPath) {
+    toast.warning(
+      'Root folder not configured',
+      'Please configure the root folder in Settings before adding audiobooks.',
+    )
+    router.push('/settings/media')
+    return
+  }
+
+  addingKeys.value = new Set(addingKeys.value).add(book.key)
+  try {
+    const metadata = await resolveMetadataForResult(book)
+    if (!metadata) return
+    const { audiobook } = await apiService.addToLibrary(metadata, {
+      monitored: true,
+      autoSearch: false,
+    })
+    handleLibraryAdded(audiobook)
+    toast.success('Added', `"${metadata.title}" has been added to your library.`)
+  } catch (e) {
+    const existing = getAlreadyExistingAudiobook(e)
+    if (existing) {
+      handleLibraryAdded(existing)
+      toast.success('Already added', `"${book.title}" is already in your library.`)
+      return
+    }
+    toast.error('Not added', describeApiError(e, 'The book could not be added.'))
+  } finally {
+    const next = new Set(addingKeys.value)
+    next.delete(book.key)
+    addingKeys.value = next
+  }
+}
+
+/** Enough of an Audiobook for the search modal to search with: no id, nothing in the library. */
+const searchStandInFor = (book: TitleSearchResult): Audiobook =>
+  ({
+    id: 0,
+    title: book.searchResult?.title || book.title || 'Unknown Title',
+    authors: book.searchResult?.artist
+      ? [book.searchResult.artist]
+      : Array.isArray(book.author_name)
+        ? book.author_name.filter((a): a is string => typeof a === 'string')
+        : [],
+    asin: getAsin(book) ?? undefined,
+    imageUrl: book.imageUrl || book.searchResult?.imageUrl || undefined,
+  }) as Audiobook
+
+/**
+ * The result's magnifying glass: search for a release first, and add the book -
+ * monitored - only when one is actually grabbed. Looking at what is available
+ * never leaves a followed book behind.
+ */
+const searchForResult = (book: TitleSearchResult) => {
+  openManualSearch(searchStandInFor(book), async () => {
+    const metadata = await resolveMetadataForResult(book)
+    if (!metadata) throw new Error('The book could not be added to the library.')
+    try {
+      const { audiobook } = await apiService.addToLibrary(metadata, {
+        monitored: true,
+        autoSearch: false,
+      })
+      handleLibraryAdded(audiobook)
+      return audiobook.id
+    } catch (e) {
+      const existing = getAlreadyExistingAudiobook(e)
+      if (!existing) throw e
+      handleLibraryAdded(existing)
+      return existing.id
+    }
+  })
 }
 
 // Common methods for both search types
@@ -4825,6 +4964,11 @@ select.form-input:focus {
   min-width: 0;
 }
 
+.result-actions .result-search-btn {
+  flex: none;
+  padding-inline: 0.75rem;
+}
+
 /* Title Search Results */
 .title-results {
   display: flex;
@@ -4863,6 +5007,15 @@ select.form-input:focus {
   align-items: flex-start;
   transition: all 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.title-result-card.selectable {
+  cursor: pointer;
+}
+
+.title-result-card.selectable:focus-visible {
+  outline: 2px solid rgba(var(--brand-rgb), 0.5);
+  outline-offset: 2px;
 }
 
 .title-result-card:hover {
