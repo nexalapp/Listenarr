@@ -33,8 +33,8 @@ namespace Listenarr.Infrastructure.Library.Transcription
     /// use, so the image ships no model and a bigger one is a setting away. ffmpeg cuts
     /// the stretch to hear and resamples it to the 16kHz mono WAV whisper wants — it is
     /// the one decoder this app already trusts, and it seeks a multi-hour file in
-    /// milliseconds. One transcription runs at a time: the NAS has no GPU, and two
-    /// whisper runs on one CPU are slower than one after the other.
+    /// milliseconds. A few transcriptions run at once, each on a share of the cores —
+    /// see <see cref="TranscriptionParallelism"/> — because one run cannot use them all.
     /// </para>
     /// <para>
     /// A singleton because the loaded model is the expensive part: a factory per model
@@ -49,7 +49,8 @@ namespace Listenarr.Infrastructure.Library.Transcription
         private const int DecodeTimeoutMs = 120_000;
         private static readonly TimeSpan MaxWindow = TimeSpan.FromMinutes(3);
 
-        private readonly SemaphoreSlim _gate = new(1, 1);
+        private readonly SemaphoreSlim _gate = new(TranscriptionParallelism.Slots, TranscriptionParallelism.Slots);
+        private readonly SemaphoreSlim _downloadGate = new(1, 1);
         private readonly Dictionary<string, WhisperFactory> _factories = new(StringComparer.Ordinal);
 
         // One download at a time, off any caller's thread; its failure is kept for the
@@ -218,7 +219,7 @@ namespace Listenarr.Infrastructure.Library.Transcription
                 var factory = GetFactory(modelPath);
                 using var processor = factory.CreateBuilder()
                     .WithLanguage("en")
-                    .WithThreads(Math.Max(1, Environment.ProcessorCount - 1))
+                    .WithThreads(TranscriptionParallelism.ThreadsPerSlot)
                     .Build();
 
                 using var stream = new MemoryStream(audio, writable: false);
@@ -259,7 +260,7 @@ namespace Listenarr.Infrastructure.Library.Transcription
                 return modelPath;
             }
 
-            await _gate.WaitAsync(cancellationToken);
+            await _downloadGate.WaitAsync(cancellationToken);
             try
             {
                 if (IsOnDisk(modelPath))
@@ -281,7 +282,7 @@ namespace Listenarr.Infrastructure.Library.Transcription
             }
             finally
             {
-                _gate.Release();
+                _downloadGate.Release();
             }
         }
 
@@ -390,6 +391,7 @@ namespace Listenarr.Infrastructure.Library.Transcription
             }
 
             _gate.Dispose();
+            _downloadGate.Dispose();
         }
     }
 }
