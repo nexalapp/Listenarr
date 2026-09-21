@@ -83,6 +83,9 @@ namespace Listenarr.Application.FoundBooks.Services
             }
 
             signal.Wake();
+            // Another open Found tab learns the row is taken the same way it learns
+            // the outcome.
+            await BroadcastAsync(cancellationToken);
             return FoundBookImportResult.Queued(begun.Book!);
         }
 
@@ -116,15 +119,33 @@ namespace Listenarr.Application.FoundBooks.Services
             FoundBookImportResult result;
             try
             {
-                result = request == null
-                    ? await FailAsync(row, FoundBookImportFailure.ImportFailed, "The queued request could not be read.", cancellationToken)
-                    : await RunAsync(row, request, attempt, cancellationToken);
+                if (request == null)
+                {
+                    result = await FailAsync(row, FoundBookImportFailure.ImportFailed, "The queued request could not be read.", cancellationToken);
+                }
+                else if (attempt > RetryDelays.Length + 1)
+                {
+                    // Every attempt has been used and the row is still queued: the abort
+                    // that should have ended it could not be written. End it here rather
+                    // than run it once a minute for ever.
+                    result = await FailAsync(row, FoundBookImportFailure.Persistence,
+                        $"Gave up after {row.ImportAttempts} attempts; the last could not be recorded. Try again once the database is well.", cancellationToken);
+                }
+                else
+                {
+                    result = await RunAsync(row, request, attempt, cancellationToken);
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && WorkerExceptionClassifier.IsNonFatal(ex))
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex) || ex is OperationCanceledException)
             {
                 // The runner puts the row back itself; this is for what fails around it.
+                // A cancellation nobody asked for is a timeout below, and a failure.
                 logger.LogError(ex, "Queued import of found book {Id} failed outside the import", row.Id);
-                result = await FailAsync(row, FoundBookImportFailure.ImportFailed, ex.Message, cancellationToken);
+                result = await FailAsync(row, FoundBookImportFailure.ImportFailed, ex is OperationCanceledException ? "A step timed out before it finished." : ex.Message, cancellationToken);
             }
 
             if (result.Failure == FoundBookImportFailure.Persistence && attempt <= RetryDelays.Length && request != null)

@@ -54,7 +54,8 @@ namespace Listenarr.Application.FoundBooks.Services
 
             // A queued request arrives already importing: the row was marked when it
             // was queued, so a restart in between finds it. Anything else is marked here.
-            if (row.State != FoundBookState.Importing)
+            var queued = row.State == FoundBookState.Importing;
+            if (!queued)
             {
                 var begun = await decisions.BeginImportAsync(row.Id, null, cancellationToken);
                 if (!begun.Success)
@@ -69,21 +70,33 @@ namespace Listenarr.Application.FoundBooks.Services
             {
                 return await ImportBegunAsync(row, metadata, options, cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && WorkerExceptionClassifier.IsNonFatal(ex))
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                // The caller's own cancellation: the host stopping. A queued row keeps its
+                // request so the next start resumes it; a row this call marked has no
+                // request to resume and must not stay importing forever. The abort gets
+                // a token of its own because the caller's is already signalled.
+                if (!queued)
+                {
+                    await AbortAsync(row.Id, "The import was cancelled before it finished.", CancellationToken.None);
+                }
+
+                throw;
+            }
+            catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex) || ex is OperationCanceledException)
+            {
+                // An OperationCanceledException the caller did not ask for is a timeout
+                // somewhere below - an HttpClient giving up on a cover image, say - and
+                // is a failure of this import, not a request to stop.
                 logger.LogError(ex, "Import of found book {Id} failed", row.Id);
                 var (failure, error) = IsPersistenceFailure(ex)
-                    ? (FoundBookImportFailure.Persistence, "The database was unavailable, so the import stopped; nothing was imported. Try again in a moment.")
-                    : (FoundBookImportFailure.ImportFailed, ex.Message);
+                    ? (FoundBookImportFailure.Persistence,
+                        "The database was unavailable, so the import stopped part-way. It will be tried again, and anything already moved is picked up where it was left.")
+                    : ex is OperationCanceledException
+                        ? (FoundBookImportFailure.ImportFailed, "A step timed out before it finished.")
+                        : (FoundBookImportFailure.ImportFailed, ex.Message);
                 var book = await AbortAsync(row.Id, error, cancellationToken);
                 return FoundBookImportResult.Fail(failure, error, book);
-            }
-            catch (OperationCanceledException)
-            {
-                // A cancelled request must not leave the row importing forever; the
-                // abort gets a token of its own because the caller's is already signalled.
-                await AbortAsync(row.Id, "The import was cancelled before it finished.", CancellationToken.None);
-                throw;
             }
         }
 
@@ -122,8 +135,8 @@ namespace Listenarr.Application.FoundBooks.Services
             }
 
             // A record that already exists is the retry case: a previous attempt got as
-            // far as adding it and no further. Reusing it is what makes a second Add
-            // safe, and the importer skips any file a previous attempt already placed.
+            // far as adding it, or further. Reusing it is what makes a second Add safe,
+            // and the importer asks only for the files a previous attempt did not move.
             var import = await importer.ImportAsync(row, audiobook.Id, options.IncludeCompanions, cancellationToken);
             if (!import.Success)
             {
@@ -156,7 +169,7 @@ namespace Listenarr.Application.FoundBooks.Services
                     var aborted = await decisions.AbortImportAsync(id, error, cancellationToken);
                     return aborted.Book;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && WorkerExceptionClassifier.IsNonFatal(ex))
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested && (WorkerExceptionClassifier.IsNonFatal(ex) || ex is OperationCanceledException))
                 {
                     if (attempt >= AbortRetryDelays.Length)
                     {

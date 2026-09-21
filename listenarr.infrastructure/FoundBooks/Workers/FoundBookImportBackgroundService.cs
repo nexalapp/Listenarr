@@ -58,8 +58,11 @@ namespace Listenarr.Infrastructure.FoundBooks.Workers
                 {
                     break;
                 }
-                catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
+                catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex) || ex is OperationCanceledException)
                 {
+                    // A cancellation that is not the host stopping is a timeout somewhere
+                    // below. Letting it escape would fault this service and, with the
+                    // host's default behaviour, stop the whole application.
                     logger.LogError(ex, "Found-book import pass failed");
                     wait = Tick;
                 }

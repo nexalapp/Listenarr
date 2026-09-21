@@ -164,7 +164,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
 
             Assert.Equal(FoundBookImportFailure.Persistence, result.Failure);
             Assert.Contains("database was unavailable", result.Error);
-            Assert.Contains("nothing was imported", result.Error);
+            Assert.Contains("tried again", result.Error);
             Assert.Equal(["begin", "abort"], _states);
             Assert.Equal([result.Error], _abortErrors);
             Assert.Equal(FoundBookState.Pending, result.Book!.State);
@@ -257,6 +257,39 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         }
 
         [Fact]
+        public async Task StoppedMidRun_PutsBackARowItMarked_ButKeepsAQueuedOne()
+        {
+            using var stopping = new CancellationTokenSource();
+            _importer.Throw = new OperationCanceledException();
+            _importer.CancelBeforeThrowing = stopping;
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => Build().RunAsync(Row, Metadata, Manual(), stopping.Token));
+            Assert.Equal(["begin", "abort"], _states);
+
+            _states.Clear();
+            using var stoppingAgain = new CancellationTokenSource();
+            _importer.CancelBeforeThrowing = stoppingAgain;
+            var queued = new FoundBook { Id = Row.Id, BookFolder = Row.BookFolder, FilesJson = Row.FilesJson, State = FoundBookState.Importing, ImportRequestJson = "{}" };
+            await Assert.ThrowsAsync<OperationCanceledException>(() => Build().RunAsync(queued, Metadata, Manual(), stoppingAgain.Token));
+            // The request stays on the row for the next start to resume.
+            Assert.Empty(_states);
+        }
+
+        [Fact]
+        public async Task ATimeoutBelow_IsAFailureOfThisImport_NotAStop()
+        {
+            // An HttpClient giving up throws OperationCanceledException with nobody's
+            // token: the row is put back with a reason, and nothing escapes.
+            _importer.Throw = new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout");
+
+            var result = await Build().RunAsync(Row, Metadata, Manual());
+
+            Assert.Equal(FoundBookImportFailure.ImportFailed, result.Failure);
+            Assert.Contains("timed out", result.Error);
+            Assert.Equal(["begin", "abort"], _states);
+        }
+
+        [Fact]
         public async Task NoImporter_RefusesBeforeTouchingTheRow()
         {
             var runner = new FoundBookImportRunner(
@@ -273,10 +306,13 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             public List<(int Id, int AudiobookId, bool IncludeCompanions)> Calls { get; } = [];
             public string? Fail { get; set; }
             public Exception? Throw { get; set; }
+            /// <summary>Signals the caller's token first, so the throw reads as the host stopping.</summary>
+            public CancellationTokenSource? CancelBeforeThrowing { get; set; }
             public bool IsAvailable => true;
 
             public Task<FoundBookImportOutcome> ImportAsync(FoundBook row, int audiobookId, bool includeCompanions, CancellationToken cancellationToken = default)
             {
+                CancelBeforeThrowing?.Cancel();
                 if (Throw != null) throw Throw;
                 Calls.Add((row.Id, audiobookId, includeCompanions));
                 return Task.FromResult(Fail == null

@@ -292,7 +292,16 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             Assert.Equal(0, aborted.Book.ImportAttempts);
             Assert.Equal("disk full", aborted.Book.LastImportError);
 
-            // A second begin, then a finish with the file gone, clears the error too.
+            // A fresh begin clears the old reason; a retry (attempt > 0) keeps it so
+            // the row can say what it is retrying after.
+            var retrying = await service.BeginImportAsync(row.Id, new FoundBookQueuedImport("{}", 1, null));
+            Assert.Equal("disk full", retrying.Book!.LastImportError);
+            await service.AbortImportAsync(row.Id, "disk full");
+            var fresh = await service.BeginImportAsync(row.Id);
+            Assert.Null(fresh.Book!.LastImportError);
+            await service.AbortImportAsync(row.Id, "disk full");
+
+            // A begin, then a finish with the file gone, clears the error too.
             await service.BeginImportAsync(row.Id);
             File.Delete(a);
             var finished = await service.FinishImportAsync(row.Id, 42);

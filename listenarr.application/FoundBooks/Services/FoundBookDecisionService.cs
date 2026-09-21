@@ -122,6 +122,11 @@ namespace Listenarr.Application.FoundBooks.Services
                 row.ImportRequestJson = queued?.RequestJson;
                 row.ImportNotBefore = queued?.NotBefore;
                 row.ImportAttempts = queued?.Attempt ?? 0;
+                // A new import starts clean; a retry keeps the reason it is retrying.
+                if ((queued?.Attempt ?? 0) == 0)
+                {
+                    row.LastImportError = null;
+                }
             });
 
         public Task<FoundBookDecisionResult> AbortImportAsync(int id, string? error = null, CancellationToken cancellationToken = default) =>
@@ -146,7 +151,7 @@ namespace Listenarr.Application.FoundBooks.Services
                 {
                     row.State = FoundBookState.Pending;
                     ClearImport(row);
-                    row.LastImportError = "The import was interrupted before it finished; nothing was imported.";
+                    row.LastImportError = "The import was interrupted before it finished. Anything already moved is kept; importing again picks up from there.";
                 }, cancellationToken);
                 logger.LogWarning("Found book {Id} was left importing by an earlier run; offered again", id);
             }

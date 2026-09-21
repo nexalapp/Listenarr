@@ -108,13 +108,16 @@ export function stateFilter(state: FoundBookState): FoundBookFilter {
 }
 
 /**
- * Whether a found row can be imported as it stands: offered, and either whole or
- * with nothing saying it is not. A row with a known gap, an unreadable file, or
- * something still owning its files waits in the Incomplete section instead.
+ * Whether a found row belongs in the main list: offered or being imported, and
+ * either whole or with nothing saying it is not. A row with a known gap, an
+ * unreadable file, or something still owning its files waits in the Incomplete
+ * section instead. An importing row stays where it was so its progress, and any
+ * reason it comes back, are seen where the person left it - not folded into
+ * "Incomplete", which says something different.
  */
 export function isReady(item: FoundBook): boolean {
   return (
-    item.state === 'Pending' &&
+    (item.state === 'Pending' || item.state === 'Importing') &&
     (item.completeness === 'Complete' || item.completeness === 'Unknown')
   )
 }
@@ -151,16 +154,20 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     items.value.filter((item) => stateFilter(item.state) === 'found' && !isReady(item)),
   )
 
-  /** Rows that can be added right now: ready, with a match, and not in the library. */
+  /** Rows that can be added right now: offered, with a match, and not in the library. */
   const addableItems = computed(() =>
     readyItems.value.filter(
       (item) =>
-        item.libraryStatus !== 'InLibrary' && matchStates.value[item.id]?.selectedMatch != null,
+        item.state === 'Pending' &&
+        item.libraryStatus !== 'InLibrary' &&
+        matchStates.value[item.id]?.selectedMatch != null,
     ),
   )
 
   const selectedItems = computed(() =>
-    readyItems.value.filter((item) => matchStates.value[item.id]?.selected),
+    readyItems.value.filter(
+      (item) => item.state === 'Pending' && matchStates.value[item.id]?.selected,
+    ),
   )
 
   function matchState(id: number): FoundBookMatchState {

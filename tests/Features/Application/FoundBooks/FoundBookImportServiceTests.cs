@@ -304,6 +304,27 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
         }
 
         [Fact]
+        public async Task ARowThatHasUsedEveryAttempt_IsEndedRatherThanRunAgain()
+        {
+            // The abort that should have ended the last attempt could not be written,
+            // so the row is still queued with every attempt spent.
+            await GivenDefaultRoot();
+            var row = await GivenRow();
+            await _decisions.BeginImportAsync(row.Id, new FoundBookQueuedImport(
+                "{\"asin\":\"B00ABCDEF1\",\"rootPath\":\"/library\",\"monitored\":true,\"separateBook\":false}",
+                FoundBookImportService.RetryDelays.Length + 1,
+                null));
+
+            var drain = await Build().RunDueAsync();
+
+            Assert.Equal(1, drain.Ran);
+            var after = (await _repository.GetAsync(row.Id))!;
+            Assert.Equal(FoundBookState.Pending, after.State);
+            Assert.Contains("Gave up", after.LastImportError);
+            _runner.VerifyNoOtherCalls();
+        }
+
+        [Fact]
         public async Task ARequestQueuedBeforeARestart_IsRunOnTheFirstPass()
         {
             // No Enqueue in this process: the row carries the request from an earlier one.

@@ -72,8 +72,7 @@ public sealed class LibraryPreviewPathWorkflowTests : BaseTests
             Mock.Of<IRootFolderService>(),
             new LibraryDestinationPlanner(
                 configurationService.Object,
-                _provider.GetRequiredService<IFileNamingService>(),
-                Mock.Of<ILogger<LibraryDestinationPlanner>>()),
+                _provider.GetRequiredService<IFileNamingService>()),
             Mock.Of<ILogger<LibraryPreviewPathWorkflow>>());
         var request = new LibraryController.PreviewPathRequest
         {

@@ -301,6 +301,23 @@ describe('found books store', () => {
     expect(store.matchState(1).error).toContain('network down')
   })
 
+  it('keeps an importing row in the main list but out of what can be added', async () => {
+    getFoundBooks.mockResolvedValue({
+      items: [book({ state: 'Importing', lastImportError: null })],
+      pending: 0,
+      blocked: 0,
+      scanning: false,
+    })
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+    await store.load()
+    await flush()
+
+    expect(store.readyItems.map((i) => i.id)).toEqual([1])
+    expect(store.incompleteItems).toHaveLength(0)
+    expect(store.addableItems).toHaveLength(0)
+  })
+
   it('refuses to add without a match', async () => {
     advancedSearch.mockResolvedValue([])
     const { useFoundBooksStore } = await import('@/stores/foundBooks')
