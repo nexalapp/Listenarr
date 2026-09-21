@@ -382,6 +382,7 @@ import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
+import { sortActivity } from '@/utils/activityOrder'
 
 const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
@@ -722,7 +723,7 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
       : `MP3 to M4B · ${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
     downloadClientId: 'LISTENARR_CONVERSION',
     downloadClientType: 'conversion',
-    addedAt: '',
+    addedAt: job.enqueuedAt ?? '',
     errorMessage: job.error ?? undefined,
     canPause: false,
     canRemove: false,
@@ -771,7 +772,7 @@ const convertTagJobToQueueItem = (job: TrackedTagJob): QueueItem => {
       : `${kind.client} · ${phaseLabel}${job.fileCount ? ` · ${job.fileCount} files` : ''}`,
     downloadClientId: 'LISTENARR_TAGGING',
     downloadClientType: 'tagging',
-    addedAt: '',
+    addedAt: job.enqueuedAt ?? '',
     errorMessage: job.error ?? undefined,
     canPause: false,
     canRemove: false,
@@ -958,7 +959,7 @@ const allActivityItems = computed(() => {
   for (const it of completedExternal) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
   for (const it of failedFromDownloads) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
 
-  return Array.from(finalMap.values())
+  return sortActivity(Array.from(finalMap.values()))
 })
 
 // Build a lookup map from audiobook ID -> title for resolving friendly names

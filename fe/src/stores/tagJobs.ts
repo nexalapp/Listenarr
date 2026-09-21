@@ -41,6 +41,8 @@ export interface TrackedTagJob {
   trigger: string
   /** `Tags` or `Chapters`. */
   kind: string
+  /** When the job joined the queue: the order the worker takes them in. */
+  enqueuedAt?: string | null
 }
 
 const terminalStatuses = new Set<ConversionJobStatus>([
@@ -98,6 +100,7 @@ function toTracked(update: TagJobUpdate, existing?: TrackedTagJob): TrackedTagJo
     error: update.error ?? null,
     failureKind: update.failureKind ?? null,
     canRetry: update.canRetry ?? existing?.canRetry ?? false,
+    enqueuedAt: update.enqueuedAt ?? existing?.enqueuedAt ?? null,
     holdingUnpublishedFile:
       update.holdingUnpublishedFile ?? existing?.holdingUnpublishedFile ?? false,
     trigger: update.trigger ?? existing?.trigger ?? 'Automatic',
