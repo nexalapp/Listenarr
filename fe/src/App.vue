@@ -506,7 +506,8 @@
         </div>
         <RouterView v-else v-slot="{ Component }">
           <Transition name="page-fade">
-            <component :is="Component" :key="route.name as string" />
+            <!-- Keyed by path so /books/1 → /books/2 mounts afresh; a query or hash change does not. -->
+            <component :is="Component" :key="route.path" />
           </Transition>
         </RouterView>
       </main>
