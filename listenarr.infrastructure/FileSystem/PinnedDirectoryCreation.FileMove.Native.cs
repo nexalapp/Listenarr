@@ -73,9 +73,13 @@ internal sealed partial class PinnedDirectoryCreation
             return new SafeFileHandle(new IntPtr(fd), ownsHandle: true);
         }
 
+        // The errno is the whole diagnosis - EACCES is a folder somebody else owns,
+        // EEXIST a leftover, ENOSPC a full disk - so it goes in the message the
+        // operator reads, not only in the code they cannot see.
+        var createError = Marshal.GetLastWin32Error();
         throw new Win32Exception(
-            Marshal.GetLastWin32Error(),
-            "Could not create a pinned read-write file.");
+            createError,
+            $"Could not create '{fileName}' in the pinned destination directory: {Marshal.GetPInvokeErrorMessage(createError)} (errno {createError}).");
     }
 
     private static SafeFileHandle OpenRelativeFileUnix(
@@ -93,9 +97,10 @@ internal sealed partial class PinnedDirectoryCreation
             return new SafeFileHandle(new IntPtr(fd), ownsHandle: true);
         }
 
+        var openError = Marshal.GetLastWin32Error();
         throw new Win32Exception(
-            Marshal.GetLastWin32Error(),
-            $"Could not open pinned file '{fullPath}'.");
+            openError,
+            $"Could not open pinned file '{fullPath}': {Marshal.GetPInvokeErrorMessage(openError)} (errno {openError}).");
     }
 
     private static SafeFileHandle OpenRelativeFileForWriteUnix(

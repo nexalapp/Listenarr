@@ -115,7 +115,7 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
                 {
                     return ConversionResult.Fail(
                         ConversionFailureKind.EncodeFailed,
-                        $"ffmpeg exited with code {run.ExitCode}: {FfmpegService.SummariseFfprobeFailure(run.Stderr)}");
+                        $"ffmpeg {DescribeExit(run.ExitCode)}: {FfmpegService.SummariseFfprobeFailure(run.Stderr)}");
                 }
 
                 return await VerifyOutputAsync(request, cancellationToken);
@@ -181,17 +181,20 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
 
             using var process = processRunner.StartProcess(startInfo);
 
-            var stderr = new StringBuilder();
+            // Bounded, and bounded at the tail: a source that warns on every frame
+            // would grow this without limit over a multi-hour encode, and the line that
+            // says why an encode died is the last one, not the first. Keeping the head
+            // reported hours of "estimating duration" and never the failure.
+            var stderr = new Queue<string>();
             var stderrPump = Task.Run(async () =>
             {
                 string? line;
                 while ((line = await process.StandardError.ReadLineAsync(cancellationToken)) != null)
                 {
-                    // Bounded: a source that warns on every frame would otherwise grow
-                    // this without limit over a multi-hour encode.
-                    if (stderr.Length < 16_384)
+                    stderr.Enqueue(line);
+                    if (stderr.Count > StderrTailLines)
                     {
-                        stderr.Append(line).Append('\n');
+                        stderr.Dequeue();
                     }
                 }
             }, CancellationToken.None);
@@ -211,7 +214,39 @@ namespace Listenarr.Infrastructure.Ffmpeg.Conversion
             }
 
             await Task.WhenAll(stderrPump, stdoutPump);
-            return (process.ExitCode, stderr.ToString());
+            return (process.ExitCode, string.Join('\n', stderr));
+        }
+
+        private const int StderrTailLines = 200;
+
+        /// <summary>
+        /// What an exit code means in words. A child that dies of a signal exits with
+        /// 128 plus the signal number, and "code 136" says nothing to a reader where
+        /// "killed by SIGFPE" says a division by zero inside ffmpeg.
+        /// </summary>
+        internal static string DescribeExit(int exitCode)
+        {
+            if (exitCode <= 128 || exitCode > 128 + 64)
+            {
+                return $"exited with code {exitCode}";
+            }
+
+            var signal = exitCode - 128;
+            var name = signal switch
+            {
+                1 => "SIGHUP",
+                2 => "SIGINT",
+                4 => "SIGILL",
+                6 => "SIGABRT",
+                7 => "SIGBUS",
+                8 => "SIGFPE",
+                9 => "SIGKILL",
+                11 => "SIGSEGV",
+                13 => "SIGPIPE",
+                15 => "SIGTERM",
+                _ => $"signal {signal}"
+            };
+            return $"was killed by {name} (exit code {exitCode})";
         }
 
         /// <summary>

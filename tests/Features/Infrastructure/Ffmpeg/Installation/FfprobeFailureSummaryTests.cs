@@ -54,5 +54,21 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             Assert.True(summary.Length <= 401, $"summary was {summary.Length} characters");
             await Task.CompletedTask;
         }
+
+        [Fact]
+        public async Task Summarise_KeepsTheLastLines_WhereFfmpegSaysWhyItStopped()
+        {
+            // Eighty-five inputs each earn a warning on the way in; the reason the
+            // encode died comes last. A summary of the first three lines reported the
+            // warnings and never the failure.
+            var warnings = Enumerable.Range(0, 85)
+                .Select(i => $"[mp3 @ 0x{i:x}] Estimating duration from bitrate, this may be inaccurate");
+            var stderr = string.Join('\n', warnings.Append("[aac @ 0x1] Error while encoding frame: Invalid argument"));
+
+            var summary = FfmpegService.SummariseFfprobeFailure(stderr);
+
+            Assert.Contains("Error while encoding frame", summary);
+            await Task.CompletedTask;
+        }
     }
 }

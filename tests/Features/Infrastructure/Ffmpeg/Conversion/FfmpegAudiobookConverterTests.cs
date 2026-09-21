@@ -416,5 +416,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
         /// </summary>
         private static Dictionary<string, string> Tags(params (string Key, string Value)[] tags) =>
             tags.ToDictionary(tag => tag.Key, tag => tag.Value, StringComparer.OrdinalIgnoreCase);
+
+        [Theory]
+        [InlineData(1, "exited with code 1")]
+        [InlineData(136, "was killed by SIGFPE (exit code 136)")]
+        [InlineData(137, "was killed by SIGKILL (exit code 137)")]
+        [InlineData(139, "was killed by SIGSEGV (exit code 139)")]
+        [InlineData(255, "exited with code 255")]
+        public void DescribeExit_NamesTheSignalThatKilledTheEncoder(int exitCode, string expected)
+        {
+            // "code 136" says nothing to a reader; "SIGFPE" says a division by zero
+            // inside ffmpeg, which is a different investigation from a bad input.
+            Assert.Equal(expected, FfmpegAudiobookConverter.DescribeExit(exitCode));
+        }
     }
 }

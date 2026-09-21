@@ -93,6 +93,15 @@ namespace Listenarr.Application.Audiobooks.Conversion
                     Reason: "This book has no MP3 files to convert.");
             }
 
+            // A file the scan could not read, or could not find, cannot be encoded.
+            // ffmpeg would spend the whole encode and then fail on it with a message
+            // about frames; the file's name is the useful answer, and it is known now.
+            var unreadable = DescribeUnreadableFiles(audiobook);
+            if (unreadable != null)
+            {
+                return new ConversionEnqueueResult(ConversionEnqueueOutcome.SourceUnreadable, Reason: unreadable);
+            }
+
             // Check for an encoder before writing a row. Queueing without one only
             // produces a job that fails the moment a worker picks it up.
             if (!await converter.IsAvailableAsync(cancellationToken))
@@ -401,6 +410,51 @@ namespace Listenarr.Application.Audiobooks.Conversion
         /// already a single M4B has nothing to gain, and one with no MP3s has nothing to
         /// convert.
         /// </summary>
+        /// <summary>
+        /// The files an encode would fail on, as one sentence naming them, or null when
+        /// every source is usable. A file the scan probed and could not read carries a
+        /// duration of zero - one never probed carries none, and is given the benefit of
+        /// the doubt; one the scan could not find is flagged as such.
+        /// </summary>
+        internal static string? DescribeUnreadableFiles(Audiobook audiobook)
+        {
+            var files = audiobook.Files;
+            if (files == null || files.Count == 0)
+            {
+                return null;
+            }
+
+            var missing = files
+                .Where(file => file.IsNotFound)
+                .Select(file => Path.GetFileName(file.Path))
+                .ToList();
+            var unreadable = files
+                .Where(file => !file.IsNotFound && file.DurationSeconds is <= 0)
+                .Select(file => Path.GetFileName(file.Path))
+                .ToList();
+            if (missing.Count == 0 && unreadable.Count == 0)
+            {
+                return null;
+            }
+
+            var parts = new List<string>();
+            if (unreadable.Count > 0)
+            {
+                parts.Add($"{Plural(unreadable.Count, "file")} could not be read by ffprobe ({Join(unreadable)})");
+            }
+
+            if (missing.Count > 0)
+            {
+                parts.Add($"{Plural(missing.Count, "file")} {(missing.Count == 1 ? "is" : "are")} not where the record says ({Join(missing)})");
+            }
+
+            return $"{string.Join(", and ", parts)}. Replace or remove {(unreadable.Count + missing.Count == 1 ? "it" : "them")}, rescan, then convert.";
+
+            static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+            static string Join(List<string> names) =>
+                names.Count <= 3 ? string.Join(", ", names) : $"{string.Join(", ", names.Take(3))}, and {names.Count - 3} more";
+        }
+
         private static int CountConvertibleFiles(Audiobook audiobook)
         {
             var files = audiobook.Files;

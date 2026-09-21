@@ -33,6 +33,12 @@ namespace Listenarr.Application.Audiobooks.Conversion
         /// <summary>No encoder is installed, so queueing would only produce a failed job.</summary>
         EncoderUnavailable,
 
+        /// <summary>
+        /// A source file cannot be read, or is no longer where the record says. An
+        /// encode would only spend minutes to fail on it; the reason names the files.
+        /// </summary>
+        SourceUnreadable,
+
         /// <summary>Automatic conversion is switched off and this was not a manual request.</summary>
         Disabled,
 

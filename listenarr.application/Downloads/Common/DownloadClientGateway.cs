@@ -282,6 +282,20 @@ namespace Listenarr.Application.Downloads.Common
                 {
                     item.SourceFiles = [item.ContentPath];
                 }
+                else if (!fileSystem.DirectoryExists(item.ContentPath))
+                {
+                    // The client still lists the item but its folder is gone: an import
+                    // took the files and the cleanup took the folder, and the client's
+                    // history simply has not been cleared. That is the normal end of a
+                    // download, not a fault, and it recurs on every poll - so it is not
+                    // worth a warning with a stack trace each time.
+                    logger.LogDebug(
+                        "Download client {ClientId} item {Title} has no folder at {Path}; already imported and cleaned up",
+                        client.Id,
+                        item.Title,
+                        item.ContentPath);
+                    item.SourceFiles = [];
+                }
                 else
                 {
                     // Some clients can only report a directory. Expand it so import code can
