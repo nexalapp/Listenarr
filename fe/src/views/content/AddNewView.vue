@@ -4964,9 +4964,14 @@ select.form-input:focus {
   min-width: 0;
 }
 
+/* Beside Monitor book, and square: as tall as that button, and as wide. */
 .result-actions .result-search-btn {
   flex: none;
-  padding-inline: 0.75rem;
+  width: 2.75rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Title Search Results */
@@ -5030,10 +5035,11 @@ select.form-input:focus {
 
 .title-result-card .result-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 0.5rem;
   min-width: 170px;
   align-self: flex-start;
+  align-items: stretch;
   margin-top: 0;
 }
 
@@ -5414,6 +5420,10 @@ select.form-input:focus {
     width: 100%;
     padding: 0.9rem 1rem;
     font-size: 1rem;
+  }
+
+  .title-result-card .result-actions .result-search-btn {
+    width: 100%;
   }
 
   /* Reduce page padding for small devices to maximize content space */
