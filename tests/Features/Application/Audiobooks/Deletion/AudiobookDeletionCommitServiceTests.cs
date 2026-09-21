@@ -2,7 +2,6 @@ using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Audiobooks.Conversion;
 using Listenarr.Application.Audiobooks.Deletion;
 using Listenarr.Application.Audiobooks.Tagging;
-using Listenarr.Domain.Audiobooks.Tagging;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 
