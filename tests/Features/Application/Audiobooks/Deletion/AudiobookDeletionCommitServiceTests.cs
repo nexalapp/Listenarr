@@ -1,5 +1,9 @@
+using Listenarr.Application.Audiobooks;
+using Listenarr.Application.Audiobooks.Conversion;
 using Listenarr.Application.Audiobooks.Deletion;
+using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Tests.Common;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Listenarr.Tests.Features.Application.Audiobooks.Deletion;
 
@@ -32,7 +36,7 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
                 return await releasePreflight.Task;
             });
         using var cancellation = new CancellationTokenSource();
-        var service = new AudiobookDeletionCommitService(repository.Object);
+        var service = Build(repository.Object);
 
         // When
         var deletion = service.DeleteAsync(audiobookId, cancellation.Token);
@@ -67,7 +71,7 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
                 cancellation.Cancel();
                 return Task.FromResult(true);
             });
-        var service = new AudiobookDeletionCommitService(repository.Object);
+        var service = Build(repository.Object);
 
         // When
         var result = await service.DeleteAsync(audiobookId, cancellation.Token);
@@ -105,7 +109,7 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
             .ReturnsAsync(audiobook);
         repository.Setup(service => service.DeleteByIdAsync(audiobookId))
             .ReturnsAsync(true);
-        var service = new AudiobookDeletionCommitService(repository.Object);
+        var service = Build(repository.Object);
 
         // When
         var result = await service.DeleteAsync(
@@ -145,7 +149,7 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
             .ReturnsAsync(audiobook);
         repository.Setup(service => service.DeleteByIdAsync(audiobookId))
             .ReturnsAsync(true);
-        var service = new AudiobookDeletionCommitService(repository.Object);
+        var service = Build(repository.Object);
 
         // When
         var result = await service.DeleteAsync(
@@ -169,7 +173,7 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var repository = new Mock<IAudiobookRepository>(MockBehavior.Strict);
-        var service = new AudiobookDeletionCommitService(repository.Object);
+        var service = Build(repository.Object);
 
         // When / Then
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
@@ -178,5 +182,63 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
             audiobookId,
             It.IsAny<CancellationToken>()), Times.Never);
         repository.Verify(service => service.DeleteByIdAsync(audiobookId), Times.Never);
+    }
+
+    private readonly Mock<IConversionQueueService> _conversions = new();
+    private readonly Mock<ITagQueueService> _tags = new();
+    private readonly Mock<IConversionJobRepository> _conversionJobs = new();
+    private readonly Mock<ITagJobRepository> _tagJobs = new();
+
+    private AudiobookDeletionCommitService Build(IAudiobookRepository repository) =>
+        new(
+            repository,
+            _conversions.Object,
+            _tags.Object,
+            _conversionJobs.Object,
+            _tagJobs.Object,
+            NullLogger<AudiobookDeletionCommitService>.Instance);
+
+    [Fact]
+    public async Task DeleteAsync_StopsAJobStillWorkingOnTheBook_BeforeTheBookGoes()
+    {
+        // A conversion encoding the book while it is deleted would go on for minutes
+        // and then publish into a folder that no longer exists; its row would vanish
+        // from under it when the key cascaded. It is cancelled first.
+        const int audiobookId = 4103;
+        var audiobook = new Audiobook { Id = audiobookId, Title = "Mid-encode" };
+        var repository = new Mock<IAudiobookRepository>();
+        repository.Setup(r => r.GetForUpdateSnapshotAsync(audiobookId, It.IsAny<CancellationToken>())).ReturnsAsync(audiobook);
+        repository.Setup(r => r.DeleteByIdAsync(audiobookId)).ReturnsAsync(true);
+        var conversion = new ConversionJob { AudiobookId = audiobookId };
+        var tagging = new TagJob { AudiobookId = audiobookId };
+        _conversions.Setup(q => q.GetActiveJobForAudiobookAsync(audiobookId, It.IsAny<CancellationToken>())).ReturnsAsync(conversion);
+        _conversions.Setup(q => q.CancelAsync(conversion.Id, It.IsAny<CancellationToken>())).ReturnsAsync(JobControlResult.Done());
+        _tags.Setup(q => q.GetActiveJobForAudiobookAsync(audiobookId, It.IsAny<CancellationToken>())).ReturnsAsync(tagging);
+        _tags.Setup(q => q.CancelAsync(tagging.Id, It.IsAny<CancellationToken>())).ReturnsAsync(JobControlResult.Done());
+
+        var result = await Build(repository.Object).DeleteAsync(audiobookId);
+
+        Assert.Equal(AudiobookDeletionCommitOutcome.Deleted, result.Outcome);
+        _conversions.Verify(q => q.CancelAsync(conversion.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _tags.Verify(q => q.CancelAsync(tagging.Id, It.IsAny<CancellationToken>()), Times.Once);
+        // And the rows go with the book, terminal ones included.
+        _conversionJobs.Verify(r => r.DeleteForAudiobookAsync(audiobookId, It.IsAny<CancellationToken>()), Times.Once);
+        _tagJobs.Verify(r => r.DeleteForAudiobookAsync(audiobookId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ThatDidNotCommit_LeavesTheJobsAlone()
+    {
+        const int audiobookId = 4104;
+        var repository = new Mock<IAudiobookRepository>();
+        repository.Setup(r => r.GetForUpdateSnapshotAsync(audiobookId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Audiobook { Id = audiobookId, Title = "Stays" });
+        repository.Setup(r => r.DeleteByIdAsync(audiobookId)).ReturnsAsync(false);
+
+        var result = await Build(repository.Object).DeleteAsync(audiobookId);
+
+        Assert.Equal(AudiobookDeletionCommitOutcome.Failed, result.Outcome);
+        _conversionJobs.Verify(r => r.DeleteForAudiobookAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _tagJobs.Verify(r => r.DeleteForAudiobookAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

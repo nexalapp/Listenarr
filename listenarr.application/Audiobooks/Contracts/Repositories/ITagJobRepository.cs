@@ -81,6 +81,16 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             Guid id,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Delete every job of a book, terminal ones included: a job has no meaning
+        /// without its book. SQLite cannot take a cascading key on an existing table
+        /// without rebuilding it, which this project's migrations forbid, so the
+        /// delete does what the key would. Returns the number removed.
+        /// </summary>
+        Task<int> DeleteForAudiobookAsync(
+            int audiobookId,
+            CancellationToken cancellationToken = default);
+
         /// <summary>Apply a change to a job and save. Returns false when the job has gone.</summary>
         Task<bool> UpdateAsync(
             Guid id,
