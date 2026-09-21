@@ -163,6 +163,13 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return rows > 0;
         }
 
+        public Task<int> DeleteForAudiobookAsync(
+            int audiobookId,
+            CancellationToken cancellationToken = default) =>
+            db.ConversionJobs
+                .Where(job => job.AudiobookId == audiobookId)
+                .ExecuteDeleteAsync(cancellationToken);
+
         public async Task<bool> UpdateAsync(
             Guid id,
             Action<ConversionJob> mutate,
