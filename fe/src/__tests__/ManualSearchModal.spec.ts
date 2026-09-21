@@ -564,4 +564,58 @@ describe('ManualSearchModal.vue', () => {
 
     expect(wrapper.find('.download-error').exists()).toBe(false)
   })
+
+  it('adds the book on the first grab when asked to, and sends the grab against the new id', async () => {
+    // A book not yet in the library is searched for as a stand-in with no id;
+    // only a grab adds it. The id the add returns is the one the grab is sent with.
+    const ensureAudiobookId = vi.fn().mockResolvedValue(4242)
+    const wrapper = mount(ManualSearchModal, {
+      props: {
+        isOpen: true,
+        audiobook: { id: 0, title: 'Wool', authors: ['Hugh Howey'] } as never,
+        ensureAudiobookId,
+      },
+      global: { stubs },
+    })
+    const vm = wrapper.vm as unknown as {
+      downloadResult: (r: ManualSearchResult) => Promise<void>
+    }
+    const result = { id: 'r1', title: 'Wool', downloadReference: 'ref-1' } as ManualSearchResult
+    setResultsOnVm(vm, [result])
+    await nextTick()
+    const send = vi
+      .spyOn(apiService, 'sendToDownloadClient')
+      .mockResolvedValue({ downloadId: 'd1', message: 'ok' })
+
+    await vm.downloadResult(result)
+
+    expect(ensureAudiobookId).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith(result, undefined, 4242)
+    expect(wrapper.emitted('downloaded')).toHaveLength(1)
+  })
+
+  it('reports a failed add as a failed grab and sends nothing', async () => {
+    const wrapper = mount(ManualSearchModal, {
+      props: {
+        isOpen: true,
+        audiobook: { id: 0, title: 'Wool', authors: ['Hugh Howey'] } as never,
+        ensureAudiobookId: vi.fn().mockRejectedValue(new Error('The book could not be added.')),
+      },
+      global: { stubs },
+    })
+    const vm = wrapper.vm as unknown as {
+      downloadResult: (r: ManualSearchResult) => Promise<void>
+    }
+    const result = { id: 'r1', title: 'Wool', downloadReference: 'ref-1' } as ManualSearchResult
+    setResultsOnVm(vm, [result])
+    await nextTick()
+    const send = vi.spyOn(apiService, 'sendToDownloadClient')
+
+    await vm.downloadResult(result)
+    await nextTick()
+
+    expect(send).not.toHaveBeenCalled()
+    expect(wrapper.find('.download-error').exists()).toBe(true)
+    expect(wrapper.find('.download-error').text()).toContain('could not be added')
+  })
 })
