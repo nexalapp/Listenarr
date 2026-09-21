@@ -932,6 +932,18 @@
                 <component :is="isAdded(book) ? PhCheck : PhPlus" />
                 {{ isAdded(book) ? 'Monitoring book' : 'Monitor book' }}
               </button>
+              <button
+                class="btn btn-secondary result-search-btn"
+                :title="
+                  isAdded(book)
+                    ? 'Search for a release'
+                    : 'Search for a release; added to the library only if you grab one'
+                "
+                :aria-label="`Search for ${book.title}`"
+                @click="searchForResult(book)"
+              >
+                <PhMagnifyingGlass />
+              </button>
             </div>
           </div>
         </div>
@@ -986,6 +998,14 @@
       </div>
     </div>
   </div>
+
+  <ManualSearchModal
+    :is-open="manualSearch !== null"
+    :audiobook="manualSearch?.audiobook ?? null"
+    :ensure-audiobook-id="manualSearch?.ensureAudiobookId"
+    @close="closeManualSearch"
+    @downloaded="handleManualSearchDownloaded"
+  />
 
   <!-- Add to Library Modal -->
   <AddLibraryModal
@@ -1053,6 +1073,9 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useLibraryStore } from '@/stores/library'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
+import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
+import { useAudiobookActions } from '@/composables/useAudiobookActions'
+import { getAlreadyExistingAudiobook } from '@/utils/apiError'
 import { useToast } from '@/services/toastService'
 import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
 import { isSeriesRestatement } from '@/utils/seriesUtils'
@@ -1172,6 +1195,8 @@ const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const libraryStore = useLibraryStore()
 const toast = useToast()
+const { manualSearch, openManualSearch, closeManualSearch, handleManualSearchDownloaded } =
+  useAudiobookActions('AddNewView')
 const { getProtectedImageSrc } = useProtectedImages()
 
 // Initialize composables
@@ -3040,8 +3065,17 @@ const attemptResolveAsinsForTitleResults = async (): Promise<void> => {
 // Removed manual ASIN helper methods (createAsinSearchHint, openAmazonSearch, useBookForAsinSearch)
 
 // Common methods for both search types
-const selectTitleResult = async (book: TitleSearchResult) => {
-  logger.debug('selectTitleResult called with book:', book)
+/**
+ * The metadata a result resolves to: the enriched result as it stands, else what
+ * the configured sources say about its ASIN, else what OpenLibrary knows by ISBN.
+ * Null when there is nothing to add from, with the reason already shown. The
+ * Monitor button and the search both start here so they cannot disagree about
+ * which book a result is.
+ */
+const resolveMetadataForResult = async (
+  book: TitleSearchResult,
+): Promise<AudibleBookMetadata | null> => {
+  logger.debug('resolveMetadataForResult called with book:', book)
   const asin = resolvedAsins.value[book.key] || book.searchResult?.asin
 
   try {
@@ -3073,8 +3107,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       }
 
       // Add to library directly using the enriched metadata
-      await addToLibrary(metadata)
-      return
+      return metadata
     }
 
     // Fallback: if we have an ASIN, fetch metadata from configured sources
@@ -3148,8 +3181,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
           openLibraryId: result?.id || undefined,
         }
         toast.warning('Metadata unavailable', 'Using search result details to continue.')
-        await addToLibrary(fallbackMetadata)
-        return
+        return fallbackMetadata
       }
 
       toast.success('Metadata retrieved', `Book details fetched from ${metadataSource}`)
@@ -3204,8 +3236,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       }
 
       // Add to library directly
-      await addToLibrary(metadata)
-      return
+      return metadata
     }
 
     // Allow adding any book with a title and ISBN (relaxed, not just OpenLibrary)
@@ -3256,18 +3287,63 @@ const selectTitleResult = async (book: TitleSearchResult) => {
               : undefined,
         metadataSource: book.metadataSource || 'unknown',
       }
-      await addToLibrary(metadata)
-      return
+      return metadata
     }
     // Otherwise, block as before
     logger.error(
       'No ASIN, enriched metadata, or OpenLibrary ISBN+title available for selected book',
     )
     toast.warning('Cannot add', 'Cannot add to library: No ASIN, metadata, or ISBN available')
+    return null
   } catch (error) {
-    logger.error('Failed to add audiobook:', error)
+    logger.error('Failed to resolve the book to add:', error)
     toast.error('Add failed', 'Failed to add audiobook. Please try again.')
+    return null
   }
+}
+
+const selectTitleResult = async (book: TitleSearchResult) => {
+  const metadata = await resolveMetadataForResult(book)
+  if (metadata) await addToLibrary(metadata)
+}
+
+/** Enough of an Audiobook for the search modal to search with: no id, nothing in the library. */
+const searchStandInFor = (book: TitleSearchResult): Audiobook =>
+  ({
+    id: 0,
+    title: book.searchResult?.title || book.title || 'Unknown Title',
+    authors: book.searchResult?.artist
+      ? [book.searchResult.artist]
+      : Array.isArray(book.author_name)
+        ? book.author_name.filter((a): a is string => typeof a === 'string')
+        : [],
+    asin: getAsin(book) ?? undefined,
+    imageUrl: book.imageUrl || book.searchResult?.imageUrl || undefined,
+  }) as Audiobook
+
+/**
+ * The result's magnifying glass: search for a release first, and add the book -
+ * monitored - only when one is actually grabbed. Looking at what is available
+ * never leaves a followed book behind.
+ */
+const searchForResult = (book: TitleSearchResult) => {
+  openManualSearch(searchStandInFor(book), async () => {
+    const metadata = await resolveMetadataForResult(book)
+    if (!metadata) throw new Error('The book could not be added to the library.')
+    try {
+      const { audiobook } = await apiService.addToLibrary(metadata, {
+        monitored: true,
+        autoSearch: false,
+      })
+      handleLibraryAdded(audiobook)
+      return audiobook.id
+    } catch (e) {
+      const existing = getAlreadyExistingAudiobook(e)
+      if (!existing) throw e
+      handleLibraryAdded(existing)
+      return existing.id
+    }
+  })
 }
 
 // Common methods for both search types
@@ -4823,6 +4899,11 @@ select.form-input:focus {
 .result-actions .btn {
   flex: 1;
   min-width: 0;
+}
+
+.result-actions .result-search-btn {
+  flex: none;
+  padding-inline: 0.75rem;
 }
 
 /* Title Search Results */

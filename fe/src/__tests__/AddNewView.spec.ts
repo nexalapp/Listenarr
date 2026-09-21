@@ -1056,9 +1056,67 @@ describe('AddNewView pagination', () => {
     const facts = card.findAll('.result-facts .fact').map((fact) => fact.text())
     expect(facts).toEqual(['22h 50m', 'English', 'Recorded Books', '2022'])
 
-    // Adding the book is what monitors it, so the one action reports that state.
+    // Adding the book is what monitors it, so the add action reports that state.
+    // Beside it, the search: for a release, without adding anything until one is grabbed.
     expect(card.find('.result-actions .btn').text()).toBe('Monitoring book')
-    expect(card.findAll('.result-actions .btn')).toHaveLength(1)
+    expect(card.findAll('.result-actions .btn')).toHaveLength(2)
+    expect(card.find('.result-actions .result-search-btn').attributes('aria-label')).toMatch(
+      /^Search for /,
+    )
+  })
+
+  it('searches from a result without adding it, and adds - monitored - only when a release is grabbed', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, {
+      global: { plugins: [createPinia(), router], stubs: { ManualSearchModal: true } },
+    })
+    const vm = wrapper.vm as unknown as {
+      searchType?: string
+      titleResults?: unknown[]
+      manualSearch?: {
+        audiobook: { id: number; title: string }
+        ensureAudiobookId?: () => Promise<number>
+      } | null
+    }
+    // The central mock has no addToLibrary; the add is the thing under test here.
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { addToLibrary?: Mock }
+    apiService.addToLibrary = vi.fn().mockResolvedValue({
+      audiobook: { id: 77, asin: 'B0NEW1', title: 'Play Nice' },
+    })
+
+    vm.searchType = 'title'
+    vm.titleResults = [
+      {
+        title: 'Play Nice',
+        key: 'B0NEW1',
+        author_name: ['Rachel Harrison'],
+        searchResult: {
+          asin: 'B0NEW1',
+          title: 'Play Nice',
+          artist: 'Rachel Harrison',
+          isEnriched: true,
+        },
+      },
+    ]
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.title-results .result-actions .result-search-btn').trigger('click')
+
+    // The search opens on a stand-in; nothing has been added.
+    expect(vm.manualSearch?.audiobook.title).toBe('Play Nice')
+    expect(vm.manualSearch?.audiobook.id).toBe(0)
+    expect(apiService.addToLibrary).not.toHaveBeenCalled()
+
+    // The grab asks for the id, which is what adds the book.
+    const id = await vm.manualSearch!.ensureAudiobookId!()
+    expect(id).toBe(77)
+    expect(apiService.addToLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({ asin: 'B0NEW1', title: 'Play Nice' }),
+      { monitored: true, autoSearch: false },
+    )
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.title-results .result-actions .btn').text()).toBe('Monitoring book')
   })
 
   it('shows "Added" and disables add button when result is already in library', async () => {
