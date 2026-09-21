@@ -210,9 +210,10 @@
     </template>
 
     <ManualSearchModal
-      :is-open="manualSearchAudiobook !== null"
-      :audiobook="manualSearchAudiobook"
-      @close="manualSearchAudiobook = null"
+      :is-open="manualSearch !== null"
+      :audiobook="manualSearch?.audiobook ?? null"
+      :ensure-audiobook-id="manualSearch?.ensureAudiobookId"
+      @close="manualSearch = null"
       @downloaded="handleManualSearchDownloaded"
     />
 
@@ -496,22 +497,45 @@ function markAdded(key: string, audiobook: Audiobook) {
   addedKeys.value = new Set(addedKeys.value).add(key)
 }
 
-const manualSearchAudiobook = ref<Audiobook | null>(null)
+const manualSearch = ref<{
+  audiobook: Audiobook
+  ensureAudiobookId: () => Promise<number>
+} | null>(null)
 
 /**
- * The card's magnifying glass. A suggestion is not in the library yet, and a
- * manual grab needs a book to attach to, so this adds it first - monitored, with
- * the automatic search left off because the person is about to run their own.
+ * The card's magnifying glass. The search needs only a title and authors, so the
+ * book is not added - and not monitored - until a release is actually sent to a
+ * download client. Closing the modal without grabbing leaves the library as it
+ * was; a suggestion that never becomes available is never followed.
  */
-async function searchFor(book: SuggestedBook) {
-  const audiobook =
-    addedAudiobooks.get(bookKey(book)) ?? (await addSuggestion(book, { autoSearch: false }))
-  if (audiobook) manualSearchAudiobook.value = audiobook
+function searchFor(book: SuggestedBook) {
+  const key = bookKey(book)
+  const added = addedAudiobooks.get(key)
+  manualSearch.value = {
+    audiobook: added ?? searchStandIn(book),
+    ensureAudiobookId: async () => {
+      const audiobook =
+        addedAudiobooks.get(key) ?? (await addSuggestion(book, { autoSearch: false }))
+      if (!audiobook) throw new Error('The book could not be added to the library.')
+      return audiobook.id
+    },
+  }
+}
+
+/** Enough of an Audiobook for the modal to search with: no id, nothing in the library. */
+function searchStandIn(book: SuggestedBook): Audiobook {
+  return {
+    id: 0,
+    title: book.title,
+    authors: book.authors ?? [],
+    asin: book.asin,
+    imageUrl: book.imageUrl,
+  } as Audiobook
 }
 
 function handleManualSearchDownloaded(result: SearchResult) {
   toast.success('Download Added', `${result.title} has been sent to your download client`)
-  manualSearchAudiobook.value = null
+  manualSearch.value = null
 }
 
 function handleAdded(audiobook: Audiobook) {

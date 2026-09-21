@@ -60,7 +60,11 @@
         </button>
         <button
           class="search"
-          :title="added ? 'Search for this book' : 'Add to library and search for it'"
+          :title="
+            added
+              ? 'Search for this book'
+              : 'Search for a release; added to the library only if you grab one'
+          "
           aria-label="Search for this book"
           :disabled="adding"
           @click.stop="emit('search')"
@@ -112,7 +116,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** The Add button: add straight away, no modal. */
   add: []
-  /** The magnifying glass: add if needed, then open manual search. */
+  /** The magnifying glass: search first; the book is added only when a release is grabbed. */
   search: []
   ignore: []
   /** The card itself: show the details and the add form. */
