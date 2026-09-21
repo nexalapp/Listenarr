@@ -7,7 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-using Listenarr.Domain.Common;
+using Listenarr.Application.FoundBooks.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library;
@@ -15,7 +15,7 @@ namespace Listenarr.Api.Features.Library;
 public sealed class LibraryPreviewPathWorkflow(
     IConfigurationService configurationService,
     IRootFolderService rootFolderService,
-    IFileNamingService fileNamingService,
+    ILibraryDestinationPlanner planner,
     ILogger<LibraryPreviewPathWorkflow> logger)
 {
     public async Task<IActionResult> PreviewAsync(LibraryController.PreviewPathRequest request)
@@ -30,30 +30,10 @@ public sealed class LibraryPreviewPathWorkflow(
             var root = explicitRoot
                 ? request.DestinationRoot
                 : defaultRoot?.Path ?? settings.OutputPath;
-            var audiobook = request.Metadata.ToAudiobook();
 
-            AudiobookSeriesMembershipHelper.ApplyToAudiobook(
-                audiobook,
-                request.Metadata.SeriesMemberships,
-                request.Metadata.Series,
-                request.Metadata.SeriesNumber);
+            var plan = await planner.PlanBookFolderAsync(request.Metadata, root ?? string.Empty);
 
-            var namingPattern = !string.IsNullOrWhiteSpace(settings.FolderNamingPattern)
-                ? settings.FolderNamingPattern
-                : settings.FileNamingPattern;
-            // Preview owns the naming calculation, so preserve the generated relative
-            // directory directly instead of re-deriving it from the full path through
-            // live filesystem semantics. Read-only preview must not depend on CIFS/NFS/
-            // FUSE case-sensitivity probes merely to recover a string it just produced.
-            var relativePath = LibraryPathPlanner.ComputeAudiobookRelativeDirectoryFromPattern(
-                audiobook,
-                namingPattern,
-                fileNamingService);
-            var fullPath = FileUtils.CombineWithOptionalBase(
-                root ?? string.Empty,
-                relativePath);
-
-            return new OkObjectResult(new { fullPath, relativePath, root });
+            return new OkObjectResult(new { fullPath = plan.FullPath, relativePath = plan.RelativePath, root });
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
         {

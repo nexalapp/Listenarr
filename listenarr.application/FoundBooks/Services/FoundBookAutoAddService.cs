@@ -32,13 +32,11 @@ namespace Listenarr.Application.FoundBooks.Services
         IFoundBookRepository repository,
         IConfigurationService configurationService,
         IFoundBookCatalogueMatcher matcher,
-        ILibraryAddService libraryAddService,
         IFoundBookImporter importer,
-        IFoundBookDecisionService decisions,
+        IFoundBookImportRunner runner,
         IRootFolderRepository rootFolderRepository,
         ILogger<FoundBookAutoAddService> logger) : IFoundBookAutoAddService
     {
-        public const string HistorySource = "FoundBooks";
 
         public async Task<FoundBookAutoAddSummary> RunAsync(CancellationToken cancellationToken = default)
         {
@@ -94,7 +92,6 @@ namespace Listenarr.Application.FoundBooks.Services
                     skipped++;
                     notes.Add($"{Describe(row)}: {ex.Message}");
                     logger.LogError(ex, "Automatic add failed for found book {Id}", row.Id);
-                    await decisions.AbortImportAsync(row.Id, cancellationToken);
                 }
             }
 
@@ -116,56 +113,19 @@ namespace Listenarr.Application.FoundBooks.Services
                 return false;
             }
 
-            var begun = await decisions.BeginImportAsync(row.Id, cancellationToken);
-            if (!begun.Success)
+            var result = await runner.RunAsync(row, match.Metadata, new FoundBookImportOptions(
+                RootPath: rootPath,
+                Monitored: true,
+                AllowDuplicateEdition: false,
+                IncludeCompanions: includeCompanions,
+                AutoAdded: true), cancellationToken);
+            if (!result.Success)
             {
-                notes.Add($"{Describe(row)}: {begun.Error}");
+                notes.Add($"{Describe(row)}: {result.Error}");
                 return false;
             }
 
-            var add = await libraryAddService.AddToLibraryAsync(new LibraryAddOperationRequest
-            {
-                Metadata = match.Metadata,
-                Monitored = true,
-                DestinationPath = rootPath,
-                HistorySource = HistorySource
-            }, cancellationToken);
-
-            var audiobook = add.Audiobook;
-            if (audiobook == null || (!add.Added && !add.AlreadyExists))
-            {
-                await decisions.AbortImportAsync(row.Id, cancellationToken);
-                notes.Add($"{Describe(row)}: could not add the record ({add.ValidationMessage ?? add.Message}).");
-                return false;
-            }
-
-            if (add.AlreadyExists && (!string.IsNullOrWhiteSpace(audiobook.FilePath) || (audiobook.Files?.Count ?? 0) > 0))
-            {
-                // The library already has this edition with a file. The scan's own
-                // library match missed it (a different spelling, most likely); a person
-                // should decide whether this is a second copy.
-                await decisions.AbortImportAsync(row.Id, cancellationToken);
-                notes.Add($"{Describe(row)}: the library already holds {match.Metadata.Asin}; left for review.");
-                return false;
-            }
-
-            var import = await importer.ImportAsync(row, audiobook.Id, includeCompanions, cancellationToken);
-            if (!import.Success)
-            {
-                await decisions.AbortImportAsync(row.Id, cancellationToken);
-                notes.Add($"{Describe(row)}: import failed ({import.Error ?? $"{import.ImportedCount} of {import.TotalCount} files"}).");
-                logger.LogWarning("Automatic add of found book {Id} into audiobook {AudiobookId} failed: {Error}", row.Id, audiobook.Id, import.Error);
-                return false;
-            }
-
-            var finished = await decisions.FinishImportAsync(row.Id, audiobook.Id, autoAdded: true, cancellationToken);
-            if (!finished.Success)
-            {
-                notes.Add($"{Describe(row)}: {finished.Error}");
-                return false;
-            }
-
-            logger.LogInformation("Automatically added found book {Id} as audiobook {AudiobookId} ({Reason})", row.Id, audiobook.Id, match.Reason);
+            logger.LogInformation("Automatically added found book {Id} as audiobook {AudiobookId} ({Reason})", row.Id, result.AudiobookId, match.Reason);
             return true;
         }
 

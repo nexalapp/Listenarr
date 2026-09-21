@@ -18,9 +18,9 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { apiService } from '@/services/api'
+import { describeApiError } from '@/utils/apiError'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
-import { addAndImportBook } from '@/utils/libraryImportAdd'
 import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
 import { matchConfidence } from '@/utils/foundBookMatch'
 import type { FoundBook, FoundBookState, FoundBookWatchFolders, SearchResult } from '@/types'
@@ -108,13 +108,16 @@ export function stateFilter(state: FoundBookState): FoundBookFilter {
 }
 
 /**
- * Whether a found row can be imported as it stands: offered, and either whole or
- * with nothing saying it is not. A row with a known gap, an unreadable file, or
- * something still owning its files waits in the Incomplete section instead.
+ * Whether a found row belongs in the main list: offered or being imported, and
+ * either whole or with nothing saying it is not. A row with a known gap, an
+ * unreadable file, or something still owning its files waits in the Incomplete
+ * section instead. An importing row stays where it was so its progress, and any
+ * reason it comes back, are seen where the person left it - not folded into
+ * "Incomplete", which says something different.
  */
 export function isReady(item: FoundBook): boolean {
   return (
-    item.state === 'Pending' &&
+    (item.state === 'Pending' || item.state === 'Importing') &&
     (item.completeness === 'Complete' || item.completeness === 'Unknown')
   )
 }
@@ -151,16 +154,20 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     items.value.filter((item) => stateFilter(item.state) === 'found' && !isReady(item)),
   )
 
-  /** Rows that can be added right now: ready, with a match, and not in the library. */
+  /** Rows that can be added right now: offered, with a match, and not in the library. */
   const addableItems = computed(() =>
     readyItems.value.filter(
       (item) =>
-        item.libraryStatus !== 'InLibrary' && matchStates.value[item.id]?.selectedMatch != null,
+        item.state === 'Pending' &&
+        item.libraryStatus !== 'InLibrary' &&
+        matchStates.value[item.id]?.selectedMatch != null,
     ),
   )
 
   const selectedItems = computed(() =>
-    readyItems.value.filter((item) => matchStates.value[item.id]?.selected),
+    readyItems.value.filter(
+      (item) => item.state === 'Pending' && matchStates.value[item.id]?.selected,
+    ),
   )
 
   function matchState(id: number): FoundBookMatchState {
@@ -437,9 +444,12 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
   }
 
   /**
-   * Add one found book to the library: mark it importing, add the matched record,
-   * move the files through the manual import, then tell the server to clear what
-   * the move left behind.
+   * Add one found book to the library. The server queues it and the import worker
+   * does the rest - add or reuse the record, move the files, finish the row - and
+   * puts the row back with the reason if anything fails, retrying a database outage
+   * first. Nothing here has to run after this call for the row to end up right: the
+   * outcome arrives on the row over FoundBooksChanged, and a reload shows it.
+   * Resolves true when the import was queued.
    */
   async function add(id: number, rootFolderPath: string, monitored: boolean): Promise<boolean> {
     const item = items.value.find((candidate) => candidate.id === id)
@@ -447,48 +457,26 @@ export const useFoundBooksStore = defineStore('foundBooks', () => {
     if (!item || !state.selectedMatch) return false
 
     setMatchState(id, { busy: true, error: null })
-    let began = false
     try {
-      const begun = await apiService.foundBookDecision(id, 'begin-import')
-      replaceItem(begun.book)
-      began = true
-
-      const result = await addAndImportBook({
-        folderPath: item.bookFolder,
-        sourceFiles: item.files.filter((f) => f.isAudio).map((f) => f.path),
-        match: state.selectedMatch,
-        fileMetadata: null,
+      const result = await apiService.importFoundBook(id, {
+        asin: state.selectedMatch.asin ?? item.matchAsin ?? null,
         rootFolderPath,
-        action: 'move',
         monitored,
         separateBook: state.separateBook,
-        // A pack's loose files share one directory; the companion pass would sweep the
-        // neighbours' covers and notes into this book, so it stays off for those.
-        includeCompanionFiles: !item.sharesFolder,
       })
-
-      const finished = await apiService.finishFoundBookImport(id, result.audiobookId)
-      replaceItem(finished.book)
-      setMatchState(id, { selected: false })
-      if (finished.skipped.length > 0) {
-        setMatchState(id, {
-          error: `Imported; ${finished.skipped.length} leftover file(s) could not be removed.`,
-        })
+      if (result.book) replaceItem(result.book)
+      if (!result.queued) {
+        setMatchState(id, { error: result.error ?? 'Import failed' })
+        return false
       }
+      setMatchState(id, { selected: false })
       return true
     } catch (e) {
-      const message = (e as Error)?.message ?? 'Import failed'
-      setMatchState(id, { error: message })
-      if (began) {
-        // finish-import already put the row back when files remain; abort covers the
-        // case where the import never ran. Either way a failure here is not ours to hide.
-        try {
-          const aborted = await apiService.foundBookDecision(id, 'abort-import')
-          replaceItem(aborted.book)
-        } catch {
-          await load()
-        }
-      }
+      // A refusal is a 409 whose body carries the reason; anything else means the
+      // server's answer never arrived, so the row is whatever it left it. Either way
+      // a reload is the truth.
+      setMatchState(id, { error: describeApiError(e, 'Import failed') })
+      await load()
       return false
     } finally {
       setMatchState(id, { busy: false })

@@ -211,8 +211,12 @@
           Restore
         </button>
       </template>
-      <span v-else-if="item.state === 'Importing'" class="fr-status dim"
-        ><PhSpinner class="ph-spin" :size="13" /> Importing…</span
+      <span
+        v-else-if="item.state === 'Importing'"
+        class="fr-status dim"
+        :title="item.lastImportError ?? undefined"
+        ><PhSpinner class="ph-spin" :size="13" />
+        {{ item.lastImportError ? 'Retrying…' : 'Importing…' }}</span
       >
 
       <div v-if="item.state !== 'Imported' && item.state !== 'Discarded'" class="fr-menu-wrap">
@@ -282,7 +286,7 @@
         </span>
       </div>
     </div>
-    <div v-if="match.error" class="fr-error" :title="match.error">{{ match.error }}</div>
+    <div v-if="rowError" class="fr-error" :title="rowError">{{ rowError }}</div>
   </div>
 </template>
 
@@ -318,6 +322,15 @@ function audioIndexOf(listIndex: number): number {
 }
 
 const match = computed(() => store.matchState(props.item.id))
+
+// What went wrong most recently: a refusal this page just saw, else what the
+// server left on the row when a queued import failed. Nothing while importing;
+// that is shown as the retry state instead.
+const rowError = computed(() => {
+  if (match.value.error) return match.value.error
+  if (props.item.state === 'Importing') return null
+  return props.item.lastImportError ?? null
+})
 const ready = computed(() => isReady(props.item))
 const label = computed(() =>
   confidenceLabel(match.value.selectedMatch ? match.value.confidence : null),

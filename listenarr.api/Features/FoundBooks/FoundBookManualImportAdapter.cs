@@ -27,7 +27,7 @@ namespace Listenarr.Api.Features.FoundBooks
     /// Runs the manual-import workflow for a found book: the same request the Found
     /// tab's Add sends, built here from the row instead of from the browser.
     /// </summary>
-    public sealed class FoundBookManualImportAdapter(ManualImportWorkflow workflow) : IFoundBookImporter
+    public sealed class FoundBookManualImportAdapter(ManualImportWorkflow workflow, IFileSystem fileSystem) : IFoundBookImporter
     {
         public bool IsAvailable => true;
 
@@ -38,10 +38,21 @@ namespace Listenarr.Api.Features.FoundBooks
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(row);
-            var audio = FoundBookFilesJson.Deserialize(row.FilesJson).Where(f => f.IsAudio).ToList();
-            if (audio.Count == 0)
+            var all = FoundBookFilesJson.Deserialize(row.FilesJson).Where(f => f.IsAudio).ToList();
+            if (all.Count == 0)
             {
                 return new FoundBookImportOutcome(false, 0, 0, "The row has no audio files.");
+            }
+
+            // A retry after a failure that came late - the database refusing to record
+            // the finish, say - finds some or all of the audio already moved. Only what
+            // is still here is asked for; the workflow reports a missing source as a
+            // failure, and asking for an empty folder throws. With nothing left to move
+            // the import is done and only the finish remains.
+            var audio = all.Where(f => fileSystem.FileExists(f.Path)).ToList();
+            if (audio.Count == 0)
+            {
+                return new FoundBookImportOutcome(true, 0, all.Count, null);
             }
 
             var request = new ManualImportRequestDto
@@ -66,7 +77,7 @@ namespace Listenarr.Api.Features.FoundBooks
                 return new FoundBookImportOutcome(
                     success,
                     batch.ImportedCount,
-                    audio.Count,
+                    all.Count,
                     success ? null : failed?.Error ?? failed?.SkipReason ?? $"{batch.ImportedCount} of {audio.Count} files imported");
             }
             catch (ApplicationConflictException ex)

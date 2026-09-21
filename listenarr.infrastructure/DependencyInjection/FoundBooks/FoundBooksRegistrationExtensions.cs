@@ -39,8 +39,13 @@ internal static class FoundBooksRegistrationExtensions
         services.AddScoped<IFoundBookCatalogueMatcher, FoundBookCatalogueMatcher>();
         services.AddScoped<IFoundBookAutoMatchService, FoundBookAutoMatchService>();
         services.AddScoped<IFoundBookAutoAddService, FoundBookAutoAddService>();
-        // The host that owns a manual-import workflow replaces this; a test host keeps it.
+        services.AddScoped<IFoundBookImportRunner, FoundBookImportRunner>();
+        services.AddScoped<IFoundBookImportService, FoundBookImportService>();
+        services.AddSingleton<IFoundBookImportSignal, FoundBookImportSignal>();
+        // The host that owns a manual-import workflow and a naming service replaces
+        // these; a test host keeps them.
         services.TryAddScoped<IFoundBookImporter, UnavailableFoundBookImporter>();
+        services.TryAddScoped<ILibraryDestinationPlanner, RootLibraryDestinationPlanner>();
         return services;
     }
 }

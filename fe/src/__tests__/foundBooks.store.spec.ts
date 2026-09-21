@@ -23,7 +23,7 @@ const getFoundBooks = vi.fn()
 const getFoundWatchFolders = vi.fn()
 const scanFoundBooks = vi.fn()
 const foundBookDecision = vi.fn()
-const finishFoundBookImport = vi.fn()
+const importFoundBook = vi.fn()
 const advancedSearch = vi.fn()
 const setFoundBookMatch = vi.fn()
 const clearFoundBookMatch = vi.fn()
@@ -39,7 +39,7 @@ vi.mock('@/services/api', () => ({
     getFoundWatchFolders,
     scanFoundBooks,
     foundBookDecision,
-    finishFoundBookImport,
+    importFoundBook,
     advancedSearch,
     setFoundBookMatch,
     clearFoundBookMatch,
@@ -135,9 +135,11 @@ describe('found books store', () => {
       }),
       skipped: [],
     }))
-    finishFoundBookImport.mockResolvedValue({
-      book: book({ state: 'Imported', matchedAudiobookId: 42 }),
-      skipped: [],
+    importFoundBook.mockResolvedValue({
+      queued: true,
+      failure: null,
+      error: null,
+      book: book({ state: 'Importing' }),
     })
   })
 
@@ -224,53 +226,35 @@ describe('found books store', () => {
     expect(store.addableItems).toHaveLength(0)
   })
 
-  it('brackets the import with begin and finish, moving only the audio files', async () => {
+  it('queues the import server-side with the chosen match, root and options', async () => {
     const { useFoundBooksStore } = await import('@/stores/foundBooks')
     const store = useFoundBooksStore()
     await store.load()
     await flush()
+    store.setSeparateBook(1, true)
 
-    const ok = await store.add(1, '/library', true)
+    const ok = await store.add(1, '/library', false)
 
     expect(ok).toBe(true)
-    expect(foundBookDecision).toHaveBeenCalledWith(1, 'begin-import')
-    expect(startManualImport).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: '/downloads/Hugh Howey - Wool',
-        action: 'move',
-        includeCompanionFiles: true,
-        cleanupEmptySourceFolders: true,
-        items: [
-          { fullPath: '/downloads/Hugh Howey - Wool/01.mp3', matchedAudiobookId: 42 },
-          { fullPath: '/downloads/Hugh Howey - Wool/02.mp3', matchedAudiobookId: 42 },
-        ],
-      }),
-    )
-    expect(finishFoundBookImport).toHaveBeenCalledWith(1, 42)
-    expect(store.items[0]?.state).toBe('Imported')
-  })
-
-  it('leaves companions behind when the book shares its folder', async () => {
-    getFoundBooks.mockResolvedValue({
-      items: [book({ sharesFolder: true })],
-      pending: 1,
-      blocked: 0,
-      scanning: false,
+    expect(importFoundBook).toHaveBeenCalledWith(1, {
+      asin: 'B00ABCDEF1',
+      rootFolderPath: '/library',
+      monitored: false,
+      separateBook: true,
     })
-    const { useFoundBooksStore } = await import('@/stores/foundBooks')
-    const store = useFoundBooksStore()
-    await store.load()
-    await flush()
-
-    await store.add(1, '/library', true)
-
-    expect(startManualImport).toHaveBeenCalledWith(
-      expect.objectContaining({ includeCompanionFiles: false }),
-    )
+    expect(foundBookDecision).not.toHaveBeenCalled()
+    expect(startManualImport).not.toHaveBeenCalled()
+    expect(store.items[0]?.state).toBe('Importing')
+    expect(store.matchState(1).selected).toBe(false)
   })
 
-  it('aborts the import and keeps the error when the move fails', async () => {
-    startManualImport.mockRejectedValue(new Error('disk full'))
+  it('keeps the reason and the row the server handed back when it refuses to queue', async () => {
+    importFoundBook.mockResolvedValue({
+      queued: false,
+      failure: 'NoMatch',
+      error: 'Choose a catalogue match for this book first.',
+      book: book({ state: 'Pending' }),
+    })
     const { useFoundBooksStore } = await import('@/stores/foundBooks')
     const store = useFoundBooksStore()
     await store.load()
@@ -279,9 +263,59 @@ describe('found books store', () => {
     const ok = await store.add(1, '/library', true)
 
     expect(ok).toBe(false)
-    expect(foundBookDecision).toHaveBeenCalledWith(1, 'abort-import')
-    expect(finishFoundBookImport).not.toHaveBeenCalled()
-    expect(store.matchState(1).error).toContain('disk full')
+    expect(store.items[0]?.state).toBe('Pending')
+    expect(store.matchState(1).error).toContain('catalogue match')
+  })
+
+  it('reads the reason out of a refusal and reloads', async () => {
+    const refusal = Object.assign(new Error('API error: 409'), {
+      status: 409,
+      body: JSON.stringify({ queued: false, failure: 'WrongState', error: 'The book is Ignored.' }),
+    })
+    importFoundBook.mockRejectedValue(refusal)
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+    await store.load()
+    await flush()
+    getFoundBooks.mockClear()
+
+    const ok = await store.add(1, '/library', true)
+
+    expect(ok).toBe(false)
+    expect(getFoundBooks).toHaveBeenCalledTimes(1)
+    expect(store.matchState(1).error).toBe('The book is Ignored.')
+  })
+
+  it('reloads rather than guesses when the request itself fails', async () => {
+    importFoundBook.mockRejectedValue(new Error('network down'))
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+    await store.load()
+    await flush()
+    getFoundBooks.mockClear()
+
+    const ok = await store.add(1, '/library', true)
+
+    expect(ok).toBe(false)
+    expect(getFoundBooks).toHaveBeenCalledTimes(1)
+    expect(store.matchState(1).error).toContain('network down')
+  })
+
+  it('keeps an importing row in the main list but out of what can be added', async () => {
+    getFoundBooks.mockResolvedValue({
+      items: [book({ state: 'Importing', lastImportError: null })],
+      pending: 0,
+      blocked: 0,
+      scanning: false,
+    })
+    const { useFoundBooksStore } = await import('@/stores/foundBooks')
+    const store = useFoundBooksStore()
+    await store.load()
+    await flush()
+
+    expect(store.readyItems.map((i) => i.id)).toEqual([1])
+    expect(store.incompleteItems).toHaveLength(0)
+    expect(store.addableItems).toHaveLength(0)
   })
 
   it('refuses to add without a match', async () => {
@@ -292,7 +326,7 @@ describe('found books store', () => {
     await flush()
 
     expect(await store.add(1, '/library', true)).toBe(false)
-    expect(foundBookDecision).not.toHaveBeenCalled()
+    expect(importFoundBook).not.toHaveBeenCalled()
   })
 
   it('reloads when the server says the scan changed something', async () => {

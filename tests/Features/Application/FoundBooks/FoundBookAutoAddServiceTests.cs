@@ -43,10 +43,10 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             await base.InitializeAsync();
             _repository = _provider.GetRequiredService<IFoundBookRepository>();
             await _rootFolderRepository.AddAsync(new RootFolderBuilder().WithPath("/library").WithIsDefault().Build());
-            _decisions.Setup(d => d.BeginImportAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((int id, CancellationToken _) => FoundBookDecisionResult.Ok(new FoundBook { Id = id, State = FoundBookState.Importing }));
-            _decisions.Setup(d => d.AbortImportAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((int id, CancellationToken _) => FoundBookDecisionResult.Ok(new FoundBook { Id = id }));
+            _decisions.Setup(d => d.BeginImportAsync(It.IsAny<int>(), null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((int id, FoundBookQueuedImport? _, CancellationToken _) => FoundBookDecisionResult.Ok(new FoundBook { Id = id, State = FoundBookState.Importing }));
+            _decisions.Setup(d => d.AbortImportAsync(It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((int id, string? _, CancellationToken _) => FoundBookDecisionResult.Ok(new FoundBook { Id = id }));
             _decisions.Setup(d => d.FinishImportAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((int id, int _, bool _, CancellationToken _) => FoundBookDecisionResult.Ok(new FoundBook { Id = id, State = FoundBookState.Imported }));
             _libraryAdd.Setup(l => l.AddToLibraryAsync(It.IsAny<LibraryAddOperationRequest>(), It.IsAny<CancellationToken>()))
@@ -84,13 +84,19 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             _matcher.Setup(m => m.MatchAsync(It.IsAny<FoundBook>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new FoundBookCatalogueMatch(new AudibleBookMetadata { Asin = "B00ABCDEF1", Title = "Wool" }, high, high ? "exact" : "nearest"));
 
+        // The real runner, so these tests cover the whole sequence the automatic add
+        // drives, not a stand-in for it.
         private FoundBookAutoAddService BuildService() => new(
             _repository,
             _provider.GetRequiredService<IConfigurationService>(),
             _matcher.Object,
-            _libraryAdd.Object,
             _importer,
-            _decisions.Object,
+            new FoundBookImportRunner(
+                _libraryAdd.Object,
+                new RootLibraryDestinationPlanner(),
+                _importer,
+                _decisions.Object,
+                NullLogger<FoundBookImportRunner>.Instance),
             _rootFolderRepository,
             NullLogger<FoundBookAutoAddService>.Instance);
 
@@ -117,7 +123,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             var summary = await BuildService().RunAsync();
 
             Assert.Equal(1, summary.Added);
-            _decisions.Verify(d => d.BeginImportAsync(row.Id, It.IsAny<CancellationToken>()), Times.Once);
+            _decisions.Verify(d => d.BeginImportAsync(row.Id, null, It.IsAny<CancellationToken>()), Times.Once);
             _libraryAdd.Verify(l => l.AddToLibraryAsync(
                 It.Is<LibraryAddOperationRequest>(r => r.Metadata.Asin == "B00ABCDEF1" && r.DestinationPath == "/library" && r.HistorySource == "FoundBooks"),
                 It.IsAny<CancellationToken>()), Times.Once);
@@ -137,7 +143,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
 
             Assert.Equal(1, summary.Skipped);
             Assert.Contains(summary.Notes, n => n.Contains("left for review"));
-            _decisions.Verify(d => d.BeginImportAsync(row.Id, It.IsAny<CancellationToken>()), Times.Never);
+            _decisions.Verify(d => d.BeginImportAsync(row.Id, null, It.IsAny<CancellationToken>()), Times.Never);
             Assert.Empty(_importer.Calls);
         }
 
@@ -166,7 +172,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             var summary = await BuildService().RunAsync();
 
             Assert.Equal(1, summary.Skipped);
-            _decisions.Verify(d => d.AbortImportAsync(row.Id, It.IsAny<CancellationToken>()), Times.Once);
+            _decisions.Verify(d => d.AbortImportAsync(row.Id, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
             _decisions.Verify(d => d.FinishImportAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
             Assert.Contains(summary.Notes, n => n.Contains("disk full"));
         }
@@ -183,7 +189,7 @@ namespace Listenarr.Tests.Features.Application.FoundBooks
             var summary = await BuildService().RunAsync();
 
             Assert.Equal(1, summary.Skipped);
-            _decisions.Verify(d => d.AbortImportAsync(row.Id, It.IsAny<CancellationToken>()), Times.Once);
+            _decisions.Verify(d => d.AbortImportAsync(row.Id, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
             Assert.Empty(_importer.Calls);
         }
 

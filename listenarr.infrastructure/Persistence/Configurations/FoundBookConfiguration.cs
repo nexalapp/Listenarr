@@ -48,6 +48,8 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(b => b.State).HasConversion<string>().HasMaxLength(16);
             builder.Property(b => b.BlockedKind).HasConversion<string>().HasMaxLength(20).HasDefaultValue(FoundBookBlockedKind.None);
             builder.Property(b => b.AutoAdded).HasDefaultValue(false);
+            builder.Property(b => b.ImportAttempts).HasDefaultValue(0);
+            builder.Property(b => b.LastImportError).HasMaxLength(1000);
             builder.Property(b => b.MatchAsin).HasMaxLength(32);
             builder.Property(b => b.MatchTitle).HasMaxLength(500);
             builder.Property(b => b.MatchAuthor).HasMaxLength(500);

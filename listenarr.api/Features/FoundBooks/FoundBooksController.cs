@@ -28,10 +28,10 @@ namespace Listenarr.Api.Features.FoundBooks
     /// and the operator's decisions about each one.
     /// </summary>
     /// <remarks>
-    /// Adding a book is client-driven, as Library Import is: the UI matches the book,
-    /// adds it, and runs the manual import, bracketed by <c>begin-import</c> and
-    /// <c>finish-import</c> here so a scan in the meantime leaves the row alone and the
-    /// leftovers are cleared once the audio has moved.
+    /// Adding a book is server-driven: the UI chooses the match and queues the import
+    /// with <c>import</c>; the import worker adds the record, moves the files and
+    /// finishes the row, and puts it back with the reason if anything fails. The
+    /// outcome reaches the UI on the row, over the FoundBooksChanged event.
     /// </remarks>
     [ApiController]
     [Route("api/v{version:apiVersion}/found")]
@@ -42,6 +42,7 @@ namespace Listenarr.Api.Features.FoundBooks
         IFoundBookWatchFolderResolver watchFolderResolver,
         IFoundBookDecisionService decisions,
         IFoundBookMatchService matches,
+        IFoundBookImportService imports,
         IFileSystem fileSystem) : ControllerBase
     {
         [HttpGet]
@@ -102,26 +103,39 @@ namespace Listenarr.Api.Features.FoundBooks
         public async Task<ActionResult<FoundBookDecisionResponse>> Restore(int id, CancellationToken cancellationToken = default) =>
             Respond(await decisions.RestoreAsync(id, cancellationToken));
 
-        [HttpPost("{id:int}/begin-import")]
-        public async Task<ActionResult<FoundBookDecisionResponse>> BeginImport(int id, CancellationToken cancellationToken = default) =>
-            Respond(await decisions.BeginImportAsync(id, cancellationToken));
-
-        [HttpPost("{id:int}/abort-import")]
-        public async Task<ActionResult<FoundBookDecisionResponse>> AbortImport(int id, CancellationToken cancellationToken = default) =>
-            Respond(await decisions.AbortImportAsync(id, cancellationToken));
-
-        [HttpPost("{id:int}/finish-import")]
-        public async Task<ActionResult<FoundBookDecisionResponse>> FinishImport(
+        /// <summary>
+        /// Queue the book's import. The row is marked importing at once and the import
+        /// worker runs it: add or reuse the record, move the files, finish the row —
+        /// and put the row back with the reason if any step fails, retrying a database
+        /// outage a few times first. 202 with the row as it now stands; a refusal that
+        /// comes before the row is marked is a 409 with the reason, and the row is
+        /// untouched. The outcome arrives on the row itself, over the FoundBooksChanged
+        /// event, so it does not depend on this request staying open.
+        /// </summary>
+        [HttpPost("{id:int}/import")]
+        public async Task<ActionResult<FoundBookImportResponse>> Import(
             int id,
-            [FromBody] FinishImportRequest request,
+            [FromBody] ImportRequest? request,
             CancellationToken cancellationToken = default)
         {
-            if (request == null || request.AudiobookId <= 0)
-            {
-                return BadRequest(new { message = "An audiobook id is required." });
-            }
+            request ??= new ImportRequest(null, null, true, false);
+            var result = await imports.EnqueueAsync(
+                id,
+                new FoundBookManualImportRequest(request.Asin, request.RootFolderPath, request.Monitored, request.SeparateBook),
+                cancellationToken);
 
-            return Respond(await decisions.FinishImportAsync(id, request.AudiobookId, autoAdded: false, cancellationToken));
+            var response = new FoundBookImportResponse(
+                result.Success,
+                result.Failure == FoundBookImportFailure.None ? null : result.Failure.ToString(),
+                result.Error,
+                result.Book == null ? null : FoundBookDto.From(result.Book));
+
+            return result.Failure switch
+            {
+                FoundBookImportFailure.None => Accepted(response),
+                FoundBookImportFailure.NotFound => NotFound(response),
+                _ => Conflict(response)
+            };
         }
 
         /// <summary>Remember the catalogue match for a row so it survives a refresh and a scan.</summary>
@@ -228,7 +242,10 @@ namespace Listenarr.Api.Features.FoundBooks
         };
     }
 
-    public sealed record FinishImportRequest(int AudiobookId);
+    public sealed record ImportRequest(string? Asin, string? RootFolderPath, bool Monitored = true, bool SeparateBook = false);
+
+    /// <summary>Whether the import was queued, and the row as it stands either way.</summary>
+    public sealed record FoundBookImportResponse(bool Queued, string? Failure, string? Error, FoundBookDto? Book);
 
     public sealed record SetMatchRequest(
         string? Asin,
@@ -292,7 +309,9 @@ namespace Listenarr.Api.Features.FoundBooks
         string? HeardTitle,
         string? HeardAuthor,
         string? HeardNarrator,
-        DateTime? HeardAt)
+        DateTime? HeardAt,
+        DateTime? ImportStartedAt,
+        string? LastImportError)
     {
         public static FoundBookDto From(FoundBook row, bool sharesFolder = false) => new(
             row.Id,
@@ -337,6 +356,8 @@ namespace Listenarr.Api.Features.FoundBooks
             row.HeardTitle,
             row.HeardAuthor,
             row.HeardNarrator,
-            row.HeardAt);
+            row.HeardAt,
+            row.ImportStartedAt,
+            row.LastImportError);
     }
 }

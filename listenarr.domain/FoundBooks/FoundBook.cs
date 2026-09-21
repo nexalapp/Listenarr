@@ -220,6 +220,31 @@ namespace Listenarr.Domain.FoundBooks
         public string? HeardTranscript { get; set; }
 
         public DateTime? HeardAt { get; set; }
+
+        /// <summary>
+        /// When the row entered <see cref="FoundBookState.Importing"/>. Null in every
+        /// other state. A row importing for longer than any import takes, with no
+        /// request queued, was stranded by a process that did not put it back.
+        /// </summary>
+        public DateTime? ImportStartedAt { get; set; }
+
+        /// <summary>
+        /// A person's Add, queued for the import worker: the request as JSON. The row
+        /// is the queue — a restart finds the request here and runs it — so the import
+        /// does not depend on the request that asked for it staying open. Null while
+        /// the scanner's own add holds the row, and once the import is done.
+        /// </summary>
+        public string? ImportRequestJson { get; set; }
+
+        /// <summary>Not before this time: a retry after a transient failure waits here.</summary>
+        public DateTime? ImportNotBefore { get; set; }
+
+        /// <summary>How many times the queued request has been run.</summary>
+        public int ImportAttempts { get; set; }
+
+        /// <summary>Why the last import of this row failed, shown on the row until the next one succeeds.</summary>
+        [MaxLength(1000)]
+        public string? LastImportError { get; set; }
     }
 
     /// <summary>One file of a found book, as stored in <see cref="FoundBook.FilesJson"/>.</summary>

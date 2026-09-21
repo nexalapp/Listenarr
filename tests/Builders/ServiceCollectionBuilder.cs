@@ -210,6 +210,7 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<LibraryUpdateWorkflow>();
             services.AddSingleton<LibraryIdentifierWorkflow>();
             services.AddSingleton<LibraryPreviewPathWorkflow>();
+            services.AddSingleton<Listenarr.Application.FoundBooks.Contracts.ILibraryDestinationPlanner, LibraryDestinationPlanner>();
             services.AddSingleton<LibraryQueryWorkflow>();
             services.AddSingleton<LibraryRenameWorkflow>();
             services.AddSingleton<SearchResponseMapper>();

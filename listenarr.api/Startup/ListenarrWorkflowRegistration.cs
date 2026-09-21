@@ -106,6 +106,7 @@ public static class ListenarrWorkflowRegistration
         // importer that drives it is registered here, replacing the null-object
         // infrastructure registers for hosts without one.
         services.Replace(ServiceDescriptor.Scoped<IFoundBookImporter, FoundBookManualImportAdapter>());
+        services.Replace(ServiceDescriptor.Scoped<ILibraryDestinationPlanner, LibraryDestinationPlanner>());
         return services;
     }
 }

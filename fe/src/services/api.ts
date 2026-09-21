@@ -81,6 +81,7 @@ import type {
   FoundBooksResponse,
   FoundBookWatchFolders,
   FoundBookDecisionResponse,
+  FoundBookImportResponse,
   FoundBook,
   FoundBookListenResponse,
 } from '@/types'
@@ -1165,7 +1166,7 @@ class ApiService {
 
   async foundBookDecision(
     id: number,
-    decision: 'ignore' | 'restore' | 'begin-import' | 'abort-import' | 'discard',
+    decision: 'ignore' | 'restore' | 'discard',
   ): Promise<FoundBookDecisionResponse> {
     return this.request<FoundBookDecisionResponse>(`/found/${id}/${decision}`, { method: 'POST' })
   }
@@ -1199,10 +1200,24 @@ class ApiService {
     return `${API_BASE_URL}/found/${id}/audio?index=${index}`
   }
 
-  async finishFoundBookImport(id: number, audiobookId: number): Promise<FoundBookDecisionResponse> {
-    return this.request<FoundBookDecisionResponse>(`/found/${id}/finish-import`, {
+  /**
+   * Queue the import server-side: the worker adds or reuses the record, moves the
+   * files and finishes the row, and puts it back with the reason if anything fails.
+   * 202 when queued; a refusal that leaves the row untouched is a 409 carrying the
+   * same shape, which surfaces here as an error whose body holds `error`.
+   */
+  async importFoundBook(
+    id: number,
+    request: {
+      asin?: string | null
+      rootFolderPath?: string | null
+      monitored: boolean
+      separateBook: boolean
+    },
+  ): Promise<FoundBookImportResponse> {
+    return this.request<FoundBookImportResponse>(`/found/${id}/import`, {
       method: 'POST',
-      body: JSON.stringify({ audiobookId }),
+      body: JSON.stringify(request),
     })
   }
 
