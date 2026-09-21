@@ -284,6 +284,7 @@ const REPAIRABLE: ReadonlySet<ChapterHealth> = new Set([
   'corrupt',
   'oversegmented',
   'generic-titles',
+  'none',
 ])
 const isRepairable = (health: ChapterHealth) => REPAIRABLE.has(health)
 
@@ -309,13 +310,12 @@ function severity(file: BookChapterFile) {
   switch (file.chapterHealth) {
     case 'corrupt':
     case 'oversegmented':
-    case 'generic-titles': {
+    case 'generic-titles':
+    case 'none': {
       const proposal = proposals.value.get(file.fileId)
       const fixable = proposal ? proposal.repairable : file.chapterRepairable
       return fixable ? 'fixable' : 'issue'
     }
-    case 'none':
-      return 'note'
     case 'healthy':
       return 'ok'
     default:
@@ -335,7 +335,7 @@ function explain(file: BookChapterFile) {
     case 'generic-titles':
       return 'Every title is a ripping tool’s name — “Chapter 001 - 00:06:20” — rather than the author’s. A repair names them from the edition’s list or from what the narrator announces at each mark.'
     case 'none':
-      return 'A long file with no chapter marks at all. Players will show it as one chapter.'
+      return 'A long file with no chapter marks at all, which players show as one chapter. A repair finds the pauses in the audio, lays the edition’s chapter list over them, and listens after each for the narrator’s announcements.'
     default:
       return file.error ?? 'This file has not been inspected.'
   }

@@ -162,6 +162,21 @@ paths converge there. A book conversion accepts is not also offered for tagging,
 because the conversion writes the tags itself. A re-run is free: the planner finds
 nothing to write and no file is opened.
 
+**A file with no chapter marks is chaptered from the audio, and a pause is never a
+chapter by itself.** `ffmpeg silencedetect` (one decode, minutes for a long book)
+finds every pause; the long ones, plus any marks the file already has, are the
+candidates. Three sources then say which candidates are chapters, and they check
+each other: the edition's list (Audnexus) is laid over the pauses at whatever
+constant offset makes most of its marks land (`EditionAlignment`), the narrator is
+listened to for ten seconds after each candidate (`ChapterDiscoveryPlanner`), and a
+numbered announcement at an edition mark that names a *different* chapter vetoes the
+edition — the narrator is reading another list. Announcements need three among the
+pauses and climbing numbers before they are believed; a CD rip whose tracks gave up
+only a chapter or two goes through the same discovery, because its tracks need not
+fall on the chapters. Whole-book transcription is deliberately not a tool here:
+`ITranscriber` is a start and a length by contract, a ten-hour transcript would cost
+hours of the NAS's CPU, and the heading still has to be found at a pause afterwards.
+
 **An embedded title only names a chapter when it distinguishes the file.** Parts
 split from one book commonly all carry the book's own title tag, and preferring
 it named every chapter identically. A title shared by more than one source falls

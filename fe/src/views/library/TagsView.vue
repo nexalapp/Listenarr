@@ -1003,9 +1003,7 @@ function cellClass(row: LibraryTagRow, key: string) {
       key === CHAPTERS_KEY &&
       REPAIRABLE_HEALTH.has(row.chapterHealth) &&
       (!!row.chapterRepairable || !!row.chapterPlanPending),
-    'tags-td--chapters-note':
-      (key === CHAPTERS_KEY && row.chapterHealth === 'none') ||
-      (key === AUDIT_KEY && row.audioAudit === 'inconclusive'),
+    'tags-td--chapters-note': key === AUDIT_KEY && row.audioAudit === 'inconclusive',
     'tags-td--locked': isLocked(row, key),
     'tags-td--empty': isTagColumn(key) && !row.tags[key],
   }
@@ -1399,11 +1397,12 @@ const someVisibleSelected = computed(() =>
   [...visibleFileIds.value].some((id) => selectedFiles.value.has(id)),
 )
 
-/** The ticked rows a chapter repair has something to say about: a broken atom, CD tracks, or placeholder titles. */
+/** The ticked rows a chapter repair has something to say about: a broken atom, CD tracks, placeholder titles, or no marks at all. */
 const REPAIRABLE_HEALTH: ReadonlySet<ChapterHealth> = new Set([
   'corrupt',
   'oversegmented',
   'generic-titles',
+  'none',
 ])
 
 const repairableSelection = computed(() =>

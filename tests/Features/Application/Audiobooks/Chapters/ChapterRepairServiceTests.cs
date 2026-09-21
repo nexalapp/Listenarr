@@ -27,7 +27,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
 {
     [Trait("Name", "ChapterRepairServiceTests")]
     [Trait("Category", "Tagging")]
-    public sealed class ChapterRepairServiceTests : BaseTests
+    public sealed partial class ChapterRepairServiceTests : BaseTests
     {
         private readonly Mock<IAudiobookRepository> _audiobooks = new();
         private readonly Mock<IAudiobookTagWriter> _writer = new();
@@ -38,6 +38,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         private readonly Mock<IConfigurationService> _configuration = new();
         private readonly Mock<ITranscriber> _transcriber = new();
         private readonly Mock<IAudiobookFileRepository> _files = new();
+        private readonly Mock<ISilenceDetector> _silences = new();
         private Audiobook? _book;
 
         private static readonly TimeSpan Duration = TimeSpan.FromMinutes(100);
@@ -45,6 +46,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         public ChapterRepairServiceTests()
         {
             GivenTranscription(enabled: false);
+            _silences
+                .Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([]);
         }
 
         private ChapterRepairService BuildService() => new(
@@ -58,7 +62,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             _audnexus.Object,
             _transcriber.Object,
             new TranscriptCache(),
-            _files.Object);
+            _files.Object,
+            _silences.Object);
 
         private void GivenTranscription(bool enabled, string model = "base.en")
         {
