@@ -81,22 +81,23 @@ namespace Listenarr.Domain.Audiobooks.Chapters
         public static bool IsIssue(ChapterHealth health) =>
             health is ChapterHealth.Corrupt or ChapterHealth.Oversegmented;
 
-        /// <summary>The verdicts a repair may have something to do for, including a retitle.</summary>
+        /// <summary>The verdicts a repair may have something to do for, including a retitle and a list found from nothing.</summary>
         public static bool IsRepairableKind(ChapterHealth health) =>
-            health is ChapterHealth.Corrupt or ChapterHealth.Oversegmented or ChapterHealth.GenericTitles;
+            health is ChapterHealth.Corrupt or ChapterHealth.Oversegmented or ChapterHealth.GenericTitles or ChapterHealth.None;
 
         /// <summary>
         /// Whether a repair has a source to work from, judged cheaply from what is known
         /// without planning: a broken atom is rebuilt from the chapter track that
-        /// survived it or from the edition's list; tracks and placeholder titles need the
-        /// edition's list or a narrator to listen to. The preview gives the definitive
-        /// answer; this is what the badge is coloured by before anyone asks.
+        /// survived it or from the edition's list; tracks, placeholder titles and a file
+        /// with no marks need the edition's list or a narrator to listen to. The preview
+        /// gives the definitive answer; this is what the badge is coloured by before
+        /// anyone asks.
         /// </summary>
         public static bool LikelyRepairable(ChapterHealth health, ChapterAtomState? atoms, bool hasAsin, bool transcriptionEnabled) =>
             health switch
             {
                 ChapterHealth.Corrupt => (atoms?.HasChapterTrack ?? false) || hasAsin,
-                ChapterHealth.Oversegmented or ChapterHealth.GenericTitles => hasAsin || transcriptionEnabled,
+                ChapterHealth.Oversegmented or ChapterHealth.GenericTitles or ChapterHealth.None => hasAsin || transcriptionEnabled,
                 _ => false
             };
     }

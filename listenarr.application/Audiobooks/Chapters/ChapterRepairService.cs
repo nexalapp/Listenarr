@@ -44,7 +44,8 @@ namespace Listenarr.Application.Audiobooks.Chapters
         IAudnexusService? audnexus = null,
         ITranscriber? transcriber = null,
         TranscriptCache? transcripts = null,
-        IAudiobookFileRepository? fileRepository = null) : IChapterRepairService
+        IAudiobookFileRepository? fileRepository = null,
+        ISilenceDetector? silenceDetector = null) : IChapterRepairService
     {
         /// <summary>How much to listen to after each mark. Announcements come first, but not always in the first breath.</summary>
         public static readonly TimeSpan ListenWindow = TimeSpan.FromSeconds(10);
@@ -198,9 +199,13 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 if (outcome == null)
                 {
                     var stage = new PlanProgress(progress, index, files.Count);
-                    var attempt = health.Health is ChapterHealth.Oversegmented or ChapterHealth.GenericTitles
-                        ? await PlanFromAnnouncementsAsync(audiobook, fullPath!, tags, health.Health, stage, cancellationToken)
-                        : await PlanCorruptAsync(audiobook, fullPath!, tags, cancellationToken);
+                    var attempt = health.Health switch
+                    {
+                        ChapterHealth.Oversegmented or ChapterHealth.GenericTitles =>
+                            await PlanFromAnnouncementsAsync(audiobook, fullPath!, tags, health.Health, stage, cancellationToken),
+                        ChapterHealth.None => await PlanUnchapteredAsync(audiobook, fullPath!, tags, stage, cancellationToken),
+                        _ => await PlanCorruptAsync(audiobook, fullPath!, tags, cancellationToken)
+                    };
                     outcome = new ChapterPlanOutcome(attempt.Plan, attempt.Rejection?.Reason);
 
                     // An answer reached without a source that should have been asked is

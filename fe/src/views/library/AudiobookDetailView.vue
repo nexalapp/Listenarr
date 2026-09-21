@@ -578,7 +578,10 @@
                 <span
                   v-if="chapterBadge(f.chapterHealth)"
                   class="file-chapter-badge"
-                  :class="{ 'file-chapter-badge--note': f.chapterHealth === 'generic-titles' }"
+                  :class="{
+                    'file-chapter-badge--note':
+                      f.chapterHealth === 'generic-titles' || f.chapterHealth === 'none',
+                  }"
                   :title="f.chapterReason ?? undefined"
                 >
                   <PhListNumbers />
@@ -2181,6 +2184,8 @@ function chapterBadge(health: ChapterHealth | undefined): string | null {
       return 'CD-track chapters'
     case 'generic-titles':
       return 'Unnamed chapters'
+    case 'none':
+      return 'No chapters'
     default:
       return null
   }
@@ -2399,7 +2404,12 @@ function openChapterRepair(...fileIds: number[]) {
 
 // ---- chapter check ---------------------------------------------------------------
 
-const CHAPTER_ISSUE_HEALTH = new Set<ChapterHealth>(['corrupt', 'oversegmented', 'generic-titles'])
+const CHAPTER_ISSUE_HEALTH = new Set<ChapterHealth>([
+  'corrupt',
+  'oversegmented',
+  'generic-titles',
+  'none',
+])
 
 /** One line for the whole book, from the worst of its files. */
 const chapterSummary = computed(() => {
@@ -2476,9 +2486,9 @@ const chapterSummary = computed(() => {
     case 'none':
       return {
         checked: true,
-        severity: 'note' as const,
+        severity,
         headline: 'No chapter marks.',
-        detail: reasons[0] ?? '',
+        detail: (reasons[0] ?? '') + fixNote,
         repairableFileIds,
       }
     default:

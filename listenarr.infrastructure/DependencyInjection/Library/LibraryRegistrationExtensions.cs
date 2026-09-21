@@ -11,6 +11,7 @@ using Listenarr.Application.Audiobooks.Audit;
 using Listenarr.Application.Audiobooks.Authors;
 using Listenarr.Application.Audiobooks.Chapters;
 using Listenarr.Application.Audiobooks.Transcription;
+using Listenarr.Infrastructure.Ffmpeg.Analysis;
 using Listenarr.Infrastructure.Library.Transcription;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Infrastructure.Library.Suggestions;
@@ -119,6 +120,7 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<IChapterAtomRecovery, ChapterAtomRecovery>();
         services.AddScoped<IChapterRewriter, FfmpegChapterRewriter>();
         services.AddScoped<IChapterRepairService, ChapterRepairService>();
+        services.AddScoped<ISilenceDetector, FfmpegSilenceDetector>();
         // The loaded whisper model is the expensive part, so the transcriber outlives a
         // request; what it has heard is remembered for the same reason.
         services.AddSingleton<WhisperTranscriber>();

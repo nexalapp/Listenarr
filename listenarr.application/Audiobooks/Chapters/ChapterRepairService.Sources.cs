@@ -30,12 +30,6 @@ namespace Listenarr.Application.Audiobooks.Chapters
     /// </summary>
     public sealed partial class ChapterRepairService
     {
-        /// <summary>Audnexus is a shared service; a library-wide planning pass must not hammer it.</summary>
-        public static readonly TimeSpan AudnexusMinimumGap = TimeSpan.FromSeconds(1.5);
-
-        private static readonly SemaphoreSlim AudnexusGate = new(1, 1);
-        private static DateTime _lastAudnexusCallUtc = DateTime.MinValue;
-
         /// <summary>
         /// One planning attempt: the plan or the rejection, and — when a source that
         /// should have answered could not be reached — why the attempt does not count.
@@ -185,6 +179,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 return new PlanAttempt(null, null, "Transcription is on but the whisper model is not available yet; check the log.");
             }
 
+            (IReadOnlyList<EmbeddedChapter> Chapters, TimeSpan Runtime)? fetchedEdition = null;
             (IReadOnlyList<EmbeddedChapter> Chapters, TimeSpan Runtime)? edition = null;
             if (!string.IsNullOrWhiteSpace(audiobook.Asin))
             {
@@ -194,6 +189,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     return new PlanAttempt(null, null, "Audnexus could not be reached for the edition's chapters.");
                 }
 
+                fetchedEdition = fetched.Edition;
                 if (fetched.Edition is { } source
                     && Math.Abs((source.Runtime - tags.Duration).TotalSeconds) <= tags.Duration.TotalSeconds * ChapterPlanner.RuntimeTolerance)
                 {
@@ -201,24 +197,72 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 }
             }
 
+            var model = listening ? ChapterPlanKeys.ModelFor(true, settings.TranscriptionModel) : null;
             try
             {
-                return await ListenAndPlanAsync(
+                // Listening at the marks may be followed by listening after the pauses.
+                var attempt = await ListenAndPlanAsync(
                     audiobook,
                     fullPath,
                     tags,
                     health,
                     marks,
-                    listening ? ChapterPlanKeys.ModelFor(true, settings.TranscriptionModel) : null,
+                    model,
                     edition,
-                    progress,
+                    listening ? progress.Span(0, 0.5) : progress,
                     cancellationToken);
+                if (!listening || !(attempt.Rejection != null || IsThin(attempt.Plan, health, fetchedEdition?.Chapters.Count)))
+                {
+                    return attempt;
+                }
+
+                // The marks did not give up the chapters, or gave up too few: the
+                // narrator announced little or nothing there. The marks may simply be
+                // in the wrong places — a rip's tracks need not fall on the chapters —
+                // so the audio itself is asked, with the marks among the candidates.
+                var discovered = await DiscoverAsync(audiobook, fullPath, tags, marks, fetchedEdition, model, progress.Span(0.5, 1), cancellationToken);
+                if (discovered.Unavailable != null)
+                {
+                    return discovered;
+                }
+
+                if (discovered.Plan != null && (attempt.Plan == null || discovered.Plan.Chapters.Count > attempt.Plan.Chapters.Count))
+                {
+                    return discovered;
+                }
+
+                if (attempt.Plan != null)
+                {
+                    return attempt;
+                }
+
+                return new PlanAttempt(null, new ChapterPlanRejection(
+                    $"{attempt.Rejection!.Reason.TrimEnd()} Listening after the pauses in the audio instead: {Uncapitalise(discovered.Rejection?.Reason)}"));
             }
             catch (TranscriptionFailedException ex)
             {
                 return new PlanAttempt(null, null, ex.Message);
             }
         }
+
+        /// <summary>
+        /// A rip merged down to a chapter or two, or to well under what the edition
+        /// lists, was announced at too few of its tracks to be believed: the chapters
+        /// are more likely between the tracks than among them.
+        /// </summary>
+        private static bool IsThin(ChapterPlan? plan, ChapterHealth health, int? editionCount)
+        {
+            if (plan == null || health != ChapterHealth.Oversegmented || plan.Source != ChapterSource.Announcements)
+            {
+                return false;
+            }
+
+            return plan.Chapters.Count <= 3
+                || (editionCount is { } expected && expected > 0 && plan.Chapters.Count * 5 < expected * 3);
+        }
+
+        private static string Uncapitalise(string? sentence) =>
+            string.IsNullOrEmpty(sentence) ? "nothing was found." : char.ToLowerInvariant(sentence[0]) + sentence[1..];
 
         private async Task<PlanAttempt> ListenAndPlanAsync(
             Audiobook audiobook,
@@ -379,8 +423,10 @@ namespace Listenarr.Application.Audiobooks.Chapters
         /// <summary>
         /// Progress across one file's planning, told in marks heard. Whisper gives no rate
         /// to estimate from, but the count of marks is known before the first is heard.
+        /// A stage that may be followed by another takes a span of the file's share, so
+        /// the bar never runs backwards when the second begins.
         /// </summary>
-        private sealed class PlanProgress(IProgress<double>? progress, int fileIndex, int fileCount)
+        private sealed class PlanProgress(IProgress<double>? progress, int fileIndex, int fileCount, double from = 0, double to = 1)
         {
             public void Heard(int done, int total)
             {
@@ -389,8 +435,12 @@ namespace Listenarr.Application.Audiobooks.Chapters
                     return;
                 }
 
-                progress.Report((fileIndex + (double)done / total) / fileCount);
+                progress.Report((fileIndex + from + (to - from) * done / total) / fileCount);
             }
+
+            /// <summary>This file's progress between two fractions of it, for one stage of several.</summary>
+            public PlanProgress Span(double start, double end) =>
+                new(progress, fileIndex, fileCount, from + (to - from) * start, from + (to - from) * end);
         }
 
         private IReadOnlyList<EmbeddedChapter>? TryRecover(string fullPath)
@@ -403,67 +453,6 @@ namespace Listenarr.Application.Audiobooks.Chapters
             {
                 logger.LogDebug(ex, "Could not read the damaged chapter atom of {Path}", LogRedaction.SanitizeFilePath(fullPath));
                 return null;
-            }
-        }
-
-        /// <summary>The edition's chapters; <c>Unavailable</c> when Audnexus could not be asked, as against having none.</summary>
-        private async Task<((IReadOnlyList<EmbeddedChapter> Chapters, TimeSpan Runtime)? Edition, bool Unavailable)> FetchAudnexusAsync(
-            string asin,
-            CancellationToken cancellationToken)
-        {
-            if (audnexus == null)
-            {
-                return default;
-            }
-
-            try
-            {
-                await AudnexusGate.WaitAsync(cancellationToken);
-                try
-                {
-                    var wait = _lastAudnexusCallUtc + AudnexusMinimumGap - DateTime.UtcNow;
-                    if (wait > TimeSpan.Zero)
-                    {
-                        await Task.Delay(wait, cancellationToken);
-                    }
-
-                    _lastAudnexusCallUtc = DateTime.UtcNow;
-                }
-                finally
-                {
-                    AudnexusGate.Release();
-                }
-
-                var lookup = await audnexus.LookupChaptersAsync(asin, cancellationToken: cancellationToken);
-                if (lookup.Unavailable)
-                {
-                    return (null, true);
-                }
-
-                if (lookup.Response?.Chapters is not { Count: > 0 } chapters || lookup.Response.RuntimeLengthMs is not { } runtimeMs)
-                {
-                    return default;
-                }
-
-                var list = new List<EmbeddedChapter>(chapters.Count);
-                foreach (var chapter in chapters)
-                {
-                    if (chapter.StartOffsetMs is not { } startMs)
-                    {
-                        continue;
-                    }
-
-                    var start = TimeSpan.FromMilliseconds(startMs);
-                    var end = chapter.LengthMs is { } lengthMs ? start + TimeSpan.FromMilliseconds(lengthMs) : start;
-                    list.Add(new EmbeddedChapter(chapter.Title, start, end));
-                }
-
-                return ((list, TimeSpan.FromMilliseconds(runtimeMs)), false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                logger.LogDebug(ex, "Audnexus chapters unavailable for {Asin}", asin);
-                return (null, true);
             }
         }
     }
