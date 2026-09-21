@@ -506,8 +506,10 @@
         </div>
         <RouterView v-else v-slot="{ Component }">
           <Transition name="page-fade">
-            <!-- Keyed by path so /books/1 → /books/2 mounts afresh; a query or hash change does not. -->
-            <component :is="Component" :key="route.path" />
+            <!-- Keyed by path so /books/1 → /books/2 mounts afresh; a query or hash change
+                 does not, and nor does a param change on a route that says its params are
+                 tabs within one page rather than different pages. -->
+            <component :is="Component" :key="routedComponentKey" />
           </Transition>
         </RouterView>
       </main>
@@ -1679,6 +1681,13 @@ const hideLayout = computed(() => {
 // The library section: its three groupings plus a book's detail page. Drives
 // both the parent nav item's active state and whether the sub-nav stays open.
 const LIBRARY_PATHS = ['/books', '/authors', '/series', '/tags']
+// A route's params usually name a different page (another book), so a change of
+// them mounts the view afresh. A route whose params are tabs within one page opts
+// out with `keepAcrossParams`, and is keyed by name so the tab change reuses it.
+const routedComponentKey = computed(() =>
+  route.meta.keepAcrossParams ? String(route.name ?? route.path) : route.path,
+)
+
 const isLibraryPath = (path: string) => LIBRARY_PATHS.includes(path) || path.startsWith('/books/')
 const isLibraryRoute = computed(() => isLibraryPath(route.path))
 const libraryNavActive = computed(
