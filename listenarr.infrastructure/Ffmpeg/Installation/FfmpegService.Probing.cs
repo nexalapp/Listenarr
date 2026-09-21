@@ -395,7 +395,9 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
                 return "no diagnostic output";
             }
 
-            var summary = string.Join("; ", lines.Take(3));
+            // The last lines, not the first: ffmpeg says why it stopped as it stops,
+            // after however many warnings the inputs earned on the way in.
+            var summary = string.Join("; ", lines.TakeLast(3));
             return summary.Length > 400 ? summary[..400] + "…" : summary;
         }
 

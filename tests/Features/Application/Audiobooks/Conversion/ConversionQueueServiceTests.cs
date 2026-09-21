@@ -92,6 +92,47 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Conversion
         // ---- what gets queued -------------------------------------------------------
 
         [Fact]
+        public async Task EnqueueAsync_RefusesABookWithAFileTheScanCouldNotRead_NamingIt()
+        {
+            // A corrupt part registered with a zero duration: ffmpeg would spend the whole
+            // encode to fail on it with a message about frames. The file's name is the
+            // useful answer, and it is known before anything is spent.
+            GivenSettings(conversionEnabled: true);
+            GivenEncoderAvailable();
+            var audiobook = GivenAudiobook("/library/book/01.mp3", "/library/book/24.mp3", "/library/book/25.mp3");
+            audiobook.Files[0].DurationSeconds = 600;
+            audiobook.Files[1].DurationSeconds = 0;
+            audiobook.Files[2].NotFoundSinceUtc = DateTime.UtcNow;
+            GivenNoActiveJob();
+
+            var result = await BuildService().EnqueueAsync(7, ConversionTrigger.Automatic);
+
+            Assert.Equal(ConversionEnqueueOutcome.SourceUnreadable, result.Outcome);
+            Assert.Contains("24.mp3", result.Reason);
+            Assert.Contains("could not be read", result.Reason);
+            Assert.Contains("25.mp3", result.Reason);
+            Assert.Contains("not where the record says", result.Reason);
+            Assert.DoesNotContain("01.mp3", result.Reason);
+            _repository.Verify(
+                repository => repository.AddAsync(It.IsAny<ConversionJob>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task EnqueueAsync_GivesAFileNeverProbed_TheBenefitOfTheDoubt()
+        {
+            GivenSettings(conversionEnabled: true);
+            GivenEncoderAvailable();
+            GivenAudiobook("/library/book/01.mp3");
+            GivenNoActiveJob();
+            GivenAddSucceeds();
+
+            var result = await BuildService().EnqueueAsync(7, ConversionTrigger.Manual);
+
+            Assert.True(result.Queued);
+        }
+
+        [Fact]
         public async Task EnqueueAsync_QueuesAnMp3Book_WhenConversionIsEnabled()
         {
             GivenSettings(conversionEnabled: true);

@@ -194,7 +194,16 @@ public partial class ScanJobProcessor
                 return true;
             }
 
-            if (result.Outcome
+            if (result.Outcome == ConversionEnqueueOutcome.SourceUnreadable)
+            {
+                // A file in the library that cannot be read is a fault in the library,
+                // whatever becomes of the conversion.
+                _logger.LogWarning(
+                    "Did not queue a conversion for audiobook {AudiobookId}: {Reason}",
+                    audiobook.Id,
+                    result.Reason);
+            }
+            else if (result.Outcome
                 is not ConversionEnqueueOutcome.Disabled
                 and not ConversionEnqueueOutcome.NothingToConvert)
             {

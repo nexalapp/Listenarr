@@ -93,6 +93,15 @@ namespace Listenarr.Application.Audiobooks.Conversion
                     Reason: "This book has no MP3 files to convert.");
             }
 
+            // A file the scan could not read, or could not find, cannot be encoded.
+            // ffmpeg would spend the whole encode and then fail on it with a message
+            // about frames; the file's name is the useful answer, and it is known now.
+            var unreadable = DescribeUnreadableFiles(audiobook);
+            if (unreadable != null)
+            {
+                return new ConversionEnqueueResult(ConversionEnqueueOutcome.SourceUnreadable, Reason: unreadable);
+            }
+
             // Check for an encoder before writing a row. Queueing without one only
             // produces a job that fails the moment a worker picks it up.
             if (!await converter.IsAvailableAsync(cancellationToken))
@@ -401,22 +410,6 @@ namespace Listenarr.Application.Audiobooks.Conversion
         /// already a single M4B has nothing to gain, and one with no MP3s has nothing to
         /// convert.
         /// </summary>
-        private static int CountConvertibleFiles(Audiobook audiobook)
-        {
-            var files = audiobook.Files;
-            if (files == null || files.Count == 0)
-            {
-                return 0;
-            }
-
-            return files.Count(file =>
-                !string.IsNullOrWhiteSpace(file.Path)
-                && string.Equals(
-                    Path.GetExtension(file.Path),
-                    ".mp3",
-                    StringComparison.OrdinalIgnoreCase));
-        }
-
         private async Task BroadcastAsync(ConversionJob job, CancellationToken cancellationToken)
         {
             try
