@@ -76,8 +76,13 @@ for pr in "$@"; do
   wait_green "$pr"
   head=$(gh pr view "$pr" --json headRefOid -q .headRefOid)
   current=false; head_is_current "$pr" && current=true
-  gh pr merge "$pr" --merge --delete-branch >/dev/null
+  # Not --delete-branch: that also checks out canary locally, which fails when
+  # another worktree holds it, and the failure lands after the merge has gone
+  # through. The remote branch is deleted separately once the merge is confirmed.
+  gh pr merge "$pr" --merge >/dev/null
   merge_sha=$(gh pr view "$pr" --json mergeCommit -q .mergeCommit.oid)
+  head_ref=$(gh pr view "$pr" --json headRefName -q .headRefName)
+  gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/$head_ref" >/dev/null 2>&1 || true
   echo "PR $pr: merged as ${merge_sha:0:7} ($([ $current = true ] && echo "head was current" || echo "head was behind canary"))"
   last_head=$head; last_current=$current; last_merge=$merge_sha
 done
