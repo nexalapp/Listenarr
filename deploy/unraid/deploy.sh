@@ -34,7 +34,10 @@ wait_green() {
   local pr=$1
   while true; do
     local buckets
-    buckets=$(gh pr checks "$pr" --json name,bucket 2>/dev/null \
+    # gh exits non-zero while any check is failing - including a previous run's,
+    # in the moment after a push before the new runs exist - and set -e would
+    # end the script on that, silently. The buckets are what matter.
+    buckets=$( (gh pr checks "$pr" --json name,bucket 2>/dev/null || true) \
       | jq -r --arg g "$GATE" '[.[] | select(.name | test($g))] | (.[].bucket), (if length < 3 then "pending" else empty end)' \
       | sort -u | tr '\n' ' ')
     case "$buckets" in
