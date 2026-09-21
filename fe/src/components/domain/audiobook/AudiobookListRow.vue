@@ -221,7 +221,7 @@ const searchTitle = computed(() =>
 <style scoped>
 .audiobook-list-item {
   display: grid;
-  grid-template-columns: 40px 64px 1fr auto 160px;
+  grid-template-columns: 40px 64px 1fr auto 120px;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -535,9 +535,10 @@ const searchTitle = computed(() =>
   white-space: nowrap;
 }
 
+/* Three buttons at most - search, edit, delete - in the header's 120px column. */
 .list-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   align-items: center;
   justify-self: end;
 }
