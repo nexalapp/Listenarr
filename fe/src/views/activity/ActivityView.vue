@@ -685,7 +685,7 @@ const estimateRemainingSeconds = (
   // would claim days.
   if (percent < 1 || percent >= 100) return undefined
 
-  const started = new Date(startedAt.endsWith('Z') ? startedAt : `${startedAt}Z`).getTime()
+  const started = new Date(startedAt).getTime()
   if (Number.isNaN(started)) return undefined
 
   const elapsedSeconds = (Date.now() - started) / 1000

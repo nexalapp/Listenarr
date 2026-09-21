@@ -49,6 +49,7 @@ public static class ListenarrPlatformRegistration
             .AddJsonProtocol(options =>
             {
                 options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+                options.PayloadSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
             });
 
         return services;
