@@ -23,6 +23,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import AddNewView from '@/views/content/AddNewView.vue'
 import { useLibraryStore } from '@/stores/library'
+import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { SearchResult } from '@/types'
 
@@ -1117,6 +1118,63 @@ describe('AddNewView pagination', () => {
     )
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.title-results .result-actions .btn').text()).toBe('Monitoring book')
+  })
+
+  it('adds directly from Monitor, and opens the options from the row - but not from a control in it', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, {
+      global: { plugins: [createPinia(), router], stubs: { ManualSearchModal: true } },
+    })
+    const vm = wrapper.vm as unknown as {
+      searchType?: string
+      titleResults?: unknown[]
+      showAddLibraryModal?: boolean
+    }
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { addToLibrary?: Mock }
+    apiService.addToLibrary = vi.fn().mockResolvedValue({
+      audiobook: { id: 78, asin: 'B0NEW2', title: 'Black Sheep' },
+    })
+    const rootFolders = useRootFoldersStore()
+    rootFolders.folders = [{ id: 1, path: '/library', isDefault: true }] as never
+
+    vm.searchType = 'title'
+    vm.titleResults = [
+      {
+        title: 'Black Sheep',
+        key: 'B0NEW2',
+        author_name: ['Rachel Harrison'],
+        searchResult: {
+          asin: 'B0NEW2',
+          title: 'Black Sheep',
+          artist: 'Rachel Harrison',
+          isEnriched: true,
+        },
+      },
+    ]
+    await wrapper.vm.$nextTick()
+    const card = wrapper.find('.title-results .title-result-card')
+
+    // Monitor: added at once, monitored, no modal.
+    await card.find('.result-actions .btn-primary').trigger('click')
+    await flushPromises()
+    expect(apiService.addToLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({ asin: 'B0NEW2' }),
+      { monitored: true, autoSearch: false },
+    )
+    expect(vm.showAddLibraryModal).toBe(false)
+    expect(card.find('.result-actions .btn').text()).toBe('Monitoring book')
+
+    // The row: the modal, so the root, profile and search can be chosen first.
+    await card.trigger('click')
+    await flushPromises()
+    expect(vm.showAddLibraryModal).toBe(true)
+    vm.showAddLibraryModal = false
+
+    // A click that lands on a control inside the row is that control's.
+    await card.find('.result-actions .result-search-btn').trigger('click')
+    await flushPromises()
+    expect(vm.showAddLibraryModal).toBe(false)
   })
 
   it('shows "Added" and disables add button when result is already in library', async () => {
