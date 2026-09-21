@@ -174,12 +174,25 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return rows > 0;
         }
 
-        public Task<int> DeleteForAudiobookAsync(
+        public async Task<int> DeleteForAudiobookAsync(
             int audiobookId,
-            CancellationToken cancellationToken = default) =>
-            db.TagJobs
+            CancellationToken cancellationToken = default)
+        {
+            // Loaded and removed rather than ExecuteDelete: the delete workflows are
+            // exercised against the in-memory provider, which has no bulk delete, and a
+            // book has a handful of jobs at most.
+            var rows = await db.TagJobs
                 .Where(job => job.AudiobookId == audiobookId)
-                .ExecuteDeleteAsync(cancellationToken);
+                .ToListAsync(cancellationToken);
+            if (rows.Count == 0)
+            {
+                return 0;
+            }
+
+            db.TagJobs.RemoveRange(rows);
+            await db.SaveChangesAsync(cancellationToken);
+            return rows.Count;
+        }
 
         public async Task<bool> UpdateAsync(
             Guid id,
