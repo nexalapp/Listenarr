@@ -321,6 +321,13 @@ import { safeText } from '@/utils/textUtils'
 interface Props {
   isOpen: boolean
   audiobook: Audiobook | null
+  /**
+   * For a book not yet in the library: called once, on the first grab, to add it
+   * and return its id. The search itself needs only the title and authors, so a
+   * book can be searched for without being added - and without being monitored -
+   * until something is actually sent to a download client.
+   */
+  ensureAudiobookId?: () => Promise<number>
 }
 
 const props = defineProps<Props>()
@@ -763,7 +770,9 @@ async function downloadResult(result: SearchResult) {
   try {
     // Check if this is a DDL
     const isDDL = getSourceType(result) === 'ddl'
-    const audiobookId = props.audiobook?.id
+    const audiobookId = props.ensureAudiobookId
+      ? await props.ensureAudiobookId()
+      : props.audiobook?.id
 
     if (isDDL) {
       // For DDL, start download in background and add to activity

@@ -377,159 +377,57 @@
             <span class="section-count">{{ section.count }}</span>
           </div>
 
-          <div
+          <AudiobookListRow
             v-for="audiobook in section.items"
             :key="`${section.key}-${audiobook.key}`"
-            tabindex="0"
-            @keydown.enter="handleRowClick(audiobook)"
-            class="audiobook-list-item"
-            :class="{
-              selected: audiobook.inLibrary && isSelected(audiobook.id),
-              'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-              'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-              'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-              'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-              'not-in-library': !audiobook.inLibrary,
-            }"
-            @click="handleRowClick(audiobook)"
+            :audiobook="audiobook"
+            :in-library="audiobook.inLibrary"
+            :status="getAudiobookStatus(audiobook)"
+            :status-label="statusText(getAudiobookStatus(audiobook))"
+            :selected="audiobook.inLibrary && isSelected(audiobook.id)"
+            :selectable="audiobook.inLibrary"
+            :show-details="showItemDetails"
+            :image-src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
+            :series-position="type === 'series' ? audiobook.seriesNumber : null"
+            :quality-profile-name="
+              audiobook.inLibrary ? getQualityProfileName(audiobook.qualityProfileId) : null
+            "
+            :monitor-busy="monitorBusy.has(audiobook.id)"
+            @open="handleRowClick(audiobook)"
+            @select-click="handleCheckboxClick(audiobook, $event)"
+            @select-change="onCheckboxChange(audiobook, $event)"
+            @select-keydown="handleCheckboxKeydown(audiobook, $event)"
+            @edit="editAudiobook(audiobook)"
+            @delete="deleteAudiobook(audiobook)"
+            @add="openAddToLibrary(audiobook)"
+            @search="searchFor(audiobook)"
+            @toggle-monitored="toggleMonitored(audiobook)"
+            @image-error="handleImageError"
           >
-            <div
-              v-if="audiobook.inLibrary"
-              class="selection-checkbox"
-              @click.stop="handleCheckboxClick(audiobook, $event)"
-              @mousedown.prevent
-            >
-              <input
-                type="checkbox"
-                :checked="isSelected(audiobook.id)"
-                @change="onCheckboxChange(audiobook, $event)"
-                @keydown.space.prevent="
-                  handleCheckboxKeydown && handleCheckboxKeydown(audiobook, $event)
-                "
-              />
-            </div>
-            <div v-else class="selection-checkbox-spacer" aria-hidden="true"></div>
-
-            <img
-              class="list-thumb"
-              :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
-              :alt="audiobook.title"
-              loading="lazy"
-              decoding="async"
-              @error="handleImageError"
-            />
-
-            <div class="list-details">
-              <div class="audiobook-title">
-                <span
-                  v-if="type === 'series' && audiobook.seriesNumber"
-                  class="list-series-position"
-                  >#{{ audiobook.seriesNumber }}</span
-                >{{ safeText(audiobook.title) }}
-              </div>
-              <div class="audiobook-author">
+            <template #details>
+              <div class="detail-line small">
                 {{
-                  audiobook.authors
-                    ?.map((author) => safeText(author))
-                    .slice(0, 2)
-                    .join(', ') || 'Unknown Author'
+                  (audiobook.narrators || [])
+                    .slice(0, 1)
+                    .map((n) => safeText(n))
+                    .join(', ') || ''
                 }}
+                <span
+                  v-if="
+                    audiobook.narrators &&
+                    audiobook.narrators.length &&
+                    (audiobook.publisher || audiobook.publishYear)
+                  "
+                >
+                  •
+                </span>
+                {{ safeText(audiobook.publisher)
+                }}<span v-if="audiobook.publishYear">
+                  • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
+                >
               </div>
-              <div v-if="showItemDetails" class="list-extra-details">
-                <div class="detail-line small">
-                  {{
-                    (audiobook.narrators || [])
-                      .slice(0, 1)
-                      .map((n) => safeText(n))
-                      .join(', ') || ''
-                  }}
-                  <span
-                    v-if="
-                      audiobook.narrators &&
-                      audiobook.narrators.length &&
-                      (audiobook.publisher || audiobook.publishYear)
-                    "
-                  >
-                    •
-                  </span>
-                  {{ safeText(audiobook.publisher)
-                  }}<span v-if="audiobook.publishYear">
-                    • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <div class="list-badges">
-              <div
-                class="status-badge"
-                :class="getAudiobookStatus(audiobook)"
-                role="button"
-                tabindex="0"
-                @click.stop="() => {}"
-                :aria-label="`Status for ${audiobook.title}`"
-              >
-                {{ statusText(getAudiobookStatus(audiobook)) }}
-              </div>
-              <div
-                v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
-                class="quality-profile-badge"
-              >
-                <PhStar />
-                {{ getQualityProfileName(audiobook.qualityProfileId) }}
-              </div>
-              <component
-                :is="audiobook.inLibrary ? 'button' : 'div'"
-                :type="audiobook.inLibrary ? 'button' : undefined"
-                class="monitored-badge"
-                :class="{
-                  unmonitored: !audiobook.inLibrary || !audiobook.monitored,
-                  toggleable: audiobook.inLibrary,
-                }"
-                :title="getMonitoringToggleTitle(audiobook)"
-                :disabled="audiobook.inLibrary && monitoringToggleBusy.has(audiobook.id)"
-                @click.stop="toggleAudiobookMonitored(audiobook)"
-              >
-                <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
-                {{ getMonitoringLabel(audiobook) }}
-              </component>
-            </div>
-
-            <div class="list-actions">
-              <button
-                v-if="canManualSearch(audiobook)"
-                class="action-btn search-btn-small"
-                @click.stop="openManualSearch(audiobook)"
-                title="Search for this book"
-              >
-                <PhMagnifyingGlass />
-              </button>
-              <button
-                v-if="audiobook.inLibrary"
-                class="action-btn edit-btn-small"
-                @click.stop="editAudiobook(audiobook)"
-                title="Edit"
-              >
-                <PhPencil />
-              </button>
-              <button
-                v-if="audiobook.inLibrary"
-                class="action-btn delete-btn-small"
-                @click.stop="deleteAudiobook(audiobook)"
-                title="Delete"
-              >
-                <PhTrash />
-              </button>
-              <button
-                v-else
-                class="action-btn add-btn-small"
-                @click.stop="openAddToLibrary(audiobook)"
-                title="Add to Library"
-              >
-                <PhPlus />
-              </button>
-            </div>
-          </div>
+            </template>
+          </AudiobookListRow>
         </template>
       </div>
 
@@ -559,136 +457,42 @@
           </div>
 
           <div class="grid-view">
-            <div
+            <AudiobookCoverCard
               v-for="audiobook in section.items"
               :key="`${section.key}-${audiobook.key}`"
-              class="collection-card"
-              :class="{
-                selected: audiobook.inLibrary && isSelected(audiobook.id),
-                'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-                'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-                'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-                'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-                'not-in-library': !audiobook.inLibrary,
-              }"
-              @click="handleCardClick(audiobook)"
+              :audiobook="audiobook"
+              :in-library="audiobook.inLibrary"
+              :status="getAudiobookStatus(audiobook)"
+              :status-label="statusText(getAudiobookStatus(audiobook))"
+              :selected="audiobook.inLibrary && isSelected(audiobook.id)"
+              :selectable="audiobook.inLibrary"
+              :selection-active="selectedCount > 0"
+              :show-details="showItemDetails"
+              :image-src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
+              :series-position="type === 'series' ? audiobook.seriesNumber : null"
+              :quality-profile-name="
+                audiobook.inLibrary ? getQualityProfileName(audiobook.qualityProfileId) : null
+              "
+              :monitor-busy="monitorBusy.has(audiobook.id)"
+              @open="handleCardClick(audiobook)"
+              @select-click="handleCheckboxClick(audiobook, $event)"
+              @select-change="onCheckboxChange(audiobook, $event)"
+              @select-keydown="handleCheckboxKeydown(audiobook, $event)"
+              @edit="editAudiobook(audiobook)"
+              @delete="deleteAudiobook(audiobook)"
+              @add="openAddToLibrary(audiobook)"
+              @search="searchFor(audiobook)"
+              @toggle-monitored="toggleMonitored(audiobook)"
+              @image-error="handleImageError"
             >
-              <div
-                v-if="audiobook.inLibrary"
-                class="selection-checkbox"
-                @click.stop="handleCheckboxClick(audiobook, $event)"
-                @mousedown.prevent
-              >
-                <input
-                  type="checkbox"
-                  :checked="isSelected(audiobook.id)"
-                  @change="onCheckboxChange(audiobook, $event)"
-                  @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
-                />
-              </div>
-              <div class="collection-cover">
-                <div
-                  v-if="type === 'series' && audiobook.seriesNumber"
-                  class="series-position-badge"
-                >
-                  #{{ audiobook.seriesNumber }}
+              <template #details>
+                <div class="detail-line title">{{ safeText(audiobook.title) }}</div>
+                <div v-if="audiobook.authors?.[0]" class="detail-line small">
+                  {{ audiobook.authors[0] }}
                 </div>
-                <img
-                  v-if="audiobook.imageUrl"
-                  :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
-                  :alt="audiobook.title"
-                  loading="lazy"
-                  decoding="async"
-                  @error="handleImageError"
-                  class="collection-image"
-                />
-                <div v-else class="no-cover">
-                  <PhBookOpen />
-                </div>
-                <div class="status-overlay">
-                  <div v-if="!showItemDetails" class="audiobook-title collection-title">
-                    {{ safeText(audiobook.title) }}
-                  </div>
-                  <div v-if="!showItemDetails" class="audiobook-author collection-author">
-                    {{
-                      audiobook.authors?.map((author) => safeText(author)).join(', ') ||
-                      'Unknown Author'
-                    }}
-                  </div>
-                  <div
-                    v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
-                    class="quality-profile-badge"
-                  >
-                    <PhStar />
-                    {{ getQualityProfileName(audiobook.qualityProfileId) }}
-                  </div>
-                  <component
-                    :is="audiobook.inLibrary ? 'button' : 'div'"
-                    :type="audiobook.inLibrary ? 'button' : undefined"
-                    class="monitored-badge"
-                    :class="{
-                      unmonitored: !audiobook.inLibrary || !audiobook.monitored,
-                      toggleable: audiobook.inLibrary,
-                    }"
-                    :title="getMonitoringToggleTitle(audiobook)"
-                    :disabled="audiobook.inLibrary && monitoringToggleBusy.has(audiobook.id)"
-                    @click.stop="toggleAudiobookMonitored(audiobook)"
-                  >
-                    <component
-                      :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash"
-                    />
-                    {{ getMonitoringLabel(audiobook) }}
-                  </component>
-                  <button
-                    v-if="canManualSearch(audiobook)"
-                    type="button"
-                    class="overlay-search-btn"
-                    title="Search for this book"
-                    :aria-label="`Search for ${audiobook.title}`"
-                    @click.stop="openManualSearch(audiobook)"
-                  >
-                    <PhMagnifyingGlass />
-                  </button>
-                </div>
-              </div>
-              <!-- Bottom placard (only show when item details are enabled) -->
-              <div v-if="showItemDetails" class="series-bottom-placard">
-                <div class="series-bottom-content">
-                  <p class="series-bottom-title">{{ safeText(audiobook.title) }}</p>
-                  <p class="series-bottom-author" v-if="audiobook.authors?.[0]">
-                    {{ audiobook.authors[0] }}
-                  </p>
-                  <p class="series-bottom-meta">{{ statusText(getAudiobookStatus(audiobook)) }}</p>
-                </div>
-              </div>
-              <!-- Action buttons -->
-              <div class="action-buttons">
-                <button
-                  v-if="audiobook.inLibrary"
-                  class="action-btn edit-btn-small"
-                  @click.stop="editAudiobook(audiobook)"
-                  title="Edit"
-                >
-                  <PhPencil />
-                </button>
-                <button
-                  v-if="audiobook.inLibrary"
-                  class="action-btn delete-btn-small"
-                  @click.stop="deleteAudiobook(audiobook)"
-                  title="Delete"
-                >
-                  <PhTrash />
-                </button>
-                <button
-                  v-else
-                  class="action-btn add-btn-small"
-                  @click.stop="openAddToLibrary(audiobook)"
-                  title="Add to Library"
-                >
-                  <PhPlus />
-                </button>
-              </div>
-            </div>
+                <div class="detail-line small">{{ statusText(getAudiobookStatus(audiobook)) }}</div>
+              </template>
+            </AudiobookCoverCard>
           </div>
         </section>
       </div>
@@ -738,8 +542,9 @@
     />
 
     <ManualSearchModal
-      :is-open="showManualSearchModal"
-      :audiobook="manualSearchAudiobook"
+      :is-open="manualSearch !== null"
+      :audiobook="manualSearch?.audiobook ?? null"
+      :ensure-audiobook-id="manualSearch?.ensureAudiobookId"
       @close="closeManualSearch"
       @downloaded="handleManualSearchDownloaded"
     />
@@ -833,13 +638,10 @@ import {
   PhTrash,
   PhCaretLeft,
   PhCaretRight,
-  PhStar,
   PhEye,
   PhEyeSlash,
-  PhPlus,
   PhGlobe,
   PhFolderOpen,
-  PhMagnifyingGlass,
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
@@ -855,6 +657,10 @@ import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
+import AudiobookCoverCard from '@/components/domain/audiobook/AudiobookCoverCard.vue'
+import AudiobookListRow from '@/components/domain/audiobook/AudiobookListRow.vue'
+import { useAudiobookActions } from '@/composables/useAudiobookActions'
+import { getAlreadyExistingAudiobook } from '@/utils/apiError'
 import { showConfirm } from '@/composables/useConfirm'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -870,7 +676,6 @@ import type {
   MonitoredAuthor,
   MonitoredSeries,
   RelatedAuthorItem,
-  SearchResult,
   SeriesCatalogBook,
   SeriesCatalogResponse,
   SeriesLookupResponse,
@@ -2419,69 +2224,46 @@ function getAudiobookStatus(audiobook: CollectionDisplayItem): CollectionStatus 
   return computeAudiobookStatus(audiobook, activeDownloadAudiobookIds.value)
 }
 
-// A book with nothing on disk and no download under way is the one worth
-// searching for from here; the rest already have their file or are getting it.
-function canManualSearch(audiobook: CollectionDisplayItem): boolean {
-  return audiobook.inLibrary && getAudiobookStatus(audiobook) === 'no-file'
-}
+const {
+  monitorBusy,
+  toggleMonitored,
+  manualSearch,
+  openManualSearch,
+  closeManualSearch,
+  handleManualSearchDownloaded,
+} = useAudiobookActions('CollectionView')
 
-const showManualSearchModal = ref(false)
-const manualSearchAudiobook = ref<Audiobook | null>(null)
-
-function openManualSearch(audiobook: CollectionDisplayItem) {
-  manualSearchAudiobook.value = audiobook
-  showManualSearchModal.value = true
-}
-
-function closeManualSearch() {
-  showManualSearchModal.value = false
-  manualSearchAudiobook.value = null
-}
-
-function handleManualSearchDownloaded(result: SearchResult) {
-  toast.success('Download Added', `${result.title} has been sent to your download client`)
-  closeManualSearch()
-  void downloadsStore.loadDownloads().catch((e) => {
-    errorTracking.captureException(e as Error, {
-      component: 'CollectionView',
-      operation: 'handleManualSearchDownloaded',
-    })
-  })
-}
-
-function getMonitoringLabel(audiobook: CollectionDisplayItem): string {
-  if (!audiobook.inLibrary) return 'Not Added'
-  return audiobook.monitored ? 'Monitored' : 'Unmonitored'
-}
-
-function getMonitoringToggleTitle(audiobook: CollectionDisplayItem): string | undefined {
-  if (!audiobook.inLibrary) return undefined
-  return audiobook.monitored ? 'Stop monitoring this book' : 'Monitor this book'
-}
-
-// The badge is the toggle. Ids in flight keep a double-click from racing two
-// opposite writes; the store shows the flip at once and puts it back on failure.
-const monitoringToggleBusy = ref(new Set<number>())
-
-async function toggleAudiobookMonitored(audiobook: CollectionDisplayItem) {
-  if (!audiobook.inLibrary || monitoringToggleBusy.value.has(audiobook.id)) return
-  monitoringToggleBusy.value = new Set(monitoringToggleBusy.value).add(audiobook.id)
-  try {
-    await libraryStore.setMonitored(audiobook.id, !audiobook.monitored)
-  } catch (e) {
-    toast.error(
-      'Monitoring not updated',
-      `${audiobook.title} was left ${audiobook.monitored ? 'monitored' : 'unmonitored'}.`,
-    )
-    errorTracking.captureException(e as Error, {
-      component: 'CollectionView',
-      operation: 'toggleAudiobookMonitored',
-    })
-  } finally {
-    const next = new Set(monitoringToggleBusy.value)
-    next.delete(audiobook.id)
-    monitoringToggleBusy.value = next
+/**
+ * The cover's magnifying glass. A library book is searched for as itself. A
+ * catalogue book the library does not hold is searched for first and added -
+ * monitored - only when a release is actually grabbed, so looking at what is
+ * available never leaves a followed book behind.
+ */
+function searchFor(audiobook: CollectionDisplayItem) {
+  if (audiobook.inLibrary) {
+    openManualSearch(audiobook)
+    return
   }
+
+  const metadata = audiobook.addMetadata
+  if (!metadata) return
+  openManualSearch(audiobook, async () => {
+    try {
+      const { audiobook: added } = await apiService.addToLibrary(metadata, {
+        monitored: true,
+        autoSearch: false,
+      })
+      void refreshLibrary()
+      return added.id
+    } catch (e) {
+      const existing = getAlreadyExistingAudiobook(e)
+      if (existing) {
+        void refreshLibrary()
+        return existing.id
+      }
+      throw e
+    }
+  })
 }
 
 function handleCheckboxKeydown(audiobook: CollectionDisplayItem, event: KeyboardEvent) {
@@ -3422,16 +3204,6 @@ defineExpose({
   object-fit: cover;
 }
 
-.no-cover {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--muted-bg);
-  color: var(--text-muted);
-}
-
 .row-details {
   flex: 1;
   min-width: 0;
@@ -3462,20 +3234,6 @@ defineExpose({
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
-}
-
-.action-btn {
-  padding: 0.5rem;
-  background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  color: var(--text-color);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  background: var(--button-hover-bg);
 }
 
 .grid-view {
@@ -3583,260 +3341,37 @@ defineExpose({
   color: #fff;
 }
 
-.collection-card {
-  background: var(--card-bg);
-  border-radius: 6px;
-  overflow: visible;
-  cursor: pointer;
-  transition: all 0.2s;
-  position: relative;
-  border-radius: 6px;
-}
-
-.collection-card:hover {
-  transform: translateY(-2px);
-}
-
-.collection-card.selected {
-  background: var(--selected-bg);
-}
-
-.collection-cover {
-  aspect-ratio: 1/1;
-  overflow: hidden;
-  position: relative;
-  border-radius: 6px;
-  box-shadow: inset 0 8px 20px rgba(0, 0, 0, 0.6);
-}
-
-.collection-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.collection-card.selected .collection-cover {
-  outline: 3px solid var(--brand-focus);
-  outline-offset: 2px;
-}
-
-.collection-card.not-in-library {
-  border: 1px dashed rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.collection-card.not-in-library .collection-image {
-  filter: grayscale(0.5) brightness(0.5);
-}
-
-.collection-card.not-in-library:hover .collection-image {
-  filter: unset;
-}
-
-.collection-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 6px;
-}
-
-.collection-card.status-no-file .collection-cover {
-  border-bottom: 4px solid #e74c3c;
-}
 .collection-card.status-downloading .collection-cover {
   border-bottom: 3px solid #3498db;
   animation: pulse 2s ease-in-out infinite;
-}
-.collection-card.status-quality-mismatch .collection-cover {
-  border-bottom: 4px solid #f39c12;
 }
 .collection-card.status-quality-match .collection-cover {
   border-bottom: 4px solid #2ecc71;
 }
 
-@keyframes pulse {
-  0%,
-  100% {
-    border-bottom-color: #3498db;
-  }
-  50% {
-    border-bottom-color: #5dade2;
-  }
-}
-
-.collection-card.status-quality-mismatch .audiobook-poster-container {
-  border-bottom: 3px solid #f39c12;
-}
-
-.collection-card.status-quality-match .audiobook-poster-container {
-  border-bottom: 3px solid #2ecc71;
-}
-
-/* List view status borders */
-.audiobook-list-item.status-no-file .list-thumb {
-  border-bottom: 3px solid #e74c3c;
-}
-
-.audiobook-list-item.status-downloading .list-thumb {
-  border-bottom: 3px solid #3498db;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-.audiobook-list-item.status-quality-mismatch .list-thumb {
-  border-bottom: 3px solid #f39c12;
-}
-
-.audiobook-list-item.status-quality-match .list-thumb {
-  border-bottom: 3px solid #2ecc71;
-}
-
-.status-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.9));
-  padding: 8px;
-  transition: padding 0.2s ease;
-}
-
-.collection-cover:hover .status-overlay {
-  padding: 80px 8px 8px;
-}
-
-/* Bottom-right of the cover, level with the monitored badge on the left. */
-.overlay-search-btn {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  cursor: pointer;
-  font-size: 14px;
-  transition:
-    background-color 0.15s,
-    border-color 0.15s;
-}
-
-.overlay-search-btn:hover {
-  background: rgba(52, 152, 219, 0.9);
-  border-color: rgba(41, 128, 185, 0.6);
-}
-
-/* When 'show-details' class is present, render overlay expanded */
-.collection-cover.show-details .status-overlay {
-  padding: 80px 8px 8px;
-}
-
 .collection-cover .audiobook-title,
-.collection-cover .audiobook-author {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
 .collection-cover.show-details .audiobook-title,
-.collection-cover.show-details .audiobook-author {
-  opacity: 1;
-}
-
-.audiobook-extra-details {
-  margin-top: 8px;
-  color: #e6eef8;
-}
 .audiobook-extra-details .detail-line {
   font-size: 12px;
   line-height: 1.2;
   margin: 2px 0;
   color: #cfd8e3;
 }
-.audiobook-extra-details .detail-line.title {
-  font-weight: 500;
-  color: #fff;
-}
 .audiobook-extra-details .detail-line.small {
   font-size: 11px;
   color: #bfcad6;
 }
-.list-extra-details {
-  margin-top: 6px;
-  color: #e6eef8;
-}
 .list-extra-details .detail-line {
   font-size: 12px;
   color: #bfcad6;
-}
-.grid-bottom-details {
-  margin-top: 8px;
-  color: #e6eef8;
-  padding: 0 4px;
-  width: 100%;
 }
 .grid-bottom-details .detail-line {
   font-size: 12px;
   color: #bfcad6;
   text-align: center;
 }
-.grid-bottom-details .detail-line.title {
-  color: #fff;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.audiobook-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: #fff;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.audiobook-author {
-  font-size: 11px;
-  color: #ccc;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
 
 .collection-cover:hover .audiobook-title,
-.collection-cover:hover .audiobook-author {
-  opacity: 1;
-}
-
-.quality-profile-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  margin-right: 0.5rem;
-  background-color: rgba(52, 152, 219, 0.2);
-  border: 1px solid rgba(52, 152, 219, 0.4);
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #3498db;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -3884,128 +3419,8 @@ defineExpose({
   color: #d3d7de;
 }
 
-.quality-profile-badge i {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.monitored-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  margin-left: 0.25rem;
-  background-color: rgba(46, 204, 113, 0.2);
-  border: 1px solid rgba(46, 204, 113, 0.4);
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #2ecc71;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.monitored-badge.unmonitored {
-  /* Neutral, not red: an unmonitored book is a state, not a destructive action.
-     Red is reserved for delete so the two do not read as the same severity. */
-  background-color: rgba(148, 163, 184, 0.15);
-  border-color: rgba(148, 163, 184, 0.35);
-  color: var(--text-muted);
-}
-
-.monitored-badge i {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
 /* The badge doubles as the toggle for a library book; a button inherits none of
    the badge's type, so it is restated here. */
-.monitored-badge.toggleable {
-  font: inherit;
-  font-size: 10px;
-  cursor: pointer;
-  transition:
-    background-color 0.15s,
-    border-color 0.15s;
-}
-
-.monitored-badge.toggleable:hover:not(:disabled) {
-  background-color: rgba(46, 204, 113, 0.32);
-  border-color: rgba(46, 204, 113, 0.6);
-}
-
-.monitored-badge.toggleable.unmonitored:hover:not(:disabled) {
-  background-color: rgba(148, 163, 184, 0.28);
-  border-color: rgba(148, 163, 184, 0.55);
-}
-
-.monitored-badge.toggleable:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
-
-.action-buttons {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: 30; /* keep action buttons above the row click overlay */
-}
-
-.audiobook-item:hover .action-buttons {
-  opacity: 1;
-}
-
-.action-btn {
-  padding: 6px 8px;
-  border-radius: 6px;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.2s;
-}
-
-.delete-btn-small {
-  background-color: rgba(231, 76, 60, 0.9);
-  border-color: rgba(192, 57, 43, 0.5);
-}
-
-.delete-btn-small:hover {
-  background-color: rgba(192, 57, 43, 1);
-}
-
-.edit-btn-small {
-  background-color: rgba(52, 152, 219, 0.9);
-  border-color: rgba(41, 128, 185, 0.5);
-}
-
-.edit-btn-small:hover {
-  background-color: rgba(41, 128, 185, 1);
-}
-
-.search-btn-small {
-  background-color: rgba(52, 152, 219, 0.9);
-  border-color: rgba(41, 128, 185, 0.5);
-}
-
-.search-btn-small:hover {
-  background-color: rgba(41, 128, 185, 1);
-}
-
-.add-btn-small {
-  background-color: rgba(46, 204, 113, 0.9);
-  border-color: rgba(39, 174, 96, 0.5);
-}
-
-.add-btn-small:hover {
-  background-color: rgba(39, 174, 96, 1);
-}
 
 .loading-state,
 .empty-state,
@@ -4089,16 +3504,9 @@ defineExpose({
   background-color: var(--brand-700);
 }
 
-.collection-cover:hover .status-overlay {
-  padding: 56px 8px 8px;
-}
 .status-overlay .overlay-title {
   color: #fff;
   font-weight: 500;
-}
-.status-overlay .overlay-author {
-  color: #bfcad6;
-  font-size: 13px;
 }
 .overlay-badges {
   display: flex;
@@ -4134,186 +3542,24 @@ defineExpose({
   margin-top: 0.5rem;
 }
 
-.series-bottom-placard {
-  margin-top: 0.5rem;
-  display: flex;
-  justify-content: center;
-  z-index: 10;
-}
-
-.series-bottom-content {
-  width: 200px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 0 0.5rem;
-}
-
-.series-bottom-title {
-  font-size: 12px;
-  /* Sits on the card surface, not on the cover art, so it must follow the theme. */
-  color: var(--text-color);
-  margin: 0 0 4px 0;
-  font-weight: 500;
-  text-align: center;
-}
-
-.series-bottom-author {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin: 0 0 2px 0;
-  text-align: center;
-}
-
-.series-bottom-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin: 0;
-  text-align: center;
-}
-
-.selection-checkbox {
-  /* default used in grid; overridden in list below */
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 40; /* keep checkbox above row click overlay */
-  height: 22px;
-  width: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  box-sizing: border-box;
-  background-color: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  opacity: 0;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-}
-/* Hide the native input visually but keep it accessible and interactive */
-.selection-checkbox input[type='checkbox'] {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 41; /* ensure native input is above overlay and container pseudo-elements */
-}
-
-/* Draw a custom box and checkmark using container pseudo-elements */
-.selection-checkbox::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 2px solid rgba(255, 255, 255, 0.14);
-  background: transparent;
-  box-sizing: border-box;
-  transition:
-    border-color 0.12s ease,
-    background-color 0.12s ease,
-    box-shadow 0.12s ease;
-  z-index: 1;
-}
-
-/* Custom checkmark uses pseudo-element ::after - no need to hide it */
-
-.selection-checkbox:hover {
-  background-color: rgba(0, 0, 0, 0.6);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-/* Custom checkmark */
-
-/* Remove container hover darkening when focusing the native checkbox so contrast stays good */
-.selection-checkbox:hover input[type='checkbox'] {
-  transform: translateY(0);
-}
-
 /* Only show checkbox when hovered or selected */
 
 .collection-card:hover .selection-checkbox,
 .collection-card.selected .selection-checkbox,
 .audiobook-list-item:hover .selection-checkbox,
 .audiobook-list-item.selected .selection-checkbox,
-.audiobooks-scroll-container.has-selection .selection-checkbox {
-  opacity: 1;
-}
 
 /* When the item is selected, style the custom box and show the check */
 .collection-card.selected .selection-checkbox::before,
-.audiobook-list-item.selected .selection-checkbox::before {
-  background-color: var(--brand-500);
-  border-color: var(--brand-500);
-  box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.12);
-}
 
 .audiobook-item.selected .selection-checkbox::after,
-.audiobook-list-item.selected .selection-checkbox::after {
-  border-right-color: #fff;
-  border-bottom-color: #fff;
-  transform: translate(-50%, -50%) rotate(45deg) scale(1);
-}
-
-/* Focus outlines for keyboard navigation */
-.selection-checkbox input[type='checkbox']:focus-visible {
-  outline: 2px solid rgba(var(--brand-rgb), 0.3);
-  outline-offset: 2px;
-}
 
 .audiobook-list-item:focus,
 .audiobook-list-item:focus-within,
 .collection-card:focus,
-.collection-card:focus-within {
-  outline: 2px solid rgba(var(--brand-rgb), 0.18);
-  outline-offset: 2px;
-  background-color: rgba(255, 255, 255, 0.02);
-}
 
-/* List-specific override for the checkbox so it participates in the grid */
-.audiobooks-list .selection-checkbox {
-  position: relative;
-  top: auto;
-  left: auto;
-  z-index: 40; /* ensure list checkboxes stay above the row overlay */
-  height: 20px;
-  width: 20px;
-  margin: 0;
-  background-color: rgba(0, 0, 0, 0);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* In list view, always show checkboxes (outline). Filled/checkmark still only shows for selected items */
-.audiobooks-list .selection-checkbox {
-  opacity: 1;
-}
 .audiobooks-list .selection-checkbox::before {
   opacity: 1;
-}
-.audiobooks-list .selection-checkbox input[type='checkbox'] {
-  opacity: 0; /* native input remains visually hidden */
-}
-
-.audiobooks-list .selection-checkbox {
-  justify-self: center;
 }
 
 .audiobooks-list .selection-checkbox-spacer {
@@ -4322,62 +3568,7 @@ defineExpose({
   justify-self: center;
 }
 
-.audiobooks-list .selection-checkbox::after {
-  left: 6px;
-  top: 2px;
-}
-
 .collection-card:focus,
-.collection-card:focus-within {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
-}
-
-.action-buttons {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.collection-card:hover .action-buttons {
-  opacity: 1;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  color: #fff;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.quality-profile-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  margin-right: 0.5rem;
-  background-color: rgba(52, 152, 219, 0.2);
-  border: 1px solid rgba(52, 152, 219, 0.4);
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #3498db;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -4419,203 +3610,14 @@ defineExpose({
   color: #2ecc71;
 }
 
-.quality-profile-badge i {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.monitored-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  margin-left: 0.25rem;
-  background-color: rgba(46, 204, 113, 0.2);
-  border: 1px solid rgba(46, 204, 113, 0.4);
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #2ecc71;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.monitored-badge.unmonitored {
-  /* Neutral, not red: an unmonitored book is a state, not a destructive action.
-     Red is reserved for delete so the two do not read as the same severity. */
-  background-color: rgba(148, 163, 184, 0.15);
-  border-color: rgba(148, 163, 184, 0.35);
-  color: var(--text-muted);
-}
-
-.monitored-badge i {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
 /* The badge doubles as the toggle for a library book; a button inherits none of
    the badge's type, so it is restated here. */
-.monitored-badge.toggleable {
-  font: inherit;
-  font-size: 10px;
-  cursor: pointer;
-  transition:
-    background-color 0.15s,
-    border-color 0.15s;
-}
-
-.monitored-badge.toggleable:hover:not(:disabled) {
-  background-color: rgba(46, 204, 113, 0.32);
-  border-color: rgba(46, 204, 113, 0.6);
-}
-
-.monitored-badge.toggleable.unmonitored:hover:not(:disabled) {
-  background-color: rgba(148, 163, 184, 0.28);
-  border-color: rgba(148, 163, 184, 0.55);
-}
-
-.monitored-badge.toggleable:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
-
-.monitored-badge.unmonitored {
-  /* Neutral, not red: an unmonitored or not-yet-added book is a state, not a
-     destructive action. Red stays reserved for delete. */
-  background: rgba(148, 163, 184, 0.15);
-  border-color: rgba(148, 163, 184, 0.35);
-  color: var(--text-muted);
-}
-
-.grid-bottom-details {
-  margin-top: 8px;
-  color: var(--text-color);
-  padding: 0 4px;
-  width: 100%;
-}
-
-.grid-bottom-details .detail-line {
-  font-size: 12px;
-  color: #bfcad6;
-  text-align: center;
-}
-
-.grid-bottom-details .detail-line.title {
-  color: #fff;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.grid-bottom-details .detail-line.small {
-  font-size: 11px;
-  margin-bottom: 2px;
-}
 
 /* List view styles copied from AudiobooksView to match visuals */
 .audiobooks-list {
   display: flex;
   flex-direction: column;
   padding: 8px 0;
-}
-
-.audiobook-list-item {
-  display: grid;
-  grid-template-columns: 40px 64px 1fr auto 120px;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 12px;
-  background-color: transparent;
-  border-radius: 6px;
-  transition:
-    background-color 0.12s,
-    transform 0.12s;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  cursor: pointer;
-}
-
-.audiobook-list-item:hover {
-  background-color: rgba(255, 255, 255, 0.02);
-  transform: translateY(-1px);
-}
-
-.audiobook-list-item.selected {
-  background-color: rgba(255, 255, 255, 0.02);
-  transform: translateY(-1px);
-}
-
-.audiobook-list-item.not-in-library {
-  opacity: 0.92;
-  border: 1px dashed rgba(255, 255, 255, 0.14);
-  background-color: rgba(255, 255, 255, 0.02);
-}
-
-.audiobook-list-item.not-in-library .list-thumb {
-  filter: grayscale(0.12) brightness(0.88);
-}
-
-.list-thumb {
-  width: 56px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
-.list-details {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Series position indicator (only shown inside a single-series collection) */
-.list-series-position {
-  display: inline-block;
-  margin-right: 0.4rem;
-  padding: 0 0.35rem;
-  border-radius: 4px;
-  font-size: 0.8em;
-  font-weight: 700;
-  color: var(--brand-500);
-  background-color: rgba(var(--brand-rgb), 0.16);
-}
-
-.series-position-badge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 2;
-  padding: 0.15rem 0.45rem;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: #fff;
-  background-color: rgba(var(--brand-rgb), 0.92);
-  pointer-events: none;
-}
-
-.list-details .audiobook-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  color: #fff;
-}
-
-.list-details .audiobook-author {
-  font-size: 12px;
-  color: #ccc;
-}
-
-.list-actions {
-  margin-left: 0;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-self: end;
 }
 
 .list-header {
@@ -4643,14 +3645,6 @@ defineExpose({
   text-align: right;
 }
 
-.list-badges {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-left: 12px;
-  justify-self: start;
-}
-
 @media (max-width: 978px) {
   .list-badges {
     flex-direction: column;
@@ -4663,12 +3657,6 @@ defineExpose({
 
 /* Ensure list view titles/badges and checkboxes are visible (override poster overlay rules) */
 .audiobooks-list .audiobook-title,
-.audiobooks-list .audiobook-author {
-  opacity: 1;
-  transition: none;
-  color: inherit;
-}
-
 .pagination {
   display: flex;
   justify-content: center;

@@ -243,13 +243,13 @@ describe('CollectionView', () => {
     expect(wrapper.vm.viewMode).toBe('grid')
 
     // collection cards should show title and author in collection-content
-    const collectionCards = wrapper.findAll('.collection-card')
+    const collectionCards = wrapper.findAll('.audiobook-item')
     expect(collectionCards.length).toBe(2)
 
     // Check first card has title and author
     const firstCard = collectionCards[0]
-    expect(firstCard.find('.collection-title').text()).toBe('Book A')
-    expect(firstCard.find('.collection-author').text()).toBe('Author A')
+    expect(firstCard.find('.audiobook-title').text()).toBe('Book A')
+    expect(firstCard.find('.audiobook-author').text()).toBe('Author A')
   })
 
   it('shows other audiobooks in a genre collection', async () => {
@@ -303,7 +303,7 @@ describe('CollectionView', () => {
     })
     await new Promise((r) => setTimeout(r, 0))
 
-    const collectionCards = wrapper.findAll('.collection-card')
+    const collectionCards = wrapper.findAll('.audiobook-item')
     expect(collectionCards).toHaveLength(2)
     expect(wrapper.text()).toContain('The Final Empire')
     expect(wrapper.text()).toContain('The Way of Kings')
@@ -361,7 +361,7 @@ describe('CollectionView', () => {
     })
     await new Promise((r) => setTimeout(r, 0))
 
-    const collectionCards = wrapper.findAll('.collection-card')
+    const collectionCards = wrapper.findAll('.audiobook-item')
     expect(collectionCards).toHaveLength(2)
     expect(wrapper.text()).toContain('Dune')
     expect(wrapper.text()).toContain('Children of Dune')
@@ -419,7 +419,7 @@ describe('CollectionView', () => {
     })
     await new Promise((r) => setTimeout(r, 0))
 
-    const collectionCards = wrapper.findAll('.collection-card')
+    const collectionCards = wrapper.findAll('.audiobook-item')
     expect(collectionCards).toHaveLength(2)
     expect(wrapper.text()).toContain('Book One')
     expect(wrapper.text()).toContain('Book Three')
@@ -1033,9 +1033,9 @@ describe('CollectionView', () => {
 
     await flushPromises()
 
-    const collectionCards = wrapper.findAll('.collection-card')
+    const collectionCards = wrapper.findAll('.audiobook-item')
     expect(collectionCards).toHaveLength(2)
-    expect(wrapper.findAll('.collection-card.not-in-library')).toHaveLength(1)
+    expect(wrapper.findAll('.audiobook-item.not-in-library')).toHaveLength(1)
     const gridSectionHeaders = wrapper.findAll('.collection-section-header')
     expect(gridSectionHeaders).toHaveLength(2)
     expect(gridSectionHeaders[0]?.text()).toContain('In Library')
@@ -1135,9 +1135,9 @@ describe('CollectionView', () => {
 
     await flushPromises()
 
-    const collectionCards = wrapper.findAll('.collection-card')
+    const collectionCards = wrapper.findAll('.audiobook-item')
     expect(collectionCards).toHaveLength(2)
-    expect(wrapper.findAll('.collection-card.not-in-library')).toHaveLength(1)
+    expect(wrapper.findAll('.audiobook-item.not-in-library')).toHaveLength(1)
     expect(wrapper.text()).toContain('Manacled')
     expect(wrapper.text()).toContain('Let the Dark In')
     expect(wrapper.text()).not.toContain('Unknown Language Fallback')
@@ -1214,10 +1214,10 @@ describe('CollectionView', () => {
 
     await flushPromises()
 
-    const collectionCards = wrapper.findAll('.collection-card')
+    const collectionCards = wrapper.findAll('.audiobook-item')
     expect(collectionCards).toHaveLength(2)
     expect(collectionCards.filter((card) => !card.classes('not-in-library'))).toHaveLength(1)
-    expect(wrapper.findAll('.collection-card.not-in-library')).toHaveLength(1)
+    expect(wrapper.findAll('.audiobook-item.not-in-library')).toHaveLength(1)
     expect(wrapper.text()).toContain('Project Hail Mary')
     expect(wrapper.text()).toContain('The Martian')
   })
@@ -1711,7 +1711,7 @@ describe('CollectionView', () => {
     })
     await flushPromises()
 
-    const card = wrapper.find('.collection-card')
+    const card = wrapper.find('.audiobook-item')
     expect(card.exists()).toBe(true)
     // Shows the Mistborn position (#2 from the membership), not the primary 'Other Series' #5.
     expect(card.text()).toContain('#2')
@@ -1807,7 +1807,7 @@ describe('CollectionView series grouping', () => {
     expect(headings[0]).toContain('Sun Eater')
     expect(headings[1]).toContain('Standalone')
 
-    const titles = wrapper.findAll('.collection-card .collection-title').map((t) => t.text())
+    const titles = wrapper.findAll('.audiobook-item .audiobook-title').map((t) => t.text())
     expect(titles).toEqual(['Empire of Silence', 'Howling Dark', 'The Dregs of Empire'])
   })
 
@@ -1819,14 +1819,14 @@ describe('CollectionView series grouping', () => {
     const headings = wrapper.findAll('.collection-section-header').map((h) => h.text())
     expect(headings.some((h) => h.includes('Not Added'))).toBe(false)
 
-    const titles = wrapper.findAll('.collection-card .collection-title').map((t) => t.text())
+    const titles = wrapper.findAll('.audiobook-item .audiobook-title').map((t) => t.text())
     expect(titles).toEqual([
       'Empire of Silence',
       'Howling Dark',
       'Demon in White',
       'The Dregs of Empire',
     ])
-    expect(wrapper.findAll('.collection-card.not-in-library')).toHaveLength(1)
+    expect(wrapper.findAll('.audiobook-item.not-in-library')).toHaveLength(1)
   })
 
   it('opens the series from its heading, and leaves the catch-all headings plain', async () => {
@@ -1850,6 +1850,6 @@ describe('CollectionView series grouping', () => {
     const wrapper = await mountAuthorCollection(false)
 
     expect(wrapper.findAll('.collection-section-header')).toHaveLength(0)
-    expect(wrapper.findAll('.collection-card').length).toBe(3)
+    expect(wrapper.findAll('.audiobook-item').length).toBe(3)
   })
 })

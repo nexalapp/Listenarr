@@ -619,151 +619,89 @@
               >
             </div>
             <template v-else>
-              <div v-for="audiobook in row.books" :key="audiobook.id" class="audiobook-wrapper">
-                <div
-                  tabindex="0"
-                  @keydown.enter="navigateToDetail(audiobook.id)"
-                  class="audiobook-item"
-                  :class="{
-                    selected: libraryStore.isSelected(audiobook.id),
-                    'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-                    'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-                    'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-                    'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-                  }"
-                  @click="navigateToDetail(audiobook.id)"
-                >
-                  <div class="row-click-target" @click="navigateToDetail(audiobook.id)" />
+              <AudiobookCoverCard
+                v-for="audiobook in row.books"
+                :key="audiobook.id"
+                :audiobook="audiobook"
+                :status="getAudiobookStatus(audiobook)"
+                :status-label="statusText(getAudiobookStatus(audiobook))"
+                :selected="libraryStore.isSelected(audiobook.id)"
+                :selection-active="selectedCount > 0"
+                :show-details="showItemDetails"
+                :image-src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                :image-loaded="isImageLoaded(getBookImageKey(audiobook))"
+                :quality-profile-name="getQualityProfileName(audiobook.qualityProfileId)"
+                :monitor-busy="monitorBusy.has(audiobook.id)"
+                @open="navigateToDetail(audiobook.id)"
+                @select-click="handleCheckboxClick(audiobook, $event)"
+                @select-change="onCheckboxChange(audiobook, $event)"
+                @select-keydown="handleCheckboxKeydown(audiobook, $event)"
+                @edit="openEditModal(audiobook)"
+                @delete="confirmDelete(audiobook)"
+                @search="openManualSearch(audiobook)"
+                @toggle-monitored="toggleMonitored(audiobook)"
+                @image-load="markImageLoaded(getBookImageKey(audiobook))"
+                @image-error="handleLazyImageError(getBookImageKey(audiobook), $event)"
+              >
+                <template #badges>
                   <div
-                    class="selection-checkbox"
-                    @click.stop="handleCheckboxClick(audiobook, $event)"
-                    @mousedown.prevent
+                    v-if="chapterIssueLabel(audiobook)"
+                    class="chapter-badge"
+                    :class="{ 'chapter-badge--fixable': audiobook.chapterRepairable }"
+                    :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
                   >
-                    <input
-                      type="checkbox"
-                      :checked="libraryStore.isSelected(audiobook.id)"
-                      @change="onCheckboxChange(audiobook, $event)"
-                      @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
-                    />
+                    <PhListNumbers />
+                    {{ chapterIssueLabel(audiobook) }}
                   </div>
                   <div
-                    class="audiobook-poster-container"
-                    :class="{ 'show-details': showItemDetails }"
+                    v-if="audioIssueLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="audiobook.audioAuditReason ?? undefined"
                   >
-                    <div
-                      class="audiobook-image-placeholder"
-                      :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-                    >
-                      <PhBookOpen class="audiobook-placeholder-icon" />
-                    </div>
-                    <img
-                      :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
-                      :alt="audiobook.title"
-                      class="audiobook-poster cover-loading-image"
-                      :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-                      loading="lazy"
-                      decoding="async"
-                      @load="markImageLoaded(getBookImageKey(audiobook))"
-                      @error="handleLazyImageError(getBookImageKey(audiobook), $event)"
-                    />
-                    <div class="status-overlay">
-                      <div v-if="!showItemDetails" class="audiobook-title">
-                        {{ safeText(audiobook.title) }}
-                      </div>
-                      <div v-if="!showItemDetails" class="audiobook-author">
-                        {{
-                          audiobook.authors?.map((author) => safeText(author)).join(', ') ||
-                          'Unknown Author'
-                        }}
-                      </div>
-                      <div
-                        v-if="getQualityProfileName(audiobook.qualityProfileId)"
-                        class="quality-profile-badge"
-                      >
-                        <PhStar />
-                        {{ getQualityProfileName(audiobook.qualityProfileId) }}
-                      </div>
-                      <div class="monitored-badge" :class="{ unmonitored: !audiobook.monitored }">
-                        <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
-                        {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
-                      </div>
-                      <div
-                        v-if="chapterIssueLabel(audiobook)"
-                        class="chapter-badge"
-                        :class="{ 'chapter-badge--fixable': audiobook.chapterRepairable }"
-                        :title="`This book has a file whose chapters are ${chapterIssueLabel(audiobook)?.toLowerCase()}. Open it to repair them.`"
-                      >
-                        <PhListNumbers />
-                        {{ chapterIssueLabel(audiobook) }}
-                      </div>
-                      <div
-                        v-if="audioIssueLabel(audiobook)"
-                        class="chapter-badge"
-                        :title="audiobook.audioAuditReason ?? undefined"
-                      >
-                        <PhEar />
-                        {{ audioIssueLabel(audiobook) }}
-                      </div>
-                      <div
-                        v-if="notFoundLabel(audiobook)"
-                        class="chapter-badge chapter-badge--not-found"
-                        title="A scan could not find these files at their paths. They are kept until you remove them from the book's Files tab."
-                      >
-                        <PhFileX />
-                        {{ notFoundLabel(audiobook) }}
-                      </div>
-                    </div>
-                    <div class="action-buttons">
-                      <button
-                        class="action-btn edit-btn-small"
-                        @click.stop="openEditModal(audiobook)"
-                        title="Edit"
-                      >
-                        <PhPencil />
-                      </button>
-                      <button
-                        class="action-btn delete-btn-small"
-                        @click.stop="confirmDelete(audiobook)"
-                        title="Delete"
-                      >
-                        <PhTrash />
-                      </button>
-                    </div>
+                    <PhEar />
+                    {{ audioIssueLabel(audiobook) }}
                   </div>
-                  <!-- Extra details shown physically under poster when toggle is enabled -->
-                  <div v-if="showItemDetails" class="grid-bottom-details">
-                    <div class="detail-line title">{{ safeText(audiobook.title) }}</div>
-                    <div class="detail-line small">
+                  <div
+                    v-if="notFoundLabel(audiobook)"
+                    class="chapter-badge chapter-badge--not-found"
+                    title="A scan could not find these files at their paths. They are kept until you remove them from the book's Files tab."
+                  >
+                    <PhFileX />
+                    {{ notFoundLabel(audiobook) }}
+                  </div>
+                </template>
+                <template #details>
+                  <div class="detail-line title">{{ safeText(audiobook.title) }}</div>
+                  <div class="detail-line small">
+                    {{
+                      (audiobook.authors || [])
+                        .slice(0, 2)
+                        .map((a) => safeText(a))
+                        .join(', ') || 'Unknown Author'
+                    }}
+                    <div v-if="(audiobook.narrators || []).length">
                       {{
-                        (audiobook.authors || [])
-                          .slice(0, 2)
-                          .map((a) => safeText(a))
-                          .join(', ') || 'Unknown Author'
+                        (audiobook.narrators || [])
+                          .slice(0, 1)
+                          .map((n) => safeText(n))
+                          .join(', ')
                       }}
-                      <div v-if="(audiobook.narrators || []).length">
-                        {{
-                          (audiobook.narrators || [])
-                            .slice(0, 1)
-                            .map((n) => safeText(n))
-                            .join(', ')
-                        }}
-                      </div>
-                    </div>
-                    <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
-                      Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
-                    </div>
-                    <div class="detail-line small">
-                      {{ safeText(audiobook.publisher)
-                      }}<span v-if="audiobook.publishYear">
-                        • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
-                      >
-                    </div>
-                    <div class="detail-line small">
-                      {{ statusText(getAudiobookStatus(audiobook)) }}
                     </div>
                   </div>
-                </div>
-              </div>
+                  <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
+                    Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
+                  </div>
+                  <div class="detail-line small">
+                    {{ safeText(audiobook.publisher)
+                    }}<span v-if="audiobook.publishYear">
+                      • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
+                    >
+                  </div>
+                  <div class="detail-line small">
+                    {{ statusText(getAudiobookStatus(audiobook)) }}
+                  </div>
+                </template>
+              </AudiobookCoverCard>
             </template>
           </template>
         </div>
@@ -790,110 +728,57 @@
               >
             </div>
             <template v-else>
-              <div
+              <AudiobookListRow
                 v-for="audiobook in row.books"
                 :key="`list-${audiobook.id}`"
-                tabindex="0"
-                @keydown.enter="navigateToDetail(audiobook.id)"
-                class="audiobook-list-item"
-                :class="{
-                  selected: libraryStore.isSelected(audiobook.id),
-                  'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-                  'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-                  'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-                  'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-                }"
-                @click="navigateToDetail(audiobook.id)"
+                :audiobook="audiobook"
+                :status="getAudiobookStatus(audiobook)"
+                :status-label="statusText(getAudiobookStatus(audiobook))"
+                :selected="libraryStore.isSelected(audiobook.id)"
+                :show-details="showItemDetails"
+                :image-src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                :image-loaded="isImageLoaded(getBookImageKey(audiobook))"
+                :quality-profile-name="getQualityProfileName(audiobook.qualityProfileId)"
+                :monitor-busy="monitorBusy.has(audiobook.id)"
+                @open="navigateToDetail(audiobook.id)"
+                @status="openStatusDetails(audiobook)"
+                @select-click="handleCheckboxClick(audiobook, $event)"
+                @select-change="onCheckboxChange(audiobook, $event)"
+                @select-keydown="handleCheckboxKeydown(audiobook, $event)"
+                @edit="openEditModal(audiobook)"
+                @delete="confirmDelete(audiobook)"
+                @search="openManualSearch(audiobook)"
+                @toggle-monitored="toggleMonitored(audiobook)"
+                @image-load="markImageLoaded(getBookImageKey(audiobook))"
+                @image-error="handleLazyImageError(getBookImageKey(audiobook), $event)"
               >
-                <div
-                  class="selection-checkbox"
-                  @click.stop="handleCheckboxClick(audiobook, $event)"
-                  @mousedown.prevent
-                >
-                  <input
-                    type="checkbox"
-                    :checked="libraryStore.isSelected(audiobook.id)"
-                    @change="onCheckboxChange(audiobook, $event)"
-                    @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
-                  />
-                </div>
-                <div class="list-thumb-container">
-                  <div
-                    class="audiobook-image-placeholder"
-                    :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-                  >
-                    <PhBookOpen class="audiobook-placeholder-icon" />
+                <template #details>
+                  <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
+                    Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
                   </div>
-                  <img
-                    class="list-thumb cover-loading-image"
-                    :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-                    :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
-                    :alt="audiobook.title"
-                    loading="lazy"
-                    decoding="async"
-                    @load="markImageLoaded(getBookImageKey(audiobook))"
-                    @error="handleLazyImageError(getBookImageKey(audiobook), $event)"
-                  />
-                </div>
-                <div class="list-details">
-                  <div class="audiobook-title">{{ safeText(audiobook.title) }}</div>
-                  <div class="audiobook-author">
+                  <div class="detail-line small">
                     {{
-                      audiobook.authors?.map((author) => safeText(author)).join(', ') ||
-                      'Unknown Author'
+                      (audiobook.narrators || [])
+                        .slice(0, 1)
+                        .map((n) => safeText(n))
+                        .join(', ') || ''
                     }}
+                    <span
+                      v-if="
+                        audiobook.narrators &&
+                        audiobook.narrators.length &&
+                        (audiobook.publisher || audiobook.publishYear)
+                      "
+                    >
+                      •
+                    </span>
+                    {{ safeText(audiobook.publisher)
+                    }}<span v-if="audiobook.publishYear">
+                      • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
+                    >
                   </div>
-                  <div v-if="showItemDetails" class="list-extra-details">
-                    <div v-if="formatSeriesMemberships(audiobook)" class="detail-line small">
-                      Series: {{ safeText(formatSeriesMemberships(audiobook)) }}
-                    </div>
-                    <div class="detail-line small">
-                      {{
-                        (audiobook.narrators || [])
-                          .slice(0, 1)
-                          .map((n) => safeText(n))
-                          .join(', ') || ''
-                      }}
-                      <span
-                        v-if="
-                          audiobook.narrators &&
-                          audiobook.narrators.length &&
-                          (audiobook.publisher || audiobook.publishYear)
-                        "
-                      >
-                        •
-                      </span>
-                      {{ safeText(audiobook.publisher)
-                      }}<span v-if="audiobook.publishYear">
-                        • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
-                      >
-                    </div>
-                  </div>
-                </div>
-                <div class="list-badges">
-                  <div
-                    class="status-badge"
-                    :class="getAudiobookStatus(audiobook)"
-                    role="button"
-                    tabindex="0"
-                    @click.stop="openStatusDetails(audiobook)"
-                    @keydown.enter.prevent="openStatusDetails(audiobook)"
-                    @keydown.space.prevent="openStatusDetails(audiobook)"
-                    :aria-label="`Show details for ${audiobook.title}`"
-                  >
-                    {{ statusText(getAudiobookStatus(audiobook)) }}
-                  </div>
-                  <div
-                    v-if="getQualityProfileName(audiobook.qualityProfileId)"
-                    class="quality-profile-badge"
-                  >
-                    <PhStar />
-                    {{ getQualityProfileName(audiobook.qualityProfileId) }}
-                  </div>
-                  <div class="monitored-badge" :class="{ unmonitored: !audiobook.monitored }">
-                    <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
-                    {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
-                  </div>
+                </template>
+                <template #badges>
                   <div
                     v-if="chapterIssueLabel(audiobook)"
                     class="chapter-badge"
@@ -919,24 +804,8 @@
                     <PhFileX />
                     {{ notFoundLabel(audiobook) }}
                   </div>
-                </div>
-                <div class="list-actions">
-                  <button
-                    class="action-btn edit-btn-small"
-                    @click.stop="openEditModal(audiobook)"
-                    title="Edit"
-                  >
-                    <PhPencil />
-                  </button>
-                  <button
-                    class="action-btn delete-btn-small"
-                    @click.stop="confirmDelete(audiobook)"
-                    title="Delete"
-                  >
-                    <PhTrash />
-                  </button>
-                </div>
-              </div>
+                </template>
+              </AudiobookListRow>
             </template>
           </template>
         </div>
@@ -971,6 +840,14 @@
       :selected-ids="libraryStore.selectedIds"
       @close="closeBulkEdit"
       @saved="handleBulkEditSaved"
+    />
+
+    <ManualSearchModal
+      :is-open="manualSearch !== null"
+      :audiobook="manualSearch?.audiobook ?? null"
+      :ensure-audiobook-id="manualSearch?.ensureAudiobookId"
+      @close="closeManualSearch"
+      @downloaded="handleManualSearchDownloaded"
     />
 
     <!-- Edit Audiobook Modal -->
@@ -1080,9 +957,7 @@ import {
   PhCheckSquare,
   PhGear,
   PhPlus,
-  PhStar,
   PhEye,
-  PhEyeSlash,
   PhListNumbers,
   PhEar,
   PhFileX,
@@ -1111,6 +986,10 @@ import { buildApiPath } from '@/services/apiBase'
 import { logger } from '@/utils/logger'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import AudiobookCoverCard from '@/components/domain/audiobook/AudiobookCoverCard.vue'
+import AudiobookListRow from '@/components/domain/audiobook/AudiobookListRow.vue'
+import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
+import { useAudiobookActions } from '@/composables/useAudiobookActions'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import ViewOptionsDropdown from '@/components/ui/ViewOptionsDropdown.vue'
@@ -1167,6 +1046,14 @@ function getNarratorFirstNameSortKey(narrator: string): string {
 const router = useRouter()
 const route = useRoute()
 const libraryStore = useLibraryStore()
+const {
+  monitorBusy,
+  toggleMonitored,
+  manualSearch,
+  openManualSearch,
+  closeManualSearch,
+  handleManualSearchDownloaded,
+} = useAudiobookActions('AudiobooksView')
 const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const conversionJobsStore = useConversionJobsStore()
@@ -3806,15 +3693,6 @@ defineExpose({
   border-radius: 6px;
 }
 
-.list-thumb-container .audiobook-image-placeholder {
-  gap: 0.2rem;
-}
-
-.list-thumb-container .audiobook-placeholder-icon {
-  width: 1.35rem;
-  height: 1.35rem;
-}
-
 /* legacy .series-hover-overlay rules removed; use .status-overlay for hover */
 
 /* Show the same bottom status-overlay for collection covers on hover */
@@ -4081,40 +3959,6 @@ defineExpose({
   color: #8b98a5;
 }
 
-.audiobook-item {
-  cursor: pointer;
-  transition: transform 0.2s ease;
-  position: relative;
-}
-
-.audiobook-item:hover {
-  transform: scale(1.05);
-}
-
-.row-click-target {
-  position: absolute;
-  inset: 0;
-  z-index: 10; /* sits below action buttons and checkboxes */
-  /* allow pointer events to pass through so hover/clicks on adjacent rows still work
-     clicks will fall through to the parent row's @click handler; controls remain interactive
-     because they have higher z-index and default pointer-events:auto */
-  pointer-events: none;
-}
-
-.audiobook-item.selected .audiobook-poster-container {
-  outline: 3px solid var(--brand-focus);
-  outline-offset: 2px;
-}
-
-.audiobook-item.status-no-file .audiobook-poster-container {
-  border-bottom: 3px solid #e74c3c;
-}
-
-.audiobook-item.status-downloading .audiobook-poster-container {
-  border-bottom: 3px solid #3498db;
-  animation: pulse 2s ease-in-out infinite;
-}
-
 @keyframes pulse {
   0%,
   100% {
@@ -4125,182 +3969,27 @@ defineExpose({
   }
 }
 
-.audiobook-item.status-quality-mismatch .audiobook-poster-container {
-  border-bottom: 3px solid #f39c12;
-}
-
-.audiobook-item.status-quality-match .audiobook-poster-container {
-  border-bottom: 3px solid #2ecc71;
-}
-
-/* List view status borders */
-.audiobook-list-item.status-no-file .list-thumb {
-  border-bottom: 3px solid #e74c3c;
-}
-
-.audiobook-list-item.status-downloading .list-thumb {
-  border-bottom: 3px solid #3498db;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-.audiobook-list-item.status-quality-mismatch .list-thumb {
-  border-bottom: 3px solid #f39c12;
-}
-
-.audiobook-list-item.status-quality-match .list-thumb {
-  border-bottom: 3px solid #2ecc71;
-}
-
-.selection-checkbox {
-  /* default used in grid; overridden in list below */
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 40; /* keep checkbox above row click overlay */
-  height: 22px;
-  width: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  box-sizing: border-box;
-  background-color: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  opacity: 0;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-}
-/* Hide the native input visually but keep it accessible and interactive */
-.selection-checkbox input[type='checkbox'] {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 41; /* ensure native input is above overlay and container pseudo-elements */
-}
-
-/* Draw a custom box and checkmark using container pseudo-elements */
-.selection-checkbox::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 2px solid rgba(255, 255, 255, 0.14);
-  background: transparent;
-  box-sizing: border-box;
-  transition:
-    border-color 0.12s ease,
-    background-color 0.12s ease,
-    box-shadow 0.12s ease;
-  z-index: 1;
-}
-
-.selection-checkbox:hover {
-  background-color: rgba(0, 0, 0, 0.6);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-/* Custom checkmark */
-
-/* Remove container hover darkening when focusing the native checkbox so contrast stays good */
-.selection-checkbox:hover input[type='checkbox'] {
-  transform: translateY(0);
-}
-
 /* Only show checkbox when hovered or selected */
 
 .audiobook-item:hover .selection-checkbox,
 .audiobook-item.selected .selection-checkbox,
 .audiobook-list-item:hover .selection-checkbox,
 .audiobook-list-item.selected .selection-checkbox,
-.audiobooks-scroll-container.has-selection .selection-checkbox {
-  opacity: 1;
-}
 
 /* When the item is selected, style the custom box and show the check */
 .audiobook-item.selected .selection-checkbox::before,
-.audiobook-list-item.selected .selection-checkbox::before {
-  background-color: var(--brand-500);
-  border-color: var(--brand-500);
-  box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.12);
-}
 
 .audiobook-item.selected .selection-checkbox::after,
-.audiobook-list-item.selected .selection-checkbox::after {
-  border-right-color: #fff;
-  border-bottom-color: #fff;
-  transform: translate(-50%, -50%) rotate(45deg) scale(1);
-}
 
 /* Checked state for grid and list rows */
 .audiobook-item.selected .selection-checkbox input[type='checkbox'],
-.audiobook-list-item.selected .selection-checkbox input[type='checkbox'] {
-  /* keep native checked UI; add slight background for custom look */
-  background-color: transparent;
-}
-
-/* Focus outlines for keyboard navigation */
-.selection-checkbox input[type='checkbox']:focus-visible {
-  outline: 2px solid rgba(var(--brand-rgb), 0.3);
-  outline-offset: 2px;
-}
 
 .audiobook-list-item:focus,
 .audiobook-list-item:focus-within,
 .audiobook-item:focus,
-.audiobook-item:focus-within {
-  outline: 2px solid rgba(var(--brand-rgb), 0.18);
-  outline-offset: 2px;
-  background-color: rgba(255, 255, 255, 0.02);
-}
 
-/* List-specific override for the checkbox so it participates in the grid */
-.audiobooks-list .selection-checkbox {
-  position: relative;
-  top: auto;
-  left: auto;
-  z-index: 40; /* ensure list checkboxes stay above the row overlay */
-  height: 20px;
-  width: 20px;
-  margin: 0;
-  background-color: rgba(0, 0, 0, 0);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* In list view, always show checkboxes (outline). Filled/checkmark still only shows for selected items */
-.audiobooks-list .selection-checkbox {
-  opacity: 1;
-}
 .audiobooks-list .selection-checkbox::before {
   opacity: 1;
-}
-.audiobooks-list .selection-checkbox input[type='checkbox'] {
-  opacity: 0; /* native input remains visually hidden */
-}
-
-.audiobooks-list .selection-checkbox {
-  justify-self: center;
-}
-
-.audiobooks-list .selection-checkbox::after {
-  left: 6px;
-  top: 2px;
 }
 
 .audiobook-poster-container {
@@ -4452,42 +4141,7 @@ defineExpose({
 }
 
 .audiobook-poster-container .audiobook-title,
-.audiobook-poster-container .audiobook-author {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
 .audiobook-poster-container.show-details .audiobook-title,
-.audiobook-poster-container.show-details .audiobook-author {
-  opacity: 1;
-}
-
-.audiobook-extra-details {
-  margin-top: 8px;
-  color: #e6eef8;
-}
-.audiobook-extra-details .detail-line {
-  font-size: 12px;
-  line-height: 1.2;
-  margin: 2px 0;
-  color: #cfd8e3;
-}
-.audiobook-extra-details .detail-line.title {
-  font-weight: 500;
-  color: #fff;
-}
-.audiobook-extra-details .detail-line.small {
-  font-size: 11px;
-  color: #bfcad6;
-}
-.list-extra-details {
-  margin-top: 6px;
-  color: #e6eef8;
-}
-.list-extra-details .detail-line {
-  font-size: 12px;
-  color: #bfcad6;
-}
 .grid-bottom-details {
   margin-top: 8px;
   color: #e6eef8;
@@ -4517,118 +4171,7 @@ defineExpose({
   transition: opacity 0.2s ease;
 }
 
-.audiobook-author {
-  font-size: 11px;
-  color: #ccc;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
 .audiobook-poster-container:hover .audiobook-title,
-.audiobook-poster-container:hover .audiobook-author {
-  opacity: 1;
-}
-
-.quality-profile-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  margin-right: 0.5rem;
-  background-color: rgba(52, 152, 219, 0.2);
-  border: 1px solid rgba(52, 152, 219, 0.4);
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #3498db;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  margin-right: 0.5rem;
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #cfcfcf;
-  margin-top: 0.5rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.status-badge.no-file {
-  background-color: rgba(231, 76, 60, 0.12);
-  border-color: rgba(231, 76, 60, 0.18);
-  color: #e74c3c;
-}
-
-.status-badge.downloading {
-  background-color: rgba(52, 152, 219, 0.1);
-  border-color: rgba(52, 152, 219, 0.2);
-  color: #3498db;
-}
-
-.status-badge.quality-mismatch {
-  background-color: rgba(243, 156, 18, 0.1);
-  border-color: rgba(243, 156, 18, 0.18);
-  color: #f39c12;
-}
-
-.status-badge.quality-match {
-  background-color: rgba(46, 204, 113, 0.1);
-  border-color: rgba(46, 204, 113, 0.18);
-  color: #2ecc71;
-}
-
-.quality-profile-badge i {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.monitored-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  margin-left: 0.25rem;
-  background-color: rgba(46, 204, 113, 0.2);
-  border: 1px solid rgba(46, 204, 113, 0.4);
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #2ecc71;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.monitored-badge.unmonitored {
-  /* Neutral, not red: an unmonitored book is a state, not a destructive action.
-     Red is reserved for delete so the two do not read as the same severity. */
-  background-color: rgba(148, 163, 184, 0.15);
-  border-color: rgba(148, 163, 184, 0.35);
-  color: var(--text-muted);
-}
-
-.monitored-badge i {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
 .chapter-badge {
   display: inline-flex;
   align-items: center;
@@ -4652,6 +4195,10 @@ defineExpose({
   color: #f39c12;
 }
 
+.collection-card:hover .action-buttons {
+  opacity: 1;
+}
+
 .action-buttons {
   position: absolute;
   top: 8px;
@@ -4661,10 +4208,6 @@ defineExpose({
   opacity: 0;
   transition: opacity 0.2s;
   z-index: 30; /* keep action buttons above the row click overlay */
-}
-
-.audiobook-item:hover .action-buttons {
-  opacity: 1;
 }
 
 .action-btn {
@@ -4795,73 +4338,6 @@ defineExpose({
   padding: 8px 0;
 }
 
-.audiobook-list-item {
-  display: grid;
-  grid-template-columns: 40px 64px 1fr auto 120px;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 12px;
-  background-color: transparent;
-  border-radius: 6px;
-  transition:
-    background-color 0.12s,
-    transform 0.12s;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  cursor: pointer;
-}
-
-.audiobook-list-item:hover {
-  background-color: rgba(255, 255, 255, 0.02);
-  transform: translateY(-1px);
-}
-
-/* When a row is selected, apply the same hover visual treatment so it appears highlighted */
-.audiobook-list-item.selected {
-  background-color: rgba(255, 255, 255, 0.02);
-  transform: translateY(-1px);
-}
-
-.list-thumb {
-  width: 56px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
-.list-thumb-container {
-  position: relative;
-  width: 56px;
-  height: 56px;
-  flex-shrink: 0;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.list-thumb-container .list-thumb {
-  width: 100%;
-  height: 100%;
-}
-
-.list-details {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.list-details .audiobook-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  color: #fff;
-}
-
-.list-details .audiobook-author {
-  font-size: 12px;
-  color: #ccc;
-}
-
 .list-actions {
   margin-left: 0;
   display: flex;
@@ -4896,15 +4372,6 @@ defineExpose({
   text-align: right;
 }
 
-/* Position badges between details and actions */
-.list-badges {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-left: 12px;
-  justify-self: start;
-}
-
 /* Stack badges vertically on screens 768px and below */
 @media (max-width: 978px) {
   .list-badges {
@@ -4922,10 +4389,5 @@ defineExpose({
   opacity: 1;
   transition: none;
   color: inherit;
-}
-
-.audiobook-wrapper {
-  display: flex;
-  flex-direction: column;
 }
 </style>
