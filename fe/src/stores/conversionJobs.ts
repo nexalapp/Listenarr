@@ -36,6 +36,8 @@ export interface TrackedConversionJob {
   trigger: string
   /** When the work began. Absent until a worker claims the job. */
   startedAt?: string | null
+  /** When the job joined the queue: the order the worker takes them in. */
+  enqueuedAt?: string | null
 }
 
 const terminalStatuses = new Set<ConversionJobStatus>([
@@ -100,6 +102,7 @@ function toTracked(
     // Kept across updates: a progress frame carries it, but holding the first one
     // seen means an estimate survives a frame that happens to omit it.
     startedAt: update.startedAt ?? existing?.startedAt ?? null,
+    enqueuedAt: update.enqueuedAt ?? existing?.enqueuedAt ?? null,
   }
 }
 
