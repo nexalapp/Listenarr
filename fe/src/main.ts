@@ -36,6 +36,7 @@ import { createAppRouter, preloadRoute } from './router'
 import { useToast } from './services/toastService'
 import { errorTracking } from './services/errorTracking'
 import { apiService } from '@/services/api'
+import { clearStaleBundleGuard, isChunkLoadError, reloadForStaleBundle } from '@/utils/staleBundle'
 
 const app = createApp(App)
 
@@ -58,8 +59,19 @@ app.config.errorHandler = (err, instance, info) => {
   }
 }
 
+// A deploy replaced the hashed bundle under this tab: load it fresh, once, instead
+// of reporting a chunk the person cannot do anything about.
+window.addEventListener('vite:preloadError', (event) => {
+  if (reloadForStaleBundle(window)) event.preventDefault()
+})
+
 // Handle unhandled promise rejections
 window.addEventListener('unhandledrejection', (event) => {
+  if (isChunkLoadError(event.reason) && reloadForStaleBundle(window)) {
+    event.preventDefault()
+    return
+  }
+
   errorTracking.captureException(event.reason, {
     component: 'Global',
     operation: 'unhandledRejection',
@@ -81,6 +93,16 @@ window.addEventListener('unhandledrejection', (event) => {
 app.use(createPinia())
 const router = createAppRouter()
 app.use(router)
+
+// A route whose component chunk is gone: go there fresh rather than staying put with
+// an error. Once a route has loaded, the tab is on the current bundle and may be
+// reloaded again for the next deploy.
+router.onError((error, to) => {
+  if (isChunkLoadError(error)) reloadForStaleBundle(window, router.resolve(to).href)
+})
+router.afterEach((_to, _from, failure) => {
+  if (!failure) clearStaleBundleGuard(window.sessionStorage)
+})
 
 // Prefetch lazy route chunks when a user hovers or presses a link.
 // This reduces perceived navigation latency by warming the dynamic import.
