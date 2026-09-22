@@ -90,7 +90,7 @@ namespace Listenarr.Application.Audiobooks.Conversion
             {
                 return new ConversionEnqueueResult(
                     ConversionEnqueueOutcome.NothingToConvert,
-                    Reason: "This book has no MP3 files to convert.");
+                    Reason: "This book has nothing to convert: every file it has is already an M4B.");
             }
 
             // A file the scan could not read, or could not find, cannot be encoded.

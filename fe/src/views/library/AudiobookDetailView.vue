@@ -1991,13 +1991,13 @@ function goToGenreCollection(genre: string | undefined | null) {
 }
 
 /**
- * The book's MP3 files. A book that is already a single M4B has nothing to gain,
- * so the button is disabled rather than offering work that would be refused.
+ * Anything conversion would read: any audio file that is not already an M4B, which
+ * is the format it produces. A book that is already M4B has nothing to gain, so the
+ * button is disabled rather than offering work that would be refused.
  */
+const CONVERTIBLE = /\.(mp3|mp4|m4a|flac|ogg|opus|aac|wav|wv|wma|ape|alac|aiff?)$/i
 const hasConvertibleFiles = computed(
-  () =>
-    audiobook.value?.files?.some((file) => (file.path ?? '').toLowerCase().endsWith('.mp3')) ??
-    false,
+  () => audiobook.value?.files?.some((file) => CONVERTIBLE.test(file.path ?? '')) ?? false,
 )
 
 const activeConversion = computed(() =>

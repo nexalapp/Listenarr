@@ -321,14 +321,13 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 Path.GetFullPath(Path.Combine(audiobook.BasePath, fileName + ".m4b")));
         }
 
-        /// <summary>The book's MP3 files, with their paths resolved.</summary>
+        /// <summary>The book's convertible files, with their paths resolved.</summary>
         private static List<(AudiobookFile File, string FullPath)> CollectSourceFiles(Audiobook audiobook)
         {
             var results = new List<(AudiobookFile, string)>();
             foreach (var file in audiobook.Files ?? [])
             {
-                if (string.IsNullOrWhiteSpace(file.Path)
-                    || !string.Equals(Path.GetExtension(file.Path), ".mp3", StringComparison.OrdinalIgnoreCase))
+                if (!ConvertibleSource.IsConvertible(file.Path))
                 {
                     continue;
                 }
