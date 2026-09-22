@@ -193,6 +193,36 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Conversion
         }
 
         [Fact]
+        public async Task EnqueueAsync_QueuesABookThatArrivedAsMp4Parts()
+        {
+            // Fifty-one numbered .mp4 chapter files are a book in pieces as much as
+            // fifty-one .mp3 files are; the rule used to say MP3 and refused them.
+            GivenSettings(conversionEnabled: true);
+            GivenEncoderAvailable();
+            GivenAudiobook("/library/book/001.mp4", "/library/book/002.mp4", "/library/book/003.mp4");
+            GivenNoActiveJob();
+            GivenAddSucceeds();
+
+            var result = await BuildService().EnqueueAsync(7, ConversionTrigger.Manual);
+
+            Assert.True(result.Queued);
+        }
+
+        [Fact]
+        public async Task EnqueueAsync_QueuesAMixedBagOfSourcesAndLeavesAnM4bOut()
+        {
+            GivenSettings(conversionEnabled: true);
+            GivenEncoderAvailable();
+            GivenAudiobook("/library/book/001.m4a", "/library/book/002.flac", "/library/book/cover.jpg");
+            GivenNoActiveJob();
+            GivenAddSucceeds();
+
+            var result = await BuildService().EnqueueAsync(7, ConversionTrigger.Manual);
+
+            Assert.True(result.Queued);
+        }
+
+        [Fact]
         public async Task EnqueueAsync_QueuesASingleMp3()
         {
             // A book merged into one chaptered MP3 is worth converting: MP4 carries the

@@ -224,7 +224,7 @@
       <FormRow
         v-if="showConversion"
         label="Convert MP3 Audiobooks to M4B"
-        help="Fold a book's MP3 files into a single M4B with one chapter per file. Conversion runs as a background job, and the originals are left alone until the result is verified."
+        help="Fold a book that arrived in pieces — MP3, MP4, M4A, FLAC — into a single M4B with one chapter per file. Conversion runs as a background job, and the originals are left alone until the result is verified."
       >
         <label class="conversion-toggle">
           <input

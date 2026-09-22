@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Audiobooks.Conversion;
+
 namespace Listenarr.Application.Audiobooks.Conversion
 {
     /// <summary>
@@ -75,12 +77,7 @@ namespace Listenarr.Application.Audiobooks.Conversion
                 return 0;
             }
 
-            return files.Count(file =>
-                !string.IsNullOrWhiteSpace(file.Path)
-                && string.Equals(
-                    Path.GetExtension(file.Path),
-                    ".mp3",
-                    StringComparison.OrdinalIgnoreCase));
+            return files.Count(file => ConvertibleSource.IsConvertible(file.Path));
         }
     }
 }
