@@ -376,7 +376,18 @@
             :class="`is-${section.key}`"
           >
             <button
-              v-if="section.seriesName"
+              v-if="section.collapsible"
+              type="button"
+              class="section-title section-title-toggle"
+              :aria-expanded="!isSectionCollapsed(section)"
+              :title="alternateSectionHint"
+              @click="toggleSection(section)"
+            >
+              <PhCaretRight class="section-caret" :class="{ open: !isSectionCollapsed(section) }" />
+              {{ section.title }}
+            </button>
+            <button
+              v-else-if="section.seriesName"
               type="button"
               class="section-title section-title-link"
               :title="`Open ${section.title}`"
@@ -389,7 +400,7 @@
           </div>
 
           <AudiobookListRow
-            v-for="audiobook in section.items"
+            v-for="audiobook in isSectionCollapsed(section) ? [] : section.items"
             :key="`${section.key}-${audiobook.key}`"
             :audiobook="audiobook"
             :in-library="audiobook.inLibrary"
@@ -448,6 +459,7 @@
           v-for="section in paginatedAudiobookSections"
           :key="`grid-${section.key}`"
           class="collection-section"
+          :class="{ 'is-muted': section.collapsible }"
         >
           <div
             v-if="section.title && section.items.length > 0"
@@ -455,7 +467,18 @@
             :class="`is-${section.key}`"
           >
             <button
-              v-if="section.seriesName"
+              v-if="section.collapsible"
+              type="button"
+              class="section-title section-title-toggle"
+              :aria-expanded="!isSectionCollapsed(section)"
+              :title="alternateSectionHint"
+              @click="toggleSection(section)"
+            >
+              <PhCaretRight class="section-caret" :class="{ open: !isSectionCollapsed(section) }" />
+              {{ section.title }}
+            </button>
+            <button
+              v-else-if="section.seriesName"
               type="button"
               class="section-title section-title-link"
               :title="`Open ${section.title}`"
@@ -467,7 +490,7 @@
             <span class="section-count">{{ section.count }}</span>
           </div>
 
-          <div class="grid-view">
+          <div v-if="!isSectionCollapsed(section)" class="grid-view">
             <AudiobookCoverCard
               v-for="audiobook in section.items"
               :key="`${section.key}-${audiobook.key}`"
@@ -695,6 +718,7 @@ import type {
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText, stripHtmlAndNormalize, truncateAtWord } from '@/utils/textUtils'
 import { buildLibrarySections } from '@/utils/libraryGrouping'
+import { findAlternatePublications } from '@/utils/alternatePublications'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import {
   describeLanguageFilter,
@@ -723,6 +747,8 @@ interface DisplaySection {
   items: CollectionDisplayItem[]
   /** The series this heading stands for, when it names one that has its own page. */
   seriesName?: string
+  /** Whether the heading folds its books away; set for the ones that are not missing. */
+  collapsible?: boolean
 }
 
 const route = useRoute()
@@ -1215,8 +1241,31 @@ const paginatedAudiobooks = computed(() => {
 })
 
 const totalPages = computed(() => Math.ceil(audiobooks.value.length / pageSize.value))
+/**
+ * Not-added books that are another publication of one already on the shelf: a
+ * re-release, a second narration, a retitled tie-in. They are not missing books, so
+ * they are kept off the Not Added pile and out of its count — a series whose every
+ * story is held then reads as complete — and shown under their own heading instead.
+ */
+const alternatePublicationKeys = computed(() =>
+  isMetadataCollection.value
+    ? findAlternatePublications(audiobooks.value, isSeriesCollection.value ? name.value : null)
+    : new Set<string>(),
+)
+
+const isAlternatePublication = (book: CollectionDisplayItem) =>
+  alternatePublicationKeys.value.has(book.key)
+
+const alternateSectionHint =
+  'Another publication of a book already in the library — a re-release, a different narration, or a retitled edition. Nothing here is missing.'
+
 const totalAddedAudiobooks = computed(() => audiobooks.value.filter((book) => book.inLibrary))
-const totalNotAddedAudiobooks = computed(() => audiobooks.value.filter((book) => !book.inLibrary))
+const totalNotAddedAudiobooks = computed(() =>
+  audiobooks.value.filter((book) => !book.inLibrary && !isAlternatePublication(book)),
+)
+const totalAlternatePublications = computed(() =>
+  audiobooks.value.filter((book) => !book.inLibrary && isAlternatePublication(book)),
+)
 const authorLibraryCount = computed(() => totalAddedAudiobooks.value.length)
 const authorNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
 const seriesLibraryCount = computed(() => totalAddedAudiobooks.value.length)
@@ -1391,7 +1440,7 @@ const shouldShowAvailabilitySections = computed(
   () =>
     isMetadataCollection.value &&
     totalAddedAudiobooks.value.length > 0 &&
-    totalNotAddedAudiobooks.value.length > 0,
+    (totalNotAddedAudiobooks.value.length > 0 || totalAlternatePublications.value.length > 0),
 )
 const paginatedAudiobookSections = computed<DisplaySection[]>(() => {
   if (groupSeriesInCollection.value) {
@@ -1422,7 +1471,12 @@ const paginatedAudiobookSections = computed<DisplaySection[]>(() => {
 
   const sections: DisplaySection[] = []
   const addedItems = paginatedAudiobooks.value.filter((book) => book.inLibrary)
-  const notAddedItems = paginatedAudiobooks.value.filter((book) => !book.inLibrary)
+  const notAddedItems = paginatedAudiobooks.value.filter(
+    (book) => !book.inLibrary && !isAlternatePublication(book),
+  )
+  const alternateItems = paginatedAudiobooks.value.filter(
+    (book) => !book.inLibrary && isAlternatePublication(book),
+  )
 
   if (addedItems.length > 0) {
     sections.push({
@@ -1442,8 +1496,33 @@ const paginatedAudiobookSections = computed<DisplaySection[]>(() => {
     })
   }
 
+  if (alternateItems.length > 0) {
+    sections.push({
+      key: 'alternate-publications',
+      title: 'Other Publications',
+      count: totalAlternatePublications.value.length,
+      items: alternateItems,
+      collapsible: true,
+    })
+  }
+
   return sections
 })
+
+// Folded away by default: the point of the heading is that nothing under it is missing.
+const expandedSections = ref(new Set<string>())
+const isSectionCollapsed = (section: DisplaySection) =>
+  Boolean(section.collapsible) && !expandedSections.value.has(section.key)
+
+function toggleSection(section: DisplaySection) {
+  const next = new Set(expandedSections.value)
+  if (next.has(section.key)) {
+    next.delete(section.key)
+  } else {
+    next.add(section.key)
+  }
+  expandedSections.value = next
+}
 
 const selectedIdsForView = computed(
   () =>
@@ -3381,6 +3460,51 @@ defineExpose({
 .section-title-link:focus-visible {
   color: #fff;
   text-decoration: underline;
+}
+
+/* The same reset as the series link, plus room for the caret. */
+.section-title-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.section-title-toggle:hover,
+.section-title-toggle:focus-visible {
+  color: #fff;
+}
+
+.section-caret {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
+}
+
+.section-caret.open {
+  transform: rotate(90deg);
+}
+
+/* Set aside, not hidden: legible, and plainly not part of what is missing. */
+.collection-section.is-muted .section-title-toggle,
+.collection-section.is-muted .section-count {
+  color: rgba(230, 238, 248, 0.6);
+}
+
+.collection-section.is-muted .grid-view {
+  opacity: 0.55;
+}
+
+.collection-section.is-muted .grid-view:hover {
+  opacity: 1;
 }
 
 .section-count {
