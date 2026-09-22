@@ -119,4 +119,10 @@ namespace Listenarr.Application.Audiobooks.Transcription
     /// verdict: the job that hit it is worth retrying once the download lands.
     /// </summary>
     public sealed class TranscriptionUnavailableException(string message) : InvalidOperationException(message);
+
+    /// <summary>
+    /// A transcription ran past the time any window of this length should take. The run
+    /// is abandoned and its slot given back, so one wedged file cannot stop the queue.
+    /// </summary>
+    public sealed class TranscriptionTimedOutException(string message) : Exception(message);
 }

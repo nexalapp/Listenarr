@@ -47,6 +47,22 @@ namespace Listenarr.Infrastructure.Library.Transcription
         ILogger<WhisperTranscriber> logger) : ITranscriber, IDisposable
     {
         private const int DecodeTimeoutMs = 120_000;
+
+        /// <summary>
+        /// Longer than any window this app asks for takes, and short enough that a run
+        /// which has stopped making progress gives its slot back the same hour. whisper
+        /// runs in native code that does not watch a cancellation token, so a run that
+        /// wedges would otherwise hold its slot for the life of the process — and with
+        /// every slot held, every planning job that follows waits behind it, claimed and
+        /// silent, until its lease expires. That is the shape the queue was found in.
+        /// </summary>
+        private static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(10);
+
+        /// <summary>
+        /// How long to wait for a slot. Slots turn over in seconds, so waiting this long
+        /// means something is holding one; the caller is told rather than left hanging.
+        /// </summary>
+        private static readonly TimeSpan SlotWait = TimeSpan.FromMinutes(20);
         private static readonly TimeSpan MaxWindow = TimeSpan.FromMinutes(3);
 
         private readonly SemaphoreSlim _gate = new(TranscriptionParallelism.Slots, TranscriptionParallelism.Slots);
@@ -213,7 +229,12 @@ namespace Listenarr.Infrastructure.Library.Transcription
                 return Transcript.Empty;
             }
 
-            await _gate.WaitAsync(cancellationToken);
+            if (!await _gate.WaitAsync(SlotWait, cancellationToken))
+            {
+                throw new TranscriptionUnavailableException(
+                    $"No transcription slot came free within {SlotWait.TotalMinutes:F0} minutes; another run is not finishing.");
+            }
+
             try
             {
                 var factory = GetFactory(modelPath);
@@ -222,15 +243,26 @@ namespace Listenarr.Infrastructure.Library.Transcription
                     .WithThreads(TranscriptionParallelism.ThreadsPerSlot)
                     .Build();
 
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(RunTimeout);
+
                 using var stream = new MemoryStream(audio, writable: false);
                 var segments = new List<string>();
-                await foreach (var segment in processor.ProcessAsync(stream, cancellationToken))
+                try
                 {
-                    var text = segment.Text.Trim();
-                    if (text.Length > 0)
+                    await foreach (var segment in processor.ProcessAsync(stream, timeout.Token))
                     {
-                        segments.Add(text);
+                        var text = segment.Text.Trim();
+                        if (text.Length > 0)
+                        {
+                            segments.Add(text);
+                        }
                     }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TranscriptionTimedOutException(
+                        $"Listening to {length.TotalSeconds:F0}s of {LogRedaction.SanitizeFilePath(path)} at {start:c} took longer than {RunTimeout.TotalMinutes:F0} minutes.");
                 }
 
                 return Transcript.FromSegments(segments);

@@ -222,22 +222,33 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return true;
         }
 
-        public async Task<int> ReleaseExpiredLeasesAsync(
+        public async Task<IReadOnlyList<TagJob>> ReleaseExpiredLeasesAsync(
             DateTime now,
-            CancellationToken cancellationToken = default) =>
-            await db.TagJobs
+            CancellationToken cancellationToken = default)
+        {
+            var expired = await db.TagJobs
                 .Where(job =>
                     job.Status == TagJobStatus.Running
                     && job.LeaseExpiresAt != null
                     && job.LeaseExpiresAt <= now)
-                .ExecuteUpdateAsync(
-                    setters => setters
-                        .SetProperty(job => job.Status, TagJobStatus.Queued)
-                        .SetProperty(job => job.Phase, TagJobPhase.None)
-                        .SetProperty(job => job.LeaseOwner, (string?)null)
-                        .SetProperty(job => job.LeaseExpiresAt, (DateTime?)null)
-                        .SetProperty(job => job.Progress, 0d)
-                        .SetProperty(job => job.UpdatedAt, now),
-                    cancellationToken);
+                .ToListAsync(cancellationToken);
+
+            foreach (var job in expired)
+            {
+                job.Status = TagJobStatus.Queued;
+                job.Phase = TagJobPhase.None;
+                job.LeaseOwner = null;
+                job.LeaseExpiresAt = null;
+                job.Progress = 0d;
+                job.UpdatedAt = now;
+            }
+
+            if (expired.Count > 0)
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            return expired;
+        }
     }
 }
