@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Audiobooks.Catalog;
+
 namespace Listenarr.Application.Audiobooks.Suggestions
 {
     /// <summary>
@@ -100,6 +102,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     // to; those are not "their books you are missing".
                     .Where(book => book.Authors.Any(name => SuggestionNames.Normalize(name) == key))
                     .Where(book => !held.Contains(book.Asin, book.Isbn, book.Title, book.Authors))
+                    // Another publication of a book already held — a re-release, a second
+                    // narration, a retitled tie-in — is not a book anyone is missing.
+                    .Where(book => !held.CoversSameStory(book.Title, book.Authors, book.Series, book.SeriesNumber))
                     .Where(book => !held.Ignored(book.Asin, book.Title, book.Authors))
                     .Select(Map)
                     .ToList();
@@ -132,6 +137,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 var missing = entry.CatalogBooks
                     .Where(book => held.SpeaksLanguage(book.Language))
                     .Where(book => !held.Contains(book.Asin, book.Isbn, book.Title, book.Authors))
+                    // As above: the shelf answers for it already, under another cover.
+                    .Where(book => !held.CoversSameStory(book.Title, book.Authors, book.Series, book.SeriesNumber))
                     .Where(book => !held.Ignored(book.Asin, book.Title, book.Authors))
                     .Select(Map)
                     .OrderBy(book => SeriesPosition(book.SeriesNumber))
@@ -229,6 +236,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             private readonly HashSet<string> _isbns = new(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<string> _titleAuthorKeys = new(StringComparer.Ordinal);
 
+            /// <summary>
+            /// Every story the shelf answers for, by place in a series and by title. A
+            /// catalogue entry matching one of these is another publication of a book
+            /// already held, not a book missing from it.
+            /// </summary>
+            private readonly HashSet<string> _stories = new(StringComparer.Ordinal);
+
             private readonly IReadOnlySet<string>? _languages;
             private readonly HashSet<string> _ignored;
 
@@ -284,6 +298,11 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     {
                         CountKey(SeriesCounts, series);
                     }
+
+                    foreach (var story in StoriesHeldBy(book, memberships))
+                    {
+                        _stories.Add(story);
+                    }
                 }
             }
 
@@ -298,6 +317,42 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 var normalized = AuthorCatalogMapping.NormalizeLanguage(language);
                 return normalized == null || _languages == null || _languages.Contains(normalized);
             }
+
+            /// <summary>
+            /// The stories one library book stands for: its place in each series it
+            /// belongs to, and its title. A book in two series is held at both places.
+            /// </summary>
+            private static IEnumerable<string> StoriesHeldBy(
+                Audiobook book,
+                IReadOnlyDictionary<int, List<AudiobookSeriesMembership>> memberships)
+            {
+                var rows = memberships.TryGetValue(book.Id, out var found) ? found : [];
+                foreach (var row in rows)
+                {
+                    if (StoryIdentity.PositionKey(row.SeriesName, row.SeriesNumber) is { } key)
+                    {
+                        yield return key;
+                    }
+                }
+
+                if (rows.Count == 0 && StoryIdentity.PositionKey(book.Series, book.SeriesNumber) is { } primary)
+                {
+                    yield return primary;
+                }
+
+                if (StoryIdentity.TitleAuthorKey(book.Title, book.Authors) is { } story)
+                {
+                    yield return story;
+                }
+            }
+
+            /// <summary>
+            /// Whether the shelf already answers for this catalogue entry's story, by a
+            /// publication that is not the same edition: the same place in the same
+            /// series, or the same title by the same author.
+            /// </summary>
+            public bool CoversSameStory(string? title, IReadOnlyList<string>? authors, string? series, string? seriesNumber) =>
+                StoryIdentity.KeysFor(title, authors, series, seriesNumber).Any(_stories.Contains);
 
             /// <summary>Dismissed by either identity: the ASIN, or the title and author.</summary>
             public bool Ignored(string? asin, string? title, IReadOnlyList<string>? authors)
