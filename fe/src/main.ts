@@ -37,8 +37,30 @@ import { useToast } from './services/toastService'
 import { errorTracking } from './services/errorTracking'
 import { apiService } from '@/services/api'
 import { clearStaleBundleGuard, isChunkLoadError, reloadForStaleBundle } from '@/utils/staleBundle'
+import {
+  createErrorToastGate,
+  shouldReportUnexpectedError,
+  unexpectedErrorToast,
+} from '@/utils/unexpectedError'
 
 const app = createApp(App)
+
+// One gate for both handlers: a failure that reaches them by two paths is still
+// one thing that went wrong.
+const errorToastGate = createErrorToastGate()
+
+function reportUnexpectedError(error: unknown) {
+  if (!shouldReportUnexpectedError(error)) return
+
+  const toast = unexpectedErrorToast(error)
+  if (!errorToastGate(toast.message)) return
+
+  try {
+    useToast().error(toast.title, toast.message, 8000)
+  } catch {
+    // The toast service is not up yet; the console already has the error.
+  }
+}
 
 // Global error handler - prevents white screen of death
 app.config.errorHandler = (err, instance, info) => {
@@ -49,14 +71,7 @@ app.config.errorHandler = (err, instance, info) => {
     metadata: { info },
   })
 
-  // Show user-friendly error message
-  try {
-    const toast = useToast()
-    toast.error('Unexpected Error', 'Something went wrong. Please refresh the page.')
-  } catch {
-    // Fallback if toast service fails
-    alert('An unexpected error occurred. Please refresh the page.')
-  }
+  reportUnexpectedError(err)
 }
 
 // A deploy replaced the hashed bundle under this tab: load it fresh, once, instead
@@ -78,16 +93,7 @@ window.addEventListener('unhandledrejection', (event) => {
   })
   event.preventDefault()
 
-  try {
-    const toast = useToast()
-    toast.error('Error', 'An unexpected error occurred.')
-  } catch (err) {
-    // Fallback if toast service fails
-    errorTracking.captureException(err as Error, {
-      component: 'Global',
-      operation: 'toastServiceFallback',
-    })
-  }
+  reportUnexpectedError(event.reason)
 })
 
 app.use(createPinia())
