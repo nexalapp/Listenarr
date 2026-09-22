@@ -891,8 +891,25 @@ export interface AudibleBookMetadata {
   region?: string
   openLibraryId?: string
   metadataSource?: string
+  /** Listener ratings, as the metadata source reports them. Absent for sources that have none. */
+  rating?: AudibleMetadataRating
   // Optional local mapping to a quality profile ID when viewing in the UI
   qualityProfileId?: number
+}
+
+/** One of Audible's three rating distributions: the average, and how many rated it. */
+export interface AudibleRatingDistribution {
+  averageRating?: number
+  numRatings?: number
+}
+
+/** What Audible reports about how a book was received. */
+export interface AudibleMetadataRating {
+  overall?: AudibleRatingDistribution
+  performance?: AudibleRatingDistribution
+  story?: AudibleRatingDistribution
+  /** Written reviews, as opposed to star ratings. */
+  numReviews?: number
 }
 
 export interface AuthorCatalogBook {

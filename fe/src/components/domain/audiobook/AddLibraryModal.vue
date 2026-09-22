@@ -75,6 +75,26 @@
                   </div>
                 </div>
 
+                <div v-if="listenerRating" class="detail-section">
+                  <h4>Ratings</h4>
+                  <div class="rating-row">
+                    <span class="rating-overall">
+                      <PhStar weight="fill" />
+                      {{ listenerRating.overall }}
+                      <span class="rating-outof">/ 5</span>
+                    </span>
+                    <span v-if="listenerRating.count" class="rating-count">
+                      {{ listenerRating.count.toLocaleString() }} ratings
+                    </span>
+                    <span v-if="listenerRating.reviews" class="rating-count">
+                      {{ listenerRating.reviews.toLocaleString() }} written reviews
+                    </span>
+                    <span v-for="part in ratingBreakdown" :key="part.label" class="rating-part">
+                      {{ part.label }} {{ part.value }}
+                    </span>
+                  </div>
+                </div>
+
                 <div class="detail-section" id="add-library-desc">
                   <h4>Publication Information</h4>
                   <div class="detail-grid">
@@ -451,6 +471,7 @@
 import { ref, onMounted, watch, computed, onBeforeUnmount, nextTick } from 'vue'
 import type {
   AudibleBookMetadata,
+  AudibleMetadataRating,
   QualityProfile,
   Audiobook,
   AudiobookSeriesMembership,
@@ -475,6 +496,7 @@ import {
   PhWarning,
   PhPencilSimple,
   PhEye,
+  PhStar,
 } from '@phosphor-icons/vue'
 import {
   detectPathKind,
@@ -711,6 +733,40 @@ function buildMetadataPayload(): AudibleBookMetadata {
 
 const currentMetadata = computed(() => editableMetadata.value || enriched.value || props.book)
 
+/**
+ * How the book was received, when the metadata source said. Someone deciding whether
+ * to add a book wants this before they add it, not after; the book page shows the
+ * same figures once it is in the library.
+ */
+const listenerRating = computed(() => {
+  const rating = currentMetadata.value.rating
+  const overall = rating?.overall?.averageRating
+  if (typeof overall !== 'number' || !Number.isFinite(overall) || overall <= 0) return null
+
+  return {
+    overall: overall.toFixed(1),
+    count: rating?.overall?.numRatings,
+    reviews: rating?.numReviews,
+    performance: rating?.performance?.averageRating,
+    story: rating?.story?.averageRating,
+  }
+})
+
+/** The narration and writing scores, each only when the source gave it. */
+const ratingBreakdown = computed(() => {
+  const rating = listenerRating.value
+  if (!rating) return []
+
+  const parts: { label: string; value: string }[] = []
+  if (typeof rating.performance === 'number' && rating.performance > 0) {
+    parts.push({ label: 'Narration', value: rating.performance.toFixed(1) })
+  }
+  if (typeof rating.story === 'number' && rating.story > 0) {
+    parts.push({ label: 'Story', value: rating.story.toFixed(1) })
+  }
+  return parts
+})
+
 const authorsInput = computed({
   get: () => joinList(editableMetadata.value?.authors),
   set: (value: string) => {
@@ -907,6 +963,8 @@ interface Audible {
   bookFormat?: string
   version?: string
   isbn?: string
+  /** How the book was received, when the source reports it. */
+  rating?: AudibleMetadataRating
 }
 
 interface AudibleMetadataResponse {
@@ -979,6 +1037,10 @@ const mapAudibleToAudible = (
         ? audible.bookFormat.toLowerCase().includes('abridged')
         : Boolean(fallbackBook?.abridged),
     isbn: audible?.isbn || fallbackBook?.isbn,
+    // Enrichment must not lose the ratings the result arrived with: the lookup by
+    // ASIN carries them, and a source that does not answer with any keeps whatever
+    // the search gave.
+    rating: audible?.rating || fallbackBook?.rating,
     source: source || fallbackBook?.source,
   }
 }
@@ -1575,6 +1637,42 @@ const capitalizeFirst = (str: string): string => {
   line-height: 1.6;
   margin: 0;
   white-space: pre-wrap;
+}
+
+.rating-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+}
+
+.rating-overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.rating-overall svg {
+  color: #fcc419;
+}
+
+.rating-outof {
+  color: #999;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.rating-count,
+.rating-part {
+  color: #999;
+  font-size: 0.9rem;
+}
+
+.rating-part {
+  color: #ccc;
 }
 
 .detail-grid {
