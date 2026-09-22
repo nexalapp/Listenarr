@@ -97,13 +97,22 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             // what detects that. Retrying moves on to the next candidate.
             for (var attempt = 0; attempt < 5; attempt++)
             {
+                // Writes first: they change the library and someone is usually waiting
+                // on them. Then listening a person asked for, then the background
+                // planning and auditing that follows a scan — hundreds of those can be
+                // queued at once, and a tag write must not wait hours behind them.
+                // Oldest first within each.
                 var candidate = await db.TagJobs
                     .Where(job =>
                         (job.Status == TagJobStatus.Queued
                          || job.Status == TagJobStatus.RetryScheduled)
                         && (job.NextAttemptAt == null || job.NextAttemptAt <= now)
                         && (job.LeaseExpiresAt == null || job.LeaseExpiresAt <= now))
-                    .OrderBy(job => job.EnqueuedAt)
+                    .OrderBy(job =>
+                        job.Kind == TagJobKind.Tags || job.Kind == TagJobKind.Chapters ? 0
+                        : job.Trigger == TagTrigger.Manual ? 1
+                        : 2)
+                    .ThenBy(job => job.EnqueuedAt)
                     .FirstOrDefaultAsync(cancellationToken);
 
                 if (candidate == null)
