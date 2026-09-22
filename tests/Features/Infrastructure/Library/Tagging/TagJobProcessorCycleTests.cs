@@ -136,6 +136,29 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
         }
 
         [Fact]
+        public async Task RunCycleAsync_FailsAJobCancelledBySomethingInsideIt()
+        {
+            // An internal timeout says so with OperationCanceledException, which used to
+            // read as "the lease was lost" — leaving the row Running for a worker that
+            // was never coming, to be claimed and abandoned for ever.
+            GivenPlanJobs(1);
+            var processor = BuildProcessor();
+            // After the processor is built, so this setup is the one that stands.
+            _repair
+                .Setup(r => r.PlanAsync(It.IsAny<int>(), It.IsAny<IReadOnlyCollection<int>?>(), It.IsAny<IProgress<double>?>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new OperationCanceledException("a decode gave up"));
+
+            await processor.RunCycleAsync(CancellationToken.None);
+
+            _queue.Verify(
+                q => q.FailAsync(It.IsAny<Guid>(), It.IsAny<TagWriteFailureKind>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+            _queue.Verify(
+                q => q.CompleteAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
         public void PlanningSlots_FollowTheTranscriberSlots()
         {
             Assert.Equal(TranscriptionParallelism.Slots, TagJobProcessor.PlanningSlots);

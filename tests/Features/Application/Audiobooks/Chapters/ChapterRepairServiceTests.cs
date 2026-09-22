@@ -516,6 +516,54 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         }
 
         [Fact]
+        public async Task PlanAsync_CarriesOnWhenAFewMarksCannotBeHeard()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            var marks = Tracks(30, TimeSpan.FromMinutes(3));
+            GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
+            GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one.", [10] = "Chapter two.", [20] = "Chapter three." });
+
+            // One window in the middle will not decode, however often it is asked for.
+            var badStart = marks[15].Start;
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), badStart, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("ffmpeg did not decode 10s within 120s."));
+
+            var preview = await BuildService().PlanAsync(7);
+
+            var file = Assert.Single(preview!.Files);
+            Assert.True(file.Repairable);
+            Assert.Equal(["Chapter 1", "Chapter 2", "Chapter 3"], file.Plan!.Chapters.Select(c => c.Title));
+        }
+
+        [Fact]
+        public async Task PlanAsync_RefusesAFileWhoseMarksMostlyCannotBeHeard()
+        {
+            GivenBook();
+            GivenTranscription(enabled: true);
+            var marks = Tracks(30, TimeSpan.FromMinutes(3));
+            GivenFileReads(marks, new ChapterAtomState(true, null, 30, true));
+            GivenHeard(marks, new Dictionary<int, string> { [0] = "Chapter one." });
+            _fileSystem.Setup(fs => fs.FileExists(It.IsAny<string>())).Returns(true);
+
+            // Every window past the first refuses: the file, not the spot, is the problem.
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(start => start > TimeSpan.Zero), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("ffmpeg did not decode 10s within 120s."));
+
+            await Assert.ThrowsAsync<ChapterSourceUnavailableException>(() => BuildService().PlanAsync(7));
+        }
+
+        [Fact]
+        public void ToleratedUnreadable_AllowsAFewMarksAndATenthOfALongList()
+        {
+            Assert.Equal(3, ChapterRepairService.ToleratedUnreadable(0));
+            Assert.Equal(3, ChapterRepairService.ToleratedUnreadable(30));
+            Assert.Equal(19, ChapterRepairService.ToleratedUnreadable(195));
+        }
+
+        [Fact]
         public async Task PlanAsync_KeepsNothingWhenAMarkCouldNotBeHeard()
         {
             GivenBook();
