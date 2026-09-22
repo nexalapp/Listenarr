@@ -72,7 +72,7 @@
         :key="tab.id"
         class="tab"
         :class="{ active: activeTab === tab.id }"
-        @click="activeTab = tab.id"
+        @click="openTab(tab.id)"
       >
         {{ tab.label }}
         <Pill v-if="tab.count > 0" variant="count" size="small">{{ tab.count }}</Pill>
@@ -230,6 +230,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { PhArrowsClockwise, PhSparkle } from '@phosphor-icons/vue'
 import { EmptyState, LoadingState, Pill } from '@/components/base'
 import { Checkbox } from '@/components/form'
@@ -259,7 +260,20 @@ const foundBooks = useFoundBooksStore()
 const snapshot = ref<SuggestionSnapshot | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const activeTab = ref<TabId>('authors')
+const route = useRoute()
+const router = useRouter()
+
+const TAB_IDS: readonly TabId[] = ['authors', 'series', 'related', 'found']
+const isTabId = (value: unknown): value is TabId => TAB_IDS.includes(value as TabId)
+
+// The open tab lives in the path, so Back returns to the tab that was open and a
+// link can name one. The bare route is the first tab.
+const activeTab = computed<TabId>(() => (isTabId(route.params.tab) ? route.params.tab : 'authors'))
+
+function openTab(tab: TabId) {
+  if (tab === activeTab.value) return
+  void router.push({ name: 'suggested', params: { tab } })
+}
 const pendingAddBook = ref<AudibleBookMetadata | null>(null)
 
 // Whether adding from here also kicks off a release search. On by default - a

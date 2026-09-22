@@ -134,10 +134,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/suggested',
+    // The tab is in the path so Back returns to the tab that was open. The view
+    // keeps its state across tabs, so a tab change must not remount it.
+    path: '/suggested/:tab(authors|series|related|found)?',
     name: 'suggested',
     component: () => import('../views/content/SuggestedView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, keepAcrossParams: true },
   },
   {
     path: '/calendar',
