@@ -24,6 +24,24 @@ namespace Listenarr.Tests.Features.Domain.Utils
 {
     public class FileUtilsTests
     {
+        [Theory]
+        // The containers audiobooks are actually posted in, .mp4 among them: it is the
+        // same container as .m4a and .m4b, and a release of numbered .mp4 chapter files
+        // was refused as having no audio in it.
+        [InlineData("Book - 001.mp4", true)]
+        [InlineData("Book.m4b", true)]
+        [InlineData("Book.m4a", true)]
+        [InlineData("Book.mp3", true)]
+        [InlineData("Book.MP4", true)]
+        [InlineData("cover.jpg", false)]
+        [InlineData("release.nfo", false)]
+        [InlineData("Book.epub", false)]
+        [InlineData("noextension", false)]
+        public void IsAudioFile_AcceptsTheContainersAudiobooksArrivesIn(string name, bool expected)
+        {
+            Assert.Equal(expected, FileUtils.IsAudioFile(name));
+        }
+
         [Fact]
         public void GetUniqueDestinationPath_ReturnsSameIfNotExists()
         {
