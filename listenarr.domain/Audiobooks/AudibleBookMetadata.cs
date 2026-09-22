@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Common;
+
 namespace Listenarr.Domain.Audiobooks
 {
     public class AudibleBookMetadata
@@ -103,7 +105,9 @@ namespace Listenarr.Domain.Audiobooks
         {
             var audiobook = new Audiobook
             {
-                Title = Title ?? string.Empty,
+                // The narrator lives in its own field and in the library's braces; a
+                // catalogue title that also carries it says it twice.
+                Title = TitleCleanup.StripNarratorSuffix(Title) ?? string.Empty,
                 Subtitle = Subtitle,
                 Authors = (Authors != null && Authors.Count != 0) ? Authors :
                     (!string.IsNullOrWhiteSpace(Author) ? [Author!] : new List<string>()),
