@@ -197,6 +197,68 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         }
 
         [Fact]
+        public async Task Get_DoesNotOfferAnotherPublicationOfABookAlreadyHeld()
+        {
+            // The shelf holds Wool #1. The catalogue also carries the television tie-in
+            // of it under its own ASIN, and the story after it.
+            var wool = Held("Wool", "Hugh Howey", asin: "W1", series: "Silo");
+            wool.SeriesNumber = "1";
+            wool.SeriesMemberships![0].SeriesNumber = "1";
+            _series.Add(new SeriesCacheEntry
+            {
+                SeriesName = "Silo",
+                CatalogBooks =
+                [
+                    new() { Title = "Wool", Asin = "W1", SeriesNumber = "1", Authors = ["Hugh Howey"] },
+                    new() { Title = "Wool: The Silo Saga", Asin = "W2", SeriesNumber = "1", Authors = ["Hugh Howey"] },
+                    new() { Title = "Shift", Asin = "W3", SeriesNumber = "2", Authors = ["Hugh Howey"] },
+                ]
+            });
+
+            var snapshot = await BuildService().GetAsync();
+
+            var group = Assert.Single(snapshot.Series);
+            Assert.Equal(["Shift"], group.Missing.Select(book => book.Title));
+        }
+
+        [Fact]
+        public async Task Get_DoesNotOfferARetitledEditionOfABookHeldOutsideASeries()
+        {
+            Held("Project Hail Mary", "Andy Weir", asin: "P1");
+            CachedAuthor("Andy Weir",
+                Catalog("Project Hail Mary: A Novel", "Andy Weir", asin: "P2"),
+                Catalog("Artemis", "Andy Weir", asin: "P3"));
+
+            var snapshot = await BuildService().GetAsync();
+
+            var group = Assert.Single(snapshot.Authors);
+            Assert.Equal(["Artemis"], group.Missing.Select(book => book.Title));
+        }
+
+        [Fact]
+        public async Task Get_StillOffersADifferentBookThatShareTheSeriesButNotThePlace()
+        {
+            // Guard against the position rule swallowing a series the library holds one
+            // book of: only the held place is covered.
+            var held = Held("Leviathan Wakes", "James S. A. Corey", asin: "B1", series: "The Expanse");
+            held.SeriesNumber = "1";
+            held.SeriesMemberships![0].SeriesNumber = "1";
+            _series.Add(new SeriesCacheEntry
+            {
+                SeriesName = "The Expanse",
+                CatalogBooks =
+                [
+                    new() { Title = "Leviathan Wakes", Asin = "B1", SeriesNumber = "1", Authors = ["James S. A. Corey"] },
+                    new() { Title = "Caliban's War", Asin = "B2", SeriesNumber = "2", Authors = ["James S. A. Corey"] },
+                ]
+            });
+
+            var snapshot = await BuildService().GetAsync();
+
+            Assert.Equal(["Caliban's War"], Assert.Single(snapshot.Series).Missing.Select(book => book.Title));
+        }
+
+        [Fact]
         public async Task Get_SuggestsSimilarAuthorsNotYetHeldAndSaysWhy()
         {
             Held("Dune", "Frank Herbert");
