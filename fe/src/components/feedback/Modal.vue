@@ -17,7 +17,7 @@
 -->
 <template>
   <teleport to="body">
-    <div v-if="visible" class="modal-overlay" @click.self="onClose">
+    <div v-if="visible" class="modal-overlay" @click.self="onBackdropClick">
       <div
         ref="contentRef"
         class="modal-content"
@@ -70,11 +70,23 @@ const props = defineProps({
   title: { type: String, default: '' },
   showClose: { type: Boolean, default: true },
   size: { type: String as () => 'sm' | 'md' | 'lg', default: 'md' },
+  /**
+   * Whether clicking the dimmed area behind the dialog closes it. A dialog holding
+   * work that took a while to produce — a search someone waited on, a form part-way
+   * filled — sets this false, so a stray click outside it does not throw that away.
+   */
+  closeOnBackdrop: { type: Boolean, default: true },
+  /** Whether Escape closes it. Off for the same dialogs, and for the same reason. */
+  closeOnEscape: { type: Boolean, default: true },
 })
 const emit = defineEmits(['close'])
 
 function onClose() {
   emit('close')
+}
+
+function onBackdropClick() {
+  if (props.closeOnBackdrop) onClose()
 }
 
 const sizeClass = computed(() => {
@@ -160,7 +172,7 @@ function ensureHeaderLabel() {
 }
 
 function onKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.visible) {
+  if (e.key === 'Escape' && props.visible && props.closeOnEscape) {
     onClose()
   }
 }
