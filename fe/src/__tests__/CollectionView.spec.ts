@@ -666,6 +666,13 @@ describe('CollectionView', () => {
     expect(wrapper.findAll('.series-hero-cover-item.is-not-added')).toHaveLength(1)
     expect(wrapper.find('.top-nav').exists()).toBe(false)
     expect(mockGetSeriesLookup).toHaveBeenCalledWith('Mistborn', 'us', 'SERIES123', false)
+
+    // The series' author is named in the header and opens their collection.
+    const authorLinks = wrapper.findAll('.series-hero-author-link')
+    expect(authorLinks.map((link) => link.text())).toEqual(['Brandon Sanderson'])
+    await authorLinks[0]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/collection/author/Brandon%20Sanderson')
   })
 
   it('sorts a series collection by position within owned, then within not-added (#626)', async () => {
