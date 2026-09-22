@@ -389,16 +389,20 @@ namespace Listenarr.Infrastructure.Library.Transcription
                 await process.WaitForExitAsync(timeout.Token);
                 await copy;
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Our own timeout, not the caller's cancellation. It has to leave as a
+                // failure: a bare OperationCanceledException reads, further up, as "the
+                // job's lease was lost", and a job stopped for that reason is left
+                // Running for another worker — which is how one undecodable window kept
+                // a planning job cycling for a day.
+                Kill(process);
+                throw new FfmpegException(
+                    $"ffmpeg did not decode {length.TotalSeconds:F0}s of {LogRedaction.SanitizeFilePath(path)} at {start:c} within {DecodeTimeoutMs / 1000}s.");
+            }
             catch (OperationCanceledException)
             {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch (InvalidOperationException)
-                {
-                }
-
+                Kill(process);
                 throw;
             }
 
@@ -408,6 +412,18 @@ namespace Listenarr.Infrastructure.Library.Transcription
             }
 
             return output.ToArray();
+        }
+
+        /// <summary>Stop a decode that is not going to finish; it may already be gone.</summary>
+        private static void Kill(System.Diagnostics.Process process)
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+            }
         }
 
         public void Dispose()

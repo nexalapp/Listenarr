@@ -150,11 +150,21 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     job.Id);
                 throw;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (heartbeat.IsCancellationRequested)
             {
                 // The lease was lost, so another worker owns this job now. Writing a
                 // failure here would overwrite that worker's progress.
                 logger.LogWarning("Tag write {JobId} stopped because its lease was lost", job.Id);
+            }
+            catch (OperationCanceledException ex)
+            {
+                // Nobody cancelled this: something inside gave up and said so in the one
+                // way that used to be mistaken for a lost lease, which left the job
+                // Running for a worker that was never coming. It is a failure.
+                logger.LogError(ex, "Tag write {JobId} was cancelled by something inside it", job.Id);
+                await MarkFailedAsync(
+                    job.Id,
+                    "The job stopped part-way without saying why. The log around this attempt says where.");
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

@@ -299,13 +299,19 @@ namespace Listenarr.Application.Audiobooks.Chapters
                         }
                     }
 
+                    var order = wanted.ToList();
+                    var listenedAtEdition = await HearEveryAsync(
+                        fullPath,
+                        order.Select(index => marks[index].Start).ToList(),
+                        model,
+                        marks.Count,
+                        done => progress.Heard(done, order.Count),
+                        cancellationToken);
+
                     var partial = new string?[marks.Count];
-                    var heardSoFar = 0;
-                    foreach (var index in wanted)
+                    for (var slot = 0; slot < order.Count; slot++)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        partial[index] = await HearAsync(fullPath, marks[index].Start, model, cancellationToken);
-                        progress.Heard(++heardSoFar, wanted.Count);
+                        partial[order[slot]] = listenedAtEdition.Heard[slot];
                     }
 
                     heardAtMarks = partial;
@@ -330,13 +336,14 @@ namespace Listenarr.Application.Audiobooks.Chapters
                 "Listening at {Count} mark(s) of {Path}",
                 marks.Count,
                 LogRedaction.SanitizeFilePath(fullPath));
-            var heard = new List<string?>(marks.Count);
-            foreach (var mark in marks)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                heard.Add(await HearAsync(fullPath, mark.Start, model, cancellationToken));
-                progress.Heard(heard.Count, marks.Count);
-            }
+            var listened = await HearEveryAsync(
+                fullPath,
+                marks.Select(mark => mark.Start).ToList(),
+                model,
+                marks.Count,
+                done => progress.Heard(done, marks.Count),
+                cancellationToken);
+            var heard = listened.Heard;
 
             // Placeholder titles on marks that are mostly unannounced are a CD rip the
             // threshold did not catch: the author's chapters begin at the announced

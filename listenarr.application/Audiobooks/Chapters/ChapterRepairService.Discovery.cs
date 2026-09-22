@@ -250,15 +250,16 @@ namespace Listenarr.Application.Audiobooks.Chapters
             HearingBudget hearing,
             CancellationToken cancellationToken)
         {
-            var heard = new List<string?>();
-            foreach (var start in starts)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                heard.Add(await HearAsync(fullPath, start, model, cancellationToken));
-                hearing.Heard();
-            }
+            var list = starts.ToList();
+            var listened = await HearEveryAsync(
+                fullPath,
+                list,
+                model,
+                list.Count,
+                _ => hearing.Heard(),
+                cancellationToken);
 
-            return heard;
+            return listened.Heard;
         }
 
         /// <summary>Progress across the marks this file may be listened at; the count is a ceiling, since the edition may settle it early.</summary>
