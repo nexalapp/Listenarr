@@ -83,8 +83,12 @@ outside Plex.
 server itself against local disk. See `deploy/unraid/README.md`.
 
 **Pin an immutable tag, never a rolling one.** `:canary` and `:beta` move.
-`:beta-<version>-<sha>` and `:<version>` do not. The deployed tag lives in
-`deploy/unraid/docker-compose.yml`; rolling back is a one-line edit.
+`:beta-<version>-<sha>` and `:<version>` do not. The deployed tag lives in the
+compose file *on the NAS*, which is the one the server reads; rolling back is a
+one-line edit there followed by `docker compose up -d`. `deploy.sh` writes the
+pin into the repo's copy only to send it, and puts that copy back: committing
+the same line to canary would keep a second, staler record of what is running,
+and the PR it needed was one more merge after every deploy.
 
 **The library mount is read-write, as of 2026-09-01.** It started `:ro` while the
 existing library had not been validated against the scanner. Conversion is what

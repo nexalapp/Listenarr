@@ -98,7 +98,10 @@ git tag v<version> && git push origin v<version>
 Merge rather than `push canary:beta` — the branches diverge (each carries its
 own merge commits), so a fast-forward push gets rejected.
 
-Then update `image:` in `docker-compose.yml` and deploy as above.
+Then update `image:` in the NAS's own `docker-compose.yml` — under
+`$NAS_PROJECT` — and `docker compose up -d`. That file, not the one in this
+repo, is what the server runs and therefore the record of what is deployed:
+`deploy.sh` sends its pin there and leaves the repo's copy untouched.
 
 `release.yml` also builds an osx-x64 artifact (`include_osx: true`), which is
 unused here — macOS is not a supported runtime for this app.

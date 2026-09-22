@@ -6,9 +6,13 @@
 # For each PR, in order: wait for its fast checks and its deploy image (both run
 # on the PR head, in parallel - .github/workflows/fast-check.yml and
 # deploy-image.yml), merge it. Then pin the last PR's image
-# - deploy-<version>-<sha7> - in docker-compose.yml, push it to the NAS and
-# restart. Only then wait for canary's version bump and open the pin PR: the
-# bump is off the critical path because the image already carries the version.
+# - deploy-<version>-<sha7> - in docker-compose.yml, push that file to the NAS
+# and restart.
+#
+# The pin is not committed. The NAS holds the compose file it runs, so that copy
+# is the record of what is deployed; a commit of the same line to canary would
+# only be a second, staler copy of it, and the PR it needed was one more thing to
+# merge after every deploy. The working tree is left as it was found.
 #
 # Upstream's run-tests.yml (format, lint, Windows) still runs on every PR but is
 # not waited for; review it after the deploy and fix forward.
@@ -104,31 +108,15 @@ echo "image $last_tag"
 image="ghcr.io/nexalapp/listenarr:$last_tag"
 docker manifest inspect "$image" >/dev/null 2>&1 || { echo "image $image not found" >&2; exit 1; }
 
-# Restart the NAS first; the version bump and the pin PR can follow.
+# The pin is written into the working copy only to send it; it is put back below.
 git checkout -q -- "$COMPOSE"
 sed -i.bak "s|ghcr.io/nexalapp/listenarr:[^ ]*|$image|" "$COMPOSE" && rm -f "$COMPOSE.bak"
 scp -q "$COMPOSE" "$NAS:$NAS_PROJECT/docker-compose.yml"
 ssh "$NAS" "cd $NAS_PROJECT && docker compose up -d 2>&1 | tail -1; for i in \$(seq 1 60); do s=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4545/api/v1/system/ready); [ \"\$s\" = 200 ] && break; sleep 5; done; echo ready=\$s; docker ps --filter name=listenarr --format '{{.Image}} {{.Status}}'"
 echo "LIVE $image"
 
-# canary.yml bumps the version once per merged PR; wait for the last one so the
-# pin PR lands on the bumped canary.
-bumps=$#
-while :; do
-  cur=$(version)
-  IFS=. read -r a b c <<< "$cur"; IFS=. read -r x y z <<< "$before"
-  [ $(( (a-x)*1000000 + (b-y)*1000 + (c-z) )) -ge "$bumps" ] && break
-  sleep "$POLL"
-done
-ver=$cur
-echo "canary now $ver"
-pinned=$(mktemp); cp "$COMPOSE" "$pinned"
+# The pin travelled to the NAS with the file above; the working copy goes back to
+# what canary says, so the next deploy starts from a clean tree.
 git checkout -q -- "$COMPOSE"
-git checkout -q -b "chore/deploy-$ver" origin/canary
-cp "$pinned" "$COMPOSE"; rm -f "$pinned"
+echo "PINNED $image (on the NAS; not committed)"
 
-git commit -q --no-verify -am "chore(deploy): pin $last_tag"
-git push -q -u origin "chore/deploy-$ver" --no-verify
-gh pr create --base canary --title "chore(deploy): pin $last_tag" --body "Deployed to the NAS." >/dev/null
-gh pr edit "chore/deploy-$ver" --add-label patch >/dev/null
-echo "PINNED $image"
