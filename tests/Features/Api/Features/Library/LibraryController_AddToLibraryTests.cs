@@ -18,6 +18,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Builders;
 
@@ -29,6 +30,14 @@ namespace Listenarr.Tests.Features.Api.Features.Library
     {
         private readonly Mock<IImageCacheService> imageCacheServiceMock = new Mock<IImageCacheService>();
         private readonly Mock<ILibraryDestinationMutationGuard> destinationGuardMock = new();
+
+        /// <summary>
+        /// An add queues a suggestion refresh for the book's authors, which looks each
+        /// author up on Audible from a background thread. Real here, it raced the
+        /// assertions on how many lookups the add itself made; inert, the add is the
+        /// only caller and the counts mean what they say.
+        /// </summary>
+        private readonly Mock<ISuggestionRefreshService> suggestionRefreshMock = new();
         private readonly string imageUrl1 = "http://example.com/a1.jpg";
         private readonly string imageUrl2 = "http://example.com/a2.jpg";
         private string tempRoot = null!;
@@ -52,6 +61,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             Init(services => services
                 .WithSingleton(imageCacheServiceMock.Object)
                 .WithSingleton(destinationGuardMock.Object)
+                .WithSingleton(suggestionRefreshMock.Object)
                 .WithScoped<ILibraryAddCommitStore>(provider =>
                     new InMemoryLibraryAddCommitStore(
                         provider.GetRequiredService<ListenArrDbContext>())));
@@ -80,6 +90,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
                 builder
                     .WithSingleton(imageCacheServiceMock.Object)
                     .WithSingleton(destinationGuardMock.Object)
+                    .WithSingleton(suggestionRefreshMock.Object)
                     .WithScoped<ILibraryAddCommitStore>(provider =>
                         new InMemoryLibraryAddCommitStore(
                             provider.GetRequiredService<ListenArrDbContext>()));
