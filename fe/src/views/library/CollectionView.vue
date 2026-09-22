@@ -194,6 +194,17 @@
               {{ seriesMetadataContextLabel }}
             </span>
             <span v-if="seriesHeroAsin" class="author-hero-asin"> ASIN {{ seriesHeroAsin }} </span>
+            <span v-if="seriesHeroAuthors.length > 0" class="series-hero-authors">
+              <PhUser />
+              <template v-for="(author, index) in seriesHeroAuthors" :key="author">
+                <button class="series-hero-author-link" @click="goToRelatedAuthor(author)">
+                  {{ author }}
+                </button>
+                <span v-if="index < seriesHeroAuthors.length - 1" class="series-hero-author-sep"
+                  >,
+                </span>
+              </template>
+            </span>
           </div>
 
           <div class="status-badges author-hero-badges">
@@ -642,6 +653,7 @@ import {
   PhEyeSlash,
   PhGlobe,
   PhFolderOpen,
+  PhUser,
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
@@ -1274,6 +1286,40 @@ const seriesHeroName = computed(
 const seriesHeroAsin = computed(
   () => safeText(seriesLookup.value?.asin || seriesCatalog.value?.series?.asin || '') || '',
 )
+/**
+ * Who wrote this series, most-written first. A series is usually one author, but a
+ * shared world is several and a collaboration names both; the library's own books
+ * are counted first because they are what the person has, and the catalog fills in
+ * the rest. Capped, because the header is one line.
+ */
+const SERIES_HERO_AUTHOR_LIMIT = 4
+const seriesHeroAuthors = computed<string[]>(() => {
+  if (!isSeriesCollection.value) return []
+
+  const counts = new Map<string, { name: string; count: number }>()
+  const count = (names: readonly (string | undefined)[] | undefined) => {
+    for (const raw of names ?? []) {
+      const name = safeText(raw ?? '')
+      if (!name) continue
+      const key = normalizeCollectionText(name)
+      const seen = counts.get(key)
+      if (seen) {
+        seen.count += 1
+      } else {
+        counts.set(key, { name, count: 1 })
+      }
+    }
+  }
+
+  for (const book of libraryCollectionAudiobooks.value) count(book.authors)
+  for (const book of seriesCatalog.value?.books ?? []) count(book.authors)
+
+  return Array.from(counts.values())
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, SERIES_HERO_AUTHOR_LIMIT)
+    .map((entry) => entry.name)
+})
+
 const seriesHeroRawImageUrl = computed(() => {
   return (
     seriesLookup.value?.cachedPath ||
@@ -2840,6 +2886,32 @@ defineExpose({
 
 .author-hero-asin {
   opacity: 0.86;
+}
+
+.series-hero-authors {
+  flex-wrap: wrap;
+}
+
+.series-hero-author-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.28);
+  text-underline-offset: 3px;
+}
+
+.series-hero-author-link:hover,
+.series-hero-author-link:focus-visible {
+  color: #fff;
+  text-decoration-color: currentColor;
+}
+
+.series-hero-author-sep {
+  margin-right: -2px;
 }
 
 .author-hero-eyebrow {
