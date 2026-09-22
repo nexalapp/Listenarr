@@ -158,6 +158,11 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     ChapterRepairable = chapterSummary?.Repairable ?? false,
                     NotFoundFiles = notFoundById.TryGetValue(a.Id, out var notFound) ? notFound : 0,
                     AudioAudit = AudioAuditVerdictNames.Of(a.AudioAuditVerdict),
+                    // Cheap to carry and the cards show it: without these a book's rating
+                    // is known only to its own page, and the badge on the cover never appears.
+                    AudibleRatingOverall = a.AudibleRatingOverall,
+                    AudibleRatingOverallCount = a.AudibleRatingOverallCount,
+                    AudnexusRating = a.AudnexusRating,
                     Status = AudiobookStatusEvaluator.ComputeStatus(
                          activeDownloadAudiobookIdSet.Contains(a.Id),
                          hasAnyFile,

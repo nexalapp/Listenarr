@@ -81,5 +81,16 @@ namespace Listenarr.Application.Audiobooks.Catalog
         /// Null until an audit has run.
         /// </summary>
         public string? AudioAudit { get; set; }
+
+        /// <summary>
+        /// The listener rating, so a card can carry it without fetching the book. Audible's
+        /// overall score and how many rated it; <see cref="AudnexusRating"/> stands in when
+        /// Audnexus answered instead, and has no count of its own.
+        /// </summary>
+        public double? AudibleRatingOverall { get; set; }
+
+        public int? AudibleRatingOverallCount { get; set; }
+
+        public double? AudnexusRating { get; set; }
     }
 }
