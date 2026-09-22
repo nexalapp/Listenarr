@@ -25,12 +25,16 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                if (RuntimeInformation.OSArchitecture == Architecture.Arm64)
-                {
-                    return "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz";
-                }
-
-                return "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz";
+                // BtbN's n8.1 builds rather than johnvansickle's, whose "release" is
+                // 7.0.2 and whose git build is older still. The difference is xHE-AAC:
+                // 7.0.2 will not open the decoder at all ("Function not implemented"),
+                // so a book posted in it cannot be listened to, audited or converted.
+                // 8.1 decodes it — with complaints on some packets, and audio out of
+                // the rest, which is what those features need. Pinned to the 8.1 line
+                // rather than master so a deploy does not follow a moving build.
+                return RuntimeInformation.OSArchitecture == Architecture.Arm64
+                    ? "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz"
+                    : "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz";
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))

@@ -98,6 +98,15 @@ after the whole encode has been spent. Imports need it for the same reason.
 Renaming can now move any of the 439G, so a naming-pattern change is no longer a
 cheap experiment.
 
+**The bundled ffmpeg is BtbN's 8.1, not johnvansickle's release.** johnvansickle
+publishes 7.0.2 as "release" and a git build older than that; 7.0.2 cannot open a
+decoder for xHE-AAC at all — "Function not implemented" — so a book posted in it
+can be neither listened to, audited nor converted, and its jobs fail with a
+message naming no cause. Measured on such a file: 7.0.2 produces nothing, 8.1
+produces audio (complaining about some packets and decoding the rest), which is
+what those features need. Pinned to the 8.1 line rather than master so a deploy
+does not follow a moving build.
+
 **ffmpeg is enough for M4B; m4b-tool is not needed.** Verified by inspecting the
 bytes ffmpeg produces: it writes the `desc` atom (the whole reason for this fork),
 `chpl` Nero chapters *and* a QuickTime chapter track, and `covr` cover art. What
