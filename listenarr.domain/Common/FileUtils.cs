@@ -41,9 +41,16 @@ namespace Listenarr.Domain.Common
         /// processor all use the same set – preventing non-audio files (cover images, NFOs, etc.)
         /// from being registered as AudiobookFile records only to be removed on the next scan.
         /// </summary>
+        /// <remarks>
+        /// <c>.mp4</c> is here because audiobooks are posted in it: the same container as
+        /// .m4a and .m4b, named for the video its muxer usually carries. A release of
+        /// sixty numbered .mp4 chapter files was refused as having no audio in it at all,
+        /// which is the sort of block nobody can act on. A file with no audio stream is
+        /// still rejected downstream, where the streams are actually read.
+        /// </remarks>
         public static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav",
+            ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".mp4", ".aac", ".wav",
             ".wv", ".wma", ".ape", ".alac", ".aif", ".aiff"
         };
 

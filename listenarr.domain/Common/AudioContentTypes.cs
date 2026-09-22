@@ -34,6 +34,7 @@ namespace Listenarr.Domain.Common
             {
                 [".m4b"] = "audio/mp4",
                 [".m4a"] = "audio/mp4",
+                [".mp4"] = "audio/mp4",
                 [".alac"] = "audio/mp4",
                 [".aac"] = "audio/aac",
                 [".mp3"] = "audio/mpeg",
