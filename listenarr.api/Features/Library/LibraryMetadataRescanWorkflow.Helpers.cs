@@ -7,6 +7,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Listenarr.Domain.Common;
+
 namespace Listenarr.Api.Features.Library
 {
     public sealed partial class LibraryMetadataRescanWorkflow
@@ -106,7 +108,7 @@ namespace Listenarr.Api.Features.Library
             bool Unlocked(string field) => !locked.Contains(field);
 
             if (Unlocked(LockableFields.Title)
-                && !string.IsNullOrWhiteSpace(metadata.Title)) audiobook.Title = metadata.Title;
+                && !string.IsNullOrWhiteSpace(metadata.Title)) audiobook.Title = TitleCleanup.StripNarratorSuffix(metadata.Title)!;
             if (Unlocked(LockableFields.Subtitle)
                 && !string.IsNullOrWhiteSpace(metadata.Subtitle)) audiobook.Subtitle = metadata.Subtitle;
             if (Unlocked(LockableFields.PublishYear)
