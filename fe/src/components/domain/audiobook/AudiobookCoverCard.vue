@@ -49,6 +49,15 @@
 
       <div class="audiobook-poster-container" :class="{ 'show-details': showDetails }">
         <div v-if="seriesPosition" class="series-position-badge">#{{ seriesPosition }}</div>
+        <div
+          v-if="listenerRating"
+          class="cover-rating-badge"
+          :class="{ 'has-position': !!seriesPosition }"
+          :title="ratingTitle"
+        >
+          <PhStar weight="fill" />
+          {{ listenerRating.overall }}
+        </div>
         <div class="audiobook-image-placeholder" :class="{ loaded }">
           <PhBookOpen class="audiobook-placeholder-icon" />
         </div>
@@ -226,6 +235,34 @@ const authorLine = computed(
   () => props.audiobook.authors?.map((author) => safeText(author)).join(', ') || 'Unknown Author',
 )
 
+/**
+ * How the book was received, for the corner of the cover. Audible's overall score
+ * when there is one, else Audnexus's, which carries no count. A book nobody has
+ * rated shows nothing rather than a zero.
+ */
+const listenerRating = computed(() => {
+  const book = props.audiobook
+  const overall = book.audibleRatingOverall ?? book.audnexusRating
+  if (typeof overall !== 'number' || !Number.isFinite(overall) || overall <= 0) return null
+
+  const fromAudible = typeof book.audibleRatingOverall === 'number'
+  return {
+    overall: overall.toFixed(1),
+    count: fromAudible ? book.audibleRatingOverallCount : undefined,
+    source: fromAudible ? 'Audible' : 'Audnexus',
+  }
+})
+
+/** The badge is small, so what it leaves out goes in the tooltip. */
+const ratingTitle = computed(() => {
+  const rating = listenerRating.value
+  if (!rating) return undefined
+
+  const counted =
+    typeof rating.count === 'number' ? ` from ${rating.count.toLocaleString()} ratings` : ''
+  return `${rating.overall} out of 5${counted} (${rating.source})`
+})
+
 // A book with nothing on disk is the one worth searching for from here; one that
 // has its file, or is on its way, already has what a search would find.
 const canSearch = computed(() => !props.inLibrary || props.status === 'no-file')
@@ -393,6 +430,38 @@ const searchTitle = computed(() =>
   border-radius: 6px;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/*
+ * Beside the position badge, or where it would be when there is none: the corner a
+ * person's eye is already on, and small enough not to cover the art.
+ */
+.cover-rating-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(12, 14, 20, 0.82);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.cover-rating-badge.has-position {
+  left: auto;
+  right: 8px;
+}
+
+.cover-rating-badge svg {
+  width: 12px;
+  height: 12px;
+  color: #fcc419;
 }
 
 .series-position-badge {

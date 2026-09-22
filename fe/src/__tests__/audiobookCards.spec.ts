@@ -102,6 +102,47 @@ describe.each(layouts)('$name card', ({ component }) => {
   })
 })
 
+describe('AudiobookCoverCard rating badge', () => {
+  const mountCover = (audiobook: Audiobook, props: Record<string, unknown> = {}) =>
+    mount(AudiobookCoverCard, {
+      props: { audiobook, status: 'quality-match', statusLabel: 'Downloaded', ...props },
+    })
+
+  it('shows the score in the corner, with the count in its tooltip', () => {
+    const wrapper = mountCover(
+      book({ audibleRatingOverall: 4.3129, audibleRatingOverallCount: 556 }),
+    )
+
+    const badge = wrapper.get('.cover-rating-badge')
+    expect(badge.text()).toContain('4.3')
+    expect(badge.attributes('title')).toBe('4.3 out of 5 from 556 ratings (Audible)')
+  })
+
+  it('moves to the other corner when the cover already carries a position badge', () => {
+    const withPosition = mountCover(book({ audibleRatingOverall: 4 }), { seriesPosition: '3' })
+    expect(withPosition.get('.cover-rating-badge').classes()).toContain('has-position')
+
+    const alone = mountCover(book({ audibleRatingOverall: 4 }))
+    expect(alone.get('.cover-rating-badge').classes()).not.toContain('has-position')
+  })
+
+  it('falls back to the Audnexus score, which has no count to report', () => {
+    const wrapper = mountCover(book({ audnexusRating: 4.5 }))
+
+    expect(wrapper.get('.cover-rating-badge').text()).toContain('4.5')
+    expect(wrapper.get('.cover-rating-badge').attributes('title')).toBe('4.5 out of 5 (Audnexus)')
+  })
+
+  it('shows nothing for a book nobody has rated', () => {
+    expect(mountCover(book()).find('.cover-rating-badge').exists()).toBe(false)
+    expect(
+      mountCover(book({ audibleRatingOverall: 0 }))
+        .find('.cover-rating-badge')
+        .exists(),
+    ).toBe(false)
+  })
+})
+
 describe('MonitoredBadge', () => {
   it('reads as a switch: a toggle icon, pressed state, and a tooltip that says what a click does', () => {
     const on = mount(MonitoredBadge, { props: { monitored: true, inLibrary: true } })
