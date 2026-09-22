@@ -668,6 +668,103 @@ describe('CollectionView', () => {
     expect(mockGetSeriesLookup).toHaveBeenCalledWith('Mistborn', 'us', 'SERIES123', false)
   })
 
+  it('folds another publication of a held book away, and leaves it out of Not Added (#silo)', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    mockGetApplicationSettings.mockResolvedValue({
+      defaultSearchRegion: 'us',
+      defaultSearchLanguage: 'english',
+    })
+    mockGetSeriesLookup.mockResolvedValue({ asin: 'SILO', name: 'Silo', totalBooks: 4 })
+    mockGetSeriesCatalog.mockResolvedValue({
+      series: { asin: 'SILO', name: 'Silo' },
+      totalBooks: 4,
+      books: [
+        {
+          asin: 'WOOL-OWNED',
+          title: 'Wool',
+          authors: ['Hugh Howey'],
+          language: 'english',
+          series: 'Silo',
+          seriesNumber: '1',
+        },
+        {
+          // The television tie-in: a different ASIN for the story already on the shelf.
+          asin: 'WOOL-TIE-IN',
+          title: 'Wool: The Silo Saga',
+          authors: ['Hugh Howey'],
+          language: 'english',
+          series: 'Silo',
+          seriesNumber: '1',
+        },
+        {
+          asin: 'DUST',
+          title: 'Dust',
+          authors: ['Hugh Howey'],
+          language: 'english',
+          series: 'Silo',
+          seriesNumber: '3',
+        },
+      ],
+    })
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+
+    await router.push('/collection/series/Silo')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    const localLibrary = [
+      {
+        id: 1,
+        title: 'Wool',
+        authors: ['Hugh Howey'],
+        series: 'Silo',
+        seriesNumber: '1',
+        asin: 'WOOL-OWNED',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks = localLibrary
+    mockGetLibrary.mockResolvedValue(localLibrary)
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'ViewOptionsDropdown', 'AddLibraryModal'],
+      },
+    })
+
+    await flushPromises()
+
+    const headings = wrapper.findAll('.collection-section-header')
+    const headingText = headings.map((heading) => heading.text())
+    expect(headingText.some((text) => text.includes('In Library'))).toBe(true)
+    expect(headingText.some((text) => text.includes('Other Publications'))).toBe(true)
+
+    // Dust is the only thing actually missing; the tie-in is not counted with it.
+    const notAdded = headings.find((heading) => heading.text().includes('Not Added'))!
+    expect(notAdded.find('.section-count').text()).toBe('1')
+
+    const other = headings.find((heading) => heading.text().includes('Other Publications'))!
+    expect(other.find('.section-count').text()).toBe('1')
+
+    // Folded away: the tie-in's card is not rendered until the heading is opened.
+    expect(wrapper.text()).not.toContain('The Silo Saga')
+
+    await other.get('.section-title-toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('The Silo Saga')
+  })
+
   it('sorts a series collection by position within owned, then within not-added (#626)', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
