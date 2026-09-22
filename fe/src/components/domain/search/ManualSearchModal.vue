@@ -16,7 +16,15 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-  <Modal :visible="isOpen" size="lg" @close="close">
+  <!-- Closed only by its own button: a search takes a while to run, and a click
+       beside the dialog or a stray Escape would throw the results away. -->
+  <Modal
+    :visible="isOpen"
+    size="lg"
+    :close-on-backdrop="false"
+    :close-on-escape="false"
+    @close="close"
+  >
     <template #header>
       <ModalHeader
         :title="`Manual Search - ${audiobook?.title || ''}`"
