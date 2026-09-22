@@ -101,7 +101,8 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// Return jobs whose lease has expired to the queue. A restart leaves rows Running
         /// with a lease nobody will renew, and those would otherwise never be picked up.
         /// </summary>
-        Task<int> ReleaseExpiredLeasesAsync(
+        /// <returns>The jobs that were returned, as they now stand.</returns>
+        Task<IReadOnlyList<TagJob>> ReleaseExpiredLeasesAsync(
             DateTime now,
             CancellationToken cancellationToken = default);
     }

@@ -132,6 +132,13 @@ namespace Listenarr.Application.Audiobooks.Chapters
             }
 
             var candidates = SilenceCandidates.Select(pauses, tags.Duration, edition?.Chapters.Count, MaxMarksToHear, marks.Select(m => m.Start));
+            // At information level because this is the work that takes the time: when a
+            // planning job stops moving, this line is the last thing it said, and it says
+            // how much listening it had signed up for.
+            logger.LogInformation(
+                "Listening for chapters in {Path}: {Candidates} mark(s) to hear",
+                LogRedaction.SanitizeFilePath(fullPath),
+                candidates.Count);
             logger.LogDebug(
                 "{Count} pause(s) and {Marks} mark(s) in {Path} give {Candidates} candidate mark(s)",
                 pauses.Count,

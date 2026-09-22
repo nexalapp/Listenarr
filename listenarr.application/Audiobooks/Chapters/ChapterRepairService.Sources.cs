@@ -326,6 +326,10 @@ namespace Listenarr.Application.Audiobooks.Chapters
                         : "Naming placeholder chapters means listening for the announcements. Turn on transcription in Settings → Metadata Tags."));
             }
 
+            logger.LogInformation(
+                "Listening at {Count} mark(s) of {Path}",
+                marks.Count,
+                LogRedaction.SanitizeFilePath(fullPath));
             var heard = new List<string?>(marks.Count);
             foreach (var mark in marks)
             {

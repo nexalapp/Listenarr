@@ -424,17 +424,40 @@ namespace Listenarr.Application.Audiobooks.Tagging
             }
         }
 
+        /// <summary>
+        /// A job may be stranded this many times before it is taken as unfinishable.
+        /// Generous, because an ordinary restart strands whatever was running through no
+        /// fault of its own; a job that reaches this has been claimed, gone quiet and had
+        /// its lease expire over and over, which no amount of retrying will change.
+        /// </summary>
+        public const int MaxStrandings = 8;
+
         public async Task RecoverAbandonedJobsAsync(CancellationToken cancellationToken = default)
         {
             var released = await repository.ReleaseExpiredLeasesAsync(
                 timeProvider.GetUtcNow().UtcDateTime,
                 cancellationToken);
 
-            if (released > 0)
+            if (released.Count == 0)
             {
-                logger.LogInformation(
-                    "Returned {Count} abandoned tag-writing job(s) to the queue",
-                    released);
+                return;
+            }
+
+            logger.LogInformation(
+                "Returned {Count} abandoned tag-writing job(s) to the queue",
+                released.Count);
+
+            // Without this a job that cannot finish is claimed, goes quiet, has its lease
+            // expire and is claimed again for ever — holding a worker slot each time and
+            // reading, to anyone watching, as "Processing" that never moves.
+            foreach (var job in released.Where(job => job.AttemptCount >= MaxStrandings))
+            {
+                await FailAsync(
+                    job.Id,
+                    TagWriteFailureKind.Unknown,
+                    $"Stopped after {job.AttemptCount} attempts that each started and then went quiet. "
+                        + "The log around the last attempt says where it stopped; Retry once the cause is fixed.",
+                    cancellationToken);
             }
         }
 
