@@ -737,7 +737,11 @@
           <div
             class="audio-audit"
             :class="
-              audiobook.audioAudit ? `audio-audit--${audiobook.audioAudit}` : 'audio-audit--none'
+              audiobook.audioAuditAccepted
+                ? 'audio-audit--accepted'
+                : audiobook.audioAudit
+                  ? `audio-audit--${audiobook.audioAudit}`
+                  : 'audio-audit--none'
             "
           >
             <PhEar class="audio-audit-icon" />
@@ -754,6 +758,9 @@
               </div>
               <div v-if="audiobook.audioAuditedAt" class="audio-audit-when">
                 Heard {{ formatAuditedAt(audiobook.audioAuditedAt) }}
+                <template v-if="audiobook.audioAuditAccepted">
+                  · kept as recorded by you, so it is not counted as a problem
+                </template>
               </div>
             </div>
             <div class="audio-audit-actions">
@@ -2289,9 +2296,39 @@ async function adoptHeardNarrator() {
   }
 }
 
+const acceptingAudio = ref(false)
+
+/**
+ * Say the record is right in spite of the verdict, or take that back.
+ *
+ * The verdict is kept and still shown; the book simply stops being counted as a
+ * problem. Pinned to the files as they are, so a recording swapped in later is judged
+ * on its own and the flag returns.
+ */
+async function setAudioAccepted(accepted: boolean) {
+  if (!audiobook.value) return
+  acceptingAudio.value = true
+  const toast = useToast()
+  try {
+    await apiService.setAudioAuditAccepted(audiobook.value.id, accepted)
+    toast.success(
+      accepted ? 'Kept as recorded' : 'No longer accepted',
+      accepted
+        ? 'This book will not be flagged again unless its files change.'
+        : 'The verdict counts against this book again.',
+    )
+    await loadAudiobook()
+  } catch (err) {
+    toast.error('Could not save that', err instanceof Error ? err.message : String(err))
+  } finally {
+    acceptingAudio.value = false
+  }
+}
+
 /**
  * What to do about the verdict. Each is a sentence and, where one exists, the action:
- * a wrong book is re-matched from what the narrator said, a wrong narrator is adopted.
+ * a wrong book is re-matched from what the narrator said, a wrong narrator is adopted,
+ * and a verdict the listener disagrees with is overruled.
  */
 const creditRecommendations = computed(() => {
   const book = audiobook.value
@@ -2328,6 +2365,28 @@ const creditRecommendations = computed(() => {
     default:
       break
   }
+
+  // Last, because it is the answer only once the others have been considered: the audit
+  // can be wrong - an opening under music, a transcript that loops - and without this the
+  // same book is offered for repair for ever.
+  if (book.audioAudit === 'mismatch' || book.audioAudit === 'narrator-mismatch') {
+    recs.push(
+      book.audioAuditAccepted
+        ? {
+            text: 'You listened to this and kept it as recorded, so it is not counted as a problem. It will be flagged again if the files change.',
+            label: 'Flag it again',
+            action: () => setAudioAccepted(false),
+            busy: acceptingAudio.value,
+          }
+        : {
+            text: 'If you have listened for yourself and the record is right, keep it as it is.',
+            label: 'Sounds right',
+            action: () => setAudioAccepted(true),
+            busy: acceptingAudio.value,
+          },
+    )
+  }
+
   return recs
 })
 
@@ -4358,6 +4417,16 @@ a.identifier-link:hover {
 
 .audio-audit--match {
   border-color: rgba(46, 204, 113, 0.25);
+}
+
+/* Settled rather than alarming: the verdict still reads, but somebody has answered it. */
+.audio-audit--accepted {
+  border-color: rgba(46, 204, 113, 0.25);
+  background: rgba(46, 204, 113, 0.05);
+}
+
+.audio-audit--accepted .audio-audit-icon {
+  color: #2ecc71;
 }
 
 .audio-audit--fixable {
