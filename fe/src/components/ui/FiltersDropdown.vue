@@ -104,7 +104,7 @@ const builtInOptions = [
   { value: 'missing', label: 'Missing' },
   { value: 'not-found', label: 'Not Found' },
   { value: 'recent', label: 'Recently Added' },
-  { value: 'chapter-issues', label: 'Broken Chapters' },
+  { value: 'chapter-issues', label: 'Chapter Issues' },
   { value: 'audio-mismatch', label: 'Metadata Mismatch' },
 ]
 

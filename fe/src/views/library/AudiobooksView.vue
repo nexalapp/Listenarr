@@ -1327,9 +1327,9 @@ const chapterIssueLabel = (book: Audiobook): string | null => {
 const audioIssueLabel = (book: Audiobook): string | null => {
   switch (book.audioAudit) {
     case 'mismatch':
-      return 'Metadata mismatch'
+      return 'Different book'
     case 'narrator-mismatch':
-      return 'Narrator mismatch'
+      return 'Narrator differs'
     default:
       return null
   }
@@ -2743,7 +2743,7 @@ async function bulkCheckChapters() {
     toast.success(
       'Chapters checked',
       flagged.size
-        ? `${flagged.size} of ${ids.length} book(s) have chapter problems; fixes are being worked out. Filter by Broken Chapters to see them.`
+        ? `${flagged.size} of ${ids.length} book(s) have chapter problems; fixes are being worked out. Filter by Chapter Issues to see them.`
         : `All ${ids.length} book(s) have sound chapters.`,
     )
     await libraryStore.fetchLibrary()
