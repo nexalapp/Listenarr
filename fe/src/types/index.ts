@@ -1260,7 +1260,6 @@ export interface Audiobook {
   audioAudit?: AudioAuditVerdict | null
   audioAuditReason?: string | null
   audioAuditAccepted?: boolean
-  audioAuditHeardNarrator?: string | null
   /** What was heard, segments newline-separated. */
   audioAuditHeard?: string | null
   audioAuditHeardTitle?: string | null

@@ -2819,8 +2819,9 @@ async function bulkRepairChapters() {
 /** The selected books the audit is flagging and nobody has overruled. */
 const flaggedSelectionCount = computed(
   () =>
-    displayedAudiobooks.value.filter((b) => libraryStore.selectedIds.has(b.id) && !!audioIssueLabel(b))
-      .length,
+    displayedAudiobooks.value.filter(
+      (b) => libraryStore.selectedIds.has(b.id) && !!audioIssueLabel(b),
+    ).length,
 )
 
 /**
@@ -2852,7 +2853,7 @@ async function bulkAcceptAudio() {
         `${accepted} book${accepted === 1 ? '' : 's'} kept as recorded. They will be flagged again only if the files change.`,
       )
       libraryStore.clearSelection()
-      await libraryStore.fetchAudiobooks()
+      await libraryStore.fetchLibrary()
     } else {
       toast.error('Nothing accepted', refusals[0] ?? 'No selected book could be accepted.')
     }
