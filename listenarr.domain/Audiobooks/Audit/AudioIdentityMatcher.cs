@@ -59,22 +59,31 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// <param name="authors">The record's authors.</param>
         /// <param name="narrators">The record's narrators; empty when unknown.</param>
         /// <param name="aliases">Name aliases, so either spelling of a person counts.</param>
+        /// <param name="recordedMinutes">The runtime the record claims; null when it claims none.</param>
+        /// <param name="measuredMinutes">How long the files actually run; null when they cannot be measured.</param>
         public static AudioAuditResult Judge(
             string? transcript,
             string? title,
             IReadOnlyList<string>? authors,
             IReadOnlyList<string>? narrators,
-            IReadOnlyList<AuthorAlias>? aliases)
+            IReadOnlyList<AuthorAlias>? aliases,
+            double? recordedMinutes = null,
+            double? measuredMinutes = null)
         {
             var heard = Tokens(transcript ?? string.Empty);
             var credits = AudioCreditsParser.Parse(transcript);
 
             if (heard.Length < MinimumWords)
             {
-                return new AudioAuditResult(
-                    AudioAuditVerdict.Inconclusive,
-                    "Too little speech was heard to tell what the book is.",
-                    0, 0, null, credits);
+                return RuntimeAgreement.Disagree(recordedMinutes, measuredMinutes)
+                    ? new AudioAuditResult(
+                        AudioAuditVerdict.RuntimeMismatch,
+                        $"Too little speech was heard to tell what the book is, and {RuntimeAgreement.Describe(recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                        0, 0, null, credits)
+                    : new AudioAuditResult(
+                        AudioAuditVerdict.Inconclusive,
+                        "Too little speech was heard to tell what the book is.",
+                        0, 0, null, credits);
             }
 
             var titleScore = Containment(Tokens(title ?? string.Empty), heard);
@@ -107,6 +116,17 @@ namespace Listenarr.Domain.Audiobooks.Audit
                         titleScore, authorScore, narratorScore, credits);
                 }
 
+                // The credits agree, so this is the book. Whether it is the recording the
+                // record describes is a separate question, and only its length answers it:
+                // every edition of a novel reads the same title and the same author aloud.
+                if (RuntimeAgreement.Disagree(recordedMinutes, measuredMinutes))
+                {
+                    return new AudioAuditResult(
+                        AudioAuditVerdict.RuntimeMismatch,
+                        $"The book is the one on record, but not this recording of it: {RuntimeAgreement.Describe(recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                        titleScore, authorScore, narratorScore, credits);
+                }
+
                 var what = (titleHeard, authorHeard) switch
                 {
                     (true, true) => "The title and the author were heard.",
@@ -133,6 +153,14 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 return new AudioAuditResult(
                     AudioAuditVerdict.Mismatch,
                     $"Neither the title nor the author of {Describe(title, authors)} was heard in the opening.",
+                    titleScore, authorScore, narratorScore, credits);
+            }
+
+            if (RuntimeAgreement.Disagree(recordedMinutes, measuredMinutes))
+            {
+                return new AudioAuditResult(
+                    AudioAuditVerdict.RuntimeMismatch,
+                    $"Only fragments of the title or the author were heard, and {RuntimeAgreement.Describe(recordedMinutes!.Value, measuredMinutes!.Value)}.",
                     titleScore, authorScore, narratorScore, credits);
             }
 

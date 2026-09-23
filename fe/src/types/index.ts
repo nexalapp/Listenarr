@@ -1269,7 +1269,12 @@ export interface Audiobook {
 }
 
 /** The audio audit's verdict as the API spells it. */
-export type AudioAuditVerdict = 'match' | 'narrator-mismatch' | 'mismatch' | 'inconclusive'
+export type AudioAuditVerdict =
+  | 'match'
+  | 'narrator-mismatch'
+  | 'runtime-mismatch'
+  | 'mismatch'
+  | 'inconclusive'
 
 /**
  * A field that can be pinned against a metadata rescan.

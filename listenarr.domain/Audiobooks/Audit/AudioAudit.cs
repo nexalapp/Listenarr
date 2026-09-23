@@ -32,7 +32,13 @@ namespace Listenarr.Domain.Audiobooks.Audit
         Mismatch,
 
         /// <summary>Too little was heard to say: music, silence, or credits that name nothing.</summary>
-        Inconclusive
+        Inconclusive,
+
+        /// <summary>
+        /// The right book, said by the credits, but not this recording of it: the audio
+        /// does not run for as long as the record says it does.
+        /// </summary>
+        RuntimeMismatch
     }
 
     /// <summary>How the stored transcript separates what was heard at the end from what was heard at the start.</summary>
@@ -50,6 +56,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
             AudioAuditVerdict.NarratorMismatch => "narrator-mismatch",
             AudioAuditVerdict.Mismatch => "mismatch",
             AudioAuditVerdict.Inconclusive => "inconclusive",
+            AudioAuditVerdict.RuntimeMismatch => "runtime-mismatch",
             _ => null
         };
     }

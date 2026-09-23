@@ -117,5 +117,74 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
 
             Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
         }
+        [Fact]
+        public void Judge_FlagsARecordingThatDoesNotRunAsLongAsTheRecordSays()
+        {
+            // 3001: the credits are right because every edition reads the same ones. The
+            // record describes Audible's 408-minute reading; the file is 370 minutes long.
+            var result = AudioIdentityMatcher.Judge(
+                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
+                recordedMinutes: 408, measuredMinutes: 370);
+
+            Assert.Equal(AudioAuditVerdict.RuntimeMismatch, result.Verdict);
+            Assert.Contains("6h 48m", result.Reason);
+            Assert.Contains("6h 10m", result.Reason);
+        }
+
+        [Fact]
+        public void Judge_KeepsTheMatchWhenTheLengthsAgreeCloselyEnough()
+        {
+            // A publisher's ident and closing credits move a book a few minutes.
+            var result = AudioIdentityMatcher.Judge(
+                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
+                recordedMinutes: 240, measuredMinutes: 236);
+
+            Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
+        }
+
+        [Fact]
+        public void Judge_IgnoresASmallGapOnAShortBook()
+        {
+            // 25% of a 20-minute story is five minutes, which is under the floor.
+            var result = AudioIdentityMatcher.Judge(
+                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
+                recordedMinutes: 20, measuredMinutes: 25);
+
+            Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
+        }
+
+        [Fact]
+        public void Judge_NamesTheNarratorAheadOfTheLength()
+        {
+            // Both are true of a wrong edition; the one that names a person is the useful one.
+            var result = AudioIdentityMatcher.Judge(
+                Opening, "A War of Gifts", ["Orson Scott Card"], ["Stefan Rudnicki"], null,
+                recordedMinutes: 408, measuredMinutes: 370);
+
+            Assert.Equal(AudioAuditVerdict.NarratorMismatch, result.Verdict);
+        }
+
+        [Fact]
+        public void Judge_SaysNothingAboutLengthWhenTheRecordClaimsNone()
+        {
+            var result = AudioIdentityMatcher.Judge(
+                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
+                recordedMinutes: null, measuredMinutes: 370);
+
+            Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
+        }
+
+        [Fact]
+        public void Judge_LengthAloneFlagsAnOpeningWithNoCredits()
+        {
+            // Music under the opening, so nothing was heard - but the file is two hours
+            // short of what the record claims, and that is still worth saying.
+            var result = AudioIdentityMatcher.Judge(
+                "The war had gone on for years and the gifts were few and nobody remembered why it had started at all.",
+                "A War of Gifts", ["Orson Scott Card"], null, null,
+                recordedMinutes: 408, measuredMinutes: 250);
+
+            Assert.Equal(AudioAuditVerdict.RuntimeMismatch, result.Verdict);
+        }
     }
 }
