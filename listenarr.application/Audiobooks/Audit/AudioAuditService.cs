@@ -104,6 +104,21 @@ namespace Listenarr.Application.Audiobooks.Audit
             var settings = await configurationService.GetApplicationSettingsAsync();
             var model = ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel);
 
+            var aliasesJson = settings.AuthorAliasesJson;
+
+            // A transcript already on the record is reused when no file has changed since
+            // it was taken. Listening costs minutes of CPU and the words do not change;
+            // re-judging them does, every time the credits parser learns something. That
+            // is what makes a re-run over a whole library affordable.
+            if (StoredTranscriptIsUsable(audiobook, files, out var stored))
+            {
+                logger.LogInformation(
+                    "Audio audit of audiobook {AudiobookId}: re-judging the transcript already on record",
+                    audiobookId);
+                progress?.Report(0.9);
+                return await JudgeAndSaveAsync(audiobookId, audiobook, stored!, aliasesJson, cancellationToken);
+            }
+
             // Two stretches to hear, so two steps of progress; whisper gives no rate to
             // estimate from, and a bar that moves twice beats one that does not move.
             progress?.Report(0.1);
@@ -125,8 +140,53 @@ namespace Listenarr.Application.Audiobooks.Audit
             var heard = string.IsNullOrWhiteSpace(closing)
                 ? opening ?? string.Empty
                 : $"{opening}{AudioAuditTranscript.ClosingMarker}{closing}";
-            var aliases = AuthorAliases.Parse(settings.AuthorAliasesJson);
+            return await JudgeAndSaveAsync(audiobookId, audiobook, heard, aliasesJson, cancellationToken);
+        }
 
+        /// <summary>
+        /// Whether the words on the record can stand in for listening again: there is a
+        /// transcript, it was taken at a known time, and nothing the audit hears has been
+        /// written since. A file touched after the audit may be a different recording.
+        /// </summary>
+        private bool StoredTranscriptIsUsable(
+            Audiobook audiobook,
+            IReadOnlyList<(AudiobookFile File, string? FullPath)> files,
+            out string? transcript)
+        {
+            transcript = audiobook.AudioAuditHeard;
+            if (string.IsNullOrWhiteSpace(transcript) || audiobook.AudioAuditedAt is not { } audited)
+            {
+                return false;
+            }
+
+            // Only the two files the audit listens to matter: the first and the last.
+            foreach (var path in new[] { files[0].FullPath, files[^1].FullPath })
+            {
+                try
+                {
+                    if (path != null && fileSystem.GetLastWriteTimeUtc(path) > audited)
+                    {
+                        return false;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Cannot tell whether it changed, so listen again rather than guess.
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private async Task<AudioAuditResult> JudgeAndSaveAsync(
+            int audiobookId,
+            Audiobook audiobook,
+            string heard,
+            string? aliasesJson,
+            CancellationToken cancellationToken)
+        {
+            var aliases = AuthorAliases.Parse(aliasesJson);
             var result = AudioIdentityMatcher.Judge(heard, audiobook.Title, audiobook.Authors, audiobook.Narrators, aliases);
 
             await audiobookRepository.SetAudioAuditAsync(
