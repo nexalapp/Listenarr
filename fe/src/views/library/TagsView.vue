@@ -610,7 +610,7 @@ const CHAPTER_FILTERS: { value: ChapterFilter; label: string }[] = [
   { value: 'generic-titles', label: 'Generic titles' },
   { value: 'none', label: 'No chapters' },
   { value: 'healthy', label: 'Healthy' },
-  { value: 'audio-mismatch', label: 'Audio mismatch' },
+  { value: 'audio-mismatch', label: 'Metadata mismatch' },
   { value: 'audio-unheard', label: 'Not listened to' },
 ]
 
