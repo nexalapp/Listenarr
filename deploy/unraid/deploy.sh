@@ -53,15 +53,25 @@ wait_green() {
 }
 
 # The tag of the deploy-image run for a commit, once that run has succeeded.
+# Labelling a PR starts a second deploy-image run on the same commit, and the
+# workflow's concurrency group cancels one of the pair. Reading only the newest
+# run therefore reports a perfectly good build as a failure about half the time,
+# so ask for every run on the commit: a success anywhere wins, and it is a real
+# failure only when nothing is still running and nothing succeeded.
 image_tag_for() {
-  local sha=$1 run
+  local sha=$1 runs run
   while true; do
-    run=$(gh run list --workflow deploy-image.yml --commit "$sha" --limit 1 --json databaseId,status,conclusion -q '.[0] | "\(.databaseId) \(.status) \(.conclusion)"')
-    case "$run" in
-      *" completed success") break ;;
-      *" completed "*)        echo "deploy-image for $sha failed ($run)" >&2; return 1 ;;
-      *)                      sleep "$POLL" ;;
-    esac
+    runs=$(gh run list --workflow deploy-image.yml --commit "$sha" --limit 20 \
+      --json databaseId,status,conclusion \
+      -q '.[] | "\(.databaseId) \(.status) \(.conclusion)"')
+    run=$(echo "$runs" | grep " completed success$" | head -1 || true)
+    [ -n "$run" ] && break
+    if [ -n "$runs" ] && ! echo "$runs" | grep -qv " completed "; then
+      echo "deploy-image for $sha failed:" >&2
+      echo "$runs" >&2
+      return 1
+    fi
+    sleep "$POLL"
   done
   # The tag is printed by the run's version step.
   gh run view "${run%% *}" --log 2>/dev/null | grep -oE "deploy-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}" | head -1
