@@ -82,7 +82,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
         bool ChapterRepairable = false,
         bool ChapterPlanPending = false,
         AudioAuditVerdict AudioAudit = AudioAuditVerdict.NotAudited,
-        string? AudioAuditReason = null);
+        string? AudioAuditReason = null,
+        bool AudioAuditAccepted = false,
+        string? AudioAuditHeardNarrator = null);
 
     /// <summary>
     /// The whole library's tag table, plus what it cost to build.

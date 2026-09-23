@@ -123,7 +123,9 @@ namespace Listenarr.Api.Features.Library
                     chapterPlanPending = row.ChapterPlanPending,
                     // The book's audio verdict, on every one of its rows.
                     audioAudit = AudioAuditVerdictNames.Of(row.AudioAudit),
-                    audioAuditReason = row.AudioAuditReason
+                    audioAuditReason = row.AudioAuditReason,
+                    audioAuditAccepted = row.AudioAuditAccepted,
+                    audioAuditHeardNarrator = row.AudioAuditHeardNarrator
                 })
             });
         }

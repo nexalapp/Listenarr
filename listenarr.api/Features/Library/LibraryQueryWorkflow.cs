@@ -141,6 +141,8 @@ public sealed class LibraryQueryWorkflow(
         audioAuditHeardTitle = audiobook.AudioAuditHeardTitle,
         audioAuditHeardAuthor = audiobook.AudioAuditHeardAuthor,
         audioAuditHeardNarrator = audiobook.AudioAuditHeardNarrator,
-        audioAuditedAt = audiobook.AudioAuditedAt
+        audioAuditedAt = audiobook.AudioAuditedAt,
+        audioAuditAccepted = AudioAuditAcceptance.IsAccepted(audiobook),
+        audioAuditAcceptedAt = audiobook.AudioAuditAcceptedAt
     };
 }

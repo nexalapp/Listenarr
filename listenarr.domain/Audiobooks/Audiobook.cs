@@ -91,6 +91,20 @@ namespace Listenarr.Domain.Audiobooks
         [MaxLength(256)]
         public string? AudioAuditFileIdentity { get; set; }
 
+        /// <summary>
+        /// The files as they were when someone listened for themselves and said the
+        /// record is right after all. While this still describes the files on disk the
+        /// audit's verdict is shown but not counted against the book; a recording
+        /// swapped in afterwards no longer matches, and the flag comes back.
+        /// </summary>
+        [MaxLength(256)]
+        public string? AudioAuditAcceptedIdentity { get; set; }
+
+        /// <summary>The verdict that was accepted, so the row can say what was overruled.</summary>
+        public AudioAuditVerdict? AudioAuditAcceptedVerdict { get; set; }
+
+        public DateTime? AudioAuditAcceptedAt { get; set; }
+
         // OpenLibrary identifier (OLID) when the audiobook originates from OpenLibrary
         public string? OpenLibraryId { get; set; }
         // Typed external identifiers for robust metadata/image lookup and manual correction.

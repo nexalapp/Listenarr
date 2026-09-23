@@ -19,6 +19,8 @@ using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
+using Listenarr.Domain.Audiobooks.Audit;
+
 namespace Listenarr.Application.Audiobooks.Tagging
 {
     /// <summary>
@@ -367,7 +369,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 repairable,
                 planPending,
                 audiobook.AudioAuditVerdict,
-                audiobook.AudioAuditReason);
+                audiobook.AudioAuditReason,
+                AudioAuditAcceptance.IsAccepted(audiobook),
+                audiobook.AudioAuditHeardNarrator);
         }
     }
 }
