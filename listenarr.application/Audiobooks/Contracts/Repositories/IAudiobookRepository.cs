@@ -29,6 +29,12 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
     public interface IAudiobookRepository
     {
         Task<List<Audiobook>> GetAllAsync();
+
+        /// <summary>
+        /// Every narrator name the library already uses, once each. The spellings its own
+        /// books carry are the dictionary a heard name is corrected against.
+        /// </summary>
+        Task<IReadOnlyList<string>> GetKnownNarratorsAsync(CancellationToken ct = default);
         Task<AudiobookPathReferenceSnapshot?> GetPathReferenceSnapshotAsync(
             int audiobookId,
             CancellationToken ct = default);

@@ -200,9 +200,25 @@ namespace Listenarr.Application.Audiobooks.Audit
             var aliases = AuthorAliases.Parse(aliasesJson);
             var result = AudioIdentityMatcher.Judge(heard, audiobook.Title, audiobook.Authors, audiobook.Narrators, aliases);
 
+            // The transcriber spells what it hears, so a real narrator arrives misspelled:
+            // "Garak Hagen" for Garrick Hagon, "Wanda McCadden" for Wanda McCaddon. The
+            // library's own spellings are the dictionary. Stored corrected, because this
+            // name is what a re-match searches for and what the book page offers to write;
+            // written through unspelled it finds nothing and invents a second narrator.
+            var credits = result.Credits;
+            if (!string.IsNullOrWhiteSpace(credits.Narrator))
+            {
+                var known = await audiobookRepository.GetKnownNarratorsAsync(cancellationToken);
+                var spelled = SpokenNameResolver.ResolveEach(credits.Narrator, known);
+                if (spelled.Any(name => name.WasRecognised))
+                {
+                    credits = credits with { Narrator = string.Join(", ", spelled.Select(name => name.Resolved)) };
+                }
+            }
+
             await audiobookRepository.SetAudioAuditAsync(
                 audiobookId,
-                new AudioAuditRecord(result.Verdict, result.Reason, heard, result.Credits, DateTime.UtcNow, fileIdentity),
+                new AudioAuditRecord(result.Verdict, result.Reason, heard, credits, DateTime.UtcNow, fileIdentity),
                 cancellationToken);
 
             logger.LogInformation(
