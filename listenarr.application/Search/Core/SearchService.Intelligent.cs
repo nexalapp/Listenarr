@@ -115,7 +115,7 @@ namespace Listenarr.Application.Search.Core
                 var asinToRawResult = candidateCollection.AsinToRawResult;
                 var asinToSource = candidateCollection.AsinToSource;
                 var asinToOpenLibrary = candidateCollection.AsinToOpenLibrary;
-                var openLibraryDerivedResults = candidateCollection.OpenLibraryDerivedResults;
+                var catalogueDerivedResults = candidateCollection.CatalogueDerivedResults;
 
                 // Deduplicate and enforce unified candidate cap
                 asinCandidates = asinCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -164,11 +164,11 @@ namespace Listenarr.Application.Search.Core
                     // metadata from external sources. If we already have enriched metadata results
                     // (e.g. from Audible/Audnexus), prefer those authoritative results and avoid
                     // adding OpenLibrary fallbacks that could dilute the final ranked list.
-                    if ((openLibraryDerivedResults != null && openLibraryDerivedResults.Any()) && !enrichedList.Any())
+                    if ((catalogueDerivedResults != null && catalogueDerivedResults.Any()) && !enrichedList.Any())
                     {
-                        _logger.LogInformation("Merging {Count} OpenLibrary-derived candidate(s) into enriched results", openLibraryDerivedResults.Count);
+                        _logger.LogInformation("Merging {Count} OpenLibrary-derived candidate(s) into enriched results", catalogueDerivedResults.Count);
 
-                        foreach (var ol in openLibraryDerivedResults)
+                        foreach (var ol in catalogueDerivedResults)
                         {
                             // Basic dedupe: avoid adding items with same Title+Artist
                             var duplicate = enrichedList.Any(e =>
@@ -200,7 +200,7 @@ namespace Listenarr.Application.Search.Core
                             }
                         }
 
-                        await _searchProgressReporter.BroadcastAsync($"OpenLibrary augmentation added {openLibraryDerivedResults.Count} candidate(s)", null);
+                        await _searchProgressReporter.BroadcastAsync($"OpenLibrary augmentation added {catalogueDerivedResults.Count} candidate(s)", null);
 
                         // Diagnostic: dump enrichedList immediately after merging OpenLibrary-derived candidates
                         try

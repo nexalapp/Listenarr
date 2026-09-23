@@ -28,6 +28,7 @@ public class AsinCandidateCollector
 {
     private readonly ILogger<AsinCandidateCollector> _logger;
     private readonly IOpenLibraryService _openLibraryService;
+    private readonly IOverDriveService? _overDriveService;
     private readonly MetadataConverters _metadataConverters;
     private readonly SearchProgressReporter _searchProgressReporter;
 
@@ -35,10 +36,12 @@ public class AsinCandidateCollector
         ILogger<AsinCandidateCollector> logger,
         IOpenLibraryService openLibraryService,
         MetadataConverters metadataConverters,
-        SearchProgressReporter searchProgressReporter)
+        SearchProgressReporter searchProgressReporter,
+        IOverDriveService? overDriveService = null)
     {
         _logger = logger;
         _openLibraryService = openLibraryService;
+        _overDriveService = overDriveService;
         _metadataConverters = metadataConverters;
         _searchProgressReporter = searchProgressReporter;
     }
@@ -73,6 +76,16 @@ public class AsinCandidateCollector
             await CollectOpenLibraryCandidatesAsync(searchTitle, searchAuthor, collection, ct);
         }
 
+        // A library catalogue last, because it answers a narrower question than the shops
+        // and only sometimes: it lends what publishers license to libraries, which is a
+        // partly different set. It is asked because it names the reader, and a book whose
+        // audio credits someone no shop admits exists is exactly what it can settle.
+        if (_overDriveService != null && !string.IsNullOrWhiteSpace(searchTitle))
+        {
+            ct.ThrowIfCancellationRequested();
+            await CollectOverDriveCandidatesAsync(searchTitle, searchAuthor, collection, ct);
+        }
+
         return collection;
     }
 
@@ -94,6 +107,63 @@ public class AsinCandidateCollector
             RegexOptions.IgnoreCase);
 
         return Regex.Replace(stripped, @"\s{2,}", " ").Trim();
+    }
+
+    /// <summary>
+    /// Editions a public library lends, which carry the one field the other sources so
+    /// often lack: who read it.
+    /// </summary>
+    private async Task CollectOverDriveCandidatesAsync(
+        string title,
+        string? author,
+        AsinCandidateCollection collection,
+        CancellationToken ct = default)
+    {
+        IReadOnlyList<OverDriveEdition> editions;
+        try
+        {
+            editions = await _overDriveService!.SearchAsync(title, author, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "OverDrive could not be asked about {Title}", title);
+            return;
+        }
+
+        foreach (var edition in editions)
+        {
+            ct.ThrowIfCancellationRequested();
+            var metadata = new AudibleBookMetadata
+            {
+                Asin = null,
+                Source = "OverDrive",
+                Title = TitleCleanup.StripNarratorSuffix(TitleCasing.ToTitleCase(edition.Title)),
+                Authors = edition.Authors.ToList(),
+                Narrators = edition.Narrators.ToList(),
+                Publisher = edition.Publisher,
+                PublishYear = edition.PublishYear,
+                Runtime = edition.RuntimeMinutes,
+                ImageUrl = edition.ImageUrl
+            };
+
+            try
+            {
+                var searchResult = await _metadataConverters.ConvertMetadataToSearchResultAsync(metadata, string.Empty);
+                searchResult.IsEnriched = true;
+                searchResult.MetadataSource = "OverDrive";
+                searchResult.Id = $"overdrive:{edition.Id}";
+                collection.CatalogueDerivedResults.Add(searchResult);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Could not render an OverDrive edition of {Title}", edition.Title);
+            }
+        }
+
+        if (editions.Count > 0)
+        {
+            _logger.LogInformation("OverDrive offered {Count} edition(s) of {Title}", editions.Count, title);
+        }
     }
 
     private async Task CollectOpenLibraryCandidatesAsync(string query, string? author, AsinCandidateCollection collection, CancellationToken ct = default)
@@ -162,7 +232,7 @@ public class AsinCandidateCollector
                             }
                         }
 
-                        collection.OpenLibraryDerivedResults.Add(searchResult);
+                        collection.CatalogueDerivedResults.Add(searchResult);
 
                         // Only store in dictionary if we have a valid OpenLibrary Key
                         // Don't use GUID fallback as it creates invalid openLibraryId values
