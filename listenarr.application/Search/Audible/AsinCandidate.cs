@@ -10,6 +10,10 @@ namespace Listenarr.Application.Search.Audible
         public Dictionary<string, (string Title, string Author, string? ImageUrl, string? Language)> AsinToRawResult { get; } = new Dictionary<string, (string, string, string?, string?)>(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string> AsinToSource { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, OpenLibraryBook> AsinToOpenLibrary { get; } = new Dictionary<string, OpenLibraryBook>(StringComparer.OrdinalIgnoreCase);
-        public List<SearchResult> OpenLibraryDerivedResults { get; } = new List<SearchResult>();
+        /// <summary>
+        /// Editions found somewhere that does not use ASINs - OpenLibrary, a library
+        /// lending catalogue - which are offered as candidates in their own right.
+        /// </summary>
+        public List<SearchResult> CatalogueDerivedResults { get; } = new List<SearchResult>();
     }
 }

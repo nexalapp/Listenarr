@@ -9,6 +9,7 @@
  */
 using System.Net;
 using Listenarr.Infrastructure.DependencyInjection.Platform;
+using Listenarr.Infrastructure.Metadata.Providers.OverDrive;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,13 @@ internal static class MetadataRegistrationExtensions
             .ConfigurePrimaryHttpMessageHandler(PlatformRegistrationExtensions.CreateExternalHandler)
             .AddPolicyHandler(retryPolicy);
         services.AddHttpClient<IAudnexusService, AudnexusService>()
+            .ConfigurePrimaryHttpMessageHandler(PlatformRegistrationExtensions.CreateExternalHandler)
+            .AddPolicyHandler(retryPolicy);
+        services.AddHttpClient<IOverDriveService, OverDriveService>(client =>
+            {
+                client.BaseAddress = new Uri("https://thunder.api.overdrive.com/");
+                client.Timeout = TimeSpan.FromSeconds(15);
+            })
             .ConfigurePrimaryHttpMessageHandler(PlatformRegistrationExtensions.CreateExternalHandler)
             .AddPolicyHandler(retryPolicy);
         return services;
