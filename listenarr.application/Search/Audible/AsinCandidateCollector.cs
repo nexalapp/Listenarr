@@ -152,7 +152,7 @@ public class AsinCandidateCollector
                 searchResult.IsEnriched = true;
                 searchResult.MetadataSource = "OverDrive";
                 searchResult.Id = $"overdrive:{edition.Id}";
-                collection.CatalogueDerivedResults.Add(searchResult);
+                collection.AlternateEditionResults.Add(searchResult);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
