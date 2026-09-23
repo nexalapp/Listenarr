@@ -76,12 +76,20 @@
         <select
           v-model="chapterFilter"
           class="toolbar-select"
-          aria-label="Filter by chapter health"
-          title="Show only files whose chapters have this verdict"
+          aria-label="Filter by chapter or metadata verdict"
+          title="Show only files with this verdict"
         >
-          <option v-for="option in CHAPTER_FILTERS" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
+          <option :value="ALL_FILTER.value">{{ ALL_FILTER.label }}</option>
+          <!--
+            Grouped because the one control answers two unrelated questions. Read as a
+            flat list, the metadata verdicts at the bottom look like more chapter
+            verdicts, and nobody finds them.
+          -->
+          <optgroup v-for="group in FILTER_GROUPS" :key="group.label" :label="group.label">
+            <option v-for="option in group.options" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </optgroup>
         </select>
 
         <!--
@@ -602,16 +610,37 @@ const CHAPTER_HEALTH_LABELS: Record<ChapterHealth, string> = {
 
 type ChapterFilter = 'all' | 'issues' | ChapterHealth | 'audio-mismatch' | 'audio-unheard'
 
+const ALL_FILTER: { value: ChapterFilter; label: string } = { value: 'all', label: 'No filter' }
+
+/**
+ * One control, two questions: what a file's chapters look like, and whether its audio
+ * agrees with its record. They are grouped so the metadata verdicts are not read as
+ * more chapter verdicts.
+ */
+const FILTER_GROUPS: { label: string; options: { value: ChapterFilter; label: string }[] }[] = [
+  {
+    label: 'Chapters',
+    options: [
+      { value: 'issues', label: 'Chapter issues' },
+      { value: 'corrupt', label: 'Corrupt' },
+      { value: 'oversegmented', label: 'Over-segmented' },
+      { value: 'generic-titles', label: 'Generic titles' },
+      { value: 'none', label: 'No chapters' },
+      { value: 'healthy', label: 'Healthy' },
+    ],
+  },
+  {
+    label: 'Metadata',
+    options: [
+      { value: 'audio-mismatch', label: 'Metadata mismatch' },
+      { value: 'audio-unheard', label: 'Not listened to' },
+    ],
+  },
+]
+
 const CHAPTER_FILTERS: { value: ChapterFilter; label: string }[] = [
-  { value: 'all', label: 'Any chapters' },
-  { value: 'issues', label: 'Chapter issues' },
-  { value: 'corrupt', label: 'Corrupt' },
-  { value: 'oversegmented', label: 'Over-segmented' },
-  { value: 'generic-titles', label: 'Generic titles' },
-  { value: 'none', label: 'No chapters' },
-  { value: 'healthy', label: 'Healthy' },
-  { value: 'audio-mismatch', label: 'Metadata mismatch' },
-  { value: 'audio-unheard', label: 'Not listened to' },
+  ALL_FILTER,
+  ...FILTER_GROUPS.flatMap((group) => group.options),
 ]
 
 /** The verdicts worth a repair, as opposed to a retitle or a shrug. */
