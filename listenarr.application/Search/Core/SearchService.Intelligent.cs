@@ -38,6 +38,14 @@ namespace Listenarr.Application.Search.Core
 
                 // Try Audible-first for various search types. If Audible returns results,
                 // convert them to SearchResult and return immediately to avoid scraping.
+                // Other recordings of the same book, asked for alongside the shop rather
+                // than after it. The fast path below returns the moment Audible answers,
+                // and the editions worth adding are exactly the ones it answers without:
+                // fourteen Scarlet Pimpernels and not the Tantor one on disk. Started
+                // here and awaited only at the point of return, so it costs the longer
+                // of the two lookups rather than their sum.
+                var alternateEditionsTask = AlternateEditionsAsync(titleVal, authorVal, ct);
+
                 try
                 {
                     // ASIN case is handled separately above via ASIN handler
@@ -51,7 +59,7 @@ namespace Listenarr.Application.Search.Core
                         language);
                     if (simpleAudibleResults?.Any() == true)
                     {
-                        return simpleAudibleResults;
+                        return await WithAlternateEditionsAsync(simpleAudibleResults, alternateEditionsTask);
                     }
 
                     var authorAudibleResults = await _audibleAuthorSearchWorkflow.TrySearchAsync(
@@ -64,7 +72,7 @@ namespace Listenarr.Application.Search.Core
                         language);
                     if (authorAudibleResults?.Any() == true)
                     {
-                        return authorAudibleResults;
+                        return await WithAlternateEditionsAsync(authorAudibleResults, alternateEditionsTask);
                     }
 
                 }
@@ -455,6 +463,5 @@ namespace Listenarr.Application.Search.Core
             (result.Narrator ?? string.Empty)
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
     }
 }

@@ -28,6 +28,7 @@ namespace Listenarr.Application.Search.Core
         private readonly ILogger<SearchService> _logger;
         private readonly SearchProgressReporter _searchProgressReporter;
         private readonly AsinCandidateCollector _asinCandidateCollector;
+        private readonly IOverDriveService? _overDriveService;
         private readonly AsinEnricher _asinEnricher;
         private readonly SearchResultScorerService _searchResultScorer;
         private readonly SearchResultSortingService _searchResultSorting;
@@ -61,8 +62,10 @@ namespace Listenarr.Application.Search.Core
             AudibleAuthorPageCollector? audibleAuthorPageCollector = null,
             AudibleSimpleLookupWorkflow? audibleSimpleLookupWorkflow = null,
             AudibleAuthorSearchWorkflow? audibleAuthorSearchWorkflow = null,
-            SearchFinalDispositionLogger? finalDispositionLogger = null)
+            SearchFinalDispositionLogger? finalDispositionLogger = null,
+            IOverDriveService? overDriveService = null)
         {
+            _overDriveService = overDriveService;
             _configurationService = configurationService;
             _logger = logger;
             _searchProgressReporter = searchProgressReporter;

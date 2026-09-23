@@ -50,7 +50,9 @@ namespace Listenarr.Tests.Features.Application.Search
                 .Setup(service => service.SearchByTitleAsync("Dune", 1, 50, "de", "german"))
                 .ReturnsAsync(audibleResponse);
 
-            Init(services => services.WithSingleton<AudibleService>(audible.Object));
+            Init(services => services
+                .WithSingleton<AudibleService>(audible.Object)
+                .WithSingleton<IOverDriveService>(new StubOverDriveService()));
             var searchService = _provider.GetRequiredService<ISearchService>();
 
             // When
@@ -62,6 +64,66 @@ namespace Listenarr.Tests.Features.Application.Search
             Assert.Equal("https://www.audible.de/pd/B0DUNE1234", result.SourceLink);
             Assert.Equal("Audible", result.MetadataSource);
             audible.Verify(service => service.SearchByTitleAsync("Dune", 1, 50, "de", "german"), Times.Once);
+        }
+
+        [Fact]
+        [Trait("Method", "IntelligentSearchAsync")]
+        [Trait("Scenario", "AudibleAnswerStillOffersLibraryEditions")]
+        public async Task IntelligentSearch_AudibleAnswers_StillOffersLibraryEditions()
+        {
+            // Given a shop that answers, and a library that lends a different recording.
+            using var httpClient = new HttpClient();
+            var audible = new Mock<AudibleService>(httpClient, NullLogger<AudibleService>.Instance);
+            var audibleResponse = new AudibleSearchResponseBuilder()
+                .WithResult(new AudibleSearchResultBuilder()
+                    .WithAsin("B0PIMP12345")
+                    .WithTitle("The Scarlet Pimpernel")
+                    .WithAuthor("Baroness Orczy")
+                    .Build())
+                .WithTotalResults(1)
+                .Build();
+            audible
+                .Setup(service => service.SearchByTitleAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<int>(),
+                    It.IsAny<int>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>()))
+                .ReturnsAsync(audibleResponse);
+
+            var overDrive = new StubOverDriveService(new OverDriveEdition(
+                Id: "1234567",
+                Title: "The Scarlet Pimpernel",
+                Authors: ["Baroness Orczy"],
+                Narrators: ["Wanda McCaddon"],
+                Publisher: "Tantor Media",
+                RuntimeMinutes: 570,
+                PublishYear: "2008",
+                ImageUrl: null));
+
+            Init(services => services
+                .WithSingleton<AudibleService>(audible.Object)
+                .WithSingleton<IOverDriveService>(overDrive));
+            var searchService = _provider.GetRequiredService<ISearchService>();
+
+            // When
+            var results = await searchService.IntelligentSearchAsync("TITLE:The Scarlet Pimpernel");
+
+            // Then the shop's answer does not hide the reader nobody sells.
+            Assert.Contains(results, result => result.MetadataSource == "Audible");
+            var lent = Assert.Single(results, result => result.MetadataSource == "OverDrive");
+            Assert.Equal("Wanda McCaddon", lent.Narrator);
+            Assert.Equal("Tantor Media", lent.Publisher);
+        }
+
+        /// <summary>An answer from a library catalogue without asking one.</summary>
+        private sealed class StubOverDriveService(params OverDriveEdition[] editions) : IOverDriveService
+        {
+            public Task<IReadOnlyList<OverDriveEdition>> SearchAsync(
+                string? title,
+                string? author,
+                CancellationToken cancellationToken = default) =>
+                Task.FromResult<IReadOnlyList<OverDriveEdition>>(editions);
         }
     }
 }
