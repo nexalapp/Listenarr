@@ -40,8 +40,25 @@ namespace Listenarr.Domain.Audiobooks.Audit
         // so the keywords carry their own (?i) and the pattern as a whole does not.
         private const string Name = @"(?:[A-Z]\.|[A-Z][\w'\-]*)(?:(?:\s+(?:(?i:and)\s+|&\s+)?|(?<=\.))(?:[A-Z]\.|[A-Z][\w'\-]*)){0,6}";
 
-        [GeneratedRegex(@"\b(?i:read|narrated|performed|voiced)\s+(?i:for you\s+)?(?i:by)\s+(?<narrator>" + Name + ")")]
+        // "red|reed" only in the "... for you by" form: whisper routinely hears "read
+        // for you by" as "Red for you by", and that phrase cannot be anything else. A
+        // bare "Red by X" is left alone, because it is a title far more often than a slip.
+        [GeneratedRegex(@"\b(?:(?i:read|narrated|performed|voiced)\s+(?i:for you\s+)?|(?i:red|reed)\s+(?i:for you)\s+)(?i:by)\s+(?<narrator>" + Name + ")")]
         private static partial Regex NarratedBy();
+
+        /// <summary>
+        /// Where a closing stops crediting this book and starts advertising others.
+        ///
+        /// <para>
+        /// A Random House tape ends "Among the many other titles by Michael Crichton,
+        /// available on audio from Random House, are Airframe, read by Blair Brown, The
+        /// Lost World, read by Anthony Heald...". Every name after that belongs to a
+        /// different book, and the parser used to take the first of them as this book's
+        /// narrator.
+        /// </para>
+        /// </summary>
+        [GeneratedRegex(@"(?i:\b(?:other|more) (?:titles|books|audiobooks|works)\b|\balso available\b|\bavailable (?:on audio |in audio |from )|\blook for\b|\bcoming soon\b|\bother recordings\b)")]
+        private static partial Regex Trailer();
 
         [GeneratedRegex(@"(?<title>[^.;:!?\n]{2,80}?)\s*[,.:]?\s+(?i:written\s+)?(?i:by)\s+(?<author>" + Name + ")")]
         private static partial Regex TitleBy();
@@ -74,11 +91,53 @@ namespace Listenarr.Domain.Audiobooks.Audit
         public static bool LooksLikeClosingCredits(string? transcript) =>
             !string.IsNullOrWhiteSpace(transcript) && ClosingCue().IsMatch(transcript);
 
+        /// <summary>
+        /// The credits of one book, read out of its opening and closing.
+        ///
+        /// <para>
+        /// The two halves are parsed apart and the opening wins every field it fills.
+        /// An opening names this book; a closing frequently sells others, and where they
+        /// disagree the opening is the one talking about the recording in hand.
+        /// </para>
+        /// </summary>
         public static AudioCredits Parse(string? transcript)
         {
             if (string.IsNullOrWhiteSpace(transcript))
             {
                 return AudioCredits.Empty;
+            }
+
+            var marker = transcript.IndexOf(AudioAuditTranscript.ClosingMarker, StringComparison.Ordinal);
+            if (marker < 0)
+            {
+                return ParseOne(transcript);
+            }
+
+            var opening = ParseOne(transcript[..marker]);
+            var closing = ParseOne(transcript[(marker + AudioAuditTranscript.ClosingMarker.Length)..]);
+            return new AudioCredits(
+                opening.Title ?? closing.Title,
+                opening.Author ?? closing.Author,
+                opening.Narrator ?? closing.Narrator);
+        }
+
+        private static AudioCredits ParseOne(string? transcript)
+        {
+            if (string.IsNullOrWhiteSpace(transcript))
+            {
+                return AudioCredits.Empty;
+            }
+
+            // Everything from the first "other titles by ..." on is an advertisement for
+            // other books, and the names in it are theirs.
+            var trailer = Trailer().Match(transcript);
+            if (trailer.Success)
+            {
+                transcript = transcript[..trailer.Index];
+                if (string.IsNullOrWhiteSpace(transcript))
+                {
+                    return AudioCredits.Empty;
+                }
             }
 
             // Whisper marks non-speech in brackets — "[Music]", "(applause)" — and those
