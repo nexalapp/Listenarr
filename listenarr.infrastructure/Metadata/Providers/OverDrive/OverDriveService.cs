@@ -18,7 +18,6 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Listenarr.Application.Search.Contracts;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Metadata.Providers.OverDrive
