@@ -36,6 +36,31 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToListAsync();
         }
 
+        public async Task<IReadOnlyList<string>> GetKnownNarratorsAsync(CancellationToken ct = default)
+        {
+            // Narrators are a serialised list on the row, so the distinct set is built
+            // here rather than asked of the database. The library is a few thousand rows
+            // and this answers a question asked once per audit.
+            var lists = await _db.Audiobooks
+                .AsNoTracking()
+                .Where(a => a.Narrators != null)
+                .Select(a => a.Narrators!)
+                .ToListAsync(ct);
+
+            var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in lists.SelectMany(list => list))
+            {
+                var trimmed = name?.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    // First spelling wins, so the set is stable between calls.
+                    names.TryAdd(trimmed, trimmed);
+                }
+            }
+
+            return names.Values.ToList();
+        }
+
         public Task<AudiobookPathReferenceSnapshot?> GetPathReferenceSnapshotAsync(
             int audiobookId,
             CancellationToken ct = default) =>

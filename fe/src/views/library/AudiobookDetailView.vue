@@ -2281,8 +2281,11 @@ async function adoptHeardNarrator() {
   settingNarrator.value = true
   const toast = useToast()
   try {
+    // The stored name is already spelled the way the library spells it, and several
+    // readers arrive comma-separated; "and" and "&" are still split for a transcript
+    // taken before that correction existed.
     const narrators = audiobook.value.audioAuditHeardNarrator
-      .split(/\s+(?:and|&)\s+/i)
+      .split(/\s*(?:,|&|\band\b)\s*/i)
       .map((n) => n.trim())
       .filter(Boolean)
     await apiService.updateAudiobook(audiobook.value.id, { narrators })
