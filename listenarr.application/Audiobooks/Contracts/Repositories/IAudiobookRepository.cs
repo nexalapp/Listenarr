@@ -136,5 +136,6 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         string Reason,
         string? Heard,
         AudioCredits Credits,
-        DateTime AuditedAtUtc);
+        DateTime AuditedAtUtc,
+        string? FileIdentity = null);
 }

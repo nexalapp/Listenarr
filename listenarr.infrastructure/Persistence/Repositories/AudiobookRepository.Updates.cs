@@ -120,6 +120,7 @@ public partial class AudiobookRepository
         existing.AudioAuditHeardTitle = Truncate(audit.Credits.Title, 256);
         existing.AudioAuditHeardAuthor = Truncate(audit.Credits.Author, 256);
         existing.AudioAuditHeardNarrator = Truncate(audit.Credits.Narrator, 256);
+        existing.AudioAuditFileIdentity = Truncate(audit.FileIdentity, 256);
         existing.AudioAuditedAt = audit.AuditedAtUtc;
         await _db.SaveChangesAsync(ct);
     }
