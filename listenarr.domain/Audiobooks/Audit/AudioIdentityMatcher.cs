@@ -92,7 +92,14 @@ namespace Listenarr.Domain.Audiobooks.Audit
 
             if (titleHeard || authorHeard || (titlePartly && authorPartly))
             {
-                if (narratorScore is { } n && n < PartlyHeardThreshold && credits.Narrator != null)
+                // A credited narrator respelled by the transcriber is still that narrator:
+                // "Michael Narrowmore" is Mikael Naramore, "PJ Oakland" is P. J. Ochlan.
+                // Letters alone cannot tell those from a different reader, so the name is
+                // compared by sound before the book is called mismatched.
+                if (narratorScore is { } n
+                    && n < PartlyHeardThreshold
+                    && credits.Narrator != null
+                    && !SpokenNameSimilarity.IsAnyOf(credits.Narrator, narrators))
                 {
                     return new AudioAuditResult(
                         AudioAuditVerdict.NarratorMismatch,
