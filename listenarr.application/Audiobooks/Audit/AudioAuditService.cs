@@ -110,13 +110,14 @@ namespace Listenarr.Application.Audiobooks.Audit
             // it was taken. Listening costs minutes of CPU and the words do not change;
             // re-judging them does, every time the credits parser learns something. That
             // is what makes a re-run over a whole library affordable.
-            if (StoredTranscriptIsUsable(audiobook, files, out var stored))
+            var identity = CurrentFileIdentity(files);
+            if (StoredTranscriptIsUsable(audiobook, identity, out var stored))
             {
                 logger.LogInformation(
                     "Audio audit of audiobook {AudiobookId}: re-judging the transcript already on record",
                     audiobookId);
                 progress?.Report(0.9);
-                return await JudgeAndSaveAsync(audiobookId, audiobook, stored!, aliasesJson, cancellationToken);
+                return await JudgeAndSaveAsync(audiobookId, audiobook, stored!, aliasesJson, identity, cancellationToken);
             }
 
             // Two stretches to hear, so two steps of progress; whisper gives no rate to
@@ -140,43 +141,52 @@ namespace Listenarr.Application.Audiobooks.Audit
             var heard = string.IsNullOrWhiteSpace(closing)
                 ? opening ?? string.Empty
                 : $"{opening}{AudioAuditTranscript.ClosingMarker}{closing}";
-            return await JudgeAndSaveAsync(audiobookId, audiobook, heard, aliasesJson, cancellationToken);
+            // Measured again after listening: the files are what the transcript describes
+            // as of now, not as of before a long transcription.
+            return await JudgeAndSaveAsync(
+                audiobookId, audiobook, heard, aliasesJson, CurrentFileIdentity(files), cancellationToken);
+        }
+
+        /// <summary>
+        /// What the two files the audit listens to look like now, or null when either
+        /// cannot be measured. Only the first and the last are heard, so only those two
+        /// decide whether a stored transcript still describes the book.
+        /// </summary>
+        private string? CurrentFileIdentity(IReadOnlyList<(AudiobookFile File, string? FullPath)> files)
+        {
+            try
+            {
+                var heard = files.Count == 1 ? new[] { files[0] } : [files[0], files[^1]];
+                var parts = new List<(long, DateTime)>(heard.Length);
+                foreach (var (_, path) in heard)
+                {
+                    if (path == null)
+                    {
+                        return null;
+                    }
+
+                    parts.Add((fileSystem.GetFileLength(path), fileSystem.GetLastWriteTimeUtc(path)));
+                }
+
+                return AudioAuditFileIdentity.Of(parts);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogDebug(ex, "Could not measure the files behind a stored transcript");
+                return null;
+            }
         }
 
         /// <summary>
         /// Whether the words on the record can stand in for listening again: there is a
-        /// transcript, it was taken at a known time, and nothing the audit hears has been
-        /// written since. A file touched after the audit may be a different recording.
+        /// transcript, and the files it was taken from are byte-for-byte the size they
+        /// were, written when they were. A recording swapped in keeps neither.
         /// </summary>
-        private bool StoredTranscriptIsUsable(
-            Audiobook audiobook,
-            IReadOnlyList<(AudiobookFile File, string? FullPath)> files,
-            out string? transcript)
+        private static bool StoredTranscriptIsUsable(Audiobook audiobook, string? identity, out string? transcript)
         {
             transcript = audiobook.AudioAuditHeard;
-            if (string.IsNullOrWhiteSpace(transcript) || audiobook.AudioAuditedAt is not { } audited)
-            {
-                return false;
-            }
-
-            // Only the two files the audit listens to matter: the first and the last.
-            foreach (var path in new[] { files[0].FullPath, files[^1].FullPath })
-            {
-                try
-                {
-                    if (path != null && fileSystem.GetLastWriteTimeUtc(path) > audited)
-                    {
-                        return false;
-                    }
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    // Cannot tell whether it changed, so listen again rather than guess.
-                    return false;
-                }
-            }
-
-            return true;
+            return !string.IsNullOrWhiteSpace(transcript)
+                && AudioAuditFileIdentity.Matches(audiobook.AudioAuditFileIdentity, identity);
         }
 
         private async Task<AudioAuditResult> JudgeAndSaveAsync(
@@ -184,6 +194,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             Audiobook audiobook,
             string heard,
             string? aliasesJson,
+            string? fileIdentity,
             CancellationToken cancellationToken)
         {
             var aliases = AuthorAliases.Parse(aliasesJson);
@@ -191,7 +202,7 @@ namespace Listenarr.Application.Audiobooks.Audit
 
             await audiobookRepository.SetAudioAuditAsync(
                 audiobookId,
-                new AudioAuditRecord(result.Verdict, result.Reason, heard, result.Credits, DateTime.UtcNow),
+                new AudioAuditRecord(result.Verdict, result.Reason, heard, result.Credits, DateTime.UtcNow, fileIdentity),
                 cancellationToken);
 
             logger.LogInformation(

@@ -100,6 +100,9 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string FoundBookImportQueueMigrationId =
         "20260920231237_AddFoundBookImportQueue";
 
+    private const string AudioAuditFileIdentityMigrationId =
+        "20260923140850_AddAudioAuditFileIdentity";
+
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
     {
@@ -252,7 +255,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 FoundBookAutoAddMigrationId,
                 FoundBookMatchMigrationId,
                 SuggestionsBackgroundFetchMigrationId,
-                FoundBookImportQueueMigrationId
+                FoundBookImportQueueMigrationId,
+                AudioAuditFileIdentityMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

@@ -83,6 +83,14 @@ namespace Listenarr.Domain.Audiobooks
 
         public DateTime? AudioAuditedAt { get; set; }
 
+        /// <summary>
+        /// What the files the audit listened to looked like at the time, so the stored
+        /// transcript is reused only while they are unchanged.
+        /// See <see cref="Listenarr.Domain.Audiobooks.Audit.AudioAuditFileIdentity"/>.
+        /// </summary>
+        [MaxLength(256)]
+        public string? AudioAuditFileIdentity { get; set; }
+
         // OpenLibrary identifier (OLID) when the audiobook originates from OpenLibrary
         public string? OpenLibraryId { get; set; }
         // Typed external identifiers for robust metadata/image lookup and manual correction.
