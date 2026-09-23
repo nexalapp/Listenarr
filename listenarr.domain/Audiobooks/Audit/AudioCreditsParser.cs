@@ -67,7 +67,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
         [GeneratedRegex(@"(?i:presents|production of|recording of|audiobook|audio book|this has been|that was|listening to|written by|narrated by|read by|performed by)")]
         private static partial Regex Cue();
 
-        [GeneratedRegex(@"^\s*(?i:this is|this has been|that was|you are listening to|you have been listening to|you've been listening to|welcome to|(?:[\w.&']+\s+){0,4}presents|(?:the )?audiobook(?: edition)? of|an? (?:[\w.&']+\s+){0,3}audio ?(?:book|books)? (?:production|recording|edition|presentation) of|an? (?:[\w.&']+\s+){0,3}(?:production|recording) of)\s*")]
+        [GeneratedRegex(@"^\s*(?i:this is|this has been|that was|you are listening to|you have been listening to|you've been listening to|welcome to|(?:[\w.&']+\s+){0,4}presents|(?:the )?audiobook(?: edition)? of|(?:an?|the) (?:[\w.&']+\s+){0,3}audio ?(?:book|books)? (?:production|recording|edition|presentation) of|(?:an?|the) (?:[\w.&']+\s+){0,3}(?:production|recording|presentation|edition) of)\s*")]
         private static partial Regex Preamble();
 
         /// <summary>The closing formula without an author: "This has been a Hachette Audio production of Drive."</summary>
@@ -144,7 +144,13 @@ namespace Listenarr.Domain.Audiobooks.Audit
             // are not part of any title. They do mark a break, as does the seam between
             // the opening and the closing, so each becomes a stop rather than a space:
             // otherwise the last words of the story run into the first of the credits.
-            var text = SoundTag().Replace(transcript.Replace('\n', ' ').Replace('\r', ' '), " . ");
+            // A line break is a full stop, not a space. Whisper breaks lines where the
+            // reader pauses, so "Read by Garrick Hagon\nThey looked out..." is two
+            // sentences; flattened to a space, the story's first capitalised word joined
+            // the narrator's name and the record was credited to "Garrick Hagon They".
+            var text = SoundTag().Replace(
+                transcript.Replace("\r\n", " . ").Replace("\n", " . ").Replace("\r", " . "),
+                " . ");
             string? narrator = null;
             var narrated = NarratedBy().Match(text);
             if (narrated.Success)
