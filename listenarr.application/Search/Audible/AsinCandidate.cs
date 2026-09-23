@@ -15,5 +15,19 @@ namespace Listenarr.Application.Search.Audible
         /// lending catalogue - which are offered as candidates in their own right.
         /// </summary>
         public List<SearchResult> CatalogueDerivedResults { get; } = new List<SearchResult>();
+
+        /// <summary>
+        /// Other recordings of the same book, from a catalogue that names its readers.
+        ///
+        /// <para>
+        /// Kept apart from <see cref="CatalogueDerivedResults"/> because the policies
+        /// differ. Those are a fallback, merged only when the shops answered nothing, so
+        /// a thin record cannot dilute a good ranking. These are the opposite case: the
+        /// shops answered, and none of their answers is the recording on disk. Offering
+        /// them only when everything else failed would never show the edition that is
+        /// actually wanted.
+        /// </para>
+        /// </summary>
+        public List<SearchResult> AlternateEditionResults { get; } = new List<SearchResult>();
     }
 }

@@ -220,6 +220,40 @@ namespace Listenarr.Application.Search.Core
                     _logger.LogWarning(ex, "Failed to merge OpenLibrary-derived results into enriched list");
                 }
 
+                // Other recordings of the same book, always offered rather than only when
+                // the shops answered nothing. The case they exist for is precisely the one
+                // where the shops answered well: fourteen editions of The Scarlet
+                // Pimpernel and not the Tantor one on disk. They are deduplicated on
+                // title and reader, so an edition a shop already listed is not repeated.
+                try
+                {
+                    var alternates = candidateCollection.AlternateEditionResults;
+                    var added = 0;
+                    foreach (var alternate in alternates)
+                    {
+                        var duplicate = enrichedList.Any(existing =>
+                            string.Equals(existing.Title?.Trim(), alternate.Title?.Trim(), StringComparison.OrdinalIgnoreCase)
+                            && NarratorsOf(existing).SetEquals(NarratorsOf(alternate)));
+                        if (!duplicate)
+                        {
+                            enrichedList.Add(alternate);
+                            added++;
+                        }
+                    }
+
+                    if (added > 0)
+                    {
+                        _logger.LogInformation(
+                            "Offered {Added} alternate edition(s) of {Query} from a library catalogue",
+                            added,
+                            query);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Failed to offer alternate editions");
+                }
+
                 // Compute scores and apply deferred filtering (containment, author/publisher, fuzzy)
                 var scored = new List<ScoredSearchResult>();
 
@@ -412,5 +446,15 @@ namespace Listenarr.Application.Search.Core
         {
             return await _metadataSourceCatalog.GetEnabledMetadataSourcesAsync();
         }
+
+        /// <summary>
+        /// The readers a result credits, for telling two recordings of one book apart.
+        /// Two editions with the same title and the same reader are the same edition.
+        /// </summary>
+        private static HashSet<string> NarratorsOf(SearchResult result) =>
+            (result.Narrator ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     }
 }
