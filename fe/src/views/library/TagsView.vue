@@ -176,6 +176,23 @@
           Transcribe ({{ selectedBookIds.size }})
         </button>
 
+        <!--
+          Only offered for books the audit is complaining about: accepting a book it
+          already agrees with would say nothing, and the button would be noise on every
+          selection.
+        -->
+        <button
+          v-if="flaggedSelection.length > 0"
+          type="button"
+          class="toolbar-btn"
+          :disabled="working"
+          :title="`Keep ${flaggedSelection.length} flagged book(s) as they are: you listened, and the record is right`"
+          @click="acceptSelected"
+        >
+          <PhCheckCircle :size="16" />
+          Sounds right ({{ flaggedSelection.length }})
+        </button>
+
         <div class="columns-menu" ref="columnsMenuEl">
           <button
             type="button"
@@ -559,6 +576,7 @@ import {
   PhCaretUp,
   PhCheck,
   PhColumns,
+  PhCheckCircle,
   PhEar,
   PhListNumbers,
   PhMagnifyingGlass,
@@ -954,12 +972,20 @@ function cellText(row: LibraryTagRow, key: string) {
   if (key === FILENAME_KEY) return row.fileName
   if (key === PATH_KEY) return row.displayPath ?? row.path ?? ''
   if (key === CHAPTERS_KEY) return chapterText(row)
-  if (key === AUDIT_KEY) return row.audioAudit ? AUDIO_AUDIT_LABELS[row.audioAudit] : ''
+  if (key === AUDIT_KEY) {
+    if (!row.audioAudit) return ''
+    const label = AUDIO_AUDIT_LABELS[row.audioAudit]
+    return row.audioAuditAccepted ? `${label} (accepted)` : label
+  }
   return row.tags[key] ?? ''
 }
 
+// An accepted row keeps its verdict and shows it, but stops being offered for repair:
+// someone listened and said the record is right, and the flag would otherwise be
+// permanent. Acceptance lapses on its own when the files change.
 const hasAudioIssue = (row: LibraryTagRow) =>
-  row.audioAudit === 'mismatch' || row.audioAudit === 'narrator-mismatch'
+  (row.audioAudit === 'mismatch' || row.audioAudit === 'narrator-mismatch') &&
+  !row.audioAuditAccepted
 
 /**
  * Verdict first, count second, so sorting the column groups the corrupt files together
@@ -1084,7 +1110,10 @@ function cellTitle(row: LibraryTagRow, key: string): string {
   }
 
   if (key === AUDIT_KEY) {
-    return row.audioAuditReason ?? 'Not yet transcribed. Tick the row and press Transcribe.'
+    const reason = row.audioAuditReason ?? 'Not yet transcribed. Tick the row and press Transcribe.'
+    return row.audioAuditAccepted
+      ? `${reason}\n\nYou listened and accepted this, so it is not counted as a problem. It will be flagged again if the file changes.`
+      : reason
   }
 
   if (key === PATH_KEY) {
@@ -1481,6 +1510,47 @@ async function repairSelected(books: { audiobookId: number; fileIds: number[] }[
   actionMessage.value = refusals.length
     ? `Queued ${queuedFiles} file(s) for chapter repair. ${refusals.length} refused: ${refusals[0]}`
     : `Queued ${queuedFiles} file${queuedFiles === 1 ? '' : 's'} for chapter repair.`
+}
+
+/** The selected books the audit is flagging and nobody has overruled. */
+const flaggedSelection = computed(() => {
+  const books = new Map<number, LibraryTagRow>()
+  for (const row of rows.value) {
+    if (selectedFiles.value.has(row.fileId) && hasAudioIssue(row)) books.set(row.audiobookId, row)
+  }
+  return [...books.keys()]
+})
+
+/**
+ * Say the record is right in spite of the verdict. The audit keeps its answer and the
+ * cell keeps showing it; the book just stops being counted as a problem, until the
+ * files change.
+ */
+async function acceptSelected() {
+  const ids = flaggedSelection.value
+  if (ids.length === 0) return
+
+  working.value = true
+  actionMessage.value = null
+
+  let accepted = 0
+  const refusals: string[] = []
+  for (const audiobookId of ids) {
+    try {
+      await apiService.setAudioAuditAccepted(audiobookId, true)
+      accepted++
+    } catch (err) {
+      logger.warn(`Could not accept the audio verdict for audiobook ${audiobookId}`, err)
+      refusals.push(describe(err))
+    }
+  }
+
+  working.value = false
+  actionMessage.value = refusals.length
+    ? `Accepted ${accepted} of ${ids.length} book(s). ${refusals.length} refused: ${refusals[0]}`
+    : `Accepted ${accepted} book${accepted === 1 ? '' : 's'}; they will not be flagged again unless the files change.`
+  selectedFiles.value = new Set()
+  await load(false)
 }
 
 async function auditSelected() {

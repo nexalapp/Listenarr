@@ -1893,6 +1893,20 @@ class ApiService {
     return this.request(`/tagging/audiobooks/${audiobookId}/audit`, { method: 'POST' })
   }
 
+  /**
+   * Overrule the audit for one book, or withdraw that. Pinned to the files as they are
+   * now: a recording swapped in later is judged on its own.
+   */
+  async setAudioAuditAccepted(
+    audiobookId: number,
+    accepted: boolean,
+  ): Promise<{ audiobookId: number; accepted: boolean }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/audit/accepted`, {
+      method: 'POST',
+      body: JSON.stringify({ accepted }),
+    })
+  }
+
   /** Re-run a tag write that failed. */
   async retryTagWrite(
     jobId: string,

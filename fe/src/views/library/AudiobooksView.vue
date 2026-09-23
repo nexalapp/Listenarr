@@ -170,6 +170,23 @@
               >
             </button>
 
+            <button
+              v-if="flaggedSelectionCount > 0"
+              type="button"
+              class="actions-item"
+              :disabled="bulkBusy"
+              @click="pick(bulkAcceptAudio)"
+            >
+              <PhCheckCircle />
+              <span
+                ><strong>Sounds right</strong
+                ><small
+                  >Keep {{ flaggedSelectionCount }} flagged book(s) as they are; they stay flagged
+                  only if the files change</small
+                ></span
+              >
+            </button>
+
             <div class="actions-divider"></div>
             <button
               type="button"
@@ -959,6 +976,7 @@ import {
   PhPlus,
   PhEye,
   PhListNumbers,
+  PhCheckCircle,
   PhEar,
   PhFileX,
   PhLightning,
@@ -2792,6 +2810,51 @@ async function bulkRepairChapters() {
       libraryStore.clearSelection()
     } else {
       toast.error('Nothing queued', refusals[0] ?? 'No selected book has a chapter fix to apply.')
+    }
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+/** The selected books the audit is flagging and nobody has overruled. */
+const flaggedSelectionCount = computed(
+  () =>
+    displayedAudiobooks.value.filter((b) => libraryStore.selectedIds.has(b.id) && !!audioIssueLabel(b))
+      .length,
+)
+
+/**
+ * Say the record is right in spite of the verdict, for every flagged book in the
+ * selection. The verdict is kept and still shown; the book stops being counted as a
+ * problem until its files change.
+ */
+async function bulkAcceptAudio() {
+  const ids = displayedAudiobooks.value
+    .filter((b) => libraryStore.selectedIds.has(b.id) && !!audioIssueLabel(b))
+    .map((b) => b.id)
+  if (ids.length === 0) return
+
+  bulkBusy.value = true
+  let accepted = 0
+  const refusals: string[] = []
+  try {
+    for (const id of ids) {
+      try {
+        await apiService.setAudioAuditAccepted(id, true)
+        accepted++
+      } catch (err) {
+        refusals.push(err instanceof Error ? err.message : String(err))
+      }
+    }
+    if (accepted > 0) {
+      toast.success(
+        'Accepted',
+        `${accepted} book${accepted === 1 ? '' : 's'} kept as recorded. They will be flagged again only if the files change.`,
+      )
+      libraryStore.clearSelection()
+      await libraryStore.fetchAudiobooks()
+    } else {
+      toast.error('Nothing accepted', refusals[0] ?? 'No selected book could be accepted.')
     }
   } finally {
     bulkBusy.value = false

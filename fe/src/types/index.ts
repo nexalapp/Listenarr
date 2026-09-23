@@ -615,6 +615,9 @@ export interface LibraryTagRow {
   /** The book's audio-audit verdict, repeated on each of its rows; null until audited. */
   audioAudit?: AudioAuditVerdict | null
   audioAuditReason?: string | null
+  /** Someone listened and overruled the verdict for these files. */
+  audioAuditAccepted?: boolean
+  audioAuditHeardNarrator?: string | null
 }
 
 /** One chapter as a repair would write it. */
@@ -1256,6 +1259,8 @@ export interface Audiobook {
   /** Whether the audio introduces itself as this book; absent until an audit has run. */
   audioAudit?: AudioAuditVerdict | null
   audioAuditReason?: string | null
+  audioAuditAccepted?: boolean
+  audioAuditHeardNarrator?: string | null
   /** What was heard, segments newline-separated. */
   audioAuditHeard?: string | null
   audioAuditHeardTitle?: string | null

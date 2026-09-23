@@ -104,6 +104,37 @@ public partial class AudiobookRepository
         return true;
     }
 
+    public async Task<bool> SetAudioAuditAcceptedAsync(int audiobookId, bool accepted, DateTime nowUtc, CancellationToken ct = default)
+    {
+        var existing = await _db.Audiobooks.FirstOrDefaultAsync(candidate => candidate.Id == audiobookId, ct);
+        if (existing == null)
+        {
+            return false;
+        }
+
+        if (!accepted)
+        {
+            existing.AudioAuditAcceptedIdentity = null;
+            existing.AudioAuditAcceptedVerdict = null;
+            existing.AudioAuditAcceptedAt = null;
+            await _db.SaveChangesAsync(ct);
+            return true;
+        }
+
+        // Nothing to vouch for, and nothing to pin it to: a book nobody has listened to
+        // cannot have its verdict overruled.
+        if (string.IsNullOrWhiteSpace(existing.AudioAuditFileIdentity))
+        {
+            return false;
+        }
+
+        existing.AudioAuditAcceptedIdentity = existing.AudioAuditFileIdentity;
+        existing.AudioAuditAcceptedVerdict = existing.AudioAuditVerdict;
+        existing.AudioAuditAcceptedAt = nowUtc;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task SetAudioAuditAsync(int audiobookId, AudioAuditRecord audit, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(audit);
@@ -121,6 +152,9 @@ public partial class AudiobookRepository
         existing.AudioAuditHeardAuthor = Truncate(audit.Credits.Author, 256);
         existing.AudioAuditHeardNarrator = Truncate(audit.Credits.Narrator, 256);
         existing.AudioAuditFileIdentity = Truncate(audit.FileIdentity, 256);
+        // Acceptance is deliberately left alone. It is pinned to the files it was given
+        // for, so listening again to the same recording keeps it and a recording swapped
+        // in fails the identity check on its own.
         existing.AudioAuditedAt = audit.AuditedAtUtc;
         await _db.SaveChangesAsync(ct);
     }

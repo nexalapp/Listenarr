@@ -82,6 +82,15 @@ namespace Listenarr.Application.Audiobooks.Catalog
         /// </summary>
         public string? AudioAudit { get; set; }
 
+        /// <summary>One sentence for the badge's tooltip.</summary>
+        public string? AudioAuditReason { get; set; }
+
+        /// <summary>The narrator the audio named, which a repair would start from.</summary>
+        public string? AudioAuditHeardNarrator { get; set; }
+
+        /// <summary>Whether someone listened and overruled the verdict for these files.</summary>
+        public bool AudioAuditAccepted { get; set; }
+
         /// <summary>
         /// The listener rating, so a card can carry it without fetching the book. Audible's
         /// overall score and how many rated it; <see cref="AudnexusRating"/> stands in when

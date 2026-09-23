@@ -107,6 +107,14 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// would put every other column back on the wire for the sake of six.
         /// </summary>
         Task SetAudioAuditAsync(int audiobookId, AudioAuditRecord audit, CancellationToken ct = default);
+
+        /// <summary>
+        /// Record that someone has listened and vouched for the book as it stands, or
+        /// withdraw that. Returns false when there is no such book, and when accepting a
+        /// book that has never been audited or whose files are not measurable - there is
+        /// nothing to pin the acceptance to.
+        /// </summary>
+        Task<bool> SetAudioAuditAcceptedAsync(int audiobookId, bool accepted, DateTime nowUtc, CancellationToken ct = default);
         Task<bool> RewritePathReferencesAsync(
             int audiobookId,
             string? sourceBasePath,

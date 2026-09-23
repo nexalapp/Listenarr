@@ -21,6 +21,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.Library
 {
+    /// <summary>Whether the audit's verdict is being overruled, or the override withdrawn.</summary>
+    public sealed record AudioAuditAcceptedRequest(bool Accepted = true);
+
     public sealed partial class TaggingController
     {
         /// <summary>
@@ -39,6 +42,47 @@ namespace Listenarr.Api.Features.Library
             var result = await auditor.EnqueueAsync(audiobookId, TagTrigger.Manual, cancellationToken);
             logger.LogInformation("Audio audit request for audiobook {AudiobookId}: {Outcome}", audiobookId, result.Outcome);
             return ToResponse(result);
+        }
+
+        /// <summary>
+        /// Overrule the audit for one book: someone listened and the record is right.
+        /// The verdict is kept and shown, but the book stops being offered for repair.
+        /// Pinned to the files as they are now, so a recording swapped in later is
+        /// judged on its own.
+        /// </summary>
+        /// <response code="200">Accepted, or the acceptance withdrawn.</response>
+        /// <response code="404">No such audiobook.</response>
+        /// <response code="409">The book has not been listened to, so there is nothing to overrule.</response>
+        [HttpPost("audiobooks/{audiobookId:int}/audit/accepted")]
+        public async Task<IActionResult> SetAudioAuditAccepted(
+            int audiobookId,
+            [FromBody] AudioAuditAcceptedRequest? request,
+            [FromServices] IAudiobookRepository audiobooks,
+            [FromServices] TimeProvider timeProvider,
+            CancellationToken cancellationToken = default)
+        {
+            var accepted = request?.Accepted ?? true;
+            var book = await audiobooks.GetByIdAsync(audiobookId);
+            if (book == null)
+            {
+                return NotFound(new { message = "No such audiobook." });
+            }
+
+            var saved = await audiobooks.SetAudioAuditAcceptedAsync(
+                audiobookId, accepted, timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            if (!saved)
+            {
+                return Conflict(new
+                {
+                    message = "This book has not been listened to yet, so there is no verdict to overrule."
+                });
+            }
+
+            logger.LogInformation(
+                "Audio audit for audiobook {AudiobookId} {State} by hand",
+                audiobookId,
+                accepted ? "accepted" : "no longer accepted");
+            return Ok(new { audiobookId, accepted });
         }
 
         /// <summary>
