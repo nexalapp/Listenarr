@@ -127,6 +127,11 @@ namespace Listenarr.Application.Audiobooks.Editions
                 asins.Add(audiobook.Asin!.Trim());
             }
 
+            // A library catalogue publishes the runtime in the result itself, so those
+            // editions are already priced and cost nothing further. A shop does not, and
+            // has to be asked per edition below.
+            var priced = new List<EditionCandidate>();
+
             try
             {
                 var found = await searchService.IntelligentSearchAsync(
@@ -134,18 +139,28 @@ namespace Listenarr.Application.Audiobooks.Editions
                     ct: cancellationToken);
                 foreach (var result in found)
                 {
-                    var asin = result.Id?.Trim();
-                    if (string.IsNullOrWhiteSpace(asin)
-                        || asins.Contains(asin, StringComparer.OrdinalIgnoreCase)
-                        || !AudioIdentityMatcher.SameTitle(title, result.Title, SameBookThreshold))
+                    if (!AudioIdentityMatcher.SameTitle(title, result.Title, SameBookThreshold))
                     {
                         continue;
                     }
 
-                    asins.Add(asin);
-                    if (asins.Count >= MostEditionsToPrice)
+                    if (result.Runtime is > 0)
                     {
-                        break;
+                        priced.Add(new EditionCandidate(
+                            result.Asin?.Trim() ?? result.Id ?? string.Empty,
+                            result.Title,
+                            Names(result.Narrator),
+                            result.Publisher,
+                            result.Runtime));
+                        continue;
+                    }
+
+                    var asin = result.Asin?.Trim();
+                    if (!string.IsNullOrWhiteSpace(asin)
+                        && !asins.Contains(asin, StringComparer.OrdinalIgnoreCase)
+                        && asins.Count < MostEditionsToPrice)
+                    {
+                        asins.Add(asin);
                     }
                 }
             }
@@ -154,7 +169,7 @@ namespace Listenarr.Application.Audiobooks.Editions
                 logger.LogDebug(ex, "Could not list editions of {Title}", title);
             }
 
-            var editions = new List<EditionCandidate>(asins.Count);
+            var editions = new List<EditionCandidate>(priced);
             foreach (var asin in asins)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -181,5 +196,11 @@ namespace Listenarr.Application.Audiobooks.Editions
 
             return editions;
         }
+
+        /// <summary>A comma-separated credit as the list of people it names.</summary>
+        private static IReadOnlyList<string> Names(string? credit) =>
+            (credit ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
     }
 }
