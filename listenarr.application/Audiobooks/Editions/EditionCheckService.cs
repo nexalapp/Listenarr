@@ -39,6 +39,19 @@ namespace Listenarr.Application.Audiobooks.Editions
         /// <summary>How much of the record's title a result must carry to count as the same book.</summary>
         private const double SameBookThreshold = 0.6;
 
+        /// <summary>
+        /// How much of an author's name a result must carry to be the same author.
+        ///
+        /// <para>
+        /// The author is what makes this safe. Titles collide constantly - this library
+        /// holds several books called Thicker Than Blood, and a title-only filter matched
+        /// one of them to a stranger's recording of another and reported it as the edition
+        /// on disk. Two books sharing a title is ordinary; two sharing a title and an
+        /// author is the same book.
+        /// </para>
+        /// </summary>
+        private const double SameAuthorThreshold = 0.6;
+
         public async Task<EditionMatchResult> CheckAsync(int audiobookId, CancellationToken cancellationToken = default)
         {
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId)
@@ -137,9 +150,11 @@ namespace Listenarr.Application.Audiobooks.Editions
                 var found = await searchService.IntelligentSearchAsync(
                     $"TITLE:{title}",
                     ct: cancellationToken);
+                var authors = audiobook.Authors ?? [];
                 foreach (var result in found)
                 {
-                    if (!AudioIdentityMatcher.SameTitle(title, result.Title, SameBookThreshold))
+                    if (!AudioIdentityMatcher.SameTitle(title, result.Title, SameBookThreshold)
+                        || !SameAuthor(authors, result.Artist))
                     {
                         continue;
                     }
@@ -195,6 +210,21 @@ namespace Listenarr.Application.Audiobooks.Editions
             }
 
             return editions;
+        }
+
+        /// <summary>
+        /// Whether a result is credited to one of the record's authors. A result that names
+        /// nobody is allowed through, because a catalogue that omits the author is not
+        /// evidence of a different one; a result that names someone else is not.
+        /// </summary>
+        private static bool SameAuthor(IReadOnlyList<string> authors, string? credited)
+        {
+            if (authors.Count == 0 || string.IsNullOrWhiteSpace(credited))
+            {
+                return true;
+            }
+
+            return authors.Any(author => AudioIdentityMatcher.SameTitle(author, credited, SameAuthorThreshold));
         }
 
         /// <summary>A comma-separated credit as the list of people it names.</summary>
