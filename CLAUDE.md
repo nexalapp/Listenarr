@@ -190,6 +190,41 @@ fall on the chapters. Whole-book transcription is deliberately not a tool here:
 `ITranscriber` is a start and a length by contract, a ten-hour transcript would cost
 hours of the NAS's CPU, and the heading still has to be found at a pause afterwards.
 
+**The whisper model is the floor everything else stands on, and `base.en` is not
+it.** Measured on this library, `base.en` mangles exactly what the audit reads:
+Tchaikovsky as "Chikovsky", Adjoa Andoh as "Adwanda", Ann Leckie as "Anne Laki",
+Freida McFadden as "freedom McFadden". Worse, given an ident over music it invents
+a sentence and loops on it — one book introduced itself nine times as "a book
+called The New World" — and the parser read that as a title and called the book a
+mismatch. `medium.en` hears all of those correctly and every one of those books
+then passes. Roughly 70s per book against 20s for base, which is the price. Do not
+diagnose a credits-parsing failure without checking which model took the words.
+
+**A better model means listening again.** A stored transcript is reused while the
+files are unchanged, so the model that took it belongs in its identity
+(`AudioAuditFileIdentity`). Without that, changing the model changed nothing for
+any book already audited and the better model was never asked — a re-run silently
+re-judged the old words.
+
+**The audit verdict is persisted by name, not by number.** `HasConversion<string>()`
+means the enum member name *is* the stored value, so renaming one orphans every row
+holding the old name: EF cannot map it back and throws on any query touching that
+audiobook, which took the library page down for as long as it took to notice.
+Renaming one needs a data repair in `RepairPostMigrationData` — not a migration,
+which `MigrationProvenanceArchitectureTests` forbids from carrying SQL — and the
+name list in `AudioAuditVerdictPersistenceTests` updated with it.
+
+**A runtime gap is not a usable signal; how the book *ends* is.** Flagging any
+disagreement between the record's runtime and the audio fired on 56 books, of which
+19 had *more* audio than claimed, 11 were within a tenth, and 14 sat in the band
+where an abridgement and a slower reading cannot be told apart without listening.
+None of that is actionable. What separates the cases is the closing, which is
+already transcribed: a complete recording ends with a publisher's credits, a
+truncated one stops mid-clause. Ender's Shadow runs 6h26m against a record of
+15h42m and closes with a proper outro for an abridged imprint — nothing is missing,
+the record describes another edition. Chapter marks running past the end of the
+audio are the other half, and are free to check.
+
 **An embedded title only names a chapter when it distinguishes the file.** Parts
 split from one book commonly all carry the book's own title tag, and preferring
 it named every chapter identically. A title shared by more than one source falls
