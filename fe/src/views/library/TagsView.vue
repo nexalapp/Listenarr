@@ -611,7 +611,7 @@ const AUDIT_KEY = '__audit'
 const AUDIO_AUDIT_LABELS: Record<AudioAuditVerdict, string> = {
   match: 'Matches',
   'narrator-mismatch': 'Narrator differs',
-  incomplete: 'Part missing',
+  incomplete: 'Cuts off',
   mismatch: 'Different book',
   inconclusive: 'Unclear',
 }

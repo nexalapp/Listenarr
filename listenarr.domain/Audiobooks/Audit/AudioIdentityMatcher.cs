@@ -59,26 +59,26 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// <param name="authors">The record's authors.</param>
         /// <param name="narrators">The record's narrators; empty when unknown.</param>
         /// <param name="aliases">Name aliases, so either spelling of a person counts.</param>
-        /// <param name="recordedMinutes">The runtime the record claims; null when it claims none.</param>
-        /// <param name="measuredMinutes">How long the files actually run; null when they cannot be measured.</param>
         public static AudioAuditResult Judge(
             string? transcript,
             string? title,
             IReadOnlyList<string>? authors,
             IReadOnlyList<string>? narrators,
-            IReadOnlyList<AuthorAlias>? aliases,
-            double? recordedMinutes = null,
-            double? measuredMinutes = null)
+            IReadOnlyList<AuthorAlias>? aliases)
         {
+            // How the recording ends, which is the only thing that separates a damaged
+            // file from a shorter edition. A finished production reads its credits.
+            var cutOff = AudioEndings.Of(AudioEndings.ClosingOf(transcript)) == AudioEnding.MidClause;
+
             var heard = Tokens(transcript ?? string.Empty);
             var credits = AudioCreditsParser.Parse(transcript);
 
             if (heard.Length < MinimumWords)
             {
-                return AudioCompleteness.MissingShare(recordedMinutes, measuredMinutes) is { } gap
+                return cutOff
                     ? new AudioAuditResult(
                         AudioAuditVerdict.Incomplete,
-                        $"Too little speech was heard to tell what the book is, and {AudioCompleteness.Describe(gap, recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                        "Too little speech was heard to tell what the book is, and the audio stops mid-sentence.",
                         0, 0, null, credits)
                     : new AudioAuditResult(
                         AudioAuditVerdict.Inconclusive,
@@ -116,14 +116,13 @@ namespace Listenarr.Domain.Audiobooks.Audit
                         titleScore, authorScore, narratorScore, credits);
                 }
 
-                // The credits agree, so this is the book. Whether all of it is here is a
-                // separate question the credits cannot answer, because the opening and the
-                // closing of a truncated file read exactly as they should.
-                if (AudioCompleteness.MissingShare(recordedMinutes, measuredMinutes) is { } missing)
+                // The credits agree, so this is the book. Whether the whole of it is here
+                // is a separate question, and only the way it ends answers it.
+                if (cutOff)
                 {
                     return new AudioAuditResult(
                         AudioAuditVerdict.Incomplete,
-                        $"The book is the one on record, but {AudioCompleteness.Describe(missing, recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                        "The book is the one on record, but the audio stops mid-sentence rather than finishing.",
                         titleScore, authorScore, narratorScore, credits);
                 }
 
@@ -156,11 +155,11 @@ namespace Listenarr.Domain.Audiobooks.Audit
                     titleScore, authorScore, narratorScore, credits);
             }
 
-            if (AudioCompleteness.MissingShare(recordedMinutes, measuredMinutes) is { } tooShort)
+            if (cutOff)
             {
                 return new AudioAuditResult(
                     AudioAuditVerdict.Incomplete,
-                    $"Only fragments of the title or the author were heard, and {AudioCompleteness.Describe(tooShort, recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                    "Only fragments of the title or the author were heard, and the audio stops mid-sentence.",
                     titleScore, authorScore, narratorScore, credits);
             }
 

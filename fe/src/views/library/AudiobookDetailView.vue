@@ -2207,7 +2207,7 @@ const audioAuditLabel = computed(() => {
     case 'narrator-mismatch':
       return 'Right book, different narrator.'
     case 'incomplete':
-      return 'Right book, but part of it is missing.'
+      return 'Right book, but the audio stops mid-sentence.'
     case 'mismatch':
       return 'The audio introduces itself as a different book.'
     case 'inconclusive':
@@ -2364,7 +2364,7 @@ const creditRecommendations = computed(() => {
       break
     case 'incomplete':
       recs.push({
-        text: `${book.audioAuditReason ?? 'The files are much shorter than the book should run.'} A truncated file still reads its opening and closing credits correctly, so nothing but the length shows this. Check the files are all here and download the rest, or re-match the record if it is describing a longer edition than the one you have.`,
+        text: `${book.audioAuditReason ?? 'The audio stops mid-sentence rather than finishing.'} A finished production reads its closing credits; this one simply stops, which means the file is cut off rather than being a shorter edition. Download it again.`,
         label: 'Fix match…',
         action: openFixMatchFromAudit,
       })
@@ -2623,7 +2623,7 @@ const audioTabBadge = computed(() => {
     case 'narrator-mismatch':
       return 'The audio names a different narrator'
     case 'incomplete':
-      return 'The files are much shorter than the book should run'
+      return 'The audio stops mid-sentence rather than finishing'
     default:
       return null
   }
