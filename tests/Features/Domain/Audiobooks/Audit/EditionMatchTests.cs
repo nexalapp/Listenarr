@@ -97,13 +97,17 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
 
         [Fact]
         [Trait("Method", "Judge")]
-        [Trait("Scenario", "NarratorHeardButContradicts")]
-        public void Judge_SaysWhenTheHeardNarratorContradictsTheLength()
+        [Trait("Scenario", "LengthAndVoiceDisagree")]
+        public void Judge_OffersNothingWhenLengthAndVoiceDisagree()
         {
+            // Mercury Rests on this library: the length lands on an AI narration while the
+            // audio plainly credits someone else. One of the two is describing a different
+            // recording and a proposal would write in the wrong one.
             var result = EditionMatch.Judge(FileMinutes, "B002UZL1CY", [Macmillan, Phoenix], ["Scott Brick"]);
 
+            Assert.Equal(EditionMatchOutcome.Contested, result.Outcome);
             Assert.False(result.NarratorAgrees);
-            Assert.Contains("only the length talking", result.Reason);
+            Assert.Contains("Length and voice disagree", result.Reason);
         }
 
         [Fact]
