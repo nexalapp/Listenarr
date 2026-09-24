@@ -198,11 +198,24 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 foreach (var word in significant)
                 {
                     var hit = -1;
+                    var consumed = 1;
                     for (var index = position; index < end; index++)
                     {
                         if (Close(word, heard[index]))
                         {
                             hit = index;
+                            consumed = 1;
+                            break;
+                        }
+
+                        // A compound the narrator says as one word and the transcriber
+                        // writes as two, or the reverse: "Ironclads" heard as "Iron Clads".
+                        // Nothing else in the loop can bridge a word boundary, so the whole
+                        // title fails on a space.
+                        if (index + 1 < end && Close(word, heard[index] + heard[index + 1]))
+                        {
+                            hit = index;
+                            consumed = 2;
                             break;
                         }
                     }
@@ -210,7 +223,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
                     if (hit >= 0)
                     {
                         matched++;
-                        position = hit + 1;
+                        position = hit + consumed;
                     }
                 }
 
@@ -265,7 +278,17 @@ namespace Listenarr.Domain.Audiobooks.Audit
             }
         }
 
-        /// <summary>Equal, or within one edit for a word long enough that one edit is a mishearing rather than a different word.</summary>
+        /// <summary>
+        /// Equal, or near enough that the difference is a mishearing rather than a
+        /// different word.
+        ///
+        /// <para>
+        /// The slack grows with the word, because one edit in five letters is most of the
+        /// word and one edit in eleven is a syllable. A long name is where the transcriber
+        /// actually goes wrong - "Tchaikovsky" comes back as "Chikovsky", two edits, and a
+        /// flat one-edit rule called that a different author and flagged the book.
+        /// </para>
+        /// </summary>
         internal static bool Close(string wanted, string heard)
         {
             if (string.Equals(wanted, heard, StringComparison.OrdinalIgnoreCase))
@@ -273,13 +296,22 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 return true;
             }
 
-            if (wanted.Length < 4 || Math.Abs(wanted.Length - heard.Length) > 1)
+            if (wanted.Length < 4)
             {
                 return false;
             }
 
-            return Edits(wanted.ToLowerInvariant(), heard.ToLowerInvariant()) <= 1;
+            var slack = Slack(wanted.Length);
+            if (Math.Abs(wanted.Length - heard.Length) > slack)
+            {
+                return false;
+            }
+
+            return Edits(wanted.ToLowerInvariant(), heard.ToLowerInvariant()) <= slack;
         }
+
+        /// <summary>How many edits a word of this length may absorb and still be itself.</summary>
+        internal static int Slack(int length) => length >= 8 ? 2 : 1;
 
         private static int Edits(string a, string b)
         {

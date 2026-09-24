@@ -62,5 +62,26 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
 
             Assert.Null(credits.Title);
         }
+        [Fact]
+        public void Parse_IgnoresASentenceTheDecoderGotStuckOn()
+        {
+            // Inhibitor Phase, verbatim: an Audible ident over music, and whisper looping
+            // on an invented sentence. The book it names does not exist in this library.
+            var credits = AudioCreditsParser.Parse(
+                "This is Audible.\nThis is a book called The New World.\nThis is a book called The New World.\n"
+                + "This is a book called The New World.\nThis is a book called The New World.");
+
+            Assert.Null(credits.Title);
+        }
+
+        [Fact]
+        public void Parse_KeepsAPhraseThatMerelyRecurs()
+        {
+            // Twice running is a refrain, not a stuck decoder.
+            var credits = AudioCreditsParser.Parse(
+                "Tantor Media presents.\nTantor Media presents.\nThe Scarlet Pimpernel by Baroness Orczy, read by Wanda McCaddon.");
+
+            Assert.Equal("Wanda McCaddon", credits.Narrator);
+        }
     }
 }
