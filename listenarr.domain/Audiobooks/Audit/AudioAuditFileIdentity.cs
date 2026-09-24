@@ -40,12 +40,24 @@ namespace Listenarr.Domain.Audiobooks.Audit
     /// </summary>
     public static class AudioAuditFileIdentity
     {
-        /// <summary>One file as "length:lastWriteTicks"; the parts joined by "|" for several.</summary>
-        public static string Of(IEnumerable<(long Length, DateTime LastWriteUtc)> files) =>
+        /// <summary>
+        /// One file as "length:lastWriteTicks", the parts joined by "|", and the model
+        /// that did the listening appended after "@".
+        /// </summary>
+        /// <remarks>
+        /// The model belongs here because a stored transcript is only as good as the ears
+        /// that took it, and they can be upgraded. Without it, moving from base to medium
+        /// changed nothing for any book already audited: the files had not moved, so every
+        /// re-run re-judged the old words and the better model was never asked. Measured on
+        /// this library, that was the difference between "This is a book called The New
+        /// World" nine times and the book's actual credits.
+        /// </remarks>
+        public static string Of(IEnumerable<(long Length, DateTime LastWriteUtc)> files, string? model = null) =>
             string.Join('|', files.Select(f =>
                 f.Length.ToString(CultureInfo.InvariantCulture)
                 + ":"
-                + f.LastWriteUtc.Ticks.ToString(CultureInfo.InvariantCulture)));
+                + f.LastWriteUtc.Ticks.ToString(CultureInfo.InvariantCulture)))
+            + (string.IsNullOrWhiteSpace(model) ? string.Empty : "@" + model.Trim());
 
         /// <summary>
         /// Whether what is on disk now is what was listened to. Unknown on either side is

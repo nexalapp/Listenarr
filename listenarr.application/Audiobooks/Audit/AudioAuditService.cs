@@ -110,7 +110,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             // it was taken. Listening costs minutes of CPU and the words do not change;
             // re-judging them does, every time the credits parser learns something. That
             // is what makes a re-run over a whole library affordable.
-            var identity = CurrentFileIdentity(files);
+            var identity = CurrentFileIdentity(files, model);
             if (StoredTranscriptIsUsable(audiobook, identity, out var stored))
             {
                 logger.LogInformation(
@@ -149,7 +149,7 @@ namespace Listenarr.Application.Audiobooks.Audit
                 audiobook,
                 heard,
                 aliasesJson,
-                CurrentFileIdentity(files),
+                CurrentFileIdentity(files, model),
                 MeasuredMinutes(files),
                 cancellationToken);
         }
@@ -159,7 +159,7 @@ namespace Listenarr.Application.Audiobooks.Audit
         /// cannot be measured. Only the first and the last are heard, so only those two
         /// decide whether a stored transcript still describes the book.
         /// </summary>
-        private string? CurrentFileIdentity(IReadOnlyList<(AudiobookFile File, string? FullPath)> files)
+        private string? CurrentFileIdentity(IReadOnlyList<(AudiobookFile File, string? FullPath)> files, string? model)
         {
             try
             {
@@ -175,7 +175,7 @@ namespace Listenarr.Application.Audiobooks.Audit
                     parts.Add((fileSystem.GetFileLength(path), fileSystem.GetLastWriteTimeUtc(path)));
                 }
 
-                return AudioAuditFileIdentity.Of(parts);
+                return AudioAuditFileIdentity.Of(parts, model);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
