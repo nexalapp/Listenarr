@@ -2206,8 +2206,8 @@ const audioAuditLabel = computed(() => {
       return 'The audio introduces itself as this book.'
     case 'narrator-mismatch':
       return 'Right book, different narrator.'
-    case 'runtime-mismatch':
-      return 'Right book, but not this recording of it.'
+    case 'incomplete':
+      return 'Right book, but part of it is missing.'
     case 'mismatch':
       return 'The audio introduces itself as a different book.'
     case 'inconclusive':
@@ -2362,9 +2362,9 @@ const creditRecommendations = computed(() => {
         action: openFixMatchFromAudit,
       })
       break
-    case 'runtime-mismatch':
+    case 'incomplete':
       recs.push({
-        text: `${book.audioAuditReason ?? 'The audio does not run for as long as the record says it does.'} Two recordings of one book read the same title and author aloud, so the length is what tells them apart. Re-match this record to the edition on disk.`,
+        text: `${book.audioAuditReason ?? 'The files are much shorter than the book should run.'} A truncated file still reads its opening and closing credits correctly, so nothing but the length shows this. Check the files are all here and download the rest, or re-match the record if it is describing a longer edition than the one you have.`,
         label: 'Fix match…',
         action: openFixMatchFromAudit,
       })
@@ -2384,7 +2384,7 @@ const creditRecommendations = computed(() => {
   if (
     book.audioAudit === 'mismatch' ||
     book.audioAudit === 'narrator-mismatch' ||
-    book.audioAudit === 'runtime-mismatch'
+    book.audioAudit === 'incomplete'
   ) {
     recs.push(
       book.audioAuditAccepted
@@ -2622,8 +2622,8 @@ const audioTabBadge = computed(() => {
       return 'The audio introduces itself as a different book'
     case 'narrator-mismatch':
       return 'The audio names a different narrator'
-    case 'runtime-mismatch':
-      return 'The audio does not run for as long as the record says'
+    case 'incomplete':
+      return 'The files are much shorter than the book should run'
     default:
       return null
   }
@@ -4429,7 +4429,7 @@ a.identifier-link:hover {
 
 .audio-audit--mismatch,
 .audio-audit--narrator-mismatch,
-.audio-audit--runtime-mismatch {
+.audio-audit--incomplete {
   border-color: rgba(231, 76, 60, 0.35);
   background: rgba(231, 76, 60, 0.08);
 }
@@ -4467,7 +4467,7 @@ a.identifier-link:hover {
 
 .audio-audit--mismatch .audio-audit-icon,
 .audio-audit--narrator-mismatch .audio-audit-icon,
-.audio-audit--runtime-mismatch .audio-audit-icon {
+.audio-audit--incomplete .audio-audit-icon {
   color: #e74c3c;
 }
 

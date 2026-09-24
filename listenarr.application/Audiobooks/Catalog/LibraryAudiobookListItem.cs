@@ -77,7 +77,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
         /// <summary>
         /// Whether the audio introduces itself as this book, as a lowercase word:
-        /// <c>match</c>, <c>narrator-mismatch</c>, <c>runtime-mismatch</c>, <c>mismatch</c>,
+        /// <c>match</c>, <c>narrator-mismatch</c>, <c>incomplete</c>, <c>mismatch</c>,
         /// <c>inconclusive</c>.
         /// Null until an audit has run.
         /// </summary>
