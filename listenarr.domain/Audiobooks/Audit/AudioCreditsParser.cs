@@ -107,6 +107,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 return AudioCredits.Empty;
             }
 
+            transcript = WithoutLoops(transcript);
             var marker = transcript.IndexOf(AudioAuditTranscript.ClosingMarker, StringComparison.Ordinal);
             if (marker < 0)
             {
@@ -120,6 +121,54 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 opening.Author ?? closing.Author,
                 opening.Narrator ?? closing.Narrator);
         }
+
+
+        /// <summary>
+        /// The transcript with a repeated line collapsed to one.
+        ///
+        /// <para>
+        /// Whisper loops when there is nothing to hear. Given a branded ident over music it
+        /// will emit one invented sentence over and over - "This is a book called The New
+        /// World", nine times, on a book that is nothing of the sort. A line the transcriber
+        /// wrote three times running is an artefact of the decoder, not something the
+        /// narrator said, and reading credits out of it invents a different book.
+        /// </para>
+        /// <para>
+        /// Only consecutive repeats are collapsed. A phrase that genuinely recurs across a
+        /// transcript - a series name in the opening and again in the closing - is not this,
+        /// and is worth keeping.
+        /// </para>
+        /// </summary>
+        internal static string WithoutLoops(string transcript)
+        {
+            var lines = transcript.Split('\n');
+            if (lines.Length < 3)
+            {
+                return transcript;
+            }
+
+            var kept = new List<string>(lines.Length);
+            var run = 0;
+            for (var index = 0; index < lines.Length; index++)
+            {
+                var same = index > 0
+                    && string.Equals(lines[index].Trim(), lines[index - 1].Trim(), StringComparison.OrdinalIgnoreCase)
+                    && lines[index].Trim().Length > 0;
+                run = same ? run + 1 : 0;
+                if (run < RepeatsBeforeItIsAnArtefact)
+                {
+                    kept.Add(lines[index]);
+                }
+            }
+
+            return string.Join('\n', kept);
+        }
+
+        /// <summary>
+        /// How many times running a line may appear before the rest are dropped. Two is a
+        /// refrain; the third is the decoder stuck.
+        /// </summary>
+        private const int RepeatsBeforeItIsAnArtefact = 2;
 
         private static AudioCredits ParseOne(string? transcript)
         {

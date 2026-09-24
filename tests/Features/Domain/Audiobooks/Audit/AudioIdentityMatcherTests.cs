@@ -188,5 +188,34 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             Assert.Equal(AudioAuditVerdict.Incomplete, result.Verdict);
             Assert.Contains("66%", result.Reason);
         }
+        [Fact]
+        public void Judge_HearsACompoundTheTranscriberSplitInTwo()
+        {
+            // Ironclads, read aloud correctly, written down as two words. The whole title
+            // used to fail on that space.
+            var result = AudioIdentityMatcher.Judge(
+                "Iron Clads by Adrian Chikovsky, read by Peter Noble. Chapter 1. Sturgeon says that, way back when, the sons of the rich used to go to war.",
+                "Ironclads", ["Adrian Tchaikovsky"], ["Peter Noble"], null);
+
+            Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
+            Assert.Equal(1, result.TitleScore);
+        }
+
+        [Fact]
+        public void Judge_ForgivesTwoEditsInALongName()
+        {
+            // "Tchaikovsky" heard as "Chikovsky": two edits in eleven letters is a syllable,
+            // not a different author.
+            Assert.True(AudioIdentityMatcher.Close("tchaikovsky", "chikovsky"));
+            Assert.Equal(2, AudioIdentityMatcher.Slack("tchaikovsky".Length));
+        }
+
+        [Fact]
+        public void Judge_StillRefusesTwoEditsInAShortWord()
+        {
+            // Two edits in five letters is most of the word, and "medusa" is not "melissa".
+            Assert.False(AudioIdentityMatcher.Close("mars", "moon"));
+            Assert.Equal(1, AudioIdentityMatcher.Slack("mars".Length));
+        }
     }
 }
