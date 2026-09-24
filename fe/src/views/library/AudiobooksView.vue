@@ -1348,6 +1348,8 @@ const audioIssueLabel = (book: Audiobook): string | null => {
       return 'Different book'
     case 'narrator-mismatch':
       return 'Narrator differs'
+    case 'runtime-mismatch':
+      return 'Different recording'
     default:
       return null
   }

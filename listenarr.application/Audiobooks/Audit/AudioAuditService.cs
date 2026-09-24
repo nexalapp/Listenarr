@@ -117,7 +117,8 @@ namespace Listenarr.Application.Audiobooks.Audit
                     "Audio audit of audiobook {AudiobookId}: re-judging the transcript already on record",
                     audiobookId);
                 progress?.Report(0.9);
-                return await JudgeAndSaveAsync(audiobookId, audiobook, stored!, aliasesJson, identity, cancellationToken);
+                return await JudgeAndSaveAsync(
+                    audiobookId, audiobook, stored!, aliasesJson, identity, MeasuredMinutes(files), cancellationToken);
             }
 
             // Two stretches to hear, so two steps of progress; whisper gives no rate to
@@ -144,7 +145,13 @@ namespace Listenarr.Application.Audiobooks.Audit
             // Measured again after listening: the files are what the transcript describes
             // as of now, not as of before a long transcription.
             return await JudgeAndSaveAsync(
-                audiobookId, audiobook, heard, aliasesJson, CurrentFileIdentity(files), cancellationToken);
+                audiobookId,
+                audiobook,
+                heard,
+                aliasesJson,
+                CurrentFileIdentity(files),
+                MeasuredMinutes(files),
+                cancellationToken);
         }
 
         /// <summary>
@@ -189,16 +196,45 @@ namespace Listenarr.Application.Audiobooks.Audit
                 && AudioAuditFileIdentity.Matches(audiobook.AudioAuditFileIdentity, identity);
         }
 
+        /// <summary>
+        /// How long the book's audio runs, from the durations the scan measured, or null
+        /// when any file is missing one. A partial sum would read as a short recording and
+        /// flag every book the scanner has not finished measuring.
+        /// </summary>
+        private static double? MeasuredMinutes(IReadOnlyList<(AudiobookFile File, string? FullPath)> files)
+        {
+            var total = 0.0;
+            foreach (var (file, _) in files)
+            {
+                if (file.DurationSeconds is not { } seconds || seconds <= 0)
+                {
+                    return null;
+                }
+
+                total += seconds;
+            }
+
+            return total > 0 ? total / 60 : null;
+        }
+
         private async Task<AudioAuditResult> JudgeAndSaveAsync(
             int audiobookId,
             Audiobook audiobook,
             string heard,
             string? aliasesJson,
             string? fileIdentity,
+            double? measuredMinutes,
             CancellationToken cancellationToken)
         {
             var aliases = AuthorAliases.Parse(aliasesJson);
-            var result = AudioIdentityMatcher.Judge(heard, audiobook.Title, audiobook.Authors, audiobook.Narrators, aliases);
+            var result = AudioIdentityMatcher.Judge(
+                heard,
+                audiobook.Title,
+                audiobook.Authors,
+                audiobook.Narrators,
+                aliases,
+                audiobook.Runtime,
+                measuredMinutes);
 
             // The transcriber spells what it hears, so a real narrator arrives misspelled:
             // "Garak Hagen" for Garrick Hagon, "Wanda McCadden" for Wanda McCaddon. The

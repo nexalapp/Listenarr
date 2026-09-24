@@ -611,6 +611,7 @@ const AUDIT_KEY = '__audit'
 const AUDIO_AUDIT_LABELS: Record<AudioAuditVerdict, string> = {
   match: 'Matches',
   'narrator-mismatch': 'Narrator differs',
+  'runtime-mismatch': 'Different recording',
   mismatch: 'Different book',
   inconclusive: 'Unclear',
 }
@@ -984,7 +985,9 @@ function cellText(row: LibraryTagRow, key: string) {
 // someone listened and said the record is right, and the flag would otherwise be
 // permanent. Acceptance lapses on its own when the files change.
 const hasAudioIssue = (row: LibraryTagRow) =>
-  (row.audioAudit === 'mismatch' || row.audioAudit === 'narrator-mismatch') &&
+  (row.audioAudit === 'mismatch' ||
+    row.audioAudit === 'narrator-mismatch' ||
+    row.audioAudit === 'runtime-mismatch') &&
   !row.audioAuditAccepted
 
 /**
