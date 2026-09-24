@@ -82,5 +82,29 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         {
             Assert.False(AudioAuditFileIdentity.Matches(stored, current));
         }
+        [Fact]
+        [Trait("Method", "Of")]
+        [Trait("Scenario", "ABetterModelIsADifferentListening")]
+        public void Of_TreatsATranscriptTakenByAnotherModelAsStale()
+        {
+            var files = new[] { (1_000L, new DateTime(2026, 9, 24, 0, 0, 0, DateTimeKind.Utc)) };
+
+            var heardByBase = AudioAuditFileIdentity.Of(files, "base.en");
+            var heardByMedium = AudioAuditFileIdentity.Of(files, "medium.en");
+
+            Assert.NotEqual(heardByBase, heardByMedium);
+            Assert.False(AudioAuditFileIdentity.Matches(heardByBase, heardByMedium));
+            Assert.True(AudioAuditFileIdentity.Matches(heardByMedium, heardByMedium));
+        }
+
+        [Fact]
+        [Trait("Method", "Of")]
+        [Trait("Scenario", "NoModelKeepsTheOldShape")]
+        public void Of_WithoutAModelIsUnchanged()
+        {
+            var files = new[] { (1_000L, new DateTime(2026, 9, 24, 0, 0, 0, DateTimeKind.Utc)) };
+
+            Assert.DoesNotContain("@", AudioAuditFileIdentity.Of(files));
+        }
     }
 }
