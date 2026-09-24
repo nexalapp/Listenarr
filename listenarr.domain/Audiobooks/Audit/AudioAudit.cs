@@ -35,10 +35,10 @@ namespace Listenarr.Domain.Audiobooks.Audit
         Inconclusive,
 
         /// <summary>
-        /// The right book, said by the credits, but not this recording of it: the audio
-        /// does not run for as long as the record says it does.
+        /// The right book, but not all of it: the files are a quarter or more shorter
+        /// than the book should run, so part of it is probably not there.
         /// </summary>
-        RuntimeMismatch
+        Incomplete
     }
 
     /// <summary>How the stored transcript separates what was heard at the end from what was heard at the start.</summary>
@@ -56,7 +56,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
             AudioAuditVerdict.NarratorMismatch => "narrator-mismatch",
             AudioAuditVerdict.Mismatch => "mismatch",
             AudioAuditVerdict.Inconclusive => "inconclusive",
-            AudioAuditVerdict.RuntimeMismatch => "runtime-mismatch",
+            AudioAuditVerdict.Incomplete => "incomplete",
             _ => null
         };
     }

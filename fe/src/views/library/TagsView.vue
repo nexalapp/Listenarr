@@ -611,7 +611,7 @@ const AUDIT_KEY = '__audit'
 const AUDIO_AUDIT_LABELS: Record<AudioAuditVerdict, string> = {
   match: 'Matches',
   'narrator-mismatch': 'Narrator differs',
-  'runtime-mismatch': 'Different recording',
+  incomplete: 'Part missing',
   mismatch: 'Different book',
   inconclusive: 'Unclear',
 }
@@ -987,7 +987,7 @@ function cellText(row: LibraryTagRow, key: string) {
 const hasAudioIssue = (row: LibraryTagRow) =>
   (row.audioAudit === 'mismatch' ||
     row.audioAudit === 'narrator-mismatch' ||
-    row.audioAudit === 'runtime-mismatch') &&
+    row.audioAudit === 'incomplete') &&
   !row.audioAuditAccepted
 
 /**

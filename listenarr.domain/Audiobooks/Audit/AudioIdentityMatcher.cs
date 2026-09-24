@@ -75,10 +75,10 @@ namespace Listenarr.Domain.Audiobooks.Audit
 
             if (heard.Length < MinimumWords)
             {
-                return RuntimeAgreement.Disagree(recordedMinutes, measuredMinutes)
+                return AudioCompleteness.MissingShare(recordedMinutes, measuredMinutes) is { } gap
                     ? new AudioAuditResult(
-                        AudioAuditVerdict.RuntimeMismatch,
-                        $"Too little speech was heard to tell what the book is, and {RuntimeAgreement.Describe(recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                        AudioAuditVerdict.Incomplete,
+                        $"Too little speech was heard to tell what the book is, and {AudioCompleteness.Describe(gap, recordedMinutes!.Value, measuredMinutes!.Value)}.",
                         0, 0, null, credits)
                     : new AudioAuditResult(
                         AudioAuditVerdict.Inconclusive,
@@ -116,14 +116,14 @@ namespace Listenarr.Domain.Audiobooks.Audit
                         titleScore, authorScore, narratorScore, credits);
                 }
 
-                // The credits agree, so this is the book. Whether it is the recording the
-                // record describes is a separate question, and only its length answers it:
-                // every edition of a novel reads the same title and the same author aloud.
-                if (RuntimeAgreement.Disagree(recordedMinutes, measuredMinutes))
+                // The credits agree, so this is the book. Whether all of it is here is a
+                // separate question the credits cannot answer, because the opening and the
+                // closing of a truncated file read exactly as they should.
+                if (AudioCompleteness.MissingShare(recordedMinutes, measuredMinutes) is { } missing)
                 {
                     return new AudioAuditResult(
-                        AudioAuditVerdict.RuntimeMismatch,
-                        $"The book is the one on record, but not this recording of it: {RuntimeAgreement.Describe(recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                        AudioAuditVerdict.Incomplete,
+                        $"The book is the one on record, but {AudioCompleteness.Describe(missing, recordedMinutes!.Value, measuredMinutes!.Value)}.",
                         titleScore, authorScore, narratorScore, credits);
                 }
 
@@ -156,11 +156,11 @@ namespace Listenarr.Domain.Audiobooks.Audit
                     titleScore, authorScore, narratorScore, credits);
             }
 
-            if (RuntimeAgreement.Disagree(recordedMinutes, measuredMinutes))
+            if (AudioCompleteness.MissingShare(recordedMinutes, measuredMinutes) is { } tooShort)
             {
                 return new AudioAuditResult(
-                    AudioAuditVerdict.RuntimeMismatch,
-                    $"Only fragments of the title or the author were heard, and {RuntimeAgreement.Describe(recordedMinutes!.Value, measuredMinutes!.Value)}.",
+                    AudioAuditVerdict.Incomplete,
+                    $"Only fragments of the title or the author were heard, and {AudioCompleteness.Describe(tooShort, recordedMinutes!.Value, measuredMinutes!.Value)}.",
                     titleScore, authorScore, narratorScore, credits);
             }
 

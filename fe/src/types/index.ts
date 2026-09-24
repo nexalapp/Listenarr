@@ -1272,7 +1272,7 @@ export interface Audiobook {
 export type AudioAuditVerdict =
   | 'match'
   | 'narrator-mismatch'
-  | 'runtime-mismatch'
+  | 'incomplete'
   | 'mismatch'
   | 'inconclusive'
 
