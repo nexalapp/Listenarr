@@ -22,6 +22,7 @@ import type {
   LibraryTagTable,
   ChapterRepairPreview,
   TranscriptionModelStatus,
+  EditionCheck,
   BookChapters,
   TagDefinition,
   TagJobUpdate,
@@ -1884,6 +1885,15 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ model }),
     })
+  }
+
+  /**
+   * Which edition of the book the files on disk actually are, from how long they run
+   * against the runtime the catalogue publishes per edition. Answers on request and
+   * stores nothing, so it is slow and always current.
+   */
+  async checkEdition(audiobookId: number): Promise<EditionCheck> {
+    return this.request<EditionCheck>(`/library/${audiobookId}/edition-check`)
   }
 
   /** Queue an audio audit: listen to the book and judge it against its record. */

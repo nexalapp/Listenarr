@@ -838,6 +838,35 @@
               </ul>
             </div>
 
+            <div class="edition-check">
+              <h4>Which edition is this?</h4>
+              <p class="edition-explain">
+                Two recordings of one book differ in length far more than a recording
+                differs from its own stated runtime, so the catalogue's runtime per
+                edition can say which one is on disk.
+              </p>
+              <button
+                type="button"
+                class="file-repair-btn"
+                :disabled="checkingEdition"
+                @click="runEditionCheck"
+              >
+                {{ checkingEdition ? 'Asking the catalogue…' : 'Check the edition' }}
+              </button>
+              <template v-if="editionCheck">
+                <p class="credits-text">{{ editionCheck.reason }}</p>
+                <button
+                  v-if="editionCheck.outcome === 'other-edition' && editionCheck.best"
+                  type="button"
+                  class="file-repair-btn"
+                  :disabled="applyingEdition"
+                  @click="adoptEdition"
+                >
+                  {{ applyingEdition ? 'Re-matching…' : `Re-match to the ${editionNarrators} edition` }}
+                </button>
+              </template>
+            </div>
+
             <div class="credits-transcript">
               <h4>Opening</h4>
               <p v-if="heardOpening" class="credits-text">{{ heardOpening }}</p>
@@ -1050,7 +1079,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed, type Component } from 'vue'
 import { useToast } from '@/services/toastService'
-import type { Audiobook as AudiobookType, ChapterHealth } from '@/types'
+import type { Audiobook as AudiobookType, ChapterHealth, EditionCheck } from '@/types'
 import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -2690,6 +2719,62 @@ async function repairChapters(books: { audiobookId: number; fileIds: number[] }[
         err instanceof Error ? err.message : String(err),
       )
     }
+  }
+}
+
+// ---- which edition is this -------------------------------------------------------
+
+const editionCheck = ref<EditionCheck | null>(null)
+const checkingEdition = ref(false)
+const applyingEdition = ref(false)
+
+const editionNarrators = computed(() =>
+  (editionCheck.value?.best?.narrators || []).join(' / ') || 'other',
+)
+
+async function runEditionCheck() {
+  if (!audiobook.value || checkingEdition.value) return
+  checkingEdition.value = true
+  editionCheck.value = null
+  try {
+    editionCheck.value = await apiService.checkEdition(audiobook.value.id)
+  } catch (err) {
+    useToast().error(
+      'Could not check the edition',
+      err instanceof Error ? err.message : String(err),
+    )
+  } finally {
+    checkingEdition.value = false
+  }
+}
+
+// Adopting an edition is the same two steps as Fix match: point the record at that
+// identifier, then let the ordinary rescan bring the rest across. Locked fields
+// survive it as they would any rescan.
+async function adoptEdition() {
+  const asin = editionCheck.value?.best?.asin
+  if (!audiobook.value || !asin || applyingEdition.value) return
+  applyingEdition.value = true
+  try {
+    const others = (audiobook.value.identifiers || [])
+      .filter((identifier) => identifier.type !== 'Asin')
+      .map((identifier) => ({
+        type: identifier.type,
+        value: identifier.value,
+        region: identifier.region,
+        isPrimary: false,
+        source: identifier.source,
+      }))
+    await apiService.updateAudiobookIdentifiers(audiobook.value.id, [
+      { type: 'Asin', value: asin, isPrimary: true, source: 'Manual' },
+      ...others,
+    ])
+    await rescanMetadata()
+    editionCheck.value = null
+  } catch (err) {
+    useToast().error('Could not re-match', err instanceof Error ? err.message : String(err))
+  } finally {
+    applyingEdition.value = false
   }
 }
 
@@ -4425,6 +4510,26 @@ a.identifier-link:hover {
   .credits-compare {
     grid-template-columns: 1fr;
   }
+}
+
+.edition-check {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, rgba(128, 128, 128, 0.25));
+}
+
+.edition-check h4 {
+  margin: 0 0 4px;
+}
+
+.edition-explain {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+.edition-check .file-repair-btn {
+  margin-top: 8px;
 }
 
 .audio-audit--mismatch,

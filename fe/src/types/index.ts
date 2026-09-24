@@ -1269,6 +1269,30 @@ export interface Audiobook {
 }
 
 /** The audio audit's verdict as the API spells it. */
+export type EditionMatchOutcome =
+  | 'unknown'
+  | 'agrees'
+  | 'other-edition'
+  | 'ambiguous'
+  | 'contested'
+  | 'no-candidate'
+
+export interface EditionCandidateView {
+  asin: string
+  title: string | null
+  narrators: string[]
+  publisher: string | null
+  runtimeMinutes: number | null
+}
+
+export interface EditionCheck {
+  outcome: EditionMatchOutcome
+  reason: string
+  narratorAgrees: boolean | null
+  best: EditionCandidateView | null
+  runnerUp: EditionCandidateView | null
+}
+
 export type AudioAuditVerdict =
   | 'match'
   | 'narrator-mismatch'
