@@ -41,7 +41,13 @@ namespace Listenarr.Domain.Audiobooks.Audit
         Ambiguous,
 
         /// <summary>No edition on offer is near the file's length.</summary>
-        NoCandidate
+        NoCandidate,
+
+        /// <summary>
+        /// The length names one edition and the audio names another. Both cannot be right,
+        /// so neither is offered.
+        /// </summary>
+        Contested
     }
 
     /// <summary>The outcome as the API spells it, one word the client can switch on.</summary>
@@ -53,6 +59,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
             EditionMatchOutcome.OtherEdition => "other-edition",
             EditionMatchOutcome.Ambiguous => "ambiguous",
             EditionMatchOutcome.NoCandidate => "no-candidate",
+            EditionMatchOutcome.Contested => "contested",
             _ => "unknown"
         };
     }
@@ -169,12 +176,23 @@ namespace Listenarr.Domain.Audiobooks.Audit
                     $"The files run {Clock(minutes)}, which is the edition on record.");
             }
 
-            var heard = narratorAgrees switch
+            // Length and voice disagreeing is not a near miss to be reported with a caveat.
+            // One of them is describing a different recording, and proposing a re-match on
+            // the strength of the weaker signal is how a wrong edition gets written in.
+            if (narratorAgrees == false)
             {
-                true => " The narrator heard in the audio names the same edition.",
-                false => " The narrator heard in the audio does not name that edition, so this is only the length talking.",
-                _ => " No narrator was heard, so this is the length alone."
-            };
+                return new EditionMatchResult(
+                    EditionMatchOutcome.Contested,
+                    closest.Candidate,
+                    runnerUp.Candidate,
+                    false,
+                    $"The files run {Clock(minutes)}, which would be {Describe(closest.Candidate)}, "
+                    + "but that is not the narrator heard in the audio. Length and voice disagree, so neither is offered.");
+            }
+
+            var heard = narratorAgrees == true
+                ? " The narrator heard in the audio names the same edition."
+                : " No narrator was heard, so this is the length alone.";
 
             return new EditionMatchResult(
                 EditionMatchOutcome.OtherEdition,
