@@ -18,6 +18,8 @@
 
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Api.Attributes;
+using Listenarr.Application.Audiobooks.Editions;
+using Listenarr.Domain.Audiobooks.Audit;
 
 namespace Listenarr.Api.Features.Library
 {
@@ -37,6 +39,7 @@ namespace Listenarr.Api.Features.Library
         private readonly LibraryDeleteWorkflow _deleteWorkflow;
         private readonly LibraryUpdateWorkflow _updateWorkflow;
         private readonly LibraryIdentifierWorkflow _identifierWorkflow;
+        private readonly IEditionCheckService _editionCheckService;
         private readonly LibraryPreviewPathWorkflow _previewPathWorkflow;
         private readonly LibraryQueryWorkflow _queryWorkflow;
         private readonly LibraryRenameWorkflow _renameWorkflow;
@@ -54,6 +57,7 @@ namespace Listenarr.Api.Features.Library
             LibraryDeleteWorkflow deleteWorkflow,
             LibraryUpdateWorkflow updateWorkflow,
             LibraryIdentifierWorkflow identifierWorkflow,
+            IEditionCheckService editionCheckService,
             LibraryPreviewPathWorkflow previewPathWorkflow,
             LibraryQueryWorkflow queryWorkflow,
             LibraryRenameWorkflow renameWorkflow,
@@ -71,6 +75,7 @@ namespace Listenarr.Api.Features.Library
             _deleteWorkflow = deleteWorkflow;
             _updateWorkflow = updateWorkflow;
             _identifierWorkflow = identifierWorkflow;
+            _editionCheckService = editionCheckService;
             _previewPathWorkflow = previewPathWorkflow;
             _queryWorkflow = queryWorkflow;
             _renameWorkflow = renameWorkflow;
@@ -170,6 +175,43 @@ namespace Listenarr.Api.Features.Library
         {
             return await _metadataRescanWorkflow.RescanAsync(id, HttpContext);
         }
+
+        /// <summary>
+        /// Work out which edition of the book the files on disk actually are, by comparing
+        /// how long they run to the runtime the catalogue publishes for each edition.
+        /// </summary>
+        /// <remarks>
+        /// Answers on request and stores nothing. Two recordings of one book differ in
+        /// length far more than a recording differs from its own stated runtime, which
+        /// makes length a fingerprint — but only where the catalogue lists the edition, so
+        /// the honest answers include "more than one fits" and "none of these".
+        /// </remarks>
+        /// <param name="id">Audiobook ID.</param>
+        /// <param name="cancellationToken">Abandons the catalogue lookups if the caller goes away.</param>
+        [HttpGet("{id}/edition-check")]
+        public async Task<IActionResult> CheckEdition(int id, CancellationToken cancellationToken)
+        {
+            var result = await _editionCheckService.CheckAsync(id, cancellationToken);
+            return Ok(new
+            {
+                outcome = EditionMatchOutcomeNames.Of(result.Outcome),
+                reason = result.Reason,
+                narratorAgrees = result.NarratorAgrees,
+                best = Describe(result.Best),
+                runnerUp = Describe(result.RunnerUp)
+            });
+        }
+
+        private static object? Describe(EditionCandidate? candidate) => candidate == null
+            ? null
+            : new
+            {
+                asin = candidate.Id,
+                title = candidate.Title,
+                narrators = candidate.Narrators,
+                publisher = candidate.Publisher,
+                runtimeMinutes = candidate.RuntimeMinutes
+            };
 
         // NOTE: Do not perform ad-hoc schema changes at runtime. Use EF Core migrations to modify the database schema.
 

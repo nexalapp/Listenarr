@@ -171,6 +171,16 @@ namespace Listenarr.Domain.Audiobooks.Audit
         }
 
         /// <summary>
+        /// Whether two titles name the same book, allowing for the slack the transcriber
+        /// and a shop's subtitle both introduce: "Ironclads" and "Iron Clads", "Ender's
+        /// Shadow" and "Ender's Shadow: The Shadow Series, Book 1".
+        /// </summary>
+        public static bool SameTitle(string? wanted, string? other, double threshold = 0.6) =>
+            !string.IsNullOrWhiteSpace(wanted)
+            && !string.IsNullOrWhiteSpace(other)
+            && Containment(Tokens(wanted), Tokens(other)) >= threshold;
+
+        /// <summary>
         /// The share of the wanted tokens heard in order within a short window, with an
         /// edit of slack per word. A phrase, not a bag: "the war had gone on and the
         /// gifts were few" contains every word of "A War of Gifts" and is not it.

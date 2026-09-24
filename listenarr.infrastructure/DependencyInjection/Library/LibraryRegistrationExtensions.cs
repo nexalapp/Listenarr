@@ -23,6 +23,8 @@ using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+using Listenarr.Application.Audiobooks.Editions;
+
 namespace Listenarr.Infrastructure.DependencyInjection.Library;
 
 internal static class LibraryRegistrationExtensions
@@ -127,6 +129,7 @@ internal static class LibraryRegistrationExtensions
         services.AddSingleton<ITranscriber>(provider => provider.GetRequiredService<WhisperTranscriber>());
         services.AddSingleton<TranscriptCache>();
         services.AddScoped<IAudioAuditService, AudioAuditService>();
+        services.AddScoped<IEditionCheckService, EditionCheckService>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
         services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();
