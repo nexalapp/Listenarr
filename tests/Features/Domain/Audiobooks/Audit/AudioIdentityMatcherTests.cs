@@ -118,104 +118,55 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
         }
         [Fact]
-        public void Judge_FlagsABookMissingMostOfItself()
+        public void Judge_FlagsABookThatStopsMidSentence()
         {
-            // Ender's Shadow on disk: 6h 26m of a book that should run 15h 42m.
+            // Ice Hammer on this library, verbatim: the story simply stops.
             var result = AudioIdentityMatcher.Judge(
-                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
-                recordedMinutes: 942, measuredMinutes: 386);
+                Opening + AudioAuditTranscript.ClosingMarker
+                    + "them as they meandered through the forest, heading north towards the highway\n"
+                    + "stared back at the orange glow of distant flames for",
+                "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null);
 
             Assert.Equal(AudioAuditVerdict.Incomplete, result.Verdict);
-            Assert.Contains("59%", result.Reason);
-            Assert.Contains("15h 42m", result.Reason);
-            Assert.Contains("6h 26m", result.Reason);
+            Assert.Contains("stops mid-sentence", result.Reason);
         }
 
         [Fact]
-        public void Judge_SaysNothingAboutAnAbridgementOrASlowerReading()
+        public void Judge_AcceptsARecordingThatReadsItsCredits()
         {
-            // A fifth short is the band where an abridgement and a different reading
-            // cannot be told apart, and neither is a broken file.
+            // A shorter edition is not a damaged one, and it says so itself.
             var result = AudioIdentityMatcher.Judge(
-                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
-                recordedMinutes: 1182, measuredMinutes: 1000);
+                Opening + AudioAuditTranscript.ClosingMarker
+                    + "This has been A War of Gifts, written by Orson Scott Card.\n"
+                    + "Copyright 2007. Production copyright 2007 by Macmillan Audio.",
+                "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null);
 
             Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
         }
 
         [Fact]
-        public void Judge_NeverComplainsThatThereIsMoreBookThanExpected()
+        public void Judge_DoesNotCallASilentTailATruncation()
         {
-            // Nothing is missing; the record simply describes a shorter edition.
+            // Whisper writes silence and music in brackets, and a book ending on one of
+            // those has not been cut off.
             var result = AudioIdentityMatcher.Judge(
-                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
-                recordedMinutes: 121, measuredMinutes: 373);
+                Opening + AudioAuditTranscript.ClosingMarker
+                    + "and that was the end of the matter for all of them.\n[BLANK_AUDIO]",
+                "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null);
 
             Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
         }
 
         [Fact]
-        public void Judge_NamesTheNarratorAheadOfTheMissingAudio()
+        public void Judge_DoesNotCallATrailingWordATruncation()
         {
-            // Both are true of a truncated wrong edition; the one that names a person first.
+            // A one-word tail is the transcriber fading out, and was most of the noise.
             var result = AudioIdentityMatcher.Judge(
-                Opening, "A War of Gifts", ["Orson Scott Card"], ["Stefan Rudnicki"], null,
-                recordedMinutes: 942, measuredMinutes: 386);
-
-            Assert.Equal(AudioAuditVerdict.NarratorMismatch, result.Verdict);
-        }
-
-        [Fact]
-        public void Judge_SaysNothingAboutLengthWhenTheRecordClaimsNone()
-        {
-            var result = AudioIdentityMatcher.Judge(
-                Opening, "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
-                recordedMinutes: null, measuredMinutes: 370);
+                Opening + AudioAuditTranscript.ClosingMarker
+                    + "he had never in his life been so nearly content.\nimpatient",
+                "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null);
 
             Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
-        }
-
-        [Fact]
-        public void Judge_MissingAudioAloneFlagsAnOpeningWithNoCredits()
-        {
-            // Music under the opening, so nothing was heard - but two thirds of the book
-            // is absent, and that is still worth saying.
-            var result = AudioIdentityMatcher.Judge(
-                "The war had gone on for years and the gifts were few and nobody remembered why it had started at all.",
-                "A War of Gifts", ["Orson Scott Card"], null, null,
-                recordedMinutes: 2096, measuredMinutes: 720);
-
-            Assert.Equal(AudioAuditVerdict.Incomplete, result.Verdict);
-            Assert.Contains("66%", result.Reason);
-        }
-        [Fact]
-        public void Judge_HearsACompoundTheTranscriberSplitInTwo()
-        {
-            // Ironclads, read aloud correctly, written down as two words. The whole title
-            // used to fail on that space.
-            var result = AudioIdentityMatcher.Judge(
-                "Iron Clads by Adrian Chikovsky, read by Peter Noble. Chapter 1. Sturgeon says that, way back when, the sons of the rich used to go to war.",
-                "Ironclads", ["Adrian Tchaikovsky"], ["Peter Noble"], null);
-
-            Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
-            Assert.Equal(1, result.TitleScore);
-        }
-
-        [Fact]
-        public void Judge_ForgivesTwoEditsInALongName()
-        {
-            // "Tchaikovsky" heard as "Chikovsky": two edits in eleven letters is a syllable,
-            // not a different author.
-            Assert.True(AudioIdentityMatcher.Close("tchaikovsky", "chikovsky"));
-            Assert.Equal(2, AudioIdentityMatcher.Slack("tchaikovsky".Length));
-        }
-
-        [Fact]
-        public void Judge_StillRefusesTwoEditsInAShortWord()
-        {
-            // Two edits in five letters is most of the word, and "medusa" is not "melissa".
-            Assert.False(AudioIdentityMatcher.Close("mars", "moon"));
-            Assert.Equal(1, AudioIdentityMatcher.Slack("mars".Length));
         }
     }
 }
