@@ -46,11 +46,23 @@ internal static class ListenarrDatabaseMigrationPreflight
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // The audit verdict is stored by name, so renaming the enum member orphans every
+        // row already holding the old one: EF cannot map the string back and throws on any
+        // query that reaches that audiobook, which takes the library page down. Ungated and
+        // idempotent - it matches nothing on a database that never saw the old name, and
+        // nothing again once it has run.
+        var auditVerdictsRenamed = context.Database.ExecuteSqlRaw(
+            """
+            UPDATE "Audiobooks"
+            SET "AudioAuditVerdict" = 'Incomplete'
+            WHERE "AudioAuditVerdict" = 'RuntimeMismatch';
+            """);
+
         var applied = context.Database.GetAppliedMigrations()
             .ToHashSet(StringComparer.Ordinal);
         if (!applied.Contains(DurableFilesystemRecoveryMigrationId))
         {
-            return default;
+            return new ListenarrDatabasePostMigrationRepairResult(0, auditVerdictsRenamed);
         }
 
         using var transaction = context.Database.BeginTransaction();
@@ -74,7 +86,7 @@ internal static class ListenarrDatabaseMigrationPreflight
             """);
         transaction.Commit();
 
-        return new ListenarrDatabasePostMigrationRepairResult(moveJobsRepaired);
+        return new ListenarrDatabasePostMigrationRepairResult(moveJobsRepaired, auditVerdictsRenamed);
     }
 }
 
@@ -82,4 +94,5 @@ internal readonly record struct ListenarrDatabaseMigrationPreflightResult(
     int DefaultRootsNormalized);
 
 internal readonly record struct ListenarrDatabasePostMigrationRepairResult(
-    int MoveJobsRepaired);
+    int MoveJobsRepaired,
+    int AuditVerdictsRenamed);

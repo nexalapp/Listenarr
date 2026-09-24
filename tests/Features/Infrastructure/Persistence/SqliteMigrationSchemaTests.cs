@@ -106,9 +106,6 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string AudioAuditAcceptanceMigrationId =
         "20260923162818_AddAudioAuditAcceptance";
 
-    private const string RenameRuntimeMismatchVerdictMigrationId =
-        "20260924021500_RenameRuntimeMismatchVerdictToIncomplete";
-
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
     {
@@ -263,8 +260,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 SuggestionsBackgroundFetchMigrationId,
                 FoundBookImportQueueMigrationId,
                 AudioAuditFileIdentityMigrationId,
-                AudioAuditAcceptanceMigrationId,
-                RenameRuntimeMismatchVerdictMigrationId
+                AudioAuditAcceptanceMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
