@@ -121,5 +121,53 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
                 EditionMatchOutcome.Unknown,
                 EditionMatch.Judge(FileMinutes, "x", [Phoenix with { RuntimeMinutes = null }]).Outcome);
         }
+        [Fact]
+        [Trait("Method", "Judge")]
+        [Trait("Scenario", "VoiceBreaksALengthTie")]
+        public void Judge_LetsTheHeardVoiceBreakALengthTie()
+        {
+            // Airframe on this library: two editions eleven hours long and four minutes
+            // apart. Length cannot separate them; the narrator can.
+            var blom = new EditionCandidate("B111", "Airframe", ["Thomas Blom"], "Lindhardt og Ringhof", 665);
+            var cassidy = new EditionCandidate("B222", "Airframe", ["Frances Cassidy"], "Random House Audio", 669);
+
+            var result = EditionMatch.Judge(665, "B999", [blom, cassidy], ["Frances Cassidy"]);
+
+            Assert.Equal(EditionMatchOutcome.OtherEdition, result.Outcome);
+            Assert.Equal("B222", result.Best!.Id);
+            Assert.True(result.NarratorAgrees);
+        }
+
+        [Fact]
+        [Trait("Method", "Judge")]
+        [Trait("Scenario", "VoiceMatchesNeitherTiedEdition")]
+        public void Judge_SaysWhenTheHeardVoiceReadsNeitherTiedEdition()
+        {
+            // The real case: the audio names Garrick Hagon and no catalogued edition of
+            // that length is his, so the edition on disk is not among the candidates.
+            var blom = new EditionCandidate("B111", "Airframe", ["Thomas Blom"], "Lindhardt og Ringhof", 665);
+            var cassidy = new EditionCandidate("B222", "Airframe", ["Frances Cassidy"], "Random House Audio", 669);
+
+            var result = EditionMatch.Judge(665, "B222", [blom, cassidy], ["Garrick Hagon"]);
+
+            Assert.Equal(EditionMatchOutcome.Ambiguous, result.Outcome);
+            Assert.Contains("reads neither", result.Reason);
+            Assert.False(result.NarratorAgrees);
+        }
+
+        [Fact]
+        [Trait("Method", "Judge")]
+        [Trait("Scenario", "NoVoiceLeavesATieATie")]
+        public void Judge_LeavesATieATieWhenNothingWasHeard()
+        {
+            var blom = new EditionCandidate("B111", "Airframe", ["Thomas Blom"], "Lindhardt og Ringhof", 665);
+            var cassidy = new EditionCandidate("B222", "Airframe", ["Frances Cassidy"], "Random House Audio", 669);
+
+            var result = EditionMatch.Judge(665, "B999", [blom, cassidy]);
+
+            Assert.Equal(EditionMatchOutcome.Ambiguous, result.Outcome);
+            Assert.DoesNotContain("reads neither", result.Reason);
+            Assert.Null(result.NarratorAgrees);
+        }
     }
 }

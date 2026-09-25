@@ -152,15 +152,33 @@ namespace Listenarr.Domain.Audiobooks.Audit
             }
 
             var runnerUp = ranked.Count > 1 ? ranked[1] : default;
-            if (ranked.Count > 1 && runnerUp.Distance <= Tolerance)
+            var tied = ranked.Where(pair => pair.Distance <= Tolerance).ToList();
+
+            // Two editions of one book are often minutes apart, and length alone cannot
+            // separate them. The audio can: where exactly one of the tied editions is read
+            // by the narrator heard, that is the one, and the tie is not a tie.
+            if (tied.Count > 1)
             {
-                return new EditionMatchResult(
-                    EditionMatchOutcome.Ambiguous,
-                    closest.Candidate,
-                    runnerUp.Candidate,
-                    null,
-                    $"Two editions run for about {Clock(minutes)} - {Describe(closest.Candidate)} and "
-                    + $"{Describe(runnerUp.Candidate)} - so the length cannot say which this is.");
+                var named = tied
+                    .Where(pair => NarratorAgreement(pair.Candidate, heardNarrators) == true)
+                    .ToList();
+
+                if (named.Count != 1)
+                {
+                    var heardNone = heardNarrators is { Count: > 0 } && named.Count == 0
+                        ? $" The narrator heard, {string.Join(" / ", heardNarrators)}, reads neither, so the edition on disk is probably not among them."
+                        : string.Empty;
+                    return new EditionMatchResult(
+                        EditionMatchOutcome.Ambiguous,
+                        closest.Candidate,
+                        runnerUp.Candidate,
+                        named.Count == 0 && heardNarrators is { Count: > 0 } ? false : null,
+                        $"Two editions run for about {Clock(minutes)} - {Describe(closest.Candidate)} and "
+                        + $"{Describe(runnerUp.Candidate)} - so the length cannot say which this is.{heardNone}");
+                }
+
+                closest = named[0];
+                runnerUp = tied.First(pair => !ReferenceEquals(pair.Candidate, closest.Candidate));
             }
 
             var narratorAgrees = NarratorAgreement(closest.Candidate, heardNarrators);
