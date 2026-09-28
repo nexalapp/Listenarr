@@ -33,11 +33,28 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
         [Trait("Scenario", "SkipsAShopIdent")]
         public void StartsAfter_BeginsWhereTheIdentEnds()
         {
-            // Star Force: Endless Crusade, measured. "This is Audible." runs to 1.72s, then
-            // a pause to 3.24s, then the credits. Starting at 3.24s is what recovered them.
-            var start = OpeningIdent.StartsAfter([Pause(1.72, 3.24), Pause(5.16, 6.05), Pause(9.88, 17.30)]);
+            // Star Force: Endless Crusade, exactly as ffmpeg reports it at the settings the
+            // app uses. Note the lead-in hush at the head of the file: taking that as the
+            // first pause skips six tenths of a second, leaves the ident in the window, and
+            // was why the first attempt at this changed nothing.
+            var start = OpeningIdent.StartsAfter(
+            [
+                Pause(0, 0.595669),
+                Pause(1.723379, 3.23678),
+                Pause(5.160272, 6.046349),
+                Pause(7.395918, 8.425986)
+            ]);
 
-            Assert.Equal(TimeSpan.FromSeconds(3.24), start);
+            Assert.Equal(TimeSpan.FromSeconds(3.23678), start);
+        }
+
+        [Fact]
+        [Trait("Method", "StartsAfter")]
+        [Trait("Scenario", "LeadInHushIsNotAGap")]
+        public void StartsAfter_IgnoresTheHushAtTheHeadOfTheFile()
+        {
+            // Nothing precedes it, so it is not the gap after anything.
+            Assert.Equal(TimeSpan.Zero, OpeningIdent.StartsAfter([Pause(0, 0.6)]));
         }
 
         [Fact]
