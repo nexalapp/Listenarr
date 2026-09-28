@@ -94,10 +94,18 @@ namespace Listenarr.Domain.Audiobooks.Audit
             // middle name or merge two words into one.
             var spokenCodes = Codes(spoken);
             var knownCodes = Codes(known);
+            // Parts that sound alike, over the longer of the two names.
+            //
+            // Over the shorter one it says only that every part of the shorter name found
+            // a partner, which a middle name and a lossy code make far too easy: Soundex
+            // reads "Garcia" and "Gross" alike, so "Paul Michael Garcia" scored a certain
+            // 0.9 against "Michael Gross" and the heard narrator was rewritten to a
+            // different reader. Requiring the longer name to be covered as well costs the
+            // respellings nothing, because those have the same parts on both sides.
             var shared = spokenCodes.Count == 0 || knownCodes.Count == 0
                 ? 0.0
                 : (double)spokenCodes.Intersect(knownCodes, StringComparer.Ordinal).Count()
-                    / Math.Min(spokenCodes.Count, knownCodes.Count);
+                    / Math.Max(spokenCodes.Count, knownCodes.Count);
 
             // The letters alone are enough when they agree; otherwise the three views
             // together, and the parts alone are never quite conclusive by themselves.
