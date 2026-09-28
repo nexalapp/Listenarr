@@ -83,5 +83,37 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
 
             Assert.Equal("Wanda McCaddon", credits.Narrator);
         }
+        [Fact]
+        public void Parse_MendsACueSplitAcrossALineBreak()
+        {
+            // Pines, verbatim. The break falls between "performed" and "by", and every
+            // break becomes a full stop, so the cue was severed and the narrator lost.
+            var credits = AudioCreditsParser.Parse(
+                "\"Brilliance Audio presents the unabridged recording of 'Pines' by Blake Crouch, performed\n"
+                + "by Paul Michael Garcia.\"\nDespite evidence that human evolution still functions.");
+
+            Assert.Equal("Paul Michael Garcia", credits.Narrator);
+        }
+
+        [Fact]
+        public void Parse_MendsANameSplitAcrossALineBreak()
+        {
+            var credits = AudioCreditsParser.Parse(
+                "The Scarlet Pimpernel by Baroness Orczy, narrated by\nWanda McCaddon.\nChapter one.");
+
+            Assert.Equal("Wanda McCaddon", credits.Narrator);
+        }
+
+        [Fact]
+        public void Parse_StillStopsANameRunningIntoTheStory()
+        {
+            // The reason breaks became full stops: flattened to a space, the story's first
+            // capitalised word joined the narrator and the book was credited to
+            // "Garrick Hagon They".
+            var credits = AudioCreditsParser.Parse(
+                "3001 The Final Odyssey by Arthur C. Clarke.\nRead by Garrick Hagon\nThey looked out across the plain.");
+
+            Assert.Equal("Garrick Hagon", credits.Narrator);
+        }
     }
 }
