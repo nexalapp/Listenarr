@@ -86,5 +86,46 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             // that starts immediately would throw away the credits rather than find them.
             Assert.Equal(TimeSpan.Zero, OpeningIdent.StartsAfter([Pause(2.0, 11.0)]));
         }
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "BadgeThenProse")]
+        public void LooksSwallowed_RecognisesABadgeFollowedByNothingButStory()
+        {
+            Assert.True(OpeningIdent.LooksSwallowed(
+                "\"This is audible.\"\nThe field square he was standing on inside the Voku transport went into freefall."));
+        }
+
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "TitleFirstOpeningIsLeftAlone")]
+        public void LooksSwallowed_LeavesABookThatOpensWithItsOwnTitle()
+        {
+            // 2001: A Space Odyssey opens with its title, and skipping the first utterance
+            // threw it away. Measured on the live library: the heard title became
+            // "Copyright 1968".
+            Assert.False(OpeningIdent.LooksSwallowed(
+                "2001 A Space Odyssey by Arthur C. Clarke\nCopyright 1968 by Arthur C. Clarke. Read by Dick Hill."));
+        }
+
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "BadgeFollowedByCreditsIsFine")]
+        public void LooksSwallowed_LeavesABadgeThatWasFollowedByTheCredits()
+        {
+            // Two thirds of the books with an ident were never swallowed by it.
+            Assert.False(OpeningIdent.LooksSwallowed(
+                "This is Audible.\nBlackstone Audio presents Inferno by Larry Niven, read by Tom Weiner."));
+        }
+
+        [Fact]
+        [Trait("Method", "IsShopIdent")]
+        [Trait("Scenario", "KnownBadges")]
+        public void IsShopIdent_KnowsABadgeFromASentence()
+        {
+            Assert.True(OpeningIdent.IsShopIdent("\"This is audible.\""));
+            Assert.True(OpeningIdent.IsShopIdent("Recorded Books and One Click Digital present"));
+            Assert.False(OpeningIdent.IsShopIdent("2001 A Space Odyssey by Arthur C. Clarke"));
+            Assert.False(OpeningIdent.IsShopIdent("I thought about being dead."));
+        }
     }
 }

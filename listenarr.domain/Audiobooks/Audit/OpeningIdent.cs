@@ -17,6 +17,8 @@
  */
 using Listenarr.Domain.Audiobooks.Chapters;
 
+using System.Text.RegularExpressions;
+
 namespace Listenarr.Domain.Audiobooks.Audit
 {
     /// <summary>
@@ -41,8 +43,52 @@ namespace Listenarr.Domain.Audiobooks.Audit
     /// enough to be the gap after an ident. Everything else starts at zero.
     /// </para>
     /// </summary>
-    public static class OpeningIdent
+    public static partial class OpeningIdent
     {
+        /// <summary>
+        /// A shop or publisher badge read before the book proper: "This is Audible.",
+        /// "Audible presents", "Recorded Books presents". Deliberately a short list of
+        /// shapes rather than a guess, because skipping the first utterance of a book that
+        /// opens with its own title throws the title away — measured on 2001: A Space
+        /// Odyssey, whose opening line *is* "2001 A Space Odyssey by Arthur C. Clarke".
+        /// </summary>
+        [GeneratedRegex(@"^[""'\s]*(this is (audible|audible studios)\b|an audible original\b|[\w'&.,\- ]{0,40}\bpresents?\b)",
+            RegexOptions.IgnoreCase)]
+        private static partial Regex ShopIdent();
+
+        /// <summary>Whether a line is nothing but a shop badge.</summary>
+        public static bool IsShopIdent(string? line) =>
+            !string.IsNullOrWhiteSpace(line)
+            && line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length <= 8
+            && ShopIdent().IsMatch(line.Trim());
+
+        private static readonly string[] CreditWording =
+        [
+            "narrated by", "read by", "performed by", "written by", "unabridged",
+            "copyright", "production of", "an audiobook"
+        ];
+
+        /// <summary>
+        /// Whether an opening looks like one whisper swallowed: it begins with a shop badge
+        /// and then says nothing about what the book is. That is the shape the skip exists
+        /// for, and the only shape it should be applied to.
+        /// </summary>
+        public static bool LooksSwallowed(string? opening)
+        {
+            if (string.IsNullOrWhiteSpace(opening))
+            {
+                return false;
+            }
+
+            var lines = opening.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (lines.Length == 0 || !IsShopIdent(lines[0]))
+            {
+                return false;
+            }
+
+            return !CreditWording.Any(word => opening.Contains(word, StringComparison.OrdinalIgnoreCase));
+        }
+
         /// <summary>A pause beginning later than this is the narrator breathing, not the end of an ident.</summary>
         public static readonly TimeSpan LatestIdentEnds = TimeSpan.FromSeconds(6);
 
