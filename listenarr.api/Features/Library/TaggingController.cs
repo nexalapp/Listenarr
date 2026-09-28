@@ -21,6 +21,7 @@ using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.AspNetCore.Mvc;
 
+
 namespace Listenarr.Api.Features.Library
 {
     /// <summary>
@@ -37,6 +38,7 @@ namespace Listenarr.Api.Features.Library
         IAudiobookRepository audiobookRepository,
         IFileSystem fileSystem,
         IConfigurationService configurationService,
+        IFfmpegService ffmpegService,
         ILogger<TaggingController> logger) : ControllerBase
     {
         /// <summary>
