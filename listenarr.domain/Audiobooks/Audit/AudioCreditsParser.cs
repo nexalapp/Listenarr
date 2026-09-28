@@ -75,7 +75,11 @@ namespace Listenarr.Domain.Audiobooks.Audit
         [GeneratedRegex(@"(?i:presents|production of|recording of|audiobook|audio book|this has been|that was|listening to|written by|narrated by|read by|performed by)")]
         private static partial Regex Cue();
 
-        [GeneratedRegex(@"^\s*(?i:this is|this has been|that was|you are listening to|you have been listening to|you've been listening to|welcome to|(?:[\w.&']+\s+){0,4}presents|(?:the )?audiobook(?: edition)? of|(?:an?|the) (?:[\w.&']+\s+){0,3}audio ?(?:book|books)? (?:production|recording|edition|presentation) of|(?:an?|the) (?:[\w.&']+\s+){0,3}(?:production|recording|presentation|edition) of)\s*")]
+        // The leading character class matters: whisper puts the whole announcement in
+        // quotation marks often enough, and anchored on whitespace alone the stripper
+        // never fired. Pines came through as "Brilliance Audio presents the unabridged
+        // recording of 'Pines" because one double quote stood in front of it.
+        [GeneratedRegex(@"^[\s""'\u2018\u2019\u201c\u201d]*(?i:this is|this has been|that was|you are listening to|you have been listening to|you've been listening to|welcome to|(?:[\w.&']+\s+){0,4}presents|(?:the )?audiobook(?: edition)? of|(?:an?|the) (?:[\w.&']+\s+){0,3}audio ?(?:book|books)? (?:production|recording|edition|presentation) of|(?:an?|the) (?:[\w.&']+\s+){0,3}(?:production|recording|presentation|edition) of)\s*")]
         private static partial Regex Preamble();
 
         /// <summary>The closing formula without an author: "This has been a Hachette Audio production of Drive."</summary>

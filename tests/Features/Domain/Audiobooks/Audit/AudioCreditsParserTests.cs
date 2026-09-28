@@ -115,5 +115,19 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
 
             Assert.Equal("Garrick Hagon", credits.Narrator);
         }
+        [Fact]
+        public void Parse_StripsAPublisherPreambleThatSitsBehindAQuotationMark()
+        {
+            // Pines, verbatim including the quotation mark whisper put around it. The
+            // stripper was anchored on whitespace, so one double quote in front of the
+            // announcement left the whole preamble in the title.
+            var credits = AudioCreditsParser.Parse(
+                "\"Brilliance Audio presents the unabridged recording of 'Pines' by Blake Crouch, performed\n"
+                + "by Paul Michael Garcia.\"\nDespite evidence that human evolution still functions.");
+
+            Assert.Equal("Pines", credits.Title);
+            Assert.Equal("Blake Crouch", credits.Author);
+            Assert.Equal("Paul Michael Garcia", credits.Narrator);
+        }
     }
 }
