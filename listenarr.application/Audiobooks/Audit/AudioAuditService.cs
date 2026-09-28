@@ -215,7 +215,13 @@ namespace Listenarr.Application.Audiobooks.Audit
                     OpeningIdent.ShortestGap,
                     OpeningIdent.MostToSkip + TimeSpan.FromSeconds(2),
                     cancellationToken);
-                return OpeningIdent.StartsAfter(pauses);
+                var afterPause = OpeningIdent.StartsAfter(pauses);
+
+                // Music has no pauses, so a book that opens on a bed of it offers nothing
+                // to start after. Start past it instead; the credits are usually read over
+                // the tail of the music and whisper hears them once the window does not
+                // begin in it.
+                return afterPause > TimeSpan.Zero ? afterPause : OpeningIdent.PastAnIntro;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

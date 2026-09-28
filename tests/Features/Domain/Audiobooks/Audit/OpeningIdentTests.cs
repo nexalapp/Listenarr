@@ -127,5 +127,27 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             Assert.False(OpeningIdent.IsShopIdent("2001 A Space Odyssey by Arthur C. Clarke"));
             Assert.False(OpeningIdent.IsShopIdent("I thought about being dead."));
         }
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "MusicSwallowsTheCreditsToo")]
+        public void LooksSwallowed_RecognisesAMusicBedInFrontOfTheCredits()
+        {
+            // Pines, verbatim. Whisper marks the bed and skips the credits read over it,
+            // then resumes at the epigraph thirty seconds in.
+            Assert.True(OpeningIdent.LooksSwallowed(
+                "[Music]\nby magazine February 23, 2009. Just because you're paranoid doesn't mean they aren't after you."));
+            Assert.True(OpeningIdent.IsNonSpeech("[Music]"));
+            Assert.True(OpeningIdent.IsNonSpeech("(dramatic music)"));
+            Assert.False(OpeningIdent.IsNonSpeech("Pines by Blake Crouch"));
+        }
+
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "MusicBeforeCreditsThatWereHeard")]
+        public void LooksSwallowed_LeavesAMusicBedWhoseCreditsCameThroughAnyway()
+        {
+            Assert.False(OpeningIdent.LooksSwallowed(
+                "[MUSIC PLAYING]\nHachette Audio presents Provenance, written by Ann Leckie, read by Adjoa Ando."));
+        }
     }
 }

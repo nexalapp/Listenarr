@@ -62,6 +62,17 @@ namespace Listenarr.Domain.Audiobooks.Audit
             && line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length <= 8
             && ShopIdent().IsMatch(line.Trim());
 
+        /// <summary>
+        /// Whether a line is only whisper's mark for something that is not speech -
+        /// "[Music]", "(dramatic music)", "[BLANK_AUDIO]". In front of the credits it
+        /// swallows them exactly as a spoken badge does.
+        /// </summary>
+        public static bool IsNonSpeech(string? line) =>
+            !string.IsNullOrWhiteSpace(line) && SoundOnly().IsMatch(line.Trim());
+
+        [GeneratedRegex(@"^[\[\(][^\]\)]*[\]\)]$")]
+        private static partial Regex SoundOnly();
+
         private static readonly string[] CreditWording =
         [
             "narrated by", "read by", "performed by", "written by", "unabridged",
@@ -81,7 +92,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
             }
 
             var lines = opening.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (lines.Length == 0 || !IsShopIdent(lines[0]))
+            if (lines.Length == 0 || !(IsShopIdent(lines[0]) || IsNonSpeech(lines[0])))
             {
                 return false;
             }
@@ -104,6 +115,21 @@ namespace Listenarr.Domain.Audiobooks.Audit
 
         /// <summary>Never skip more than this, whatever the pauses say. Beyond it, story is being thrown away.</summary>
         public static readonly TimeSpan MostToSkip = TimeSpan.FromSeconds(8);
+
+        /// <summary>
+        /// Where to start when the opening was swallowed and there is no pause to start
+        /// after, because the thing in front of the credits is music rather than speech.
+        ///
+        /// <para>
+        /// Music has no pauses, so silence detection finds nothing and the pause rule has
+        /// no answer. Pines opens on a bed of it and whisper returns "[Music]" and then
+        /// skips to the thirtieth second; from eight seconds it returns "Brilliance Audio
+        /// presents the unabridged recording of Pines by Blake Crouch, performed by Paul
+        /// Michael Garcia". Eight seconds is short enough that a book announcing itself
+        /// immediately has already been caught by the first pass.
+        /// </para>
+        /// </summary>
+        public static readonly TimeSpan PastAnIntro = TimeSpan.FromSeconds(8);
 
         /// <summary>How far into the file the opening window should begin.</summary>
         public static TimeSpan StartsAfter(IReadOnlyList<SilenceSpan>? pauses)
