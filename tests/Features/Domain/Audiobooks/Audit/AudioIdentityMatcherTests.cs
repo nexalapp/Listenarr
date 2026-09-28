@@ -180,5 +180,37 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
             Assert.Equal(1, result.TitleScore);
         }
+        [Fact]
+        public void Judge_DoesNotCallASignatureATruncation()
+        {
+            // Richter 10 closes on Clarke's signed afterword. It has no full stop, and was
+            // reported as a book that cuts off.
+            var result = AudioIdentityMatcher.Judge(
+                Opening + AudioAuditTranscript.ClosingMarker
+                    + "Though we never met, I feel sure the field has lost a promising contributor.\n"
+                    + "Arthur C. Clarke, 27 July 1995",
+                "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null);
+
+            Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
+        }
+
+        [Fact]
+        public void Judge_StillCatchesASentenceCutInHalf()
+        {
+            // The three real ones on this library all stop on an ordinary word.
+            foreach (var tail in new[]
+            {
+                "stared back at the orange glow of distant flames for",
+                "at the official rate in Arresa Cessamele, and even more upriver,",
+                "You don't, do you? I don't,\" he admitted. \"I flew o"
+            })
+            {
+                var result = AudioIdentityMatcher.Judge(
+                    Opening + AudioAuditTranscript.ClosingMarker + tail,
+                    "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null);
+
+                Assert.Equal(AudioAuditVerdict.Incomplete, result.Verdict);
+            }
+        }
     }
 }
