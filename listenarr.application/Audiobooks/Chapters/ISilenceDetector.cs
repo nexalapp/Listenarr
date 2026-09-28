@@ -33,9 +33,13 @@ namespace Listenarr.Application.Audiobooks.Chapters
     {
         /// <param name="path">The file to listen through.</param>
         /// <param name="minimumLength">Pauses shorter than this are not reported.</param>
+        /// <param name="within">
+        /// Stop after this much audio instead of decoding the whole file. A probe of the
+        /// first few seconds costs nothing; the whole book costs minutes.
+        /// </param>
         /// <param name="cancellationToken">Stops the decode; the file is untouched.</param>
         /// <exception cref="SilenceDetectionException">The file could not be decoded, or no ffmpeg is installed.</exception>
-        Task<IReadOnlyList<SilenceSpan>> DetectAsync(string path, TimeSpan minimumLength, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<SilenceSpan>> DetectAsync(string path, TimeSpan minimumLength, TimeSpan? within = null, CancellationToken cancellationToken = default);
     }
 
     /// <summary>The pauses could not be found: a decode failure, a timeout, or no decoder.</summary>

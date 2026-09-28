@@ -47,7 +47,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
         {
             GivenTranscription(enabled: false);
             _silences
-                .Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
         }
 

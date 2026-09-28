@@ -36,7 +36,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             var pauses = minutes.Select(m => new SilenceSpan(Min(m) - TimeSpan.FromSeconds(3), Min(m))).ToList();
             pauses.AddRange(Enumerable.Range(1, 99).Where(i => !minutes.Contains(i)).Select(i => new SilenceSpan(Min(i), Min(i) + TimeSpan.FromSeconds(0.5))));
             _silences
-                .Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(pauses);
         }
 
@@ -110,7 +110,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             GivenAudnexusChapters("B00X", 5, Min(20), Duration);
             var pauses = Enumerable.Range(1, 4).Select(i => new SilenceSpan(Min(20 * i) + shift - TimeSpan.FromSeconds(2), Min(20 * i) + shift)).ToList();
             pauses.AddRange([new SilenceSpan(Min(7), Min(7) + TimeSpan.FromSeconds(3)), new SilenceSpan(Min(33), Min(33) + TimeSpan.FromSeconds(3))]);
-            _silences.Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>())).ReturnsAsync(pauses);
+            _silences.Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>())).ReturnsAsync(pauses);
             GivenHeardAtMinutes(new Dictionary<double, string> { [20 + shift.TotalMinutes] = "Chapter two.", [60 + shift.TotalMinutes] = "Chapter four." });
 
             var preview = await BuildService().PlanAsync(7);
@@ -208,7 +208,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             Assert.Contains("no ASIN", file.Rejection);
             Assert.Contains("Turn on transcription", file.Rejection);
             // Not worth decoding the whole file to say so.
-            _silences.Verify(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
+            _silences.Verify(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -217,7 +217,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             GivenBook();
             GivenTranscription(enabled: true);
             GivenAnUnchapteredFile();
-            _silences.Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+            _silences.Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
 
             var preview = await BuildService().PlanAsync(7);
 
@@ -234,7 +234,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Chapters
             GivenTranscription(enabled: true);
             GivenAnUnchapteredFile();
             _silences
-                .Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .Setup(s => s.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new SilenceDetectionException("ffmpeg could not decode Book.m4b (exit 1): Invalid data found"));
 
             var preview = await BuildService().PlanAsync(7);

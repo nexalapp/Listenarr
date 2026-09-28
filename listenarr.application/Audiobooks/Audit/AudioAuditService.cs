@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Chapters;
 using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Application.Audiobooks.Transcription;
 using Listenarr.Domain.Audiobooks.Audit;
@@ -43,7 +44,8 @@ namespace Listenarr.Application.Audiobooks.Audit
         ILogger<AudioAuditService> logger,
         ITranscriber? transcriber = null,
         TranscriptCache? transcripts = null,
-        IAudiobookTagWriter? tagWriter = null) : IAudioAuditService
+        IAudiobookTagWriter? tagWriter = null,
+        ISilenceDetector? silenceDetector = null) : IAudioAuditService
     {
         public static readonly TimeSpan OpeningWindow = TimeSpan.FromSeconds(90);
         public static readonly TimeSpan ClosingWindow = TimeSpan.FromSeconds(90);
@@ -110,7 +112,11 @@ namespace Listenarr.Application.Audiobooks.Audit
             // it was taken. Listening costs minutes of CPU and the words do not change;
             // re-judging them does, every time the credits parser learns something. That
             // is what makes a re-run over a whole library affordable.
-            var identity = CurrentFileIdentity(files, model);
+            // Where the opening window begins, which depends on whether a shop's ident sits
+            // in front of the credits. Part of the identity, so the books whose window moves
+            // are re-heard and the rest keep the transcripts they have.
+            var opening = await OpeningStartAsync(files[0].FullPath!, cancellationToken);
+            var identity = CurrentFileIdentity(files, model, opening);
             if (StoredTranscriptIsUsable(audiobook, identity, out var stored))
             {
                 logger.LogInformation(
@@ -124,7 +130,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             // Two stretches to hear, so two steps of progress; whisper gives no rate to
             // estimate from, and a bar that moves twice beats one that does not move.
             progress?.Report(0.1);
-            var opening = await HearAsync(files[0].FullPath!, TimeSpan.Zero, OpeningWindow, model, cancellationToken);
+            var heardOpening = await HearAsync(files[0].FullPath!, opening, OpeningWindow, model, cancellationToken);
             progress?.Report(0.55);
 
             var last = files[^1];
@@ -140,8 +146,8 @@ namespace Listenarr.Application.Audiobooks.Audit
 
             // The closing is kept apart from the opening so the page can show which is which.
             var heard = string.IsNullOrWhiteSpace(closing)
-                ? opening ?? string.Empty
-                : $"{opening}{AudioAuditTranscript.ClosingMarker}{closing}";
+                ? heardOpening ?? string.Empty
+                : $"{heardOpening}{AudioAuditTranscript.ClosingMarker}{closing}";
             // Measured again after listening: the files are what the transcript describes
             // as of now, not as of before a long transcription.
             return await JudgeAndSaveAsync(
@@ -149,7 +155,7 @@ namespace Listenarr.Application.Audiobooks.Audit
                 audiobook,
                 heard,
                 aliasesJson,
-                CurrentFileIdentity(files, model),
+                CurrentFileIdentity(files, model, opening),
                 cancellationToken);
         }
 
@@ -158,7 +164,35 @@ namespace Listenarr.Application.Audiobooks.Audit
         /// cannot be measured. Only the first and the last are heard, so only those two
         /// decide whether a stored transcript still describes the book.
         /// </summary>
-        private string? CurrentFileIdentity(IReadOnlyList<(AudiobookFile File, string? FullPath)> files, string? model)
+        /// <summary>
+        /// How far into the first file to start listening. A shop's ident in front of the
+        /// credits makes whisper swallow everything after it, so the window begins at the
+        /// end of the first pause when there is one. Costs one decode of a few seconds.
+        /// </summary>
+        private async Task<TimeSpan> OpeningStartAsync(string fullPath, CancellationToken cancellationToken)
+        {
+            if (silenceDetector == null)
+            {
+                return TimeSpan.Zero;
+            }
+
+            try
+            {
+                var pauses = await silenceDetector.DetectAsync(
+                    fullPath,
+                    OpeningIdent.ShortestGap,
+                    OpeningIdent.MostToSkip + TimeSpan.FromSeconds(2),
+                    cancellationToken);
+                return OpeningIdent.StartsAfter(pauses);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogDebug(ex, "Could not look for an ident at the start of {Path}", LogRedaction.SanitizeFilePath(fullPath));
+                return TimeSpan.Zero;
+            }
+        }
+
+        private string? CurrentFileIdentity(IReadOnlyList<(AudiobookFile File, string? FullPath)> files, string? model, TimeSpan opening)
         {
             try
             {
@@ -174,7 +208,7 @@ namespace Listenarr.Application.Audiobooks.Audit
                     parts.Add((fileSystem.GetFileLength(path), fileSystem.GetLastWriteTimeUtc(path)));
                 }
 
-                return AudioAuditFileIdentity.Of(parts, model);
+                return AudioAuditFileIdentity.Of(parts, model, opening.TotalSeconds);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

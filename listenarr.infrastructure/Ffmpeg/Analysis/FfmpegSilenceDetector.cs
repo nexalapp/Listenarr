@@ -50,7 +50,7 @@ namespace Listenarr.Infrastructure.Ffmpeg.Analysis
         [GeneratedRegex(@"silence_end:\s*(?<end>-?[0-9.]+)\s*\|\s*silence_duration:\s*(?<length>[0-9.]+)")]
         private static partial Regex SilenceEnd();
 
-        public async Task<IReadOnlyList<SilenceSpan>> DetectAsync(string path, TimeSpan minimumLength, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<SilenceSpan>> DetectAsync(string path, TimeSpan minimumLength, TimeSpan? within = null, CancellationToken cancellationToken = default)
         {
             var ffmpeg = await ffmpegService.GetFfmpegPathAsync();
             if (string.IsNullOrEmpty(ffmpeg))
@@ -71,6 +71,9 @@ namespace Listenarr.Infrastructure.Ffmpeg.Analysis
                      {
                          "-hide_banner", "-nostdin", "-nostats", "-loglevel", "info",
                          "-i", path,
+                         "-t", (within?.TotalSeconds ?? 0) > 0
+                             ? within!.Value.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture)
+                             : "999999",
                          "-vn", "-af", $"silencedetect=noise={NoiseFloor}:d={Math.Max(0.1, minimumLength.TotalSeconds).ToString("F2", CultureInfo.InvariantCulture)}",
                          "-f", "null", "-"
                      })

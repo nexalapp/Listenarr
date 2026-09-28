@@ -124,7 +124,7 @@ namespace Listenarr.Application.Audiobooks.Chapters
             IReadOnlyList<SilenceSpan> pauses;
             try
             {
-                pauses = await silenceDetector.DetectAsync(fullPath, SilenceCandidates.ShortestSilence, cancellationToken) ?? [];
+                pauses = await silenceDetector.DetectAsync(fullPath, SilenceCandidates.ShortestSilence, cancellationToken: cancellationToken) ?? [];
             }
             catch (SilenceDetectionException ex)
             {
