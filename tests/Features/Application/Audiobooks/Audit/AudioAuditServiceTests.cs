@@ -185,8 +185,17 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
                 writer.Object);
             var result = await service.AuditAsync(7);
 
+            // The whole of the credits chapter, not the first ninety seconds of it. This
+            // one runs 104s; capping it left the last fourteen seconds unheard, and on a
+            // real book - The Lost World, whose final chapter is 161s - it stopped the
+            // transcript 71 seconds early, mid-sentence, which the completeness check then
+            // read as the book being cut off.
             _transcriber.Verify(
-                t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(3364.758), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()),
+                t => t.TranscribeAsync(
+                    It.IsAny<string>(),
+                    TimeSpan.FromSeconds(3364.758),
+                    TimeSpan.FromSeconds(3469) - TimeSpan.FromSeconds(3364.758),
+                    It.IsAny<CancellationToken>()),
                 Times.Once);
             Assert.Equal("Drive, an Expanse short story", result.Credits.Title);
             Assert.Equal("James S. A. Corey", result.Credits.Author);
