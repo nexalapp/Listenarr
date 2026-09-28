@@ -138,5 +138,16 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             Assert.False(SpokenNameSimilarity.IsAnyOf("Tim Sample", ["Penny Sampell"]));
             Assert.False(SpokenNameSimilarity.IsAnyOf("Scott Brick", ["Michael Gross"]));
         }
+        [Fact]
+        [Trait("Method", "IsAnyOf")]
+        [Trait("Scenario", "SharedMiddleNameAndACollidingSurname")]
+        public void IsAnyOf_DoesNotMatchOnAMiddleNameAndALossyCode()
+        {
+            // Pines credits "Paul Michael Garcia". Soundex reads Garcia and Gross alike, so
+            // every part of the shorter name found a partner and the heard narrator was
+            // rewritten to Michael Gross, who reads a different book in this library.
+            Assert.False(SpokenNameSimilarity.IsAnyOf("Paul Michael Garcia", ["Michael Gross"]));
+            Assert.False(SpokenNameSimilarity.IsAnyOf("Paul Michael Garcia", ["Max Meyers"]));
+        }
     }
 }
