@@ -1089,20 +1089,59 @@ const openBlockDetails = (item: QueueItem) => {
   blockDetailsItem.value = item
 }
 
+/**
+ * The sentence the server gave for refusing, when it gave one.
+ *
+ * A refusal arrives two ways: a body saying `queued: false` with a reason, or a 409
+ * carrying the same JSON as the error's body. Both used to be dropped on the floor,
+ * so pressing Retry on a job the server would not re-run looked like a dead button.
+ */
+const refusalReason = (result: unknown, err?: unknown): string | null => {
+  const fromResult = (result as { queued?: boolean; reason?: string } | undefined) ?? undefined
+  if (fromResult && fromResult.queued === false) {
+    return fromResult.reason ?? 'The server would not queue it again.'
+  }
+
+  const body = (err as { body?: unknown } | undefined)?.body
+  if (typeof body === 'string' && body.length > 0) {
+    try {
+      const parsed = JSON.parse(body) as { reason?: string }
+      if (parsed?.reason) return parsed.reason
+    } catch {
+      // Not JSON; fall through to the error's own message.
+    }
+  }
+
+  return null
+}
+
 const retryImport = async (item: QueueItem) => {
   retryingImportId.value = item.id
+  const toast = useToast()
   try {
+    let result: unknown
     if (item.id.startsWith('conversion:')) {
-      await conversionJobsStore.retry(item.id.slice('conversion:'.length))
+      result = await conversionJobsStore.retry(item.id.slice('conversion:'.length))
     } else if (item.id.startsWith('tagging:')) {
-      await tagJobsStore.retry(item.id.slice('tagging:'.length))
+      result = await tagJobsStore.retry(item.id.slice('tagging:'.length))
     } else {
-      await apiService.retryImport(item.id)
+      result = await apiService.retryImport(item.id)
+    }
+
+    const refused = refusalReason(result)
+    if (refused) {
+      toast.warning('Not queued again', refused)
+      return
     }
 
     blockDetailsItem.value = null
     await refreshQueue()
   } catch (err) {
+    const refused = refusalReason(undefined, err)
+    toast.warning(
+      refused ? 'Not queued again' : 'Retry failed',
+      refused ?? (err instanceof Error ? err.message : String(err)),
+    )
     errorTracking.captureException(err as Error, {
       component: 'ActivityView',
       operation: 'retryImport',
