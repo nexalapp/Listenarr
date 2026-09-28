@@ -133,6 +133,22 @@ const mockTagJobsStore = (overrides: Record<string, unknown> = {}) => {
   return currentTagJobsStore
 }
 
+let currentToast: Record<string, ReturnType<typeof vi.fn>>
+
+const mockToast = () => {
+  currentToast = {
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+  }
+  vi.doMock('@/services/toastService', () => ({
+    useToast: () => currentToast,
+  }))
+
+  return currentToast
+}
+
 const mockDownloadsStore = (overrides: Record<string, unknown> = {}) => {
   const store = {
     activeDownloads: [],
@@ -1150,5 +1166,53 @@ describe('ActivityView', () => {
     expect(vm.allActivityItems[0]?.id).toBe('tracked-artemis')
     expect(vm.allActivityItems[0]?.status).toBe('completed')
     expect(vm.allActivityItems[0]?.title).toBe('Artemis')
+  })
+  it('says why when the server refuses to queue a tag job again', async () => {
+    // The server declines an automatic job while automatic tag writing is off, and
+    // answers 409 with the sentence explaining what to do instead. That sentence used
+    // to be thrown away, so Retry looked like a dead button.
+    const toast = mockToast()
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 574, title: 'Tracker' }])
+    mockDownloadsStore()
+    const refusal = Object.assign(new Error('API error: 409'), {
+      status: 409,
+      body: JSON.stringify({
+        queued: false,
+        reason: 'Automatic metadata tag writing is switched off, so this automatic job will not be retried.',
+      }),
+    })
+    mockTagJobsStore({ retry: vi.fn(async () => { throw refusal }) })
+    vi.doMock('@/stores/tagJobs', () => ({ useTagJobsStore: () => currentTagJobsStore }))
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    await vm.retryImport({ id: 'tagging:1acfe8da' } as ActivityItem)
+
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Not queued again',
+      expect.stringContaining('Automatic metadata tag writing is switched off'),
+    )
+  })
+
+  it('says why when the server answers that it did not queue it', async () => {
+    const toast = mockToast()
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore([{ id: 574, title: 'Tracker' }])
+    mockDownloadsStore()
+    mockTagJobsStore({
+      retry: vi.fn(async () => ({ queued: false, reason: 'Queue it from the Tags page.' })),
+    })
+    vi.doMock('@/stores/tagJobs', () => ({ useTagJobsStore: () => currentTagJobsStore }))
+
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    await vm.retryImport({ id: 'tagging:1acfe8da' } as ActivityItem)
+
+    expect(toast.warning).toHaveBeenCalledWith('Not queued again', 'Queue it from the Tags page.')
   })
 })
