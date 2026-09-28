@@ -112,10 +112,14 @@ namespace Listenarr.Application.Audiobooks.Audit
             // it was taken. Listening costs minutes of CPU and the words do not change;
             // re-judging them does, every time the credits parser learns something. That
             // is what makes a re-run over a whole library affordable.
-            // Where the opening window begins, which depends on whether a shop's ident sits
-            // in front of the credits. Part of the identity, so the books whose window moves
-            // are re-heard and the rest keep the transcripts they have.
-            var opening = await OpeningStartAsync(files[0].FullPath!, cancellationToken);
+            // Skipping a shop's ident is only right for a book that has one swallowing its
+            // credits. Applied blindly it throws away the first thing said, and for a book
+            // whose opening line is its own title that is the title. The words already on
+            // record say which kind this is, so they decide; a book with none is heard from
+            // the start and reconsidered afterwards.
+            var opening = OpeningIdent.LooksSwallowed(OpeningOf(audiobook.AudioAuditHeard))
+                ? await OpeningStartAsync(files[0].FullPath!, cancellationToken)
+                : TimeSpan.Zero;
             var identity = CurrentFileIdentity(files, model, opening);
             if (StoredTranscriptIsUsable(audiobook, identity, out var stored))
             {
@@ -131,6 +135,22 @@ namespace Listenarr.Application.Audiobooks.Audit
             // estimate from, and a bar that moves twice beats one that does not move.
             progress?.Report(0.1);
             var heardOpening = await HearAsync(files[0].FullPath!, opening, OpeningWindow, model, cancellationToken);
+
+            // Nothing was on record to judge by, and what came back is a badge and then
+            // prose. Listen again from after the badge; that is where the credits are.
+            if (opening == TimeSpan.Zero && OpeningIdent.LooksSwallowed(heardOpening))
+            {
+                var afterIdent = await OpeningStartAsync(files[0].FullPath!, cancellationToken);
+                if (afterIdent > TimeSpan.Zero)
+                {
+                    var second = await HearAsync(files[0].FullPath!, afterIdent, OpeningWindow, model, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(second))
+                    {
+                        heardOpening = second;
+                        opening = afterIdent;
+                    }
+                }
+            }
             progress?.Report(0.55);
 
             var last = files[^1];
@@ -164,6 +184,18 @@ namespace Listenarr.Application.Audiobooks.Audit
         /// cannot be measured. Only the first and the last are heard, so only those two
         /// decide whether a stored transcript still describes the book.
         /// </summary>
+        /// <summary>The opening half of a stored transcript.</summary>
+        private static string? OpeningOf(string? transcript)
+        {
+            if (string.IsNullOrWhiteSpace(transcript))
+            {
+                return null;
+            }
+
+            var marker = transcript.IndexOf(AudioAuditTranscript.ClosingMarker, StringComparison.Ordinal);
+            return marker < 0 ? transcript : transcript[..marker];
+        }
+
         /// <summary>
         /// How far into the first file to start listening. A shop's ident in front of the
         /// credits makes whisper swallow everything after it, so the window begins at the
