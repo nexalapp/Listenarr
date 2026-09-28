@@ -4498,23 +4498,27 @@ a.identifier-link:hover {
 
 .credits-col,
 .credits-recommend,
+.credits-transcript {
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* The player is its own element and takes its own height. It must not be grouped with
+   the panels above: a fixed height on a block holding several lines of prose makes the
+   text spill out and print over whatever follows. */
 .credits-clip {
+  display: block;
   width: 100%;
-  margin-top: 8px;
   height: 32px;
+  margin-top: 8px;
 }
 
 .credits-clip-hint {
   margin: 6px 0 0;
   color: var(--text-secondary);
   font-size: 0.8em;
-}
-
-.credits-transcript {
-  padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
 }
 
 .credits-col h4,
