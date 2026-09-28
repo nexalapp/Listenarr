@@ -871,9 +871,29 @@
               <h4>Opening</h4>
               <p v-if="heardOpening" class="credits-text">{{ heardOpening }}</p>
               <p v-else class="credits-missing">Nothing was heard in the first minute.</p>
+              <audio
+                v-if="openingClip"
+                class="credits-clip"
+                controls
+                preload="none"
+                :src="openingClip.src"
+                @loadedmetadata="seekClip($event, openingClip.from)"
+              ></audio>
               <template v-if="heardClosing">
                 <h4>Closing</h4>
                 <p class="credits-text">{{ heardClosing }}</p>
+                <audio
+                  v-if="closingClip"
+                  class="credits-clip"
+                  controls
+                  preload="none"
+                  :src="closingClip.src"
+                  @loadedmetadata="seekClip($event, closingClip.from)"
+                ></audio>
+                <p class="credits-clip-hint">
+                  Plays the last stretch the audit listened to, so a verdict about how the
+                  book ends can be checked by ear.
+                </p>
               </template>
             </div>
           </template>
@@ -2778,6 +2798,45 @@ async function adoptEdition() {
   }
 }
 
+// ---- listening to what the audit heard ---------------------------------------------
+
+/**
+ * The audit judges two stretches it never lets anyone hear, and a verdict about how a
+ * recording ends is exactly the kind that wants checking by ear. These play the same
+ * stretches: the opening from the start, and the closing from ninety seconds before
+ * the end of the last file.
+ */
+const auditAudioFiles = computed(() =>
+  (audiobook.value?.files ?? []).filter((file) => (file.durationSeconds ?? 0) > 0),
+)
+
+const openingClip = computed(() => {
+  const first = auditAudioFiles.value[0]
+  return first ? { src: apiService.buildLibraryFileAudioUrl(first.id), from: 0 } : null
+})
+
+const closingClip = computed(() => {
+  const last = auditAudioFiles.value[auditAudioFiles.value.length - 1]
+  if (!last) return null
+  const duration = last.durationSeconds ?? 0
+  return {
+    src: apiService.buildLibraryFileAudioUrl(last.id),
+    from: Math.max(0, duration - 90),
+  }
+})
+
+/**
+ * Seek once the browser knows how long the file is. A media fragment in the URL is not
+ * enough: an M4B keeps its moov atom at the end, so the duration is unknown until the
+ * player has ranged to it, and a seek issued before then is discarded.
+ */
+function seekClip(event: Event, from: number) {
+  const player = event.target as HTMLAudioElement | null
+  if (player && Number.isFinite(from) && from > 0 && player.currentTime < from) {
+    player.currentTime = from
+  }
+}
+
 const showFixMatchModal = ref(false)
 
 function closeFixMatch() {
@@ -4439,6 +4498,18 @@ a.identifier-link:hover {
 
 .credits-col,
 .credits-recommend,
+.credits-clip {
+  width: 100%;
+  margin-top: 8px;
+  height: 32px;
+}
+
+.credits-clip-hint {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8em;
+}
+
 .credits-transcript {
   padding: 12px 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
