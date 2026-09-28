@@ -168,5 +168,17 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
 
             Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
         }
+        [Fact]
+        public void Judge_HearsTwoWordsTheNarratorSaysAsOne()
+        {
+            // Star Force: Endless Crusade, read aloud as "Starforce Endless Crusade". The
+            // record's two words are the narrator's one, and the title used to score half.
+            var result = AudioIdentityMatcher.Judge(
+                "Starforce Endless Crusade. Written by Eir K'jir. Narrated by Josh Cates. Chapter 1. May 13th, 3638, Taitamen System.",
+                "Star Force: Endless Crusade", ["Aer-ki Jyr"], ["Josh Cates"], null);
+
+            Assert.Equal(AudioAuditVerdict.Match, result.Verdict);
+            Assert.Equal(1, result.TitleScore);
+        }
     }
 }

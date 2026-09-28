@@ -204,35 +204,46 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 var matched = 0;
                 var position = start;
                 var end = Math.Min(heard.Length, start + window);
-                foreach (var word in significant)
+                for (var want = 0; want < significant.Length; want++)
                 {
+                    var word = significant[want];
+                    var pair = want + 1 < significant.Length ? word + significant[want + 1] : null;
                     var hit = -1;
                     var consumed = 1;
+                    var wantsUsed = 1;
                     for (var index = position; index < end; index++)
                     {
                         if (Close(word, heard[index]))
                         {
                             hit = index;
-                            consumed = 1;
                             break;
                         }
 
-                        // A compound the narrator says as one word and the transcriber
-                        // writes as two, or the reverse: "Ironclads" heard as "Iron Clads".
-                        // Nothing else in the loop can bridge a word boundary, so the whole
-                        // title fails on a space.
+                        // A compound written as two words where the record has one:
+                        // "Ironclads" transcribed as "Iron Clads".
                         if (index + 1 < end && Close(word, heard[index] + heard[index + 1]))
                         {
                             hit = index;
                             consumed = 2;
                             break;
                         }
+
+                        // And the reverse, which is just as common: the record writes
+                        // "Star Force" and the narrator says "Starforce". Two wanted words
+                        // are then one heard word, and without this the title scores half.
+                        if (pair != null && Close(pair, heard[index]))
+                        {
+                            hit = index;
+                            wantsUsed = 2;
+                            break;
+                        }
                     }
 
                     if (hit >= 0)
                     {
-                        matched++;
+                        matched += wantsUsed;
                         position = hit + consumed;
+                        want += wantsUsed - 1;
                     }
                 }
 
