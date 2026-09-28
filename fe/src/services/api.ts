@@ -1788,6 +1788,21 @@ class ApiService {
     return `${API_BASE_URL}/tagging/files/${fileId}/audio`
   }
 
+  /**
+   * Just one stretch of a file, cut server-side.
+   *
+   * The whole-file URL above can be seeked, but a player pointed at it still shows an
+   * eight-hour scrubber for a ninety-second question. This returns only the stretch, so
+   * the control reads 0:00 to 1:30 and the thing being judged is the thing being played.
+   */
+  buildLibraryFileClipUrl(fileId: number, startSeconds: number, seconds: number): string {
+    const query = new URLSearchParams({
+      startSeconds: Math.max(0, Math.floor(startSeconds)).toString(),
+      seconds: Math.max(1, Math.round(seconds)).toString(),
+    })
+    return `${API_BASE_URL}/tagging/files/${fileId}/audio/clip?${query}`
+  }
+
   /** The tags Listenarr can write, with their current mapping. */
   async getTagDefinitions(): Promise<TagDefinition[]> {
     return this.request<TagDefinition[]>('/tagging/tags')
