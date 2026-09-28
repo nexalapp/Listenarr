@@ -49,6 +49,13 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// <summary>Shorter than this is a breath within the ident rather than the gap after it.</summary>
         public static readonly TimeSpan ShortestGap = TimeSpan.FromSeconds(0.4);
 
+        /// <summary>
+        /// A pause beginning before this is the lead-in hush at the head of the file, not
+        /// the gap after anything. Files commonly open with half a second of it, and taking
+        /// that as the end of the ident skips nothing and leaves the ident in the window.
+        /// </summary>
+        public static readonly TimeSpan LeadIn = TimeSpan.FromSeconds(0.25);
+
         /// <summary>Never skip more than this, whatever the pauses say. Beyond it, story is being thrown away.</summary>
         public static readonly TimeSpan MostToSkip = TimeSpan.FromSeconds(8);
 
@@ -60,8 +67,11 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 return TimeSpan.Zero;
             }
 
+            // The gap wanted is the one after the ident, so it must follow some speech.
             var first = pauses
-                .Where(pause => pause.Start < LatestIdentEnds && pause.End - pause.Start >= ShortestGap)
+                .Where(pause => pause.Start >= LeadIn
+                    && pause.Start < LatestIdentEnds
+                    && pause.End - pause.Start >= ShortestGap)
                 .OrderBy(pause => pause.Start)
                 .FirstOrDefault();
 
