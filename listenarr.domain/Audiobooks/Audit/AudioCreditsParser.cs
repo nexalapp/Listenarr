@@ -46,6 +46,14 @@ namespace Listenarr.Domain.Audiobooks.Audit
         [GeneratedRegex(@"\b(?:(?i:read|narrated|performed|voiced)\s+(?i:for you\s+)?|(?i:red|reed)\s+(?i:for you)\s+)(?i:by)\s+(?<narrator>" + Name + ")")]
         private static partial Regex NarratedBy();
 
+        /// <summary>A line break between the cue word and its "by": "performed\nby X".</summary>
+        [GeneratedRegex(@"\b((?i:read|narrated|performed|voiced|written))\s*\r?\n\s*(?i:by)\b")]
+        private static partial Regex CueSplit();
+
+        /// <summary>A line break between "by" and the name it introduces: "read by\nWanda McCaddon".</summary>
+        [GeneratedRegex(@"\b(?i:by)\s*\r?\n\s*(?=[A-Z])([A-Z][\w'\-.]*)")]
+        private static partial Regex NameSplit();
+
         /// <summary>
         /// Where a closing stops crediting this book and starts advertising others.
         ///
@@ -197,6 +205,16 @@ namespace Listenarr.Domain.Audiobooks.Audit
             // reader pauses, so "Read by Garrick Hagon\nThey looked out..." is two
             // sentences; flattened to a space, the story's first capitalised word joined
             // the narrator's name and the record was credited to "Garrick Hagon They".
+            // Whisper breaks a line where the reader pauses and also where the line simply
+            // got long, and a break of the second kind lands inside the credit itself:
+            // Pines reads "...performed\nby Paul Michael Garcia". Every break becomes a
+            // full stop below, which is what keeps a narrator's name from running into the
+            // story, and it severs that cue. So mend the two places a break can split a
+            // credit before the stops go in: after the cue word and before its "by", and
+            // after "by" and before the name.
+            transcript = CueSplit().Replace(transcript, "$1 by");
+            transcript = NameSplit().Replace(transcript, "by $1");
+
             var text = SoundTag().Replace(
                 transcript.Replace("\r\n", " . ").Replace("\n", " . ").Replace("\r", " . "),
                 " . ");
