@@ -102,5 +102,41 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             Assert.True(same > other, $"expected {same} > {other}");
             Assert.True(same >= SpokenNameSimilarity.SameNameThreshold);
         }
+        [Fact]
+        [Trait("Method", "IsAnyOf")]
+        [Trait("Scenario", "SharedFirstNameDifferentSurname")]
+        public void IsAnyOf_DoesNotMatchAStrangerWhoSharesAFirstName()
+        {
+            // Richter 10 credits "David Elias", who reads nothing else in this library.
+            // The nearest name in it is David Holmes, and the heard name was rewritten to
+            // his: classic Soundex keeps four characters, so "davidelias" and
+            // "davidholmes" both encoded as D134 and the surname never reached the code.
+            Assert.False(SpokenNameSimilarity.IsAnyOf("David Elias", ["David Holmes"]));
+            Assert.False(SpokenNameSimilarity.IsAnyOf("David Elias", ["David Birney", "David Morse", "David Haig"]));
+        }
+
+        [Fact]
+        [Trait("Method", "IsAnyOf")]
+        [Trait("Scenario", "RespellingsStillMatch")]
+        public void IsAnyOf_StillJoinsANameToItsRespelling()
+        {
+            // The cases the blend exists for, which a stricter surname rule would break.
+            Assert.True(SpokenNameSimilarity.IsAnyOf("Michael Narrowmore", ["Mikael Naramore"]));
+            Assert.True(SpokenNameSimilarity.IsAnyOf("Emily Wuzallar", ["Emily Woo Zeller"]));
+            Assert.True(SpokenNameSimilarity.IsAnyOf("PJ Oakland", ["P. J. Ochlan"]));
+            Assert.True(SpokenNameSimilarity.IsAnyOf("Adjua Ando", ["Adjoa Andoh"]));
+            Assert.True(SpokenNameSimilarity.IsAnyOf("Josh Kates", ["Josh Cates"]));
+            Assert.True(SpokenNameSimilarity.IsAnyOf("Wanda McCadden", ["Wanda McCaddon"]));
+        }
+
+        [Fact]
+        [Trait("Method", "IsAnyOf")]
+        [Trait("Scenario", "DifferentPeopleStayApart")]
+        public void IsAnyOf_KeepsDifferentReadersApart()
+        {
+            Assert.False(SpokenNameSimilarity.IsAnyOf("Stefan Rudnicki", ["Stephen Hoy"]));
+            Assert.False(SpokenNameSimilarity.IsAnyOf("Tim Sample", ["Penny Sampell"]));
+            Assert.False(SpokenNameSimilarity.IsAnyOf("Scott Brick", ["Michael Gross"]));
+        }
     }
 }

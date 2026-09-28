@@ -88,7 +88,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
             var knownJoined = string.Concat(known);
 
             var letters = Ratio(spokenJoined, knownJoined);
-            var sound = Ratio(Soundex(spokenJoined), Soundex(knownJoined));
+            var sound = Ratio(LongSoundex(spokenJoined), LongSoundex(knownJoined));
 
             // Parts that sound alike, over the shorter name: a heard name may drop a
             // middle name or merge two words into one.
@@ -105,7 +105,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
         }
 
         private static HashSet<string> Codes(List<string> tokens) =>
-            tokens.Where(t => t.Length > 2).Select(Soundex).Where(c => c.Length > 0).ToHashSet(StringComparer.Ordinal);
+            tokens.Where(t => t.Length > 2).Select(token => Soundex(token)).Where(c => c.Length > 0).ToHashSet(StringComparer.Ordinal);
 
         private static double Ratio(string a, string b)
         {
@@ -155,7 +155,22 @@ namespace Listenarr.Domain.Audiobooks.Audit
         }
 
         /// <summary>Soundex: the first letter and the sounds after it, as four characters.</summary>
-        private static string Soundex(string word)
+        /// <summary>
+        /// Soundex without the four-character cut, for comparing a whole name at once.
+        ///
+        /// <para>
+        /// Classic Soundex keeps one letter and three digits, which is enough for a single
+        /// surname and useless for a name run together: "davidelias" and "davidholmes" both
+        /// reduce to D134, because the shared first name fills the code and the surname is
+        /// discarded before it is ever encoded. That scored the sound of the two names as
+        /// identical and pulled a heard "David Elias" onto a library's "David Holmes".
+        /// </para>
+        /// </summary>
+        private static string LongSoundex(string word) => Soundex(word, int.MaxValue);
+
+        private static string Soundex(string word) => Soundex(word, 4);
+
+        private static string Soundex(string word, int longest)
         {
             if (word.Length == 0)
             {
@@ -171,7 +186,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 if (digit != '\0' && digit != previous)
                 {
                     code.Append(digit);
-                    if (code.Length == 4)
+                    if (code.Length == longest)
                     {
                         break;
                     }
@@ -185,7 +200,12 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 }
             }
 
-            return code.Append("000").ToString()[..4];
+            if (longest == int.MaxValue)
+            {
+                return code.ToString();
+            }
+
+            return code.Append("000").ToString()[..longest];
         }
 
         private static char Digit(char c) => char.ToLowerInvariant(c) switch
