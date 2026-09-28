@@ -52,12 +52,25 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// this library, that was the difference between "This is a book called The New
         /// World" nine times and the book's actual credits.
         /// </remarks>
-        public static string Of(IEnumerable<(long Length, DateTime LastWriteUtc)> files, string? model = null) =>
+        /// <param name="files">Each file's length and last-write time.</param>
+        /// <param name="model">The whisper model that did the listening.</param>
+        /// <param name="openingSkipSeconds">
+        /// How far into the first file the opening window began. Appended only when it is
+        /// not zero, so a book with no ident to skip keeps the identity it already had and
+        /// its stored transcript stays good.
+        /// </param>
+        public static string Of(
+            IEnumerable<(long Length, DateTime LastWriteUtc)> files,
+            string? model = null,
+            double openingSkipSeconds = 0) =>
             string.Join('|', files.Select(f =>
                 f.Length.ToString(CultureInfo.InvariantCulture)
                 + ":"
                 + f.LastWriteUtc.Ticks.ToString(CultureInfo.InvariantCulture)))
-            + (string.IsNullOrWhiteSpace(model) ? string.Empty : "@" + model.Trim());
+            + (string.IsNullOrWhiteSpace(model) ? string.Empty : "@" + model.Trim())
+            + (openingSkipSeconds > 0
+                ? "+" + openingSkipSeconds.ToString("F1", CultureInfo.InvariantCulture)
+                : string.Empty);
 
         /// <summary>
         /// Whether what is on disk now is what was listened to. Unknown on either side is
