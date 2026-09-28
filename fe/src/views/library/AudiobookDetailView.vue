@@ -876,8 +876,7 @@
                 class="credits-clip"
                 controls
                 preload="none"
-                :src="openingClip.src"
-                @loadedmetadata="seekClip($event, openingClip.from)"
+                :src="openingClip"
               ></audio>
               <template v-if="heardClosing">
                 <h4>Closing</h4>
@@ -887,8 +886,7 @@
                   class="credits-clip"
                   controls
                   preload="none"
-                  :src="closingClip.src"
-                  @loadedmetadata="seekClip($event, closingClip.from)"
+                  :src="closingClip"
                 ></audio>
                 <p class="credits-clip-hint">
                   Plays the last stretch the audit listened to, so a verdict about how the
@@ -2810,32 +2808,29 @@ const auditAudioFiles = computed(() =>
   (audiobook.value?.files ?? []).filter((file) => (file.durationSeconds ?? 0) > 0),
 )
 
+/** The same ninety seconds at each end that the audit listens to. */
+const AUDIT_WINDOW_SECONDS = 90
+
+/**
+ * Cut server-side rather than seeked into. Pointing a player at the whole file and
+ * seeking put it at the right offset and still drew an eight-hour scrubber for a
+ * ninety-second question, which is no use for checking a verdict by ear.
+ */
 const openingClip = computed(() => {
   const first = auditAudioFiles.value[0]
-  return first ? { src: apiService.buildLibraryFileAudioUrl(first.id), from: 0 } : null
+  return first ? apiService.buildLibraryFileClipUrl(first.id, 0, AUDIT_WINDOW_SECONDS) : null
 })
 
 const closingClip = computed(() => {
   const last = auditAudioFiles.value[auditAudioFiles.value.length - 1]
   if (!last) return null
   const duration = last.durationSeconds ?? 0
-  return {
-    src: apiService.buildLibraryFileAudioUrl(last.id),
-    from: Math.max(0, duration - 90),
-  }
+  return apiService.buildLibraryFileClipUrl(
+    last.id,
+    Math.max(0, duration - AUDIT_WINDOW_SECONDS),
+    AUDIT_WINDOW_SECONDS,
+  )
 })
-
-/**
- * Seek once the browser knows how long the file is. A media fragment in the URL is not
- * enough: an M4B keeps its moov atom at the end, so the duration is unknown until the
- * player has ranged to it, and a seek issued before then is discarded.
- */
-function seekClip(event: Event, from: number) {
-  const player = event.target as HTMLAudioElement | null
-  if (player && Number.isFinite(from) && from > 0 && player.currentTime < from) {
-    player.currentTime = from
-  }
-}
 
 const showFixMatchModal = ref(false)
 
