@@ -109,7 +109,18 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 return AudioEnding.Credits;
             }
 
-            if (Terminal().IsMatch(last) || last.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < ShortestMeaningfulTail)
+            var words = last.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (Terminal().IsMatch(last) || words.Length < ShortestMeaningfulTail)
+            {
+                return AudioEnding.CompleteSentence;
+            }
+
+            // A severed sentence stops on an ordinary word - "distant flames for", "even
+            // more upriver,", "I flew o". A closing that ends on a name or a date is a
+            // signature or a credit and is finished: Richter 10 ends "Arthur C. Clarke,
+            // 27 July 1995", and calling that a cut-off book is simply wrong.
+            var final = words[^1].Trim(',', ';', ':', '-', '"', '\'');
+            if (final.Length == 0 || !char.IsLower(final[0]))
             {
                 return AudioEnding.CompleteSentence;
             }
