@@ -336,7 +336,13 @@ namespace Listenarr.Application.Audiobooks.Audit
                     return fromEnd;
                 }
 
-                return (lastChapter.Start, length < ClosingWindow ? length : ClosingWindow);
+                // The whole of it, not the first ninety seconds of it. Capping the window
+                // at ninety while starting at the chapter's beginning stops the transcript
+                // short of the file's end - The Lost World's final chapter runs 161s, so
+                // the window ended 71 seconds early, mid-sentence, and the completeness
+                // check read our own truncation as the book being cut off. Whatever the
+                // window starts at, it has to reach the end.
+                return (lastChapter.Start, length);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
