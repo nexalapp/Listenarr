@@ -73,6 +73,41 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 : string.Empty);
 
         /// <summary>
+        /// Just the files' part of an identity, without the model that listened or the
+        /// offset it started at.
+        ///
+        /// <para>
+        /// Those suffixes exist so a transcript is re-taken when the way we listen changes,
+        /// which is right for a transcript and wrong for anything about the recording
+        /// itself. A person who accepts a verdict vouches for the audio they heard, not for
+        /// which whisper model transcribed it, so comparing the whole string quietly threw
+        /// twelve acceptances away when the format grew a suffix.
+        /// </para>
+        /// </summary>
+        public static string? FilesOf(string? identity)
+        {
+            if (string.IsNullOrWhiteSpace(identity))
+            {
+                return identity;
+            }
+
+            var mark = identity.IndexOf('@');
+            return mark < 0 ? identity : identity[..mark];
+        }
+
+        /// <summary>
+        /// Whether two identities describe the same files, ignoring how they were heard.
+        /// </summary>
+        public static bool SameFiles(string? left, string? right)
+        {
+            var a = FilesOf(left);
+            var b = FilesOf(right);
+            return !string.IsNullOrWhiteSpace(a)
+                && !string.IsNullOrWhiteSpace(b)
+                && string.Equals(a, b, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         /// Whether what is on disk now is what was listened to. Unknown on either side is
         /// not a match: a transcript with no identity predates this check and is re-taken
         /// once, and a file that cannot be measured is not vouched for.
