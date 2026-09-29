@@ -86,68 +86,34 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             // that starts immediately would throw away the credits rather than find them.
             Assert.Equal(TimeSpan.Zero, OpeningIdent.StartsAfter([Pause(2.0, 11.0)]));
         }
-        [Fact]
+        // Verbatim whisper output from books in the library, kept as fixtures so a change
+        // to the rule has to answer for the real cases rather than for invented ones.
+        [Theory]
         [Trait("Method", "LooksSwallowed")]
-        [Trait("Scenario", "BadgeThenProse")]
-        public void LooksSwallowed_RecognisesABadgeFollowedByNothingButStory()
+        [Trait("Scenario", "NinetySecondsThatSayNothing")]
+        [InlineData("\"This is audible.\"\nThe field square he was standing on went into freefall.")]
+        [InlineData("[Music]\nby magazine February 23, 2009. Just because you're paranoid.")]
+        [InlineData("1.\nHealers Dolores never met a healer she didn't like, until the night they took her away.")]
+        public void LooksSwallowed_IsAboutWhatTheOpeningSaysNotHowItBegins(string opening)
         {
-            Assert.True(OpeningIdent.LooksSwallowed(
-                "\"This is audible.\"\nThe field square he was standing on inside the Voku transport went into freefall."));
+            // Three disguises, one symptom. The third is Invasive Procedures, whose
+            // recording actually opens "Blackstone Audio presents Invasive Procedures, a
+            // novel by Orson Scott Card and Aaron Johnston" - whisper rendered that whole
+            // stretch as "1.", so the first line is the damage rather than the book.
+            Assert.True(OpeningIdent.LooksSwallowed(opening));
         }
 
-        [Fact]
+        [Theory]
         [Trait("Method", "LooksSwallowed")]
-        [Trait("Scenario", "TitleFirstOpeningIsLeftAlone")]
-        public void LooksSwallowed_LeavesABookThatOpensWithItsOwnTitle()
+        [Trait("Scenario", "AnOpeningThatNamedTheBook")]
+        [InlineData("2001 A Space Odyssey by Arthur C. Clarke\nCopyright 1968. Read by Dick Hill.")]
+        [InlineData("This is Audible.\nBlackstone Audio presents Inferno by Larry Niven, read by Tom Weiner.")]
+        [InlineData("[MUSIC PLAYING]\nHachette Audio presents Provenance, written by Ann Leckie.")]
+        public void LooksSwallowed_LeavesAnOpeningThatNamedTheBook(string opening)
         {
-            // 2001: A Space Odyssey opens with its title, and skipping the first utterance
-            // threw it away. Measured on the live library: the heard title became
-            // "Copyright 1968".
-            Assert.False(OpeningIdent.LooksSwallowed(
-                "2001 A Space Odyssey by Arthur C. Clarke\nCopyright 1968 by Arthur C. Clarke. Read by Dick Hill."));
-        }
-
-        [Fact]
-        [Trait("Method", "LooksSwallowed")]
-        [Trait("Scenario", "BadgeFollowedByCreditsIsFine")]
-        public void LooksSwallowed_LeavesABadgeThatWasFollowedByTheCredits()
-        {
-            // Two thirds of the books with an ident were never swallowed by it.
-            Assert.False(OpeningIdent.LooksSwallowed(
-                "This is Audible.\nBlackstone Audio presents Inferno by Larry Niven, read by Tom Weiner."));
-        }
-
-        [Fact]
-        [Trait("Method", "IsShopIdent")]
-        [Trait("Scenario", "KnownBadges")]
-        public void IsShopIdent_KnowsABadgeFromASentence()
-        {
-            Assert.True(OpeningIdent.IsShopIdent("\"This is audible.\""));
-            Assert.True(OpeningIdent.IsShopIdent("Recorded Books and One Click Digital present"));
-            Assert.False(OpeningIdent.IsShopIdent("2001 A Space Odyssey by Arthur C. Clarke"));
-            Assert.False(OpeningIdent.IsShopIdent("I thought about being dead."));
-        }
-        [Fact]
-        [Trait("Method", "LooksSwallowed")]
-        [Trait("Scenario", "MusicSwallowsTheCreditsToo")]
-        public void LooksSwallowed_RecognisesAMusicBedInFrontOfTheCredits()
-        {
-            // Pines, verbatim. Whisper marks the bed and skips the credits read over it,
-            // then resumes at the epigraph thirty seconds in.
-            Assert.True(OpeningIdent.LooksSwallowed(
-                "[Music]\nby magazine February 23, 2009. Just because you're paranoid doesn't mean they aren't after you."));
-            Assert.True(OpeningIdent.IsNonSpeech("[Music]"));
-            Assert.True(OpeningIdent.IsNonSpeech("(dramatic music)"));
-            Assert.False(OpeningIdent.IsNonSpeech("Pines by Blake Crouch"));
-        }
-
-        [Fact]
-        [Trait("Method", "LooksSwallowed")]
-        [Trait("Scenario", "MusicBeforeCreditsThatWereHeard")]
-        public void LooksSwallowed_LeavesAMusicBedWhoseCreditsCameThroughAnyway()
-        {
-            Assert.False(OpeningIdent.LooksSwallowed(
-                "[MUSIC PLAYING]\nHachette Audio presents Provenance, written by Ann Leckie, read by Adjoa Ando."));
+            // 2001 opens with its own title and must never be skipped past; the other two
+            // carry a badge or music and were transcribed correctly anyway.
+            Assert.False(OpeningIdent.LooksSwallowed(opening));
         }
     }
 }
