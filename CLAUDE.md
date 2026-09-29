@@ -254,6 +254,42 @@ x64 the wrong `fstat` ABI misclassifies every file as a character device, and on
 arm64 the platform gate exists for good reason — lifting it caused an unkillable
 kernel hang. Use the Docker dev environment (`./run.sh dev`).
 
+## How the audio audit is tested
+
+Three layers, because a bug in this feature can live at three different depths and only
+two of them are reachable from CI.
+
+**1. Transcripts as fixtures.** Everything downstream of whisper - the credits parser,
+the identity matcher, the name comparison, the ending rule, the swallowed-opening rule -
+takes text. The fixtures are *verbatim whisper output from real books in the library*,
+pasted into the test that covers the case they broke. They are deterministic, free, and
+carry no copyright exposure. When a new failure turns up, the transcript that exposed it
+goes in beside the others.
+
+**2. Window coverage, against a mocked transcriber.** The step before the transcript -
+which stretches of audio get listened to at all - is where several real bugs have lived:
+a closing window that stopped 71 seconds before the file ended, and a retry that threw
+away what the first pass heard. Those are assertions about the offsets handed to
+`ITranscriber`, and they belong in `AudioAuditServiceTests`. Two invariants are worth
+holding to: **the closing window reaches the end of the file** whatever the last
+chapter's length, and **listening again never discards what was already heard**.
+
+**3. Whether whisper swallows a given intro is not testable here.** That is a fact about
+whisper, not about this code. It is established once per case with the harness described
+below, and then frozen into a layer-1 fixture.
+
+**Do not commit audio.** Thirty-second clips of commercial audiobooks in a public repo
+are republished copyrighted recordings, permanently, in the git history. They would also
+drag the 1.5GB model and minutes of CPU into CI for a suite that currently finishes in
+seconds, and whisper's output shifts with model version and thread count, so the
+assertions would be brittle. Keep sample audio on the NAS, outside the repo.
+
+**The harness.** A throwaway .NET console app using the same Whisper.net version and the
+same builder settings as the app, run in the dev container against wav windows cut with
+the bundled ffmpeg at 16kHz mono. It is the only way to answer "would whisper hear this
+if the window started elsewhere", which is the question behind most of these bugs. The
+API exposes no arbitrary-window transcription, deliberately.
+
 ## Development
 
 `./run.sh dev` starts the Docker dev environment (API + Vite with hot reload).
