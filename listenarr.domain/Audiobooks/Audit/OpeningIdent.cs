@@ -91,12 +91,16 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 return false;
             }
 
-            var lines = opening.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (lines.Length == 0 || !(IsShopIdent(lines[0]) || IsNonSpeech(lines[0])))
-            {
-                return false;
-            }
-
+            // The symptom, not the disguise. Whatever sits in front of the credits - a
+            // shop's badge, a bed of music, or nothing anyone can point to - what comes
+            // back is ninety seconds that never say what the book is, so that is what to
+            // look for. Keying on the first line meant a new rule for every new case.
+            //
+            // Invasive Procedures is the one that settled it. The recording opens
+            // "Blackstone Audio presents Invasive Procedures, a novel by Orson Scott Card
+            // and Aaron Johnston", and whisper rendered that entire stretch as "1." before
+            // starting the story. The first line was not a badge, not music, and not
+            // anything the book says; it was the damage itself.
             return !CreditWording.Any(word => opening.Contains(word, StringComparison.OrdinalIgnoreCase));
         }
 

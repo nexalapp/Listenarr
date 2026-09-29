@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Audiobooks.Audit;
+using Listenarr.Application.Audiobooks.Chapters;
+using Listenarr.Domain.Audiobooks.Chapters;
 using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Application.Audiobooks.Transcription;
 using Listenarr.Domain.Audiobooks.Audit;
@@ -235,6 +237,117 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
             _transcriber.Verify(
                 t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
                 Times.Once);
+        }
+        // ---- the windows must cover the file ------------------------------------------
+        //
+        // Everything else in this suite starts from a transcript that already exists. These
+        // are about the step before that: which stretches of audio get listened to at all.
+        // Both bugs they cover shipped, because nothing asserted the coverage.
+
+        [Theory]
+        [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "ClosingWindowReachesTheEnd")]
+        [InlineData(30)]
+        [InlineData(104)]
+        [InlineData(161)]
+        [InlineData(600)]
+        public async Task AuditAsync_ClosingWindowAlwaysReachesTheEndOfTheFile(double finalChapterSeconds)
+        {
+            // A credits chapter shorter than three minutes moves the window's start. It
+            // must never shorten its reach: The Lost World's final chapter runs 161s, the
+            // window took only the first 90 of them, and the transcript stopped 71 seconds
+            // early in the middle of a sentence.
+            const double duration = 3600;
+            GivenSettings(transcription: true);
+            GivenBook(("Book.m4b", duration));
+            GivenHeard("A War of Gifts by Orson Scott Card, read by Scott Brick. Chapter one.", "This has been A War of Gifts.");
+
+            var writer = new Mock<IAudiobookTagWriter>();
+            writer
+                .Setup(w => w.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudiobookFileTags(
+                    new Dictionary<string, string>(),
+                    1,
+                    TimeSpan.FromSeconds(duration),
+                    false,
+                    Chapters:
+                    [
+                        new EmbeddedChapter("1", TimeSpan.Zero, TimeSpan.FromSeconds(duration - finalChapterSeconds)),
+                        new EmbeddedChapter("2", TimeSpan.FromSeconds(duration - finalChapterSeconds), TimeSpan.FromSeconds(duration))
+                    ]));
+
+            TimeSpan? start = null;
+            TimeSpan? window = null;
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.Zero), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .Callback((string _, TimeSpan s, TimeSpan w, CancellationToken _) => { start = s; window = w; })
+                .ReturnsAsync(new Transcript("This has been A War of Gifts."));
+
+            var service = new AudioAuditService(
+                _audiobooks.Object,
+                _queue.Object,
+                _configuration.Object,
+                _fileSystem.Object,
+                NullLogger<AudioAuditService>.Instance,
+                _transcriber.Object,
+                new TranscriptCache(),
+                writer.Object);
+            await service.AuditAsync(7);
+
+            Assert.NotNull(start);
+            Assert.NotNull(window);
+            Assert.Equal(duration, start!.Value.TotalSeconds + window!.Value.TotalSeconds, 1);
+        }
+
+        [Fact]
+        [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "RetryKeepsWhatWasAlreadyHeard")]
+        public async Task AuditAsync_ListeningAgainKeepsWhatTheFirstPassHeard()
+        {
+            // When the opening says nothing about the book the audit listens again from
+            // later in the file. What it already heard is kept: a transcript that merely
+            // starts a few seconds in is how 2001: A Space Odyssey lost its title.
+            GivenSettings(transcription: true);
+            GivenBook(("Book.m4b", 3600));
+
+            const string firstPass = "1.\nHealers Dolores never met a healer she didn't like.";
+            const string secondPass = "Blackstone Audio presents A War of Gifts, written by Orson Scott Card, read by Scott Brick.";
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript(firstPass));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.Zero && s < TimeSpan.FromSeconds(60)), AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript(secondPass));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.FromSeconds(60)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("The end."));
+
+            var silences = new Mock<ISilenceDetector>();
+            silences
+                .Setup(d => d.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new SilenceSpan(TimeSpan.FromSeconds(1.7), TimeSpan.FromSeconds(3.2))]);
+
+            AudioAuditRecord? saved = null;
+            _audiobooks
+                .Setup(r => r.SetAudioAuditAsync(7, It.IsAny<AudioAuditRecord>(), It.IsAny<CancellationToken>()))
+                .Callback((int _, AudioAuditRecord record, CancellationToken _) => saved = record)
+                .Returns(Task.CompletedTask);
+
+            var service = new AudioAuditService(
+                _audiobooks.Object,
+                _queue.Object,
+                _configuration.Object,
+                _fileSystem.Object,
+                NullLogger<AudioAuditService>.Instance,
+                _transcriber.Object,
+                new TranscriptCache(),
+                null,
+                silences.Object);
+            await service.AuditAsync(7);
+
+            Assert.NotNull(saved);
+            Assert.Contains("Blackstone Audio presents", saved!.Heard);
+            Assert.Contains("Healers Dolores", saved.Heard);
         }
     }
 }

@@ -144,9 +144,21 @@ namespace Listenarr.Application.Audiobooks.Audit
                 if (afterIdent > TimeSpan.Zero)
                 {
                     var second = await HearAsync(files[0].FullPath!, afterIdent, OpeningWindow, model, cancellationToken);
-                    if (!string.IsNullOrWhiteSpace(second))
+
+                    // Only take the second listen when it actually found the credits: a
+                    // book that simply opens on its story has nothing to find, and a
+                    // transcript that merely starts later is how 2001: A Space Odyssey
+                    // lost its title.
+                    //
+                    // And keep both. The first pass is what was heard from the very start
+                    // and nothing gives us the right to throw it away; the second is put in
+                    // front of it because it holds the credits, and the parser takes the
+                    // first thing that reads like one.
+                    if (AudioCreditsParser.LooksLikeOpeningCredits(second))
                     {
-                        heardOpening = second;
+                        heardOpening = string.IsNullOrWhiteSpace(heardOpening)
+                            ? second
+                            : second + "\n" + heardOpening;
                         opening = afterIdent;
                     }
                 }
