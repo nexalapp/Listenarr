@@ -100,8 +100,6 @@ namespace Listenarr.Domain.Audiobooks
         [MaxLength(256)]
         public string? AudioAuditAcceptedIdentity { get; set; }
 
-        /// <summary>The verdict that was accepted, so the row can say what was overruled.</summary>
-        public AudioAuditVerdict? AudioAuditAcceptedVerdict { get; set; }
 
         public DateTime? AudioAuditAcceptedAt { get; set; }
 

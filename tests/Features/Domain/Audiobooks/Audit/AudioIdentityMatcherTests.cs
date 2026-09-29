@@ -212,5 +212,34 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
                 Assert.Equal(AudioAuditVerdict.Incomplete, result.Verdict);
             }
         }
+        [Fact]
+        public void Judge_SentenceAndFieldNameTheSameReader()
+        {
+            // The invariant. The reason used to be built from the raw parsed name and the
+            // stored name resolved separately afterwards, so one book's sentence read
+            // "the narrator heard is J.P. Linton" beside a page showing Amy Landon.
+            var result = AudioIdentityMatcher.Judge(
+                "A War of Gifts by Orson Scott Card. Read by Garak Hagen. Zach Morgan sat on the front row.",
+                "A War of Gifts", ["Orson Scott Card"], ["Scott Brick"], null,
+                knownNarrators: ["Garrick Hagon", "Scott Brick"]);
+
+            Assert.Equal(AudioAuditVerdict.NarratorMismatch, result.Verdict);
+            Assert.Equal("Garrick Hagon", result.Credits.Narrator);
+            Assert.Contains("Garrick Hagon", result.Reason);
+            Assert.DoesNotContain("Garak Hagen", result.Reason);
+        }
+
+        [Fact]
+        public void Judge_LeavesAHeardNameAloneWhenTheLibraryKnowsNobodyLikeIt()
+        {
+            var result = AudioIdentityMatcher.Judge(
+                "Pines by Blake Crouch, performed by Paul Michael Garcia. Chapter one. He came to lying "
+                + "on his back with sunlight pouring down into his face and the murmur of running water.",
+                "Pines", ["Blake Crouch"], ["Max Meyers"], null,
+                knownNarrators: ["Michael Gross", "Max Meyers"]);
+
+            Assert.Equal("Paul Michael Garcia", result.Credits.Narrator);
+            Assert.Contains("Paul Michael Garcia", result.Reason);
+        }
     }
 }

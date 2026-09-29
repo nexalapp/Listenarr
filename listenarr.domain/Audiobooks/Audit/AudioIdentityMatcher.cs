@@ -59,12 +59,20 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// <param name="authors">The record's authors.</param>
         /// <param name="narrators">The record's narrators; empty when unknown.</param>
         /// <param name="aliases">Name aliases, so either spelling of a person counts.</param>
+        /// <param name="knownNarrators">
+        /// Every narrator the library knows, so a name the transcriber respelled is put
+        /// back before anything is said about it. Resolving afterwards let the sentence
+        /// and the stored name disagree: one book's reason read "the narrator heard is
+        /// J.P. Linton" while the page showed Amy Landon, because the sentence was built
+        /// from the raw name and the field from the resolved one.
+        /// </param>
         public static AudioAuditResult Judge(
             string? transcript,
             string? title,
             IReadOnlyList<string>? authors,
             IReadOnlyList<string>? narrators,
-            IReadOnlyList<AuthorAlias>? aliases)
+            IReadOnlyList<AuthorAlias>? aliases,
+            IReadOnlyList<string>? knownNarrators = null)
         {
             // How the recording ends, which is the only thing that separates a damaged
             // file from a shorter edition. A finished production reads its credits.
@@ -72,6 +80,19 @@ namespace Listenarr.Domain.Audiobooks.Audit
 
             var heard = Tokens(transcript ?? string.Empty);
             var credits = AudioCreditsParser.Parse(transcript);
+
+            // The transcriber spells what it hears, so a real narrator arrives misspelled:
+            // "Garak Hagen" for Garrick Hagon, "Wanda McCadden" for Wanda McCaddon. Put the
+            // library's own spelling back now, before a verdict or a sentence is built from
+            // it, so everything downstream names the same reader.
+            if (!string.IsNullOrWhiteSpace(credits.Narrator) && knownNarrators is { Count: > 0 })
+            {
+                var spelled = SpokenNameResolver.ResolveEach(credits.Narrator, knownNarrators);
+                if (spelled.Any(name => name.WasRecognised))
+                {
+                    credits = credits with { Narrator = string.Join(", ", spelled.Select(name => name.Resolved)) };
+                }
+            }
 
             if (heard.Length < MinimumWords)
             {
