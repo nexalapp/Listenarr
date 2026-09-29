@@ -41,7 +41,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// </summary>
         public static bool IsAccepted(Audiobook audiobook) =>
             audiobook is not null
-            && AudioAuditFileIdentity.Matches(
+            && AudioAuditFileIdentity.SameFiles(
                 audiobook.AudioAuditAcceptedIdentity,
                 audiobook.AudioAuditFileIdentity);
 

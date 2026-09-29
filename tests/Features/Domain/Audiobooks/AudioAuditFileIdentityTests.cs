@@ -106,5 +106,32 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
 
             Assert.DoesNotContain("@", AudioAuditFileIdentity.Of(files));
         }
+        [Fact]
+        [Trait("Method", "SameFiles")]
+        [Trait("Scenario", "HowWeListenedIsNotWhatWasAccepted")]
+        public void SameFiles_IgnoresTheModelAndTheOffset()
+        {
+            // Verbatim from the library. The files never changed; the identity format grew
+            // a model and then an offset, and twelve acceptances stopped holding.
+            const string accepted = "35460185:639252507960433027";
+            const string now = "35460185:639252507960433027@medium.en+2.6";
+
+            Assert.True(AudioAuditFileIdentity.SameFiles(accepted, now));
+            Assert.False(AudioAuditFileIdentity.Matches(accepted, now));
+        }
+
+        [Fact]
+        [Trait("Method", "SameFiles")]
+        [Trait("Scenario", "ASwappedRecordingStillBreaksIt")]
+        public void SameFiles_StillNoticesADifferentRecording()
+        {
+            // The whole point of pinning: a file swapped in afterwards is not what anyone
+            // vouched for.
+            Assert.False(AudioAuditFileIdentity.SameFiles(
+                "35460185:639252507960433027@medium.en",
+                "99999999:639252507960433027@medium.en"));
+            Assert.False(AudioAuditFileIdentity.SameFiles(null, "35460185:1@medium.en"));
+            Assert.False(AudioAuditFileIdentity.SameFiles("35460185:1@medium.en", null));
+        }
     }
 }
