@@ -114,7 +114,7 @@ namespace Listenarr.Api.Features.Library
                 startInfo.ArgumentList.Add(argument);
             }
 
-            var process = Process.Start(startInfo);
+            using var process = Process.Start(startInfo);
             if (process == null)
             {
                 return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "ffmpeg would not start." });
@@ -123,8 +123,24 @@ namespace Listenarr.Api.Features.Library
             // Drained so a full stderr pipe cannot wedge the encode, and discarded: a clip
             // that fails simply plays as nothing.
             _ = process.StandardError.ReadToEndAsync(cancellationToken);
+
+            // Read the whole clip before answering, rather than handing the player the
+            // pipe. A piped response carries no Content-Length and cannot serve a range, so
+            // the player never learns how long the clip is: its duration grows as bytes
+            // arrive, the scrubber lands somewhere different on every click, and dragging
+            // to the end is not the end. Ninety seconds of 64k mono is under a megabyte and
+            // the length is capped above, so holding it is cheap and seeking then works.
+            using var buffer = new MemoryStream();
+            await process.StandardOutput.BaseStream.CopyToAsync(buffer, cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (buffer.Length == 0)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "ffmpeg produced no audio for that stretch." });
+            }
+
             Response.Headers.CacheControl = "private, max-age=3600";
-            return File(process.StandardOutput.BaseStream, "audio/mpeg");
+            return File(buffer.ToArray(), "audio/mpeg", enableRangeProcessing: true);
         }
     }
 }
