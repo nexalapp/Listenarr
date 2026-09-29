@@ -461,7 +461,25 @@
                   </svg>
                 </button>
                 <div class="cell-lines">
-                  <span class="cell-text">{{ cellText(row, column.key) }}</span>
+                  <!--
+                    A real link, so the browser's own affordances work: command-click and
+                    middle-click open a tab, the context menu offers it, the destination
+                    shows on hover. A row that navigates from a click handler has none of
+                    those, because there is nothing for the browser to act on. The row
+                    keeps its handler as the plain-click path.
+                  -->
+                  <RouterLink
+                    v-if="column.key === FILENAME_KEY"
+                    class="cell-text cell-link"
+                    :to="{
+                      name: 'audiobook-detail',
+                      params: { id: row.audiobookId },
+                      query: { tab: 'tags' },
+                    }"
+                    @click.stop
+                    >{{ cellText(row, column.key) }}</RouterLink
+                  >
+                  <span v-else class="cell-text">{{ cellText(row, column.key) }}</span>
                   <span
                     v-if="showProposals && proposalFor(row, column.key)"
                     class="cell-proposal"
@@ -2543,6 +2561,18 @@ onBeforeUnmount(() => {
  * the first character that differs is the first character out of column. A smaller
  * proposal saved a few pixels and cost exactly the comparison the second line is for.
  */
+/* The filename is a link so the browser can open it in a tab, but it should read as the
+   text it replaced until someone points at it. */
+.cell-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cell-link:hover,
+.cell-link:focus-visible {
+  text-decoration: underline;
+}
+
 .cell-text,
 .cell-proposal {
   min-width: 0;
