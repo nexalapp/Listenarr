@@ -115,7 +115,6 @@ public partial class AudiobookRepository
         if (!accepted)
         {
             existing.AudioAuditAcceptedIdentity = null;
-            existing.AudioAuditAcceptedVerdict = null;
             existing.AudioAuditAcceptedAt = null;
             await _db.SaveChangesAsync(ct);
             return true;
@@ -129,7 +128,6 @@ public partial class AudiobookRepository
         }
 
         existing.AudioAuditAcceptedIdentity = existing.AudioAuditFileIdentity;
-        existing.AudioAuditAcceptedVerdict = existing.AudioAuditVerdict;
         existing.AudioAuditAcceptedAt = nowUtc;
         await _db.SaveChangesAsync(ct);
         return true;
