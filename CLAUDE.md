@@ -175,6 +175,21 @@ paths converge there. A book conversion accepts is not also offered for tagging,
 because the conversion writes the tags itself. A re-run is free: the planner finds
 nothing to write and no file is opened.
 
+**whisper returns windows it did not read through, and says nothing about it.** It reads
+a window in thirty-second chunks, and a chunk opening on something it cannot make words of
+— music, a shop ident, a lone heading — costs the rest of that chunk and sometimes the ones
+after. It does not error: it returns a short transcript, or the previous phrase again with
+its timestamp stretched over the part it dropped. Measured on The Barsoom Project's closing
+ninety seconds, which carry its production credits behind twelve seconds of music: whisper
+gave up at 37.1s, said "to life." across the next sixteen, then nothing until the last
+three. Fed the same audio from 37.1s it read every line, including the only place either
+author is named aloud. The book's opening does it twice, yielding "This is Audible." and
+"Prologue" for sixty seconds. So `TranscriptStall` reads the segment *times* — the only
+evidence of this — and the transcriber listens to the rest of the window again, once, and
+keeps the second reading only when it says more. A judgement made on the words alone can
+never recover from it, which is why `AudioAuditFileIdentity` carries a listening version
+beside the model: the model says which ears listened, not how well they were made to.
+
 **A file with no chapter marks is chaptered from the audio, and a pause is never a
 chapter by itself.** `ffmpeg silencedetect` (one decode, minutes for a long book)
 finds every pause; the long ones, plus any marks the file already has, are the
