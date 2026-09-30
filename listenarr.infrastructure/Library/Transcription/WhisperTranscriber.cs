@@ -41,7 +41,7 @@ namespace Listenarr.Infrastructure.Library.Transcription
     /// file is kept for the life of the process and processors are built per call.
     /// </para>
     /// </summary>
-    public sealed class WhisperTranscriber(
+    public sealed partial class WhisperTranscriber(
         IServiceScopeFactory scopeFactory,
         IApplicationPathService paths,
         ILogger<WhisperTranscriber> logger) : ITranscriber, IDisposable
@@ -229,48 +229,11 @@ namespace Listenarr.Infrastructure.Library.Transcription
                 return Transcript.Empty;
             }
 
-            if (!await _gate.WaitAsync(SlotWait, cancellationToken))
-            {
-                throw new TranscriptionUnavailableException(
-                    $"No transcription slot came free within {SlotWait.TotalMinutes:F0} minutes; another run is not finishing.");
-            }
+            var heard = await ListenAsync(audio, modelPath, path, start, length, cancellationToken);
 
-            try
-            {
-                var factory = GetFactory(modelPath);
-                using var processor = factory.CreateBuilder()
-                    .WithLanguage("en")
-                    .WithThreads(TranscriptionParallelism.ThreadsPerSlot)
-                    .Build();
-
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(RunTimeout);
-
-                using var stream = new MemoryStream(audio, writable: false);
-                var segments = new List<string>();
-                try
-                {
-                    await foreach (var segment in processor.ProcessAsync(stream, timeout.Token))
-                    {
-                        var text = segment.Text.Trim();
-                        if (text.Length > 0)
-                        {
-                            segments.Add(text);
-                        }
-                    }
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    throw new TranscriptionTimedOutException(
-                        $"Listening to {length.TotalSeconds:F0}s of {LogRedaction.SanitizeFilePath(path)} at {start:c} took longer than {RunTimeout.TotalMinutes:F0} minutes.");
-                }
-
-                return Transcript.FromSegments(segments);
-            }
-            finally
-            {
-                _gate.Release();
-            }
+            // whisper can hand back a window it did not read through, with no error to say
+            // so. Where it gave up, listen to the rest of that window again.
+            return await HearTheRestAsync(heard, modelPath, path, start, length, cancellationToken);
         }
 
         private async Task<(bool Enabled, string Model)> ReadSettingsAsync()

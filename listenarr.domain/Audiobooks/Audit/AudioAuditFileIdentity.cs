@@ -41,6 +41,21 @@ namespace Listenarr.Domain.Audiobooks.Audit
     public static class AudioAuditFileIdentity
     {
         /// <summary>
+        /// Bumped when the way a window is listened to changes, so that transcripts taken
+        /// the old way are heard again rather than merely re-judged. The model alone is not
+        /// enough: it says which ears listened, not how well they were made to listen.
+        ///
+        /// <para>
+        /// 2: whisper's stalls are noticed and the rest of the window is heard again
+        /// (TranscriptStall). The Barsoom Project's production credits - the only place
+        /// either of its authors is named aloud - sat behind twelve seconds of music that
+        /// cost the fifty seconds after it, and no amount of re-judging those words could
+        /// have found them.
+        /// </para>
+        /// </summary>
+        private const int Listening = 2;
+
+        /// <summary>
         /// One file as "length:lastWriteTicks", the parts joined by "|", and the model
         /// that did the listening appended after "@".
         /// </summary>
@@ -67,7 +82,9 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 f.Length.ToString(CultureInfo.InvariantCulture)
                 + ":"
                 + f.LastWriteUtc.Ticks.ToString(CultureInfo.InvariantCulture)))
-            + (string.IsNullOrWhiteSpace(model) ? string.Empty : "@" + model.Trim())
+            + (string.IsNullOrWhiteSpace(model)
+                ? string.Empty
+                : "@" + model.Trim() + "~" + Listening.ToString(CultureInfo.InvariantCulture))
             + (openingSkipSeconds > 0
                 ? "+" + openingSkipSeconds.ToString("F1", CultureInfo.InvariantCulture)
                 : string.Empty);
