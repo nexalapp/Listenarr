@@ -121,6 +121,31 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         }
 
         [Fact]
+        [Trait("Method", "OpeningSkipOf")]
+        [Trait("Scenario", "ARecordedSkipReadsBackExactly")]
+        public void OpeningSkipOf_ReadsBackWhatOfWrote()
+        {
+            // It has to round-trip to the same string, or the identity it rebuilds will not
+            // equal the one on the record and the transcript is thrown away.
+            var written = AudioAuditFileIdentity.Of([(1024L, When)], "medium.en", 2.6);
+
+            var skip = AudioAuditFileIdentity.OpeningSkipOf(written);
+
+            Assert.Equal(2.6, skip.TotalSeconds, 3);
+            Assert.Equal(written, AudioAuditFileIdentity.Of([(1024L, When)], "medium.en", skip.TotalSeconds));
+        }
+
+        [Fact]
+        [Trait("Method", "OpeningSkipOf")]
+        [Trait("Scenario", "NoSkipRecordedIsZero")]
+        public void OpeningSkipOf_IsZeroWithoutOne()
+        {
+            Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf(null));
+            Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf("35460185:639252507960433027"));
+            Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf("35460185:639252507960433027@medium.en"));
+        }
+
+        [Fact]
         [Trait("Method", "SameFiles")]
         [Trait("Scenario", "ASwappedRecordingStillBreaksIt")]
         public void SameFiles_StillNoticesADifferentRecording()

@@ -46,13 +46,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
             _transcriber.Object,
             new TranscriptCache());
 
-        private void GivenSettings(bool transcription, bool onImport = false)
+        private ApplicationSettings GivenSettings(bool transcription, bool onImport = false)
         {
             var settings = new ApplicationSettingsBuilder().Build();
             settings.TranscriptionEnabled = transcription;
             settings.AudioAuditOnImport = onImport;
             _configuration.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
             _transcriber.Setup(t => t.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(transcription);
+            return settings;
         }
 
         private Audiobook GivenBook(params (string Path, double? Seconds)[] files)
@@ -348,6 +349,92 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
             Assert.NotNull(saved);
             Assert.Contains("Blackstone Audio presents", saved!.Heard);
             Assert.Contains("Healers Dolores", saved.Heard);
+        }
+
+        [Fact]
+        [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "ARecordedSkipCostsNothingToReJudge")]
+        public async Task AuditAsync_ReUsesATranscriptTakenPastTheIdent()
+        {
+            // The whole point of the identity: a re-run after the credits parser learns
+            // something re-judges the words on record for free. A book already heard past
+            // its shop ident was the one case that did not, because the skip was worked out
+            // again as zero and the identity it built could never equal the stored one. It
+            // cost two transcriptions a book, on every audit, to arrive back where it was.
+            var settings = GivenSettings(transcription: true);
+            var model = ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel);
+            var book = GivenBook(("Book.m4b", 3600));
+            book.AudioAuditHeard = "Blackstone Audio presents A War of Gifts, written by Orson Scott Card, read by Scott Brick.";
+            book.AudioAuditFileIdentity = AudioAuditFileIdentity.Of(
+                [(1024L, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc))], model, 2.6);
+
+            AudioAuditRecord? saved = null;
+            _audiobooks
+                .Setup(r => r.SetAudioAuditAsync(7, It.IsAny<AudioAuditRecord>(), It.IsAny<CancellationToken>()))
+                .Callback((int _, AudioAuditRecord record, CancellationToken _) => saved = record)
+                .Returns(Task.CompletedTask);
+
+            await BuildService().AuditAsync(7);
+
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+            Assert.NotNull(saved);
+            Assert.Equal(book.AudioAuditHeard, saved!.Heard);
+            Assert.Equal(book.AudioAuditFileIdentity, saved.FileIdentity);
+        }
+
+        [Fact]
+        [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "ASecondListenThatFoundNothingIsStillRecorded")]
+        public async Task AuditAsync_RecordsTheSkipEvenWhenTheSecondListenFindsNothing()
+        {
+            // A listen that came back with no credits is still a listen that happened, and
+            // it is expensive. Left off the identity it would be attempted again on every
+            // audit of a book already known to have nothing there.
+            GivenSettings(transcription: true);
+            GivenBook(("Book.m4b", 3600));
+
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("1.\nHealers Dolores never met a healer she didn't like."));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.Zero && s < TimeSpan.FromSeconds(60)), AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("never met a healer she didn't like, and this one was no exception."));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.FromSeconds(60)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("The end."));
+
+            var silences = new Mock<ISilenceDetector>();
+            silences
+                .Setup(d => d.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new SilenceSpan(TimeSpan.FromSeconds(1.7), TimeSpan.FromSeconds(3.2))]);
+
+            AudioAuditRecord? saved = null;
+            _audiobooks
+                .Setup(r => r.SetAudioAuditAsync(7, It.IsAny<AudioAuditRecord>(), It.IsAny<CancellationToken>()))
+                .Callback((int _, AudioAuditRecord record, CancellationToken _) => saved = record)
+                .Returns(Task.CompletedTask);
+
+            var service = new AudioAuditService(
+                _audiobooks.Object,
+                _queue.Object,
+                _configuration.Object,
+                _fileSystem.Object,
+                NullLogger<AudioAuditService>.Instance,
+                _transcriber.Object,
+                new TranscriptCache(),
+                null,
+                silences.Object);
+            await service.AuditAsync(7);
+
+            Assert.NotNull(saved);
+
+            // The words kept are the ones from the start; the skip is on the record anyway.
+            Assert.Contains("Healers Dolores", saved!.Heard);
+            Assert.True(
+                AudioAuditFileIdentity.OpeningSkipOf(saved.FileIdentity) > TimeSpan.Zero,
+                $"the skip that was tried is not on the identity: {saved.FileIdentity}");
         }
     }
 }

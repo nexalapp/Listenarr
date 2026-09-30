@@ -96,6 +96,40 @@ namespace Listenarr.Domain.Audiobooks.Audit
         }
 
         /// <summary>
+        /// How far into the first file a recorded listening began, or zero when the
+        /// identity records no skip.
+        /// </summary>
+        /// <remarks>
+        /// Read back rather than decided again, because the skip is part of the identity.
+        /// Recomputing it as zero for a book that had already been re-heard past its ident
+        /// made the stored transcript fail this check on every later audit: minutes of CPU
+        /// to hear words we already had, and the second pass's credits replaced by the very
+        /// opening they were found to hide.
+        /// </remarks>
+        public static TimeSpan OpeningSkipOf(string? identity)
+        {
+            if (string.IsNullOrWhiteSpace(identity))
+            {
+                return TimeSpan.Zero;
+            }
+
+            // Only the skip is written with a "+"; lengths, ticks and model names have none.
+            var mark = identity.LastIndexOf('+');
+            if (mark < 0)
+            {
+                return TimeSpan.Zero;
+            }
+
+            return double.TryParse(
+                identity[(mark + 1)..],
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var seconds) && seconds > 0
+                ? TimeSpan.FromSeconds(seconds)
+                : TimeSpan.Zero;
+        }
+
+        /// <summary>
         /// Whether two identities describe the same files, ignoring how they were heard.
         /// </summary>
         public static bool SameFiles(string? left, string? right)
