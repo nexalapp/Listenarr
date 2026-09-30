@@ -175,6 +175,21 @@ paths converge there. A book conversion accepts is not also offered for tagging,
 because the conversion writes the tags itself. A re-run is free: the planner finds
 nothing to write and no file is opened.
 
+**Credits are hunted for in short windows, walking past whatever is in front of them.**
+Measured on The Barsoom Project, one offset and three lengths: from 2.7s a seventeen-second
+window read its announcement, a thirty-second window returned *nothing whatsoever*, and
+eighty-eight seconds returned the prologue with the announcement missing. So the credits
+window is 20s, not the 90s one the rest of the audit uses. And one offset is not enough: the
+pause rule stops where the ident ends, which on that book is exactly where nine seconds of
+music begin, so every window from there is "[music]" and nothing else at any length. Eight
+seconds further in whisper reads the title, both authors and the narrator — none of which is
+spoken anywhere else in the recording. Nothing measurable distinguishes a music bed from a
+pause (silence detection cannot see music, being loud), so `OpeningIdent.CreditsProbes` walks
+in by eight seconds at a time up to forty and stops at the first window that reads like
+credits. The offset that worked goes on the identity so the hunt happens once. The long
+opening window always starts at zero: it used to start after the ident, which lost the first
+thing said and made re-listening stack copies of the passage it had just re-read.
+
 **whisper returns windows it did not read through, and says nothing about it.** It reads
 a window in thirty-second chunks, and a chunk opening on something it cannot make words of
 — music, a shop ident, a lone heading — costs the rest of that chunk and sometimes the ones

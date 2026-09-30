@@ -149,6 +149,57 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// </summary>
         public static readonly TimeSpan PastAnIntro = TimeSpan.FromSeconds(8);
 
+        /// <summary>
+        /// A window for hearing credits and nothing else. Short on purpose.
+        ///
+        /// <para>
+        /// Measured on The Barsoom Project, one offset, three lengths: from 2.7s a
+        /// seventeen-second window read the announcement, a thirty-second window returned
+        /// nothing whatsoever, and eighty-eight seconds returned the prologue with the
+        /// announcement missing. A window that runs on past the credits gives whisper room
+        /// to lose them.
+        /// </para>
+        /// </summary>
+        public static readonly TimeSpan CreditsWindow = TimeSpan.FromSeconds(20);
+
+        /// <summary>How much further in to try when a window came back without credits.</summary>
+        public static readonly TimeSpan ProbeStep = TimeSpan.FromSeconds(8);
+
+        /// <summary>
+        /// How far in to keep looking. A book that has not announced itself in the first
+        /// minute is not going to.
+        /// </summary>
+        public static readonly TimeSpan GiveUpAfter = TimeSpan.FromSeconds(40);
+
+        /// <summary>
+        /// Where to try listening for the credits, in order, given where the ident ends.
+        ///
+        /// <para>
+        /// One offset is not enough, and the first one is wrong more often than not. The
+        /// pause rule stops at the end of the ident, which on The Barsoom Project is 2.7s -
+        /// and 2.7s is where nine seconds of music begin. Every window starting there comes
+        /// back as "[music]" and nothing else, at any length. From 10.7s, once the music is
+        /// behind it, whisper reads "Audible Frontiers presents The Barsoom Project. Written
+        /// by Larry Niven and Stephen Barnes and narrated by Stefan Rudnicki" - the title,
+        /// both authors and the narrator, none of which is said anywhere else in the
+        /// recording.
+        /// </para>
+        /// <para>
+        /// So walk. There is nothing to measure that distinguishes a music bed from a pause
+        /// - silence detection cannot see music, being loud - and the cheap way to find the
+        /// far side of one is to listen past it in short steps and stop at the first window
+        /// that reads like credits.
+        /// </para>
+        /// </summary>
+        public static IEnumerable<TimeSpan> CreditsProbes(TimeSpan identEnd)
+        {
+            var from = identEnd > TimeSpan.Zero ? identEnd : PastAnIntro;
+            for (var at = from; at <= GiveUpAfter; at += ProbeStep)
+            {
+                yield return at;
+            }
+        }
+
         /// <summary>How far into the file the opening window should begin.</summary>
         public static TimeSpan StartsAfter(IReadOnlyList<SilenceSpan>? pauses)
         {
