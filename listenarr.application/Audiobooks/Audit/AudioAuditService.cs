@@ -150,7 +150,12 @@ namespace Listenarr.Application.Audiobooks.Audit
             // already on record are the only copy of what comes before it. Keep them behind
             // the new ones rather than losing them: re-hearing A Meeting with Medusa from
             // eight seconds in dropped the title it opens with.
-            if (opening > TimeSpan.Zero)
+            //
+            // Only when they really are the only copy. Words taken from this same offset
+            // cover the same audio, and this listen has just covered it better, so keeping
+            // them stacks a second reading of the same passage under the first. The Barsoom
+            // Project's opening reached three copies of its prologue that way.
+            if (opening > TimeSpan.Zero && recorded < opening)
             {
                 var previous = OpeningOf(audiobook.AudioAuditHeard);
                 if (!string.IsNullOrWhiteSpace(previous))
