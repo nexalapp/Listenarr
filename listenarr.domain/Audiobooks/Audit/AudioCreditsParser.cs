@@ -79,7 +79,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
         // quotation marks often enough, and anchored on whitespace alone the stripper
         // never fired. Pines came through as "Brilliance Audio presents the unabridged
         // recording of 'Pines" because one double quote stood in front of it.
-        [GeneratedRegex(@"^[\s""'\u2018\u2019\u201c\u201d]*(?i:this is|this has been|that was|you are listening to|you have been listening to|you've been listening to|welcome to|(?:[\w.&']+\s+){0,4}presents|(?:the )?audiobook(?: edition)? of|(?:an?|the) (?:[\w.&']+\s+){0,3}audio ?(?:book|books)? (?:production|recording|edition|presentation) of|(?:an?|the) (?:[\w.&']+\s+){0,3}(?:production|recording|presentation|edition) of)\s*")]
+        [GeneratedRegex(@"^[\s""'\u2018\u2019\u201c\u201d]*(?i:this is|this has been|that was|you are listening to|you have been listening to|you've been listening to|welcome to|(?:[\w.&']+\s+){0,4}presents|(?:the )?audiobook(?: edition)? of|(?:an?|the) (?:[\w.&']+\s+){0,3}audio ?(?:book|books)? (?:production|recording|edition|presentation) of|(?:an?|the) (?:[\w.&']+\s+){0,3}(?:production|recording|presentation|edition) of|side\s+(?:one|two|three|four|five|six|\d{1,2})\b|[a-z]{1,3}[-\s]?\d{2,7}(?:-\d{1,4})?\b|\d{5,7}\b)[\s,.:;""'\u2018\u2019\u201c\u201d-]*")]
         private static partial Regex Preamble();
 
         /// <summary>The closing formula without an author: "This has been a Hachette Audio production of Drive."</summary>

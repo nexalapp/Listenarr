@@ -129,5 +129,44 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             Assert.Equal("Blake Crouch", credits.Author);
             Assert.Equal("Paul Michael Garcia", credits.Narrator);
         }
+        // Verbatim openings from the library's cassette rips. Thirty-eight books read a
+        // side number, a lending-library shelf number, or both before the title.
+        [Theory]
+        [InlineData(
+            "This book contains up to four sides per cassette.\nSide one, RC-56820, Robot Dreams by Isaac Asimov. "
+            + "Copyright 1986 by Byron Price Visual Productions Incorporated. Read by Michael Rosato.",
+            "Robot Dreams", "Isaac Asimov", "Michael Rosato")]
+        [InlineData(
+            "Side 1, RC 47439, Fires of Azeroth by C. J. Cherryh. Read by Gabra Zackman. Chapter one.",
+            "Fires of Azeroth", "C. J. Cherryh", "Gabra Zackman")]
+        [InlineData(
+            "Side one, Nemesis by Isaac Asimov, read by Tom Weiner. Chapter one.",
+            "Nemesis", "Isaac Asimov", "Tom Weiner")]
+        [InlineData(
+            "42857, I Will Fear No Evil by Robert A. Heinlein. Read by Tom Weiner.",
+            "I Will Fear No Evil", "Robert A. Heinlein", "Tom Weiner")]
+        [InlineData(
+            "Side one RC-51-448, Farnham's Freehold by Robert A. Heinlein, read by Tom Weiner.",
+            "Farnham's Freehold", "Robert A. Heinlein", "Tom Weiner")]
+        public void Parse_StripsACassetteSideAndAShelfNumber(
+            string transcript, string title, string author, string narrator)
+        {
+            var credits = AudioCreditsParser.Parse(transcript);
+
+            Assert.Equal(title, credits.Title);
+            Assert.Equal(author, credits.Author);
+            Assert.Equal(narrator, credits.Narrator);
+        }
+
+        [Fact]
+        public void Parse_DoesNotEatATitleThatIsAYear()
+        {
+            // 1968 and 2010 are titles in this library and must survive a rule about
+            // shelf numbers.
+            Assert.Equal("1968", AudioCreditsParser.Parse(
+                "Side 1, RC-43735, 1968 by Mark Kurlansky. Read by Tom Weiner.").Title);
+            Assert.Equal("2010 Odyssey 2", AudioCreditsParser.Parse(
+                "Side one, 2010 Odyssey 2 by Arthur C. Clarke. Read by Tom Weiner.").Title);
+        }
     }
 }
