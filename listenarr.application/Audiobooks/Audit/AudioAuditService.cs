@@ -117,7 +117,14 @@ namespace Listenarr.Application.Audiobooks.Audit
             // whose opening line is its own title that is the title. The words already on
             // record say which kind this is, so they decide; a book with none is heard from
             // the start and reconsidered afterwards.
-            var opening = OpeningIdent.LooksSwallowed(OpeningOf(audiobook.AudioAuditHeard))
+            // Only ever tried once. A book whose second listen still found nothing keeps the
+            // skip recorded in its identity, and must not be re-heard on every audit.
+            var alreadyTried = (audiobook.AudioAuditFileIdentity ?? string.Empty).Contains('+');
+            var opening = !alreadyTried
+                && OpeningIdent.LooksSwallowed(
+                    OpeningOf(audiobook.AudioAuditHeard),
+                    audiobook.Title,
+                    audiobook.Authors)
                 ? await OpeningStartAsync(files[0].FullPath!, cancellationToken)
                 : TimeSpan.Zero;
             var identity = CurrentFileIdentity(files, model, opening);
@@ -136,9 +143,25 @@ namespace Listenarr.Application.Audiobooks.Audit
             progress?.Report(0.1);
             var heardOpening = await HearAsync(files[0].FullPath!, opening, OpeningWindow, model, cancellationToken);
 
+            // A skip decided up front listens once, from later in the file, so the words
+            // already on record are the only copy of what comes before it. Keep them behind
+            // the new ones rather than losing them: re-hearing A Meeting with Medusa from
+            // eight seconds in dropped the title it opens with.
+            if (opening > TimeSpan.Zero)
+            {
+                var previous = OpeningOf(audiobook.AudioAuditHeard);
+                if (!string.IsNullOrWhiteSpace(previous))
+                {
+                    heardOpening = string.IsNullOrWhiteSpace(heardOpening)
+                        ? previous
+                        : heardOpening + "\n" + previous;
+                }
+            }
+
             // Nothing was on record to judge by, and what came back is a badge and then
             // prose. Listen again from after the badge; that is where the credits are.
-            if (opening == TimeSpan.Zero && OpeningIdent.LooksSwallowed(heardOpening))
+            if (opening == TimeSpan.Zero
+                && OpeningIdent.LooksSwallowed(heardOpening, audiobook.Title, audiobook.Authors))
             {
                 var afterIdent = await OpeningStartAsync(files[0].FullPath!, cancellationToken);
                 if (afterIdent > TimeSpan.Zero)
