@@ -84,23 +84,37 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// and then says nothing about what the book is. That is the shape the skip exists
         /// for, and the only shape it should be applied to.
         /// </summary>
-        public static bool LooksSwallowed(string? opening)
+        /// <param name="opening">The words heard at the start of the book.</param>
+        /// <param name="title">The record's title.</param>
+        /// <param name="authors">The record's authors.</param>
+        public static bool LooksSwallowed(string? opening, string? title = null, IReadOnlyList<string>? authors = null)
         {
             if (string.IsNullOrWhiteSpace(opening))
             {
                 return false;
             }
 
+            // An opening that names the book is not swallowed, whatever words it used to do
+            // it. A Meeting with Medusa opens "A Meeting with Medusa. A Day to Remember."
+            // and never says "read by" or "copyright", so a rule about credit wording alone
+            // called it swallowed, listened again from eight seconds in, and threw the title
+            // away. What matters is whether the stretch identifies the book at all.
+            if (!string.IsNullOrWhiteSpace(title) && AudioIdentityMatcher.SameTitle(title, opening))
+            {
+                return false;
+            }
+
+            foreach (var author in authors ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(author) && AudioIdentityMatcher.SameTitle(author, opening))
+                {
+                    return false;
+                }
+            }
+
             // The symptom, not the disguise. Whatever sits in front of the credits - a
-            // shop's badge, a bed of music, or nothing anyone can point to - what comes
-            // back is ninety seconds that never say what the book is, so that is what to
-            // look for. Keying on the first line meant a new rule for every new case.
-            //
-            // Invasive Procedures is the one that settled it. The recording opens
-            // "Blackstone Audio presents Invasive Procedures, a novel by Orson Scott Card
-            // and Aaron Johnston", and whisper rendered that entire stretch as "1." before
-            // starting the story. The first line was not a badge, not music, and not
-            // anything the book says; it was the damage itself.
+            // shop's badge, a bed of music, or nothing anyone can point to - what comes back
+            // is ninety seconds that say nothing about this book.
             return !CreditWording.Any(word => opening.Contains(word, StringComparison.OrdinalIgnoreCase));
         }
 

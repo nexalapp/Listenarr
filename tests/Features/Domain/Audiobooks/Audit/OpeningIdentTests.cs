@@ -115,5 +115,56 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             // carry a badge or music and were transcribed correctly anyway.
             Assert.False(OpeningIdent.LooksSwallowed(opening));
         }
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "AnOpeningThatNamesTheBook")]
+        public void LooksSwallowed_LeavesAnOpeningThatNamesTheBookInItsOwnWords()
+        {
+            // A Meeting with Medusa, verbatim. It never says "read by" or "copyright", so a
+            // rule about credit wording alone called it swallowed, listened again from eight
+            // seconds in, and threw the title away. Checked on the live library, where the
+            // book went from match to mismatch.
+            const string opening =
+                "A Meeting with Medusa.\nA Day to Remember.\nThe Queen Elizabeth was five kilometers "
+                + "above the Grand Canyon, dawdling along at a comfortable 180, when Howard Falcon "
+                + "spotted the camera platform closing in from the right.";
+
+            Assert.False(OpeningIdent.LooksSwallowed(opening, "A Meeting with Medusa", ["Arthur C. Clarke"]));
+            Assert.True(OpeningIdent.LooksSwallowed(opening, "Some Other Book", ["Nobody At All"]));
+        }
+
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "TheAuthorAloneIsEnough")]
+        public void LooksSwallowed_LeavesAnOpeningThatNamesOnlyTheAuthor()
+        {
+            // Either half is enough to say the stretch identifies the book.
+            Assert.False(OpeningIdent.LooksSwallowed(
+                "Alastair Reynolds.\nGrafenwalder's attention was torn between the Ultra captain.",
+                "Some Quite Different Title",
+                ["Alastair Reynolds"]));
+
+            // Half a title is not the title: "Grafenwalder's" alone leaves the book unnamed.
+            Assert.True(OpeningIdent.LooksSwallowed(
+                "Grafenwalder's attention was torn between the Ultra captain and the video feed.",
+                "Grafenwalder's Bestiary",
+                ["Alastair Reynolds"]));
+        }
+
+        [Fact]
+        [Trait("Method", "LooksSwallowed")]
+        [Trait("Scenario", "StillCatchesTheRealOnes")]
+        public void LooksSwallowed_StillCatchesTheThreeRealCases()
+        {
+            Assert.True(OpeningIdent.LooksSwallowed(
+                "\"This is audible.\"\nThe field square he was standing on went into freefall.",
+                "Star Force: Endless Crusade", ["Aer-ki Jyr"]));
+            Assert.True(OpeningIdent.LooksSwallowed(
+                "[Music]\nby magazine February 23, 2009. Just because you're paranoid.",
+                "Pines", ["Blake Crouch"]));
+            Assert.True(OpeningIdent.LooksSwallowed(
+                "1.\nHealers Dolores never met a healer she didn't like, until the night they took her away.",
+                "Invasive Procedures", ["Orson Scott Card", "Aaron Johnston"]));
+        }
     }
 }
