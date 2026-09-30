@@ -53,7 +53,7 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// have found them.
         /// </para>
         /// </summary>
-        private const int Listening = 2;
+        private const int Listening = 3;
 
         /// <summary>
         /// One file as "length:lastWriteTicks", the parts joined by "|", and the model
@@ -126,6 +126,15 @@ namespace Listenarr.Domain.Audiobooks.Audit
         public static TimeSpan OpeningSkipOf(string? identity)
         {
             if (string.IsNullOrWhiteSpace(identity))
+            {
+                return TimeSpan.Zero;
+            }
+
+            // A skip decided by an older listener is not binding. It was the right answer
+            // for how the audio was read then; The Barsoom Project's recorded 2.7s was the
+            // end of its ident and the start of its music, and keeping it would have pinned
+            // every later audit to the one offset that cannot hear the credits.
+            if (!identity.Contains("~" + Listening.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal))
             {
                 return TimeSpan.Zero;
             }

@@ -166,5 +166,45 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
                 "1.\nHealers Dolores never met a healer she didn't like, until the night they took her away.",
                 "Invasive Procedures", ["Orson Scott Card", "Aaron Johnston"]));
         }
+
+        [Fact]
+        [Trait("Method", "CreditsProbes")]
+        [Trait("Scenario", "ItWalksPastTheMusic")]
+        public void CreditsProbes_WalkInFromTheIdentUntilItGivesUp()
+        {
+            // The Barsoom Project's ident ends at 2.705s, which is also where nine seconds
+            // of music begin. Every window from there is "[music]" and nothing else. The
+            // second probe, 10.705s, is the one that reads the credits.
+            var probes = OpeningIdent.CreditsProbes(TimeSpan.FromSeconds(2.705)).ToList();
+
+            Assert.Equal(2.705, probes[0].TotalSeconds, 3);
+            Assert.Equal(10.705, probes[1].TotalSeconds, 3);
+            Assert.All(probes, at => Assert.True(at <= OpeningIdent.GiveUpAfter));
+            Assert.True(probes.Count >= 4, $"too few probes to get past a music bed: {probes.Count}");
+        }
+
+        [Fact]
+        [Trait("Method", "CreditsProbes")]
+        [Trait("Scenario", "NoIdentStillStartsPastAnIntro")]
+        public void CreditsProbes_StartPastAnIntroWhenNoPauseWasFound()
+        {
+            // Music has no pauses, so there is no ident to end. Pines is the measured case.
+            Assert.Equal(
+                OpeningIdent.PastAnIntro,
+                OpeningIdent.CreditsProbes(TimeSpan.Zero).First());
+        }
+
+        [Fact]
+        [Trait("Method", "CreditsWindow")]
+        [Trait("Scenario", "ShortEnoughNotToLoseThem")]
+        public void CreditsWindow_IsShorterThanAWhisperChunk()
+        {
+            // Measured on one offset of The Barsoom Project: seventeen seconds read the
+            // announcement, thirty returned nothing at all, eighty-eight returned the
+            // prologue without it. A window that runs on past the credits loses them.
+            Assert.True(
+                OpeningIdent.CreditsWindow < TimeSpan.FromSeconds(30),
+                "a window of a whole whisper chunk or more is where the credits go missing");
+        }
     }
 }

@@ -317,7 +317,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
                 .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new Transcript(firstPass));
             _transcriber
-                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.Zero && s < TimeSpan.FromSeconds(60)), AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.Zero && s < TimeSpan.FromSeconds(60)), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new Transcript(secondPass));
             _transcriber
                 .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.FromSeconds(60)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
@@ -353,25 +353,27 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
 
         [Fact]
         [Trait("Method", "AuditAsync")]
-        [Trait("Scenario", "WordsFromTheSameOffsetAreNotStacked")]
-        public async Task AuditAsync_DoesNotKeepWordsCoveringTheSameAudio()
+        [Trait("Scenario", "TheOpeningWindowAlwaysStartsAtTheStart")]
+        public async Task AuditAsync_HearsTheOpeningFromTheVeryBeginning()
         {
-            // The words on record were taken from the same offset this listen starts at, so
-            // they cover the same audio and this listen has just covered it better. Keeping
-            // them put three copies of The Barsoom Project's prologue on its record.
+            // The offset on the record is where the credits were found, not where to start
+            // reading. It used to be both, and that cost the first thing said: a book whose
+            // opening line is its own title lost the title, and re-listening from the same
+            // offset stacked copies of the passage it had just re-read - The Barsoom Project
+            // reached three of them. The credits get windows of their own, so this one has no
+            // reason to skip anything.
             var settings = GivenSettings(transcription: true);
             var model = ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel);
             var book = GivenBook(("Book.m4b", 3600));
-            book.AudioAuditHeard = "Like a raging mountain, the Terrichik rose screaming from a frozen night-dark sea.";
+            book.AudioAuditHeard = "A War of Gifts by Orson Scott Card, read by Scott Brick.";
             book.AudioAuditFileIdentity = AudioAuditFileIdentity.Of(
-                [(4096L, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc))], model, 2.7);
+                [(4096L, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc))], model, 10.7);
 
-            const string again = "Like a raging mountain, the Terri-Chick rose screaming from a frozen night-dark sea.";
-            // The opening and closing windows are the same length, so the start is what tells
-            // the two calls apart.
+            var starts = new List<TimeSpan>();
             _transcriber
-                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v < TimeSpan.FromSeconds(60)), AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new Transcript(again));
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .Callback((string _, TimeSpan start, TimeSpan _, CancellationToken _) => starts.Add(start))
+                .ReturnsAsync(new Transcript("A War of Gifts by Orson Scott Card, read by Scott Brick."));
             _transcriber
                 .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v > TimeSpan.FromSeconds(60)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new Transcript("The end."));
@@ -384,9 +386,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
 
             await BuildService().AuditAsync(7);
 
+            Assert.Contains(TimeSpan.Zero, starts);
             Assert.NotNull(saved);
-            Assert.Contains("Terri-Chick", saved!.Heard);
-            Assert.DoesNotContain("Terrichik", saved.Heard);
+
+            // One reading of it, not two.
+            Assert.Equal(1, saved!.Heard!.Split("A War of Gifts").Length - 1);
         }
 
         [Fact]
@@ -437,7 +441,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
                 .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new Transcript("1.\nHealers Dolores never met a healer she didn't like."));
             _transcriber
-                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.Zero && s < TimeSpan.FromSeconds(60)), AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.Zero && s < TimeSpan.FromSeconds(60)), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new Transcript("never met a healer she didn't like, and this one was no exception."));
             _transcriber
                 .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(s => s > TimeSpan.FromSeconds(60)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
@@ -473,6 +477,70 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
             Assert.True(
                 AudioAuditFileIdentity.OpeningSkipOf(saved.FileIdentity) > TimeSpan.Zero,
                 $"the skip that was tried is not on the identity: {saved.FileIdentity}");
+        }
+
+        [Fact]
+        [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "TheSecondProbeIsThePastTheMusicOne")]
+        public async Task AuditAsync_KeepsLookingWhenTheFirstWindowIsOnlyMusic()
+        {
+            // The Barsoom Project. The ident ends at 2.7s and nine seconds of music begin
+            // there, so the window at the ident reads "[music]" and nothing else - at any
+            // length. Eight seconds further in, the credits are read plainly. Before this
+            // the audit tried the one offset, got music, and reported the book as a mismatch
+            // for want of a title or an author it had never been given a chance to hear.
+            GivenSettings(transcription: true);
+            GivenBook(("Book.m4b", 46442));
+
+            const string music = "[music]";
+            const string credits = "Audible Frontiers presents The Barsoom Project. Written by Larry Niven and Stephen Barnes and narrated by Stefan Rudnicki.";
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("Like a raging mountain, the Terrichik rose screaming from a frozen night-dark sea."));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(2.7), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript(music));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(10.7), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript(credits));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v > TimeSpan.FromSeconds(1000)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("Audible hopes you have enjoyed this program."));
+
+            var silences = new Mock<ISilenceDetector>();
+            silences
+                .Setup(d => d.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new SilenceSpan(TimeSpan.FromSeconds(1.637), TimeSpan.FromSeconds(2.7))]);
+
+            AudioAuditRecord? saved = null;
+            _audiobooks
+                .Setup(r => r.SetAudioAuditAsync(7, It.IsAny<AudioAuditRecord>(), It.IsAny<CancellationToken>()))
+                .Callback((int _, AudioAuditRecord record, CancellationToken _) => saved = record)
+                .Returns(Task.CompletedTask);
+
+            var service = new AudioAuditService(
+                _audiobooks.Object,
+                _queue.Object,
+                _configuration.Object,
+                _fileSystem.Object,
+                NullLogger<AudioAuditService>.Instance,
+                _transcriber.Object,
+                new TranscriptCache(),
+                null,
+                silences.Object);
+            await service.AuditAsync(7);
+
+            Assert.NotNull(saved);
+            Assert.Contains("Barsoom Project", saved!.Heard);
+            Assert.Contains("Stefan Rudnicki", saved.Heard);
+
+            // And the offset that worked is on the record, so it is not hunted for again.
+            Assert.Equal(10.7, AudioAuditFileIdentity.OpeningSkipOf(saved.FileIdentity).TotalSeconds, 1);
+
+            // It stopped as soon as it had them rather than walking the whole ladder.
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(18.7), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()),
+                Times.Never);
         }
     }
 }
