@@ -353,6 +353,44 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
 
         [Fact]
         [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "WordsFromTheSameOffsetAreNotStacked")]
+        public async Task AuditAsync_DoesNotKeepWordsCoveringTheSameAudio()
+        {
+            // The words on record were taken from the same offset this listen starts at, so
+            // they cover the same audio and this listen has just covered it better. Keeping
+            // them put three copies of The Barsoom Project's prologue on its record.
+            var settings = GivenSettings(transcription: true);
+            var model = ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel);
+            var book = GivenBook(("Book.m4b", 3600));
+            book.AudioAuditHeard = "Like a raging mountain, the Terrichik rose screaming from a frozen night-dark sea.";
+            book.AudioAuditFileIdentity = AudioAuditFileIdentity.Of(
+                [(4096L, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc))], model, 2.7);
+
+            const string again = "Like a raging mountain, the Terri-Chick rose screaming from a frozen night-dark sea.";
+            // The opening and closing windows are the same length, so the start is what tells
+            // the two calls apart.
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v < TimeSpan.FromSeconds(60)), AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript(again));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v > TimeSpan.FromSeconds(60)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("The end."));
+
+            AudioAuditRecord? saved = null;
+            _audiobooks
+                .Setup(r => r.SetAudioAuditAsync(7, It.IsAny<AudioAuditRecord>(), It.IsAny<CancellationToken>()))
+                .Callback((int _, AudioAuditRecord record, CancellationToken _) => saved = record)
+                .Returns(Task.CompletedTask);
+
+            await BuildService().AuditAsync(7);
+
+            Assert.NotNull(saved);
+            Assert.Contains("Terri-Chick", saved!.Heard);
+            Assert.DoesNotContain("Terrichik", saved.Heard);
+        }
+
+        [Fact]
+        [Trait("Method", "AuditAsync")]
         [Trait("Scenario", "ARecordedSkipCostsNothingToReJudge")]
         public async Task AuditAsync_ReUsesATranscriptTakenPastTheIdent()
         {
