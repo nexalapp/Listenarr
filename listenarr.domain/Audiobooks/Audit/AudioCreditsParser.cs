@@ -86,6 +86,37 @@ namespace Listenarr.Domain.Audiobooks.Audit
         [GeneratedRegex(@"(?i:this has been|that was|you have been listening to|you've been listening to)\s+(?<title>[^.;:!?\n]{2,100})")]
         private static partial Regex ClosingTitle();
 
+        /// <summary>
+        /// A clause that is nothing but crew roles, so the "by" after it credits the crew
+        /// and not the book.
+        ///
+        /// <para>
+        /// The Barsoom Project's closing reads "Engineered and directed by Judy Young.
+        /// Edited by Ted Scott. Music by Michael Whelan." Each is an "X by Y", and the
+        /// first of them went on the record as the book's title and author.
+        /// </para>
+        /// <para>
+        /// The whole clause has to be roles, joined by nothing but "and" or a comma. A role
+        /// word merely at the end is not enough: Soul Music is a book by Terry Pratchett.
+        /// </para>
+        /// </summary>
+        [GeneratedRegex(@"^(?i:(?:executive\s+|associate\s+|co[-\s]?)?(?:produced|producer|producers|production|engineered|engineer|directed|director|edited|editor|mixed|mastered|recorded|abridged|adapted|arranged|music|sound\s+design|cover\s+design|cover\s+art|casting|post[-\s]?production)(?:\s*(?:,|and|&)\s*)?)+$")]
+        private static partial Regex Crew();
+
+        /// <summary>
+        /// "Copyright 1989 by Larry Niven, Stephen Barnes" names the author, and the words
+        /// before its "by" are a notice rather than this book's title.
+        /// </summary>
+        [GeneratedRegex(@"^(?i:(?:audio\s+recording\s+|sound\s+recording\s+|℗\s*|©\s*)?copyright(?:\s+\d{4})?)$")]
+        private static partial Regex CopyrightNotice();
+
+        /// <summary>
+        /// A closing that credits the house without ever naming the book: "This has been an
+        /// Audible Frontiers production." There is no title in it to take.
+        /// </summary>
+        [GeneratedRegex(@"^(?i:(?:an?|the)\s+)?[\w.&'\u2019\s-]*?\b(?:production|recording|presentation|edition|audiobook|audio\s+book)$")]
+        private static partial Regex NamesNoBook();
+
         [GeneratedRegex(@"\[[^\]]*\]|\([^)]*\)|\*[^*]*\*")]
         private static partial Regex SoundTag();
 
@@ -248,6 +279,14 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 }
             }
 
+            // Both of these credit something other than the book, and taking the words
+            // around them as a title put "Engineered and directed" and "an Audible Frontiers
+            // production" on the record as the titles of The Barsoom Project.
+            if (title != null && (CopyrightNotice().IsMatch(title) || NamesNoBook().IsMatch(title)))
+            {
+                title = null;
+            }
+
             return new AudioCredits(
                 title is { Length: > 0 } t && Words(t) <= MaxCreditWords * 2 ? t : null,
                 author is { Length: > 0 } a && Words(a) <= MaxCreditWords ? a : null,
@@ -270,6 +309,13 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 var title = LastClause(match.Groups["title"].Value);
                 var authorWords = Words(author);
                 if (authorWords == 0 || authorWords > MaxCreditWords)
+                {
+                    continue;
+                }
+
+                // A crew credit is not a candidate at all. Scoring it down is not enough:
+                // in a closing it sits beside the copyright notice, which scores the same.
+                if (Crew().IsMatch(title.Trim()))
                 {
                     continue;
                 }
