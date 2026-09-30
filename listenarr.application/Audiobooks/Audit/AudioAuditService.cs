@@ -117,16 +117,19 @@ namespace Listenarr.Application.Audiobooks.Audit
             // whose opening line is its own title that is the title. The words already on
             // record say which kind this is, so they decide; a book with none is heard from
             // the start and reconsidered afterwards.
-            // Only ever tried once. A book whose second listen still found nothing keeps the
-            // skip recorded in its identity, and must not be re-heard on every audit.
-            var alreadyTried = (audiobook.AudioAuditFileIdentity ?? string.Empty).Contains('+');
-            var opening = !alreadyTried
-                && OpeningIdent.LooksSwallowed(
+            // Only ever decided once. A skip already on the record is read back from the
+            // identity rather than worked out again: it is part of that identity, so a book
+            // re-heard past its ident failed the check below on every later audit and paid
+            // for two more transcriptions to arrive at words it already had.
+            var recorded = AudioAuditFileIdentity.OpeningSkipOf(audiobook.AudioAuditFileIdentity);
+            var opening = recorded > TimeSpan.Zero
+                ? recorded
+                : OpeningIdent.LooksSwallowed(
                     OpeningOf(audiobook.AudioAuditHeard),
                     audiobook.Title,
                     audiobook.Authors)
-                ? await OpeningStartAsync(files[0].FullPath!, cancellationToken)
-                : TimeSpan.Zero;
+                    ? await OpeningStartAsync(files[0].FullPath!, cancellationToken)
+                    : TimeSpan.Zero;
             var identity = CurrentFileIdentity(files, model, opening);
             if (StoredTranscriptIsUsable(audiobook, identity, out var stored))
             {
@@ -166,6 +169,11 @@ namespace Listenarr.Application.Audiobooks.Audit
                 var afterIdent = await OpeningStartAsync(files[0].FullPath!, cancellationToken);
                 if (afterIdent > TimeSpan.Zero)
                 {
+                    // Recorded as soon as it is decided, before anything is heard, so that a
+                    // second listen which finds nothing is still a listen that happened. Left
+                    // off the identity it would be attempted again on every audit, for a book
+                    // already known to have nothing there.
+                    opening = afterIdent;
                     var second = await HearAsync(files[0].FullPath!, afterIdent, OpeningWindow, model, cancellationToken);
 
                     // Only take the second listen when it actually found the credits: a
@@ -182,7 +190,6 @@ namespace Listenarr.Application.Audiobooks.Audit
                         heardOpening = string.IsNullOrWhiteSpace(heardOpening)
                             ? second
                             : second + "\n" + heardOpening;
-                        opening = afterIdent;
                     }
                 }
             }
