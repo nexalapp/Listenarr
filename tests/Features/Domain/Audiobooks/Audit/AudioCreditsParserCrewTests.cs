@@ -92,5 +92,47 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             Assert.Equal(title, credits.Title);
             Assert.Equal(author, credits.Author);
         }
+
+        [Fact]
+        [Trait("Method", "Parse")]
+        [Trait("Scenario", "AnEditorIsNotTheAuthor")]
+        public void Parse_DoesNotTakeAnAnthologysEditorForTheAuthor()
+        {
+            // Dealing in Futures is a Joe Haldeman collection, and each story carries a note
+            // saying where it first appeared. The parser read one of those notes as the book
+            // and reported the collection as "Alien Stars, Baen Books, edited" by Elizabeth
+            // Mitchell - a confident, wrong answer in place of "nothing was heard".
+            const string storyNote = "This story first appeared in Alien Stars, Baen Books, edited by Elizabeth Mitchell.";
+
+            var credits = AudioCreditsParser.Parse(storyNote);
+
+            Assert.Null(credits.Author);
+            Assert.Null(credits.Title);
+        }
+
+        [Theory]
+        [Trait("Method", "Parse")]
+        [Trait("Scenario", "OtherRolesThatTakeTheirOwnBy")]
+        [InlineData("Translated by Michael Hofmann.")]
+        [InlineData("Abridged by Sally Marmion.")]
+        [InlineData("Selected by Ursula K. Le Guin.")]
+        public void Parse_DoesNotTakeThoseRolesForTheAuthor(string line)
+        {
+            Assert.Null(AudioCreditsParser.Parse(line).Author);
+        }
+
+        [Fact]
+        [Trait("Method", "Parse")]
+        [Trait("Scenario", "ARealAuthorIsStillRead")]
+        public void Parse_StillReadsAPlainAnnouncement()
+        {
+            // The guard is the word immediately before "by", so an ordinary credit is untouched.
+            var credits = AudioCreditsParser.Parse(
+                "Audible Frontiers presents The Barsoom Project. Written by Larry Niven and Stephen Barnes and narrated by Stefan Rudnicki.");
+
+            Assert.Equal("Larry Niven and Stephen Barnes", credits.Author);
+            Assert.Equal("Stefan Rudnicki", credits.Narrator);
+            Assert.Equal("The Barsoom Project", credits.Title);
+        }
     }
 }

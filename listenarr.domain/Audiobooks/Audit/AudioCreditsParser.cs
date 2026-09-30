@@ -104,6 +104,22 @@ namespace Listenarr.Domain.Audiobooks.Audit
         private static partial Regex Crew();
 
         /// <summary>
+        /// A role that takes a "by" of its own and does not name this book's author, whatever
+        /// stands in front of it.
+        ///
+        /// <para>
+        /// Dealing in Futures is a collection, and each story carries a note saying where it
+        /// first appeared: "Alien Stars, Baen Books, edited by Elizabeth Mitchell". The parser
+        /// read that as the book, and reported a Joe Haldeman collection as a book by its
+        /// anthology's editor. Unlike a crew line this cannot be recognised from the clause
+        /// alone - the words before "by" are a real title - so it is the word immediately in
+        /// front of the "by" that disqualifies it.
+        /// </para>
+        /// </summary>
+        [GeneratedRegex(@"(?i:\b(?:edited|compiled|selected|collected|translated|abridged|adapted|introduced|illustrated)$)")]
+        private static partial Regex NotTheAuthorsBy();
+
+        /// <summary>
         /// "Copyright 1989 by Larry Niven, Stephen Barnes" names the author, and the words
         /// before its "by" are a notice rather than this book's title.
         /// </summary>
@@ -316,6 +332,12 @@ namespace Listenarr.Domain.Audiobooks.Audit
                 // A crew credit is not a candidate at all. Scoring it down is not enough:
                 // in a closing it sits beside the copyright notice, which scores the same.
                 if (Crew().IsMatch(title.Trim()))
+                {
+                    continue;
+                }
+
+                // Nor is an editor, a translator or an abridger, whatever precedes them.
+                if (NotTheAuthorsBy().IsMatch(title.TrimEnd(' ', ',', '.', ';', ':')))
                 {
                     continue;
                 }

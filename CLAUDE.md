@@ -190,6 +190,26 @@ credits. The offset that worked goes on the identity so the hunt happens once. T
 opening window always starts at zero: it used to start after the ident, which lost the first
 thing said and made re-listening stack copies of the passage it had just re-read.
 
+**The walk keeps going only while it hears noise, and sweeps a minute at a time to five.**
+Close in it steps by eight seconds, because a credit read across a seam would be cut in half.
+Past forty seconds it takes one probe a minute out to five minutes: Fantastic Beasts: Makers,
+Mysteries and Magic is "(music)" at nought, two hundred and four hundred seconds, so forty
+seconds does not clear a long open. The sweep skips audio, which is the trade for reaching
+five minutes in five decodes; `listenFurther` steps by the window instead and covers every
+second, and is asked for by hand. What decides whether to carry on is
+`OpeningIdent.NothingButNoise`: a window holding only whisper's marks — "[Music]",
+"(eerie music)" — said nothing, so the thing in front of the credits has not finished, while
+real speech that is not a credit means the book has started and there is nothing ahead to
+find. Without that test every unannounced book in the library would pay ten decodes an audit.
+
+**Hearing nothing is not a mismatch.** A mismatch says the record is wrong, and that claim
+needs a recording that named some *other* book. When nothing matched and nothing was credited
+either, the verdict is `inconclusive` — the recording may never name itself, or whisper may
+never have read the part where it does. Fantastic Beasts is the honest case: every
+twenty-second window of it is "(music)", half an hour in as much as at the start. Those books
+stay in the Tags page's issue filter, labelled "Unclear" rather than "Different book", so the
+distinction is visible without hiding them.
+
 **whisper returns windows it did not read through, and says nothing about it.** It reads
 a window in thirty-second chunks, and a chunk opening on something it cannot make words of
 — music, a shop ident, a lone heading — costs the rest of that chunk and sometimes the ones

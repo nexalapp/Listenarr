@@ -168,11 +168,20 @@ namespace Listenarr.Domain.Audiobooks.Audit
                     titleScore, authorScore, narratorScore, credits);
             }
 
+            // Nothing matched, and nothing was credited either: no announcement was heard at
+            // all. That is not evidence the record is wrong, which is what a mismatch claims -
+            // the recording may never name itself, or whisper may never have read the part
+            // where it does. Fantastic Beasts: Makers, Mysteries and Magic is the honest case:
+            // every twenty-second window of it comes back "(music)", at the start and half an
+            // hour in, so there is nothing to judge by. The branch above still catches a
+            // recording that announces some *other* book, which is a real mismatch.
             if (!titlePartly && !authorPartly)
             {
                 return new AudioAuditResult(
-                    AudioAuditVerdict.Mismatch,
-                    $"Neither the title nor the author of {Describe(title, authors)} was heard in the opening.",
+                    cutOff ? AudioAuditVerdict.Incomplete : AudioAuditVerdict.Inconclusive,
+                    cutOff
+                        ? $"Nothing was heard naming {Describe(title, authors)}, and the audio stops mid-sentence."
+                        : $"Nothing naming {Describe(title, authors)} was heard, and no other book was named either.",
                     titleScore, authorScore, narratorScore, credits);
             }
 

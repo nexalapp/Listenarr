@@ -166,10 +166,21 @@ namespace Listenarr.Domain.Audiobooks.Audit
         public static readonly TimeSpan ProbeStep = TimeSpan.FromSeconds(8);
 
         /// <summary>
-        /// How far in to keep looking. A book that has not announced itself in the first
-        /// minute is not going to.
+        /// How far in the dense part of the walk goes. Close in, a step has to be smaller
+        /// than the window or a credit read across the seam is cut in half.
         /// </summary>
-        public static readonly TimeSpan GiveUpAfter = TimeSpan.FromSeconds(40);
+        public static readonly TimeSpan CloseIn = TimeSpan.FromSeconds(40);
+
+        /// <summary>
+        /// Past the close-in steps, a sweep: one probe a minute out to five. Measured on
+        /// Fantastic Beasts: The Crimes of Grindelwald, whose every twenty-second window is
+        /// "(music)" at nought, two hundred and four hundred seconds. A long musical open
+        /// is not rare and forty seconds does not clear one.
+        /// </summary>
+        public static readonly TimeSpan SweepStep = TimeSpan.FromMinutes(1);
+
+        /// <summary>How far in to keep looking at all.</summary>
+        public static readonly TimeSpan GiveUpAfter = TimeSpan.FromMinutes(5);
 
         /// <summary>
         /// Where to try listening for the credits, in order, given where the ident ends.
@@ -191,14 +202,61 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// that reads like credits.
         /// </para>
         /// </summary>
-        public static IEnumerable<TimeSpan> CreditsProbes(TimeSpan identEnd)
+        /// <param name="identEnd">Where the shop's ident stops, or zero when none was found.</param>
+        /// <param name="listenFurther">
+        /// Leave no gaps: step by the window rather than by a minute, all the way out. Asked
+        /// for by hand, for a book known to keep its credits behind a long open, because a
+        /// sweep of one probe a minute can pass straight over them.
+        /// </param>
+        public static IEnumerable<TimeSpan> CreditsProbes(TimeSpan identEnd, bool listenFurther = false)
         {
             var from = identEnd > TimeSpan.Zero ? identEnd : PastAnIntro;
-            for (var at = from; at <= GiveUpAfter; at += ProbeStep)
+
+            if (listenFurther)
+            {
+                for (var at = from; at <= GiveUpAfter; at += CreditsWindow)
+                {
+                    yield return at;
+                }
+
+                yield break;
+            }
+
+            // Close in, where a credit read across a seam would be cut in half.
+            for (var at = from; at <= CloseIn; at += ProbeStep)
             {
                 yield return at;
             }
+
+            // Then a sweep. These skip audio, which is the trade for reaching five minutes
+            // in five probes; a book whose credits fall in one of the gaps needs the walk
+            // asked for by hand.
+            for (var at = SweepStep; at <= GiveUpAfter; at += SweepStep)
+            {
+                if (at > CloseIn)
+                {
+                    yield return at;
+                }
+            }
         }
+
+        /// <summary>
+        /// Whether a window came back with no words in it at all - only whisper's marks for
+        /// music or other noise, "[Music]", "(eerie music)".
+        ///
+        /// <para>
+        /// This is what says to keep walking. Nothing was said there, so there is nothing to
+        /// have missed, and the thing in front of the credits has not finished. Real speech
+        /// that is not a credit means the book has started and the announcement is not ahead
+        /// of us, so the walk stops - which is what keeps it from costing ten decodes on
+        /// every book whose opening happens not to name itself.
+        /// </para>
+        /// </summary>
+        public static bool NothingButNoise(string? heard) =>
+            string.IsNullOrWhiteSpace(SoundMarks().Replace(heard ?? string.Empty, string.Empty));
+
+        [GeneratedRegex(@"\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|[\s.,;:!?-]")]
+        private static partial Regex SoundMarks();
 
         /// <summary>How far into the file the opening window should begin.</summary>
         public static TimeSpan StartsAfter(IReadOnlyList<SilenceSpan>? pauses)

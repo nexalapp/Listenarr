@@ -1005,7 +1005,8 @@ function cellText(row: LibraryTagRow, key: string) {
 const hasAudioIssue = (row: LibraryTagRow) =>
   (row.audioAudit === 'mismatch' ||
     row.audioAudit === 'narrator-mismatch' ||
-    row.audioAudit === 'incomplete') &&
+    row.audioAudit === 'incomplete' ||
+    row.audioAudit === 'inconclusive') &&
   !row.audioAuditAccepted
 
 /**
