@@ -255,7 +255,10 @@ namespace Listenarr.Domain.Audiobooks.Audit
         public static bool NothingButNoise(string? heard) =>
             string.IsNullOrWhiteSpace(SoundMarks().Replace(heard ?? string.Empty, string.Empty));
 
-        [GeneratedRegex(@"\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|[\s.,;:!?-]")]
+        // whisper writes music as a bracketed word, "[Music]", "(dramatic music)", and also
+        // as bare notes: the stored opening of Fantastic Beasts reads "(dramatic music)" and
+        // then "♪♪". A line of notes left the walk thinking it had heard speech and stop.
+        [GeneratedRegex(@"\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|[\s.,;:!?♪♫♬♩-]")]
         private static partial Regex SoundMarks();
 
         /// <summary>How far into the file the opening window should begin.</summary>
