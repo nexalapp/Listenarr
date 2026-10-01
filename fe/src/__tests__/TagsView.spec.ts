@@ -1078,8 +1078,11 @@ describe('TagsView', () => {
     await wrapper.vm.$nextTick()
 
     expect(auditAudio).toHaveBeenCalledTimes(2)
-    expect(auditAudio).toHaveBeenCalledWith(7)
-    expect(auditAudio).toHaveBeenCalledWith(9)
+
+    // A bulk audit is the ordinary listen; "listen further" is a single-book action, asked
+    // for by hand, because it costs a decode every twenty seconds of the first five minutes.
+    expect(auditAudio).toHaveBeenCalledWith(7, false)
+    expect(auditAudio).toHaveBeenCalledWith(9, false)
     expect(wrapper.text()).toContain('Transcribing 2 books')
   })
 

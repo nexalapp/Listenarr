@@ -775,7 +775,7 @@
                       ? 'Transcription is off. Turn it on in Settings → Metadata Tags.'
                       : 'Hear the opening and closing and check them against the record'
                 "
-                @click="auditAudio"
+                @click="auditAudio(false)"
               >
                 {{
                   audioAuditInFlight
@@ -784,6 +784,19 @@
                       ? 'Transcribe again'
                       : 'Transcribe'
                 }}
+              </button>
+              <button
+                type="button"
+                class="file-repair-btn"
+                :disabled="audioAuditInFlight || transcriptionOff"
+                :title="
+                  transcriptionOff
+                    ? 'Transcription is off. Turn it on in Settings → Metadata Tags.'
+                    : 'For a book that opens on a long stretch of music: keep looking for the credits through the first five minutes, leaving no gaps. Slower than a normal listen.'
+                "
+                @click="auditAudio(true)"
+              >
+                Listen further
               </button>
             </div>
           </div>
@@ -2470,15 +2483,17 @@ const audioAuditInFlight = computed(() => {
   return !!job
 })
 
-async function auditAudio() {
+async function auditAudio(listenFurther = false) {
   if (!audiobook.value) return
   const toast = useToast()
   try {
-    const response = await tagJobsStore.auditAudio(audiobook.value.id)
+    const response = await tagJobsStore.auditAudio(audiobook.value.id, listenFurther)
     if (response.queued) {
       toast.success(
-        'Transcribing',
-        'The verdict appears on the Transcript tab once the opening and closing have been heard.',
+        listenFurther ? 'Listening further' : 'Transcribing',
+        listenFurther
+          ? 'Looking for the credits through the first five minutes. This takes longer than a normal listen.'
+          : 'The verdict appears on the Transcript tab once the opening and closing have been heard.',
       )
     } else {
       toast.error('Not queued', response.reason ?? 'This book could not be queued for an audit.')

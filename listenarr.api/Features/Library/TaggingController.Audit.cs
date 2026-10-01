@@ -37,10 +37,15 @@ namespace Listenarr.Api.Features.Library
         public async Task<IActionResult> AuditAudio(
             int audiobookId,
             [FromServices] IAudioAuditService auditor,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            [FromQuery] bool listenFurther = false)
         {
-            var result = await auditor.EnqueueAsync(audiobookId, TagTrigger.Manual, cancellationToken);
-            logger.LogInformation("Audio audit request for audiobook {AudiobookId}: {Outcome}", audiobookId, result.Outcome);
+            var result = await auditor.EnqueueAsync(audiobookId, TagTrigger.Manual, cancellationToken, listenFurther);
+            logger.LogInformation(
+                "Audio audit request for audiobook {AudiobookId}: {Outcome} (listening further: {Further})",
+                audiobookId,
+                result.Outcome,
+                listenFurther);
             return ToResponse(result);
         }
 

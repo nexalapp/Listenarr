@@ -188,8 +188,8 @@ export const useTagJobsStore = defineStore('tagJobs', () => {
     return response
   }
 
-  async function auditAudio(audiobookId: number) {
-    const response = await apiService.auditAudio(audiobookId)
+  async function auditAudio(audiobookId: number, listenFurther = false) {
+    const response = await apiService.auditAudio(audiobookId, listenFurther)
     if (response.queued) {
       await refresh()
     }

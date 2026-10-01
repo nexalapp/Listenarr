@@ -50,7 +50,14 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         Audit,
 
         /// <summary>Work out and store the chapter fix for a book's flagged files. Writes nothing to the file.</summary>
-        Plan
+        Plan,
+
+        /// <summary>
+        /// The same audit, asked to spend longer looking for the credits: no gaps in the walk
+        /// and out to five minutes. Only ever asked for by hand, for a book whose credits sit
+        /// behind an open long enough that the ordinary sweep passes over them.
+        /// </summary>
+        AuditFurther
     }
 
     public enum TagTrigger

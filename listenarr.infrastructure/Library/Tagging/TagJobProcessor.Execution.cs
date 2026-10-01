@@ -59,7 +59,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 return await ExecuteChapterPlanAsync(job, audiobook, services, queue, cancellationToken);
             }
 
-            if (job.Kind == TagJobKind.Audit)
+            if (job.Kind is TagJobKind.Audit or TagJobKind.AuditFurther)
             {
                 return await ExecuteAudioAuditAsync(job, audiobook, services, queue, cancellationToken);
             }

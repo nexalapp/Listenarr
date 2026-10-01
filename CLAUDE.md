@@ -202,6 +202,15 @@ second, and is asked for by hand. What decides whether to carry on is
 real speech that is not a credit means the book has started and there is nothing ahead to
 find. Without that test every unannounced book in the library would pay ten decodes an audit.
 
+**"Listen further" is a job kind, not a flag on a row.** `TagJobKind.AuditFurther` runs the
+same audit with `listenFurther`, which steps the credits walk by the window instead of sweeping
+a minute at a time, so nothing is skipped out to five minutes. It is a button on a book's
+transcript panel and never automatic: it costs a decode for every twenty seconds of the first
+five minutes, which is the wrong default for a library of 1,240. Both kinds share the audit's
+deduplication key, so a longer listen cannot be queued beside an ordinary one and race it. The
+`Kind` column holds 16 characters and stores the name, so appending a member is safe and
+renaming one is not.
+
 **Hearing nothing is not a mismatch.** A mismatch says the record is wrong, and that claim
 needs a recording that named some *other* book. When nothing matched and nothing was credited
 either, the verdict is `inconclusive` — the recording may never name itself, or whisper may

@@ -56,7 +56,7 @@ namespace Listenarr.Application.Audiobooks.Audit
         /// </summary>
         public static readonly TimeSpan CreditsChapterMaximum = TimeSpan.FromMinutes(3);
 
-        public async Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default)
+        public async Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default, bool listenFurther = false)
         {
             var settings = await configurationService.GetApplicationSettingsAsync();
             if (!settings.TranscriptionEnabled || transcriber == null)
@@ -71,7 +71,7 @@ namespace Listenarr.Application.Audiobooks.Audit
                 return new TagEnqueueResult(TagEnqueueOutcome.Disabled, Reason: "Auditing new imports is switched off.");
             }
 
-            return await tagQueue.EnqueueAudioAuditAsync(audiobookId, trigger, cancellationToken);
+            return await tagQueue.EnqueueAudioAuditAsync(audiobookId, trigger, cancellationToken, listenFurther);
         }
 
         public async Task<AudioAuditResult> AuditAsync(int audiobookId, IProgress<double>? progress = null, CancellationToken cancellationToken = default, bool listenFurther = false)

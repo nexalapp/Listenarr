@@ -1911,11 +1911,19 @@ class ApiService {
     return this.request<EditionCheck>(`/library/${audiobookId}/edition-check`)
   }
 
-  /** Queue an audio audit: listen to the book and judge it against its record. */
+  /**
+   * Queue an audio audit: listen to the book and judge it against its record.
+   *
+   * `listenFurther` spends longer looking for the credits - no gaps in the walk, out to
+   * five minutes - for a book whose announcement sits behind an open long enough that the
+   * ordinary sweep passes over it.
+   */
   async auditAudio(
     audiobookId: number,
+    listenFurther = false,
   ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
-    return this.request(`/tagging/audiobooks/${audiobookId}/audit`, { method: 'POST' })
+    const query = listenFurther ? '?listenFurther=true' : ''
+    return this.request(`/tagging/audiobooks/${audiobookId}/audit${query}`, { method: 'POST' })
   }
 
   /**
