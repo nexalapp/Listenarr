@@ -98,7 +98,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
         public async Task<TagEnqueueResult> EnqueueAudioAuditAsync(
             int audiobookId,
             TagTrigger trigger,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool listenFurther = false)
         {
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
             if (audiobook == null)
@@ -112,7 +113,10 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 return new TagEnqueueResult(TagEnqueueOutcome.NothingToTag, Reason: "This book has no audio files to listen to.");
             }
 
-            var existing = await repository.GetActiveForAudiobookAsync(audiobookId, TagJobKind.Audit, cancellationToken);
+            // Either kind counts as the book's audit: the deduplication key is the same, so a
+            // longer listen cannot be queued alongside an ordinary one and race it.
+            var existing = await repository.GetActiveForAudiobookAsync(audiobookId, TagJobKind.Audit, cancellationToken)
+                ?? await repository.GetActiveForAudiobookAsync(audiobookId, TagJobKind.AuditFurther, cancellationToken);
             if (existing != null)
             {
                 return new TagEnqueueResult(TagEnqueueOutcome.AlreadyQueued, existing.Id, "This book is already queued for an audio audit.");
@@ -122,7 +126,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
             {
                 AudiobookId = audiobookId,
                 Trigger = trigger,
-                Kind = TagJobKind.Audit,
+                Kind = listenFurther ? TagJobKind.AuditFurther : TagJobKind.Audit,
                 FileCount = Math.Min(audioFiles, 2),
                 ActiveDeduplicationKey = TagJob.BuildAuditDeduplicationKey(audiobookId),
                 EnqueuedAt = timeProvider.GetUtcNow().UtcDateTime

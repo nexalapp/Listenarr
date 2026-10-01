@@ -27,7 +27,13 @@ namespace Listenarr.Application.Audiobooks.Audit
     public interface IAudioAuditService
     {
         /// <summary>Queue an audit, or say why not.</summary>
-        Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default);
+        /// <param name="audiobookId">The book to listen to.</param>
+        /// <param name="trigger">Whether a person asked or an import did.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="listenFurther">
+        /// Spend longer looking for the credits: no gaps in the walk, out to five minutes.
+        /// </param>
+        Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default, bool listenFurther = false);
 
         /// <summary>Listen and judge now, on the worker. Records the outcome on the book.</summary>
         /// <param name="audiobookId">The book to listen to.</param>
