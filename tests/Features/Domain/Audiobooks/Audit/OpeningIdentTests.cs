@@ -180,18 +180,64 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Audit
             Assert.Equal(2.705, probes[0].TotalSeconds, 3);
             Assert.Equal(10.705, probes[1].TotalSeconds, 3);
             Assert.All(probes, at => Assert.True(at <= OpeningIdent.GiveUpAfter));
-            Assert.True(probes.Count >= 4, $"too few probes to get past a music bed: {probes.Count}");
         }
 
         [Fact]
         [Trait("Method", "CreditsProbes")]
-        [Trait("Scenario", "NoIdentStillStartsPastAnIntro")]
-        public void CreditsProbes_StartPastAnIntroWhenNoPauseWasFound()
+        [Trait("Scenario", "ASweepReachesFiveMinutes")]
+        public void CreditsProbes_SweepAMinuteAtATimeToFiveMinutes()
         {
-            // Music has no pauses, so there is no ident to end. Pines is the measured case.
-            Assert.Equal(
-                OpeningIdent.PastAnIntro,
-                OpeningIdent.CreditsProbes(TimeSpan.Zero).First());
+            // Forty seconds does not clear a long musical open. Fantastic Beasts: Makers,
+            // Mysteries and Magic is "(music)" at nought, two hundred and four hundred
+            // seconds, so the walk has to reach minutes - and cheaply, which means skipping
+            // audio between probes rather than widening the window that reads them.
+            var probes = OpeningIdent.CreditsProbes(TimeSpan.FromSeconds(2.705)).ToList();
+
+            Assert.Contains(TimeSpan.FromMinutes(1), probes);
+            Assert.Contains(TimeSpan.FromMinutes(5), probes);
+            Assert.Equal(TimeSpan.FromMinutes(5), probes[^1]);
+
+            // Cheap enough to run on a whole library: a handful of twenty-second decodes.
+            Assert.True(probes.Count <= 12, $"too many probes for an ordinary audit: {probes.Count}");
+        }
+
+        [Fact]
+        [Trait("Method", "CreditsProbes")]
+        [Trait("Scenario", "ListeningFurtherLeavesNoGaps")]
+        public void CreditsProbes_LeaveNoGapsWhenAskedToListenFurther()
+        {
+            // The sweep skips audio, so credits can fall between two of its probes. Asked for
+            // by hand, the walk steps by the window instead and covers every second of it.
+            var probes = OpeningIdent.CreditsProbes(TimeSpan.FromSeconds(2.705), listenFurther: true).ToList();
+
+            for (var i = 1; i < probes.Count; i++)
+            {
+                Assert.True(
+                    probes[i] - probes[i - 1] <= OpeningIdent.CreditsWindow,
+                    $"a gap between {probes[i - 1]} and {probes[i]} is wider than the window");
+            }
+
+            Assert.True(probes[^1] >= TimeSpan.FromMinutes(4), "it should still reach minutes in");
+        }
+
+        [Theory]
+        [Trait("Method", "NothingButNoise")]
+        [Trait("Scenario", "OnlyMarksMeansKeepWalking")]
+        [InlineData("[Music]", true)]
+        [InlineData("(eerie music)", true)]
+        [InlineData("(dramatic music)", true)]
+        [InlineData("[MUSIC PLAYING]", true)]
+        [InlineData("", true)]
+        [InlineData("   ", true)]
+        [InlineData("[Music] Audible Frontiers presents The Barsoom Project.", false)]
+        [InlineData("Introduction.", false)]
+        [InlineData("When I put together my first short story collection", false)]
+        public void NothingButNoise_SeparatesSilenceFromSpeech(string heard, bool noise)
+        {
+            // Fantastic Beasts really does come back as nothing but a mark, three times over.
+            // Dealing in Futures comes back with words from the first second - the book has
+            // started, so there is nothing further in to find.
+            Assert.Equal(noise, OpeningIdent.NothingButNoise(heard));
         }
 
         [Fact]

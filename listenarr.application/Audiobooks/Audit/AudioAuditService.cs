@@ -74,7 +74,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             return await tagQueue.EnqueueAudioAuditAsync(audiobookId, trigger, cancellationToken);
         }
 
-        public async Task<AudioAuditResult> AuditAsync(int audiobookId, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+        public async Task<AudioAuditResult> AuditAsync(int audiobookId, IProgress<double>? progress = null, CancellationToken cancellationToken = default, bool listenFurther = false)
         {
             var audiobook = await audiobookRepository.GetByIdAsync(audiobookId)
                 ?? throw new InvalidOperationException("That audiobook no longer exists.");
@@ -157,7 +157,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             if (OpeningIdent.LooksSwallowed(heardOpening, audiobook.Title, audiobook.Authors))
             {
                 var afterIdent = await OpeningStartAsync(files[0].FullPath!, cancellationToken);
-                foreach (var at in OpeningIdent.CreditsProbes(afterIdent))
+                foreach (var at in OpeningIdent.CreditsProbes(afterIdent, listenFurther))
                 {
                     // Recorded as it is tried, so that a hunt which finds nothing is still a
                     // hunt that happened. Left off the identity it would be run again on
@@ -174,6 +174,15 @@ namespace Listenarr.Application.Audiobooks.Audit
                         heardOpening = string.IsNullOrWhiteSpace(heardOpening)
                             ? credits
                             : credits + "\n" + heardOpening;
+                        break;
+                    }
+
+                    // Words, but not a credit: the book has started and the announcement is
+                    // not ahead of us. Walking on would cost a decode a step for nothing.
+                    // Only noise is a reason to keep going - nothing was said there, so the
+                    // thing in front of the credits has not finished.
+                    if (!listenFurther && !OpeningIdent.NothingButNoise(credits))
+                    {
                         break;
                     }
                 }
