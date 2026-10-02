@@ -1154,6 +1154,7 @@ import CustomSelect from '@/components/form/CustomSelect.vue'
 import AudioPreviewPlayer from '@/components/ui/AudioPreviewPlayer.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { Pill } from '@/components/base'
+import { isAudioAuditOverrulable } from '@/utils/audioAudit'
 import {
   PhArrowLeft,
   PhArrowClockwise,
@@ -2441,11 +2442,7 @@ const creditRecommendations = computed(() => {
   // Last, because it is the answer only once the others have been considered: the audit
   // can be wrong - an opening under music, a transcript that loops - and without this the
   // same book is offered for repair for ever.
-  if (
-    book.audioAudit === 'mismatch' ||
-    book.audioAudit === 'narrator-mismatch' ||
-    book.audioAudit === 'incomplete'
-  ) {
+  if (isAudioAuditOverrulable(book.audioAudit)) {
     recs.push(
       book.audioAuditAccepted
         ? {

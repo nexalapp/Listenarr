@@ -106,11 +106,26 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
 
         [Theory]
         [InlineData(AudioAuditVerdict.Match)]
-        [InlineData(AudioAuditVerdict.Inconclusive)]
         [InlineData(AudioAuditVerdict.NotAudited)]
-        public void NeedsAttention_IsOnlyForAVerdictThatDisagrees(AudioAuditVerdict verdict)
+        public void NeedsAttention_IsNotForABookWithNothingToAnswer(AudioAuditVerdict verdict)
         {
             Assert.False(AudioAuditAcceptance.NeedsAttention(Flagged(verdict)));
+        }
+
+        /// <summary>
+        /// A book nothing could be heard on is still a book waiting for an answer, and the
+        /// answer may well be that someone listened and it is fine. It used to be left out
+        /// of this, which meant it showed on the Tags page as a problem with no way to say
+        /// so - the overrule is offered for exactly the verdicts counted here.
+        /// </summary>
+        [Theory]
+        [InlineData(AudioAuditVerdict.Mismatch)]
+        [InlineData(AudioAuditVerdict.NarratorMismatch)]
+        [InlineData(AudioAuditVerdict.Incomplete)]
+        [InlineData(AudioAuditVerdict.Inconclusive)]
+        public void NeedsAttention_CoversEveryVerdictThatCanBeOverruled(AudioAuditVerdict verdict)
+        {
+            Assert.True(AudioAuditAcceptance.NeedsAttention(Flagged(verdict)));
         }
 
         /// <summary>Nothing to pin an acceptance to is nothing accepted.</summary>

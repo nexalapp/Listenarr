@@ -608,6 +608,7 @@ import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepa
 import { apiService } from '@/services/api'
 import { useTagJobsStore } from '@/stores/tagJobs'
 import { logger } from '@/utils/logger'
+import { isAudioAuditFlagged } from '@/utils/audioAudit'
 import type {
   AudioAuditVerdict,
   ChapterHealth,
@@ -1003,11 +1004,7 @@ function cellText(row: LibraryTagRow, key: string) {
 // someone listened and said the record is right, and the flag would otherwise be
 // permanent. Acceptance lapses on its own when the files change.
 const hasAudioIssue = (row: LibraryTagRow) =>
-  (row.audioAudit === 'mismatch' ||
-    row.audioAudit === 'narrator-mismatch' ||
-    row.audioAudit === 'incomplete' ||
-    row.audioAudit === 'inconclusive') &&
-  !row.audioAuditAccepted
+  isAudioAuditFlagged(row.audioAudit, row.audioAuditAccepted)
 
 /**
  * Verdict first, count second, so sorting the column groups the corrupt files together
