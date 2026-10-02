@@ -297,29 +297,34 @@ namespace Listenarr.Application.Audiobooks.Audit
             }
         }
 
+        /// <summary>
+        /// What the two files the audit listens to sound like now, or null when either has no
+        /// measured length. Only the first and the last are heard, so only those two decide
+        /// whether a stored transcript still describes the book.
+        ///
+        /// <para>
+        /// The audio's length, not the file's. A tag write rewrites the container and leaves
+        /// the audio alone, and an identity built from size and modification time threw away
+        /// the transcript - and lapsed the acceptance - every time a narrator was corrected.
+        /// It also costs nothing to read: the duration is already on the file's record, so
+        /// this no longer touches the disk at all.
+        /// </para>
+        /// </summary>
         private string? CurrentFileIdentity(IReadOnlyList<(AudiobookFile File, string? FullPath)> files, string? model, TimeSpan opening)
         {
-            try
+            var heard = files.Count == 1 ? new[] { files[0] } : [files[0], files[^1]];
+            var durations = new List<TimeSpan>(heard.Length);
+            foreach (var (file, _) in heard)
             {
-                var heard = files.Count == 1 ? new[] { files[0] } : [files[0], files[^1]];
-                var parts = new List<(long, DateTime)>(heard.Length);
-                foreach (var (_, path) in heard)
+                if (file.DurationSeconds is not { } seconds || seconds <= 0)
                 {
-                    if (path == null)
-                    {
-                        return null;
-                    }
-
-                    parts.Add((fileSystem.GetFileLength(path), fileSystem.GetLastWriteTimeUtc(path)));
+                    return null;
                 }
 
-                return AudioAuditFileIdentity.Of(parts, model, opening.TotalSeconds);
+                durations.Add(TimeSpan.FromSeconds(seconds));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                logger.LogDebug(ex, "Could not measure the files behind a stored transcript");
-                return null;
-            }
+
+            return AudioAuditFileIdentity.Of(durations, model, opening.TotalSeconds);
         }
 
         /// <summary>

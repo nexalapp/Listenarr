@@ -366,8 +366,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
             var model = ChapterPlanKeys.ModelFor(settings.TranscriptionEnabled, settings.TranscriptionModel);
             var book = GivenBook(("Book.m4b", 3600));
             book.AudioAuditHeard = "A War of Gifts by Orson Scott Card, read by Scott Brick.";
+            // A duration the book's files do not have, so the stored transcript cannot stand in.
             book.AudioAuditFileIdentity = AudioAuditFileIdentity.Of(
-                [(4096L, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc))], model, 10.7);
+                [TimeSpan.FromSeconds(1200)], model, 10.7);
 
             var starts = new List<TimeSpan>();
             _transcriber
@@ -408,7 +409,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
             var book = GivenBook(("Book.m4b", 3600));
             book.AudioAuditHeard = "Blackstone Audio presents A War of Gifts, written by Orson Scott Card, read by Scott Brick.";
             book.AudioAuditFileIdentity = AudioAuditFileIdentity.Of(
-                [(1024L, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc))], model, 2.6);
+                [TimeSpan.FromSeconds(3600)], model, 2.6);
 
             AudioAuditRecord? saved = null;
             _audiobooks

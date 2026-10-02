@@ -148,6 +148,20 @@ then produce different tags from enriching it. `AudiobookTagPlanner` is the only
 place a tag value is decided; conversion resolves through it against an empty set
 of existing tags.
 
+**The audit's identity is the audio's length, not the file's.** A tag write rewrites the
+container — new size, new modification time — without touching a second of audio, so an identity
+built from size and time threw away a good transcript *and* lapsed the acceptance every time a
+narrator was corrected. The duration survives it, costs nothing to read (it is already on the
+file's record, so `CurrentFileIdentity` no longer touches the disk), and is the better question
+anyway: two recordings of a book practically never run to the same second, while a re-encode of
+the same audio does and keeping its transcript is right. Rounded to whole seconds, because a
+rescan with a different tool can shift a duration by milliseconds and that must not cost a
+re-listen. Identities written the old way — `length:lastWriteTicks` — cannot be compared with a
+duration or recovered into one, so they are taken at their word: every acceptance already given
+holds, and every transcript already taken is kept provided the model and listening version still
+agree. Those books alone would not notice a recording swapped in afterwards; they leave the
+bridge behind the next time they are audited.
+
 **ffmpeg cannot write this library's tags. TagLib# can.** The mov muxer writes
 only the keys it has standard atoms for and drops the rest silently — `SERIES`,
 `SERIESPOSITION`, `ASIN` and `sort_album`, which is exactly the set the library's

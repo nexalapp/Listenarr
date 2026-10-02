@@ -24,8 +24,15 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
     [Trait("Category", "Domain")]
     public sealed class AudioAuditAcceptanceTests : BaseTests
     {
-        private const string Files = "89927466:639251721393432443";
-        private const string OtherFiles = "322004118:639251721393432443";
+        private const string Files = "46442s@medium.en~3";
+        private const string OtherFiles = "24703s@medium.en~3";
+
+        /// <summary>
+        /// Written before the identity recorded durations. These hold the lengths of
+        /// containers that have since been rewritten, so they cannot be compared with a
+        /// duration and are taken at their word instead.
+        /// </summary>
+        private const string FilesTheOldWay = "89927466:639251721393432443";
 
         private static Audiobook Flagged(
             AudioAuditVerdict verdict = AudioAuditVerdict.NarratorMismatch,
@@ -78,6 +85,23 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             book.AudioAuditFileIdentity = Files;
 
             Assert.True(AudioAuditAcceptance.IsAccepted(book));
+        }
+
+        /// <summary>
+        /// The deliberate hole in the bridge. An acceptance given before durations were
+        /// recorded is honoured whatever the book's files look like now: someone listened and
+        /// said the record was right, and a change in how files are described is no reason to
+        /// make them do it again. The cost is that those books alone would not notice a
+        /// recording swapped in afterwards, and they stop being special the moment one is
+        /// accepted again.
+        /// </summary>
+        [Fact]
+        public void Acceptance_FromBeforeDurationsIsHonoured()
+        {
+            var book = Flagged(identity: OtherFiles, accepted: FilesTheOldWay);
+
+            Assert.True(AudioAuditAcceptance.IsAccepted(book));
+            Assert.False(AudioAuditAcceptance.NeedsAttention(book));
         }
 
         [Theory]
