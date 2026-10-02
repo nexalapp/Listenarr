@@ -128,6 +128,20 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             var plan = ConversionPlanner.BuildPlan(sources, pathComparer);
 
+            // Refuse rather than guess when the sources' own tags say the filename order
+            // runs the book backwards. An encode is hours and the sources are removed once
+            // it is published, so a reversed book is expensive to notice and expensive to
+            // undo - and the one that got through was only caught by someone listening to it.
+            var backwards = ConversionPlanner.DescribeBackwardsOrder(plan.OrderedSources);
+            if (backwards != null)
+            {
+                logger.LogWarning(
+                    "Refusing to convert audiobook {AudiobookId}: {Reason}",
+                    audiobook.Id,
+                    backwards);
+                return PlanningOutcome.Failed(ConversionFailureKind.SourceOrderUnclear, backwards);
+            }
+
             // The output is brand new, so there are no existing tags to preserve or
             // protect: every mapping that resolves to something is written. Routing
             // through the same planner a tag write uses is what makes a converted book

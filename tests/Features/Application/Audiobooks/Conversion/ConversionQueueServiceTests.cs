@@ -328,6 +328,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Conversion
         [Theory]
         [InlineData(ConversionFailureKind.EncoderUnavailable)]
         [InlineData(ConversionFailureKind.SourceUnreadable)]
+        // Only a rename puts the sources in play order, so a timer will never clear it.
+        [InlineData(ConversionFailureKind.SourceOrderUnclear)]
         [InlineData(ConversionFailureKind.EncodeFailed)]
         [InlineData(ConversionFailureKind.OutputRejected)]
         public async Task FailAsync_EndsAJobThatNeedsAPerson_RatherThanRetryingOnATimer(
