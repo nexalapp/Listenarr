@@ -542,5 +542,127 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Audit
                 t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(18.7), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()),
                 Times.Never);
         }
+
+        [Fact]
+        [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "AForewordSendsTheWalkToTheChapterMark")]
+        public async Task AuditAsync_StepsOverFrontMatterToTheNextChapter()
+        {
+            // Dealing in Futures opens on "Introduction." and five and a half minutes of Joe
+            // Haldeman. The walk used to stop there - words, so the story has started - and a
+            // recording that announces itself after its introduction never got its chance.
+            // Crawling the introduction twenty seconds at a time would be sixteen decodes of
+            // the same prose, so where the file has chapter marks the walk steps to the one
+            // after the front matter and looks there.
+            const double introEnds = 331.7;
+            GivenSettings(transcription: true);
+            GivenBook(("Book.m4b", 38111));
+
+            var writer = new Mock<IAudiobookTagWriter>();
+            writer
+                .Setup(w => w.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AudiobookFileTags(
+                    new Dictionary<string, string>(),
+                    2,
+                    TimeSpan.FromSeconds(38111),
+                    false,
+                    Chapters:
+                    [
+                        new EmbeddedChapter("Introduction", TimeSpan.Zero, TimeSpan.FromSeconds(introEnds)),
+                        new EmbeddedChapter("Seasons", TimeSpan.FromSeconds(introEnds), TimeSpan.FromSeconds(8183))
+                    ]));
+
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("Introduction.\nWhen I put together my first short story collection, Infinite Dreams"));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v > TimeSpan.Zero && v <= TimeSpan.FromSeconds(300)), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("Introduction.\nWhen I put together my first short story collection"));
+
+            // At the chapter mark, the book announces itself.
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(introEnds), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("Dealing in Futures by Joe Haldeman, read by Tom Weiner."));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v > TimeSpan.FromSeconds(30000)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("The end."));
+
+            var silences = new Mock<ISilenceDetector>();
+            silences
+                .Setup(d => d.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new SilenceSpan(TimeSpan.FromSeconds(2.4), TimeSpan.FromSeconds(3.4))]);
+
+            AudioAuditRecord? saved = null;
+            _audiobooks
+                .Setup(r => r.SetAudioAuditAsync(7, It.IsAny<AudioAuditRecord>(), It.IsAny<CancellationToken>()))
+                .Callback((int _, AudioAuditRecord record, CancellationToken _) => saved = record)
+                .Returns(Task.CompletedTask);
+
+            var service = new AudioAuditService(
+                _audiobooks.Object,
+                _queue.Object,
+                _configuration.Object,
+                _fileSystem.Object,
+                NullLogger<AudioAuditService>.Instance,
+                _transcriber.Object,
+                new TranscriptCache(),
+                writer.Object,
+                silences.Object);
+            await service.AuditAsync(7);
+
+            Assert.NotNull(saved);
+            Assert.Contains("Joe Haldeman", saved!.Heard);
+
+            // It went to the mark rather than crawling the foreword to the five-minute cap.
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromSeconds(introEnds), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()),
+                Times.Once);
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.FromMinutes(5), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        [Trait("Method", "AuditAsync")]
+        [Trait("Scenario", "AChapterHeadingEndsTheWalk")]
+        public async Task AuditAsync_StopsWalkingOnceTheBookHasStarted()
+        {
+            // Nothing is read in front of the credits after the book proper has begun, so
+            // there is nothing ahead to find and every further probe is wasted.
+            GivenSettings(transcription: true);
+            GivenBook(("Book.m4b", 3600));
+
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), TimeSpan.Zero, AudioAuditService.OpeningWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("[Music]"));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v > TimeSpan.Zero), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("Chapter one. The boy stood at the window and watched the snow."));
+            _transcriber
+                .Setup(t => t.TranscribeAsync(It.IsAny<string>(), It.Is<TimeSpan>(v => v > TimeSpan.FromSeconds(600)), AudioAuditService.ClosingWindow, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Transcript("The end."));
+
+            var silences = new Mock<ISilenceDetector>();
+            silences
+                .Setup(d => d.DetectAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new SilenceSpan(TimeSpan.FromSeconds(1.0), TimeSpan.FromSeconds(2.0))]);
+
+            var service = new AudioAuditService(
+                _audiobooks.Object,
+                _queue.Object,
+                _configuration.Object,
+                _fileSystem.Object,
+                NullLogger<AudioAuditService>.Instance,
+                _transcriber.Object,
+                new TranscriptCache(),
+                null,
+                silences.Object);
+            await service.AuditAsync(7);
+
+            // One probe, not eleven.
+            _transcriber.Verify(
+                t => t.TranscribeAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), OpeningIdent.CreditsWindow, It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
     }
 }

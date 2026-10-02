@@ -183,6 +183,18 @@ namespace Listenarr.Domain.Audiobooks.Audit
         public static readonly TimeSpan GiveUpAfter = TimeSpan.FromMinutes(5);
 
         /// <summary>
+        /// How late a chapter mark may be and still be the end of the book's front matter.
+        ///
+        /// <para>
+        /// Deliberately further out than the sweep gives up. Stepping over a foreword is one
+        /// decode at a known offset, not a walk, so it can afford to reach past where blind
+        /// probing stops: Dealing in Futures' introduction ends at 331.7s, which is beyond
+        /// five minutes, and that is the whole case this exists for.
+        /// </para>
+        /// </summary>
+        public static readonly TimeSpan FrontMatterEndsBy = TimeSpan.FromMinutes(10);
+
+        /// <summary>
         /// Where to try listening for the credits, in order, given where the ident ends.
         ///
         /// <para>

@@ -157,6 +157,7 @@ namespace Listenarr.Application.Audiobooks.Audit
             if (OpeningIdent.LooksSwallowed(heardOpening, audiobook.Title, audiobook.Authors))
             {
                 var afterIdent = await OpeningStartAsync(files[0].FullPath!, cancellationToken);
+                var pastFrontMatter = false;
                 foreach (var at in OpeningIdent.CreditsProbes(afterIdent, listenFurther))
                 {
                     // Recorded as it is tried, so that a hunt which finds nothing is still a
@@ -177,11 +178,52 @@ namespace Listenarr.Application.Audiobooks.Audit
                         break;
                     }
 
-                    // Words, but not a credit: the book has started and the announcement is
-                    // not ahead of us. Walking on would cost a decode a step for nothing.
-                    // Only noise is a reason to keep going - nothing was said there, so the
-                    // thing in front of the credits has not finished.
-                    if (!listenFurther && !OpeningIdent.NothingButNoise(credits))
+                    if (listenFurther)
+                    {
+                        continue;
+                    }
+
+                    // The book proper has started. Nothing is read in front of the credits
+                    // after this, so there is nothing ahead to find.
+                    if (FrontMatter.IsBookStarting(credits))
+                    {
+                        break;
+                    }
+
+                    // A foreword, an introduction, an author's note: not the story, and a
+                    // recording that announces itself after one has not had its chance yet.
+                    // Crawling through five minutes of it twenty seconds at a time would
+                    // spend the whole budget on prose, so where the file carries chapter
+                    // marks, step to the one after this and look there instead - that is
+                    // where a delayed announcement sits.
+                    if (FrontMatter.IsHeading(credits))
+                    {
+                        pastFrontMatter = true;
+                        var boundary = await NextChapterStartAsync(files[0].FullPath!, at, cancellationToken);
+                        if (boundary is { } start)
+                        {
+                            found = start;
+                            var atBoundary = await HearAsync(files[0].FullPath!, start, OpeningIdent.CreditsWindow, model, cancellationToken);
+                            if (AudioCreditsParser.LooksLikeOpeningCredits(atBoundary))
+                            {
+                                heardOpening = string.IsNullOrWhiteSpace(heardOpening)
+                                    ? atBoundary
+                                    : atBoundary + "\n" + heardOpening;
+                            }
+
+                            // Either way the front matter has been stepped over, and what
+                            // follows it is the book. Walking on through the foreword would
+                            // find the same prose a dozen more times.
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    // Words that are neither a credit nor a heading. Inside front matter that
+                    // is the foreword still being read, and worth walking on through; before
+                    // any heading it is the story, and there is nothing ahead.
+                    if (!pastFrontMatter && !OpeningIdent.NothingButNoise(credits))
                     {
                         break;
                     }
@@ -324,6 +366,52 @@ namespace Listenarr.Application.Audiobooks.Audit
                 result.AuthorScore);
 
             return result;
+        }
+
+        /// <summary>
+        /// The start of the first chapter mark after <paramref name="after"/>, or null when
+        /// the file carries no marks or none beyond that point.
+        ///
+        /// <para>
+        /// Dealing in Futures is the measured case: its first chapter is the introduction,
+        /// nought to 331.7s, and the second begins the moment that stops. A probe there is
+        /// one decode; crawling the introduction twenty seconds at a time is sixteen, and
+        /// finds the same prose every time.
+        /// </para>
+        /// </summary>
+        private async Task<TimeSpan?> NextChapterStartAsync(string fullPath, TimeSpan after, CancellationToken cancellationToken)
+        {
+            if (tagWriter == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                var tags = await tagWriter.ReadAsync(fullPath, cancellationToken);
+                if (tags.Chapters is not { Count: > 1 } chapters)
+                {
+                    return null;
+                }
+
+                foreach (var chapter in chapters)
+                {
+                    // Comfortably past this probe's own window, or it would read the same
+                    // seconds again.
+                    if (chapter.Start > after + OpeningIdent.CreditsWindow
+                        && chapter.Start <= OpeningIdent.FrontMatterEndsBy)
+                    {
+                        return chapter.Start;
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogDebug(ex, "Could not read the chapter marks of {Path}", LogRedaction.SanitizeFilePath(fullPath));
+                return null;
+            }
         }
 
         /// <summary>
