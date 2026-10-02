@@ -211,6 +211,18 @@ deduplication key, so a longer listen cannot be queued beside an ordinary one an
 `Kind` column holds 16 characters and stores the name, so appending a member is safe and
 renaming one is not.
 
+**Front matter is not the book starting.** The walk's first stop rule was "any words mean the
+story has begun", which is wrong twice for a book opening on a foreword: the foreword is not the
+story, and a recording that announces itself after one never gets its chance. `FrontMatter`
+splits the two — a heading that stands before the book ("Introduction.", "Author's note") says
+carry on; a division of the work ("Chapter one", "Part two") says stop, because nothing is read
+in front of the credits after that. A bare "One." is not a division: it is as likely to be a
+sentence. Crawling a five-minute introduction twenty seconds at a time would be sixteen decodes
+of the same prose, so where the file carries chapter marks the walk steps straight to the first
+one past the front matter and looks there instead — one decode at a known offset. That mark is
+allowed as far out as ten minutes, further than the blind sweep gives up, because Dealing in
+Futures' introduction ends at 331.7s and that is the case it exists for.
+
 **Hearing nothing is not a mismatch.** A mismatch says the record is wrong, and that claim
 needs a recording that named some *other* book. When nothing matched and nothing was credited
 either, the verdict is `inconclusive` — the recording may never name itself, or whisper may
