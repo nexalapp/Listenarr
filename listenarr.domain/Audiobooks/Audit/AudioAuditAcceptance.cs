@@ -51,7 +51,10 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// </summary>
         public static bool NeedsAttention(Audiobook audiobook) =>
             audiobook is not null
-            && audiobook.AudioAuditVerdict is AudioAuditVerdict.Mismatch or AudioAuditVerdict.NarratorMismatch
+            && audiobook.AudioAuditVerdict is AudioAuditVerdict.Mismatch
+                or AudioAuditVerdict.NarratorMismatch
+                or AudioAuditVerdict.Incomplete
+                or AudioAuditVerdict.Inconclusive
             && !IsAccepted(audiobook);
     }
 }
