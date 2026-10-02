@@ -24,100 +24,123 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
     [Trait("Category", "Domain")]
     public sealed class AudioAuditFileIdentityTests : BaseTests
     {
-        private static readonly DateTime When = new(2026, 9, 23, 12, 0, 0, DateTimeKind.Utc);
+        private static TimeSpan Mins(double minutes) => TimeSpan.FromMinutes(minutes);
 
         [Fact]
-        public void Matches_TheSameFilesUnchanged()
+        [Trait("Method", "Matches")]
+        [Trait("Scenario", "TheSameAudioUnchanged")]
+        public void Matches_TheSameAudioUnchanged()
         {
-            var taken = AudioAuditFileIdentity.Of([(89_927_466L, When), (12_345L, When)]);
-            var now = AudioAuditFileIdentity.Of([(89_927_466L, When), (12_345L, When)]);
+            var taken = AudioAuditFileIdentity.Of([Mins(774), Mins(136)], "medium.en");
+            var now = AudioAuditFileIdentity.Of([Mins(774), Mins(136)], "medium.en");
 
             Assert.True(AudioAuditFileIdentity.Matches(taken, now));
         }
 
         /// <summary>
-        /// The case a timestamp alone misses: a different recording copied in with its
-        /// modification time preserved, by cp -p, rsync -a, or a restore from backup.
+        /// The whole point of the change: a tag write rewrites the container and leaves the
+        /// audio alone, so a corrected narrator must not cost a re-listen. Under size and
+        /// modification time it cost one every time, and lapsed the acceptance with it.
         /// </summary>
         [Fact]
-        public void DoesNotMatch_AReplacementThatKeptItsTimestamp()
+        [Trait("Method", "Matches")]
+        [Trait("Scenario", "ATagWriteIsNotANewRecording")]
+        public void Matches_SurvivesARewrittenContainer()
         {
-            var taken = AudioAuditFileIdentity.Of([(89_927_466L, When)]);
-            var swapped = AudioAuditFileIdentity.Of([(322_004_118L, When)]);
+            // Same audio, same duration. Nothing in the identity can see the rewrite.
+            var before = AudioAuditFileIdentity.Of([TimeSpan.FromSeconds(46442.119667)], "medium.en");
+            var after = AudioAuditFileIdentity.Of([TimeSpan.FromSeconds(46442.119667)], "medium.en");
 
-            Assert.False(AudioAuditFileIdentity.Matches(taken, swapped));
+            Assert.True(AudioAuditFileIdentity.Matches(before, after));
+            Assert.True(AudioAuditFileIdentity.SameFiles(before, after));
+        }
+
+        /// <summary>
+        /// A rescan with a different tool can shift a duration by milliseconds, and that must
+        /// not be enough to throw a transcript away - which is the failing this replaces.
+        /// </summary>
+        [Fact]
+        [Trait("Method", "Of")]
+        [Trait("Scenario", "MillisecondsOfJitterAreNotAChange")]
+        public void Of_IsNotMovedByMeasurementJitter()
+        {
+            Assert.Equal(
+                AudioAuditFileIdentity.Of([TimeSpan.FromSeconds(46442.119667)], "medium.en"),
+                AudioAuditFileIdentity.Of([TimeSpan.FromSeconds(46442.004)], "medium.en"));
         }
 
         [Fact]
-        public void DoesNotMatch_AFileWrittenSince()
+        [Trait("Method", "Matches")]
+        [Trait("Scenario", "ADifferentRecording")]
+        public void DoesNotMatch_ADifferentRecording()
         {
-            var taken = AudioAuditFileIdentity.Of([(89_927_466L, When)]);
-            var rewritten = AudioAuditFileIdentity.Of([(89_927_466L, When.AddMinutes(1))]);
-
-            Assert.False(AudioAuditFileIdentity.Matches(taken, rewritten));
+            // Two recordings of a book practically never run to the same second. An abridged
+            // edition swapped in for an unabridged one is hours apart.
+            Assert.False(AudioAuditFileIdentity.Matches(
+                AudioAuditFileIdentity.Of([Mins(774)], "medium.en"),
+                AudioAuditFileIdentity.Of([Mins(412)], "medium.en")));
         }
 
         /// <summary>The last file counts too: a book can be re-cut at its end alone.</summary>
         [Fact]
+        [Trait("Method", "Matches")]
+        [Trait("Scenario", "OnlyTheLastFileChanged")]
         public void DoesNotMatch_WhenOnlyTheLastFileChanged()
         {
-            var taken = AudioAuditFileIdentity.Of([(100L, When), (200L, When)]);
-            var now = AudioAuditFileIdentity.Of([(100L, When), (201L, When)]);
-
-            Assert.False(AudioAuditFileIdentity.Matches(taken, now));
+            Assert.False(AudioAuditFileIdentity.Matches(
+                AudioAuditFileIdentity.Of([Mins(774), Mins(136)], "medium.en"),
+                AudioAuditFileIdentity.Of([Mins(774), Mins(97)], "medium.en")));
         }
 
-        /// <summary>
-        /// Unknown on either side is never a match: a transcript from before this check
-        /// carries no identity and is re-taken once, and a file that cannot be measured
-        /// is not vouched for.
-        /// </summary>
         [Theory]
-        [InlineData(null, "100:1")]
-        [InlineData("100:1", null)]
-        [InlineData("", "100:1")]
-        [InlineData("100:1", "  ")]
-        [InlineData(null, null)]
+        [Trait("Method", "Matches")]
+        [Trait("Scenario", "UnknownEitherSide")]
+        [InlineData(null, "46442s@medium.en~3")]
+        [InlineData("46442s@medium.en~3", null)]
+        [InlineData("", "46442s@medium.en~3")]
         public void DoesNotMatch_WhenEitherSideIsUnknown(string? stored, string? current)
         {
+            // A file with no measured length is not vouched for.
             Assert.False(AudioAuditFileIdentity.Matches(stored, current));
         }
+
         [Fact]
         [Trait("Method", "Of")]
         [Trait("Scenario", "ABetterModelIsADifferentListening")]
         public void Of_TreatsATranscriptTakenByAnotherModelAsStale()
         {
-            var files = new[] { (1_000L, new DateTime(2026, 9, 24, 0, 0, 0, DateTimeKind.Utc)) };
-
-            var heardByBase = AudioAuditFileIdentity.Of(files, "base.en");
-            var heardByMedium = AudioAuditFileIdentity.Of(files, "medium.en");
-
-            Assert.NotEqual(heardByBase, heardByMedium);
-            Assert.False(AudioAuditFileIdentity.Matches(heardByBase, heardByMedium));
-            Assert.True(AudioAuditFileIdentity.Matches(heardByMedium, heardByMedium));
+            // Moving from base to medium changed nothing for any book already audited until
+            // the model went into the identity: the files had not moved, so every re-run
+            // re-judged the old words and the better model was never asked.
+            Assert.False(AudioAuditFileIdentity.Matches(
+                AudioAuditFileIdentity.Of([Mins(774)], "base.en"),
+                AudioAuditFileIdentity.Of([Mins(774)], "medium.en")));
         }
 
-        [Fact]
-        [Trait("Method", "Of")]
-        [Trait("Scenario", "NoModelKeepsTheOldShape")]
-        public void Of_WithoutAModelIsUnchanged()
-        {
-            var files = new[] { (1_000L, new DateTime(2026, 9, 24, 0, 0, 0, DateTimeKind.Utc)) };
-
-            Assert.DoesNotContain("@", AudioAuditFileIdentity.Of(files));
-        }
         [Fact]
         [Trait("Method", "SameFiles")]
         [Trait("Scenario", "HowWeListenedIsNotWhatWasAccepted")]
         public void SameFiles_IgnoresTheModelAndTheOffset()
         {
-            // Verbatim from the library. The files never changed; the identity format grew
-            // a model and then an offset, and twelve acceptances stopped holding.
-            const string accepted = "35460185:639252507960433027";
-            const string now = "35460185:639252507960433027@medium.en+2.6";
+            // Someone vouched for a recording, not for the way it was transcribed. Changing
+            // the model or the offset once lapsed twelve acceptances.
+            var accepted = AudioAuditFileIdentity.Of([Mins(774)], "base.en");
+            var now = AudioAuditFileIdentity.Of([Mins(774)], "medium.en", 2.6);
 
             Assert.True(AudioAuditFileIdentity.SameFiles(accepted, now));
             Assert.False(AudioAuditFileIdentity.Matches(accepted, now));
+        }
+
+        [Fact]
+        [Trait("Method", "SameFiles")]
+        [Trait("Scenario", "ASwappedRecordingStillBreaksIt")]
+        public void SameFiles_StillNoticesADifferentRecording()
+        {
+            Assert.False(AudioAuditFileIdentity.SameFiles(
+                AudioAuditFileIdentity.Of([Mins(774)], "medium.en"),
+                AudioAuditFileIdentity.Of([Mins(412)], "medium.en")));
+            Assert.False(AudioAuditFileIdentity.SameFiles(null, "46442s@medium.en~3"));
+            Assert.False(AudioAuditFileIdentity.SameFiles("46442s@medium.en~3", null));
         }
 
         [Fact]
@@ -127,12 +150,12 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         {
             // It has to round-trip to the same string, or the identity it rebuilds will not
             // equal the one on the record and the transcript is thrown away.
-            var written = AudioAuditFileIdentity.Of([(1024L, When)], "medium.en", 2.6);
+            var written = AudioAuditFileIdentity.Of([Mins(774)], "medium.en", 10.7);
 
             var skip = AudioAuditFileIdentity.OpeningSkipOf(written);
 
-            Assert.Equal(2.6, skip.TotalSeconds, 3);
-            Assert.Equal(written, AudioAuditFileIdentity.Of([(1024L, When)], "medium.en", skip.TotalSeconds));
+            Assert.Equal(10.7, skip.TotalSeconds, 3);
+            Assert.Equal(written, AudioAuditFileIdentity.Of([Mins(774)], "medium.en", skip.TotalSeconds));
         }
 
         [Fact]
@@ -141,22 +164,55 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         public void OpeningSkipOf_IsZeroWithoutOne()
         {
             Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf(null));
-            Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf("35460185:639252507960433027"));
-            Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf("35460185:639252507960433027@medium.en"));
+            Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf("46442s"));
+            Assert.Equal(TimeSpan.Zero, AudioAuditFileIdentity.OpeningSkipOf(AudioAuditFileIdentity.Of([Mins(774)], "medium.en")));
+        }
+
+        /// <summary>
+        /// The bridge for everything written before durations were recorded. Those identities
+        /// hold the lengths of containers that have since been rewritten, so they cannot be
+        /// compared with a duration and cannot be recovered into one. They are taken at their
+        /// word instead, which keeps every acceptance already given and every transcript
+        /// already taken.
+        /// </summary>
+        [Fact]
+        [Trait("Method", "SameFiles")]
+        [Trait("Scenario", "AnAcceptanceFromBeforeDurationsStillHolds")]
+        public void SameFiles_HonoursAnIdentityWrittenTheOldWay()
+        {
+            // Verbatim from the library.
+            const string acceptedLongAgo = "35460185:639252507960433027";
+
+            Assert.True(AudioAuditFileIdentity.SameFiles(
+                acceptedLongAgo,
+                AudioAuditFileIdentity.Of([Mins(774)], "medium.en", 2.6)));
         }
 
         [Fact]
-        [Trait("Method", "SameFiles")]
-        [Trait("Scenario", "ASwappedRecordingStillBreaksIt")]
-        public void SameFiles_StillNoticesADifferentRecording()
+        [Trait("Method", "Matches")]
+        [Trait("Scenario", "ATranscriptFromBeforeDurationsIsKept")]
+        public void Matches_KeepsATranscriptWrittenTheOldWayWhenTheListeningAgrees()
         {
-            // The whole point of pinning: a file swapped in afterwards is not what anyone
-            // vouched for.
-            Assert.False(AudioAuditFileIdentity.SameFiles(
-                "35460185:639252507960433027@medium.en",
-                "99999999:639252507960433027@medium.en"));
-            Assert.False(AudioAuditFileIdentity.SameFiles(null, "35460185:1@medium.en"));
-            Assert.False(AudioAuditFileIdentity.SameFiles("35460185:1@medium.en", null));
+            // The words are good and re-taking them costs minutes of CPU a book across the
+            // whole library. Only the files part is bridged.
+            var current = AudioAuditFileIdentity.Of([Mins(774)], "medium.en", 2.7);
+            var storedOldWay = "377814753:639257318581723427" + current[current.IndexOf('@')..];
+
+            Assert.True(AudioAuditFileIdentity.Matches(storedOldWay, current));
+        }
+
+        [Fact]
+        [Trait("Method", "Matches")]
+        [Trait("Scenario", "TheBridgeDoesNotExcuseAWorseListening")]
+        public void Matches_StillReHearsWhenTheListeningChanged()
+        {
+            // The bridge is about which files, not about how they were heard. A better model
+            // or a better walk still re-hears everything, old identity or not.
+            var current = AudioAuditFileIdentity.Of([Mins(774)], "medium.en", 2.7);
+
+            Assert.False(AudioAuditFileIdentity.Matches(
+                "377814753:639257318581723427@base.en~1+2.7",
+                current));
         }
     }
 }

@@ -24,20 +24,18 @@ namespace Listenarr.Domain.Audiobooks.Audit
     /// stored transcript can be trusted or thrown away.
     ///
     /// <para>
-    /// A timestamp on its own is not enough in either direction. A recording swapped in
-    /// with its modification time preserved - <c>cp -p</c>, <c>rsync -a</c>, a restore
-    /// from backup - would keep the old book's transcript and be judged as that book.
-    /// Size catches those, because two different recordings are practically never the
-    /// same number of bytes.
+    /// What is recorded is the audio's own length, not the file's. A tag write rewrites the
+    /// container - new size, new modification time - without touching a second of audio, and
+    /// an identity built from size and time therefore threw away a perfectly good transcript
+    /// every time a narrator was corrected, and lapsed the acceptance that went with it. The
+    /// duration survives that, and is already measured: it is on the file's record.
     /// </para>
     /// <para>
-    /// Both are recorded rather than a content hash: hashing a 700MB file means reading
-    /// all of it, and a tag write rewrites the container without touching a second of
-    /// audio, so a hash of the bytes would throw away a good transcript every time a
-    /// narrator was corrected. Size and last-write together are cheap, and wrong only
-    /// for a replacement that matches on both.
+    /// It is also the better question. Two different recordings of a book practically never
+    /// run to the same second; a re-encode of the same audio does, and keeping its transcript
+    /// is right. What it cannot catch is a different recording of identical length swapped in
+    /// without a rescan, which is a narrower hole than the one it closes.
     /// </para>
-    /// </summary>
     public static class AudioAuditFileIdentity
     {
         /// <summary>
@@ -56,38 +54,48 @@ namespace Listenarr.Domain.Audiobooks.Audit
         private const int Listening = 3;
 
         /// <summary>
-        /// One file as "length:lastWriteTicks", the parts joined by "|", and the model
-        /// that did the listening appended after "@".
+        /// Each file's audio length in whole seconds, the parts joined by "|", the model that
+        /// did the listening appended after "@" with the listening version, and the offset the
+        /// credits were found at after "+".
         /// </summary>
         /// <remarks>
-        /// The model belongs here because a stored transcript is only as good as the ears
-        /// that took it, and they can be upgraded. Without it, moving from base to medium
-        /// changed nothing for any book already audited: the files had not moved, so every
-        /// re-run re-judged the old words and the better model was never asked. Measured on
-        /// this library, that was the difference between "This is a book called The New
-        /// World" nine times and the book's actual credits.
+        /// Whole seconds rather than the measurement to hand. A rescan with a different tool
+        /// can shift a duration by milliseconds, and that must not be enough to throw away a
+        /// transcript - which is the whole failing this replaces.
         /// </remarks>
-        /// <param name="files">Each file's length and last-write time.</param>
+        /// <param name="durations">Each heard file's audio length.</param>
         /// <param name="model">The whisper model that did the listening.</param>
         /// <param name="openingSkipSeconds">
-        /// How far into the first file the opening window began. Appended only when it is
-        /// not zero, so a book with no ident to skip keeps the identity it already had and
-        /// its stored transcript stays good.
+        /// How far into the first file the credits were found. Appended only when it is not
+        /// zero, so a book with nothing to skip keeps the identity it already had.
         /// </param>
         public static string Of(
-            IEnumerable<(long Length, DateTime LastWriteUtc)> files,
+            IEnumerable<TimeSpan> durations,
             string? model = null,
             double openingSkipSeconds = 0) =>
-            string.Join('|', files.Select(f =>
-                f.Length.ToString(CultureInfo.InvariantCulture)
-                + ":"
-                + f.LastWriteUtc.Ticks.ToString(CultureInfo.InvariantCulture)))
+            string.Join('|', durations.Select(duration =>
+                ((long)Math.Round(duration.TotalSeconds)).ToString(CultureInfo.InvariantCulture) + "s"))
             + (string.IsNullOrWhiteSpace(model)
                 ? string.Empty
                 : "@" + model.Trim() + "~" + Listening.ToString(CultureInfo.InvariantCulture))
             + (openingSkipSeconds > 0
                 ? "+" + openingSkipSeconds.ToString("F1", CultureInfo.InvariantCulture)
                 : string.Empty);
+
+        /// <summary>
+        /// Whether an identity's files part was written the old way, as "length:lastWriteTicks".
+        ///
+        /// <para>
+        /// Those cannot be compared with a duration and cannot be recovered into one: the
+        /// lengths they hold are of containers that have since been rewritten. They are taken
+        /// at their word instead - the files they describe are treated as the files on disk -
+        /// which keeps every acceptance already given, and every transcript already taken,
+        /// rather than lapsing the lot on a change of format. A book audited once from here on
+        /// records a duration and leaves the bridge behind.
+        /// </para>
+        /// </summary>
+        private static bool WrittenTheOldWay(string identity) =>
+            FilesOf(identity) is { Length: > 0 } files && files.Contains(':', StringComparison.Ordinal);
 
         /// <summary>
         /// Just the files' part of an identity, without the model that listened or the
@@ -162,9 +170,17 @@ namespace Listenarr.Domain.Audiobooks.Audit
         {
             var a = FilesOf(left);
             var b = FilesOf(right);
-            return !string.IsNullOrWhiteSpace(a)
-                && !string.IsNullOrWhiteSpace(b)
-                && string.Equals(a, b, StringComparison.Ordinal);
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
+            {
+                return false;
+            }
+
+            // An acceptance given before durations were recorded is honoured. Someone listened
+            // and said the record was right, and a change in how the files are described is no
+            // reason to make them do it again.
+            return string.Equals(a, b, StringComparison.Ordinal)
+                || WrittenTheOldWay(left!)
+                || WrittenTheOldWay(right!);
         }
 
         /// <summary>
@@ -172,9 +188,32 @@ namespace Listenarr.Domain.Audiobooks.Audit
         /// not a match: a transcript with no identity predates this check and is re-taken
         /// once, and a file that cannot be measured is not vouched for.
         /// </summary>
-        public static bool Matches(string? stored, string? current) =>
-            !string.IsNullOrWhiteSpace(stored)
-            && !string.IsNullOrWhiteSpace(current)
-            && string.Equals(stored, current, StringComparison.Ordinal);
+        public static bool Matches(string? stored, string? current)
+        {
+            if (string.IsNullOrWhiteSpace(stored) || string.IsNullOrWhiteSpace(current))
+            {
+                return false;
+            }
+
+            if (string.Equals(stored, current, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            // A transcript taken before durations were recorded is kept, provided the same
+            // model listened the same way: the words are good and re-taking them costs minutes
+            // of CPU a book across the whole library. Only the files part is bridged - the
+            // model and the listening version still have to agree, which is what makes a
+            // better listener re-hear everything.
+            return WrittenTheOldWay(stored)
+                && string.Equals(HeardHowOf(stored), HeardHowOf(current), StringComparison.Ordinal);
+        }
+
+        /// <summary>Which ears listened and how: everything from the "@" on.</summary>
+        private static string HeardHowOf(string identity)
+        {
+            var mark = identity.IndexOf('@', StringComparison.Ordinal);
+            return mark < 0 ? string.Empty : identity[mark..];
+        }
     }
 }
