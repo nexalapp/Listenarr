@@ -145,6 +145,68 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
             Assert.Equal("7", name);
         }
 
+        // ---------------------------------------------------------------
+        // 3. A book in no series has no position for the track number to stand in for.
+        // ---------------------------------------------------------------
+
+        [Fact]
+        public void StandaloneBook_IsGivenNoPositionByItsTrackNumber()
+        {
+            // "Theo of Golden": no series anywhere - not on the record, not in Audible's
+            // answer, not in the file's tags - and one file, track 1 of 1.
+            var metadata = new Audiobook { Title = "Theo of Golden" }.CreateBasicAudioMetadata();
+            metadata.TrackNumber = 1;
+
+            // Rendered beside the title, because a pattern that resolves to nothing at all
+            // falls back to "Unknown" and would hide the difference.
+            var name = Naming().ApplyNamingPattern("{Title} {SeriesNumber}", metadata, treatAsFilename: true);
+
+            Assert.Equal("Theo of Golden", name);
+        }
+
+        [Fact]
+        public void StandaloneBook_CollapsesTheWholeSeriesBracket()
+        {
+            // The symptom as it reached disk: "Allen Levi - [1] Theo of Golden ...". A
+            // position with no series kept the bracket group alive, so the group no longer
+            // collapsed the way it does for every other standalone book.
+            var metadata = new Audiobook
+            {
+                Title = "Theo of Golden",
+                Authors = ["Allen Levi"],
+                Narrators = ["David Morse"],
+            }.CreateBasicAudioMetadata();
+            metadata.TrackNumber = 1;
+
+            var name = Naming().ApplyNamingPattern(
+                "{Author} - [{Series} {SeriesNumber}] {Title} {{Narrator}}",
+                metadata,
+                treatAsFilename: true);
+
+            Assert.Equal("Allen Levi - Theo of Golden {David Morse}", name);
+            Assert.DoesNotContain("[", name);
+        }
+
+        [Fact]
+        public void SeriesBookWithNoPosition_KeepsTheTrackNumberInTheBracket()
+        {
+            // The other side of the same rule: the fallback still applies when there is a
+            // series for the number to be a position in.
+            var metadata = new Audiobook
+            {
+                Title = "Caliban's War",
+                Series = "The Expanse",
+            }.CreateBasicAudioMetadata();
+            metadata.TrackNumber = 7;
+
+            var name = Naming().ApplyNamingPattern(
+                "[{Series} {SeriesNumber}] {Title}",
+                metadata,
+                treatAsFilename: true);
+
+            Assert.Equal("[The Expanse 7] Caliban's War", name);
+        }
+
         [Fact]
         public void ZeroPosition_Survives()
         {
