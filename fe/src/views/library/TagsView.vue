@@ -480,11 +480,23 @@
                     >{{ cellText(row, column.key) }}</RouterLink
                   >
                   <span v-else class="cell-text">{{ cellText(row, column.key) }}</span>
-                  <span
-                    v-if="showProposals && proposalFor(row, column.key)"
-                    class="cell-proposal"
-                    >{{ proposalFor(row, column.key) }}</span
-                  >
+                  <!--
+                    Split rather than printed whole: the run the proposal shares with the
+                    value above it is dimmed and only the run that actually changes is
+                    marked, so a rename that swaps one bracketed group in the middle of a
+                    hundred characters reads at a glance. The marking is a background
+                    tint and an opacity, never a weight or a size, because anything that
+                    changed a glyph's advance would walk the second line out of step with
+                    the first — which is the one thing this pair exists to preserve.
+                  -->
+                  <span v-if="showProposals && proposalFor(row, column.key)" class="cell-proposal">
+                    <span
+                      v-for="(part, index) in proposalParts(row, column.key)"
+                      :key="index"
+                      :class="part.changed ? 'cell-proposal-change' : 'cell-proposal-context'"
+                      >{{ part.text }}</span
+                    >
+                  </span>
                 </div>
               </div>
             </td>
@@ -1057,6 +1069,47 @@ function proposalFor(row: LibraryTagRow, key: string) {
   if (key === FILENAME_KEY) return row.expectedFileName ?? ''
   if (key === PATH_KEY) return row.expectedPath ?? ''
   return row.expected[key] ?? ''
+}
+
+/**
+ * The proposal cut into the runs it shares with the value above it and the run that
+ * changes.
+ *
+ * Matched from both ends rather than diffed properly: a rename swaps one bracketed group
+ * and leaves the author, the title and the extension around it alone, so the common
+ * prefix and the common suffix find the edit exactly, for a thousandth of the cost of a
+ * real diff on a table that re-renders every scroll tick.
+ *
+ * A pure deletion leaves nothing between the two matched ends. The whole proposal is
+ * marked in that case rather than none of it, because a line dimmed end to end reads as
+ * "nothing to see here", which is the opposite of what it would mean.
+ */
+function proposalParts(row: LibraryTagRow, key: string) {
+  const proposed = proposalFor(row, key)
+  if (!proposed) return []
+
+  const current = cellText(row, key)
+  const shortest = Math.min(proposed.length, current.length)
+
+  let head = 0
+  while (head < shortest && proposed[head] === current[head]) head++
+
+  let tail = 0
+  while (
+    tail < shortest - head &&
+    proposed[proposed.length - 1 - tail] === current[current.length - 1 - tail]
+  ) {
+    tail++
+  }
+
+  const change = proposed.slice(head, proposed.length - tail)
+  if (!change) return [{ text: proposed, changed: true }]
+
+  return [
+    { text: proposed.slice(0, head), changed: false },
+    { text: change, changed: true },
+    { text: proposed.slice(proposed.length - tail), changed: false },
+  ].filter((part) => part.text.length > 0)
 }
 
 function cellClass(row: LibraryTagRow, key: string) {
@@ -2546,9 +2599,16 @@ onBeforeUnmount(() => {
  * to both lines, and a lock that sat on the first would read as belonging only to it.
  */
 .cell-lines {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  /*
+   * One grid column rather than a flex stack, so both lines are laid into the same
+   * track and start at the same x by construction. The two are not even the same
+   * element — the filename is a RouterLink and its proposal a span — so an alignment
+   * that merely emerged from them happening to be flex items is one a user-agent rule
+   * for anchors, or any later wrapper, could quietly take away.
+   */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
   flex: 1;
   min-width: 0;
 }
@@ -2573,6 +2633,17 @@ onBeforeUnmount(() => {
 
 .cell-text,
 .cell-proposal {
+  /*
+   * Both lines sit in the one column and carry no box of their own: an anchor and a
+   * span arrive with different user-agent defaults, and a single stray pixel of
+   * indent on one of them is enough to stop the pair reading as a diff.
+   */
+  grid-column: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  text-indent: 0;
+  font: inherit;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2582,6 +2653,20 @@ onBeforeUnmount(() => {
 
 .cell-proposal {
   color: var(--warning-500);
+}
+
+/* Dimmed, not hidden: the context is what tells you where in the name the change lands. */
+.cell-proposal-context {
+  opacity: 0.45;
+}
+
+/*
+ * Tint only. A weight or a size here would change the glyph advances and push the rest
+ * of the proposal out of column with the value above it.
+ */
+.cell-proposal-change {
+  background: rgba(255, 165, 0, 0.22);
+  border-radius: 2px;
 }
 
 /*
@@ -2594,7 +2679,7 @@ onBeforeUnmount(() => {
 }
 
 .tags-table--proposals .cell-lines {
-  justify-content: flex-start;
+  align-content: start;
 }
 
 .tags-table--proposals .cell-lock {
