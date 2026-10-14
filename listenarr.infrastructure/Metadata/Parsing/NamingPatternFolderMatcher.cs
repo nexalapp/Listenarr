@@ -214,8 +214,19 @@ internal static class NamingPatternFolderMatcher
         return builder.ToString();
     }
 
+    // {SeriesBrackets} renders every series as its own bracket group, primary first, and
+    // nothing for a standalone. The primary reads back as Series/SeriesNumber, exactly as
+    // "[{Series} {SeriesNumber}]" would; the groups after it are tolerated, not parsed.
+    private const string SeriesBracketGroups =
+        @"(?:\[(?<Series>[^\[\]]+?)(?:\s+(?<SeriesNumber>[\d.]+))?\]" + AnyBracketGroup + "*)?";
+
     private static string RenderToken(string name, bool optional)
     {
+        if (name == "SeriesBrackets")
+        {
+            return SeriesBracketGroups;
+        }
+
         var body = name switch
         {
             "Year" => @"\d{4}",

@@ -136,6 +136,40 @@ namespace Listenarr.Tests.Features.Infrastructure.Metadata.Parsing
             Assert.Null(parsed.Series);
         }
 
+        private const string SeriesBracketsPattern =
+            "{Author}/{SeriesBrackets} {Title} {{Narrator}} ({Year})";
+
+        [Theory]
+        [InlineData("[Commonwealth Universe 6][Chronicle of the Fallers 1] The Abyss Beyond Dreams {John Lee} (2014)",
+            "Commonwealth Universe", "6", "The Abyss Beyond Dreams", "John Lee", "2014")]
+        [InlineData("[Revelation Space 10] Dilation Sleep {John Lee} (1990)",
+            "Revelation Space", "10", "Dilation Sleep", "John Lee", "1990")]
+        [InlineData("[Radicalized] Radicalized {Cory Doctorow} (2019)",
+            "Radicalized", null, "Radicalized", "Cory Doctorow", "2019")]
+        public void SeriesBracketsPattern_ReadsThePrimarySeriesBack(
+            string folder, string series, string? part, string title, string narrator, string year)
+        {
+            var parsed = Parse("Some Author", folder, SeriesBracketsPattern);
+
+            Assert.Equal(series, parsed.Series);
+            Assert.Equal(part, parsed.SeriesNumber);
+            Assert.Equal(title, parsed.Title);
+            Assert.Equal(narrator, parsed.Narrator);
+            Assert.Equal(year, parsed.Year);
+        }
+
+        [Fact]
+        public void SeriesBracketsPattern_StandaloneKeepsItsWholeTitle()
+        {
+            // The token renders empty for a standalone; reading it as a required catch-all
+            // took the title's first character as the series.
+            var parsed = Parse("Robert A. Heinlein", "Revolt in 2100 {Eric Michael Summerer} (2009)", SeriesBracketsPattern);
+
+            Assert.Null(parsed.Series);
+            Assert.Equal("Revolt in 2100", parsed.Title);
+            Assert.Equal("2009", parsed.Year);
+        }
+
         [Fact]
         public void NoConfiguredPattern_FallsBackToBuiltInConvention()
         {
