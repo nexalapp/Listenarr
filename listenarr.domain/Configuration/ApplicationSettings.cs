@@ -331,6 +331,13 @@ namespace Listenarr.Domain.Configuration
         public string SeriesNameDropWordsJson { get; set; } = SeriesNameStyle.DefaultDropWordsJson;
 
         /// <summary>
+        /// Series names written in full even when they end in a drop word, as a JSON
+        /// array — for a name that dropped would read as another series. See
+        /// <see cref="SeriesNameStyle"/>.
+        /// </summary>
+        public string SeriesNamesKeptWholeJson { get; set; } = "[]";
+
+        /// <summary>
         /// Author spellings to store as another, as a JSON list of
         /// <c>{"variant","canonical"}</c>. See <see cref="AuthorAliases"/>.
         /// </summary>

@@ -733,6 +733,8 @@ export interface ApplicationSettings {
   libraryLanguagesJson?: string
   /** JSON array of words dropped from the end of a series name in paths and tags ("Series", "Trilogy", …). */
   seriesNameDropWordsJson?: string
+  /** JSON array of series names written in full even when they end in a drop word. */
+  seriesNamesKeptWholeJson?: string
   authorAliasesJson?: string
   maxNarratorsInNames?: number
   fileSeriesUnderFirstAuthor?: boolean

@@ -129,6 +129,8 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .HasDefaultValue("[]");
             builder.Property(e => e.SeriesNameDropWordsJson)
                 .HasDefaultValue(SeriesNameStyle.DefaultDropWordsJson);
+            builder.Property(e => e.SeriesNamesKeptWholeJson)
+                .HasDefaultValue("[]");
         }
     }
 }

@@ -63,6 +63,21 @@ describe('FileManagementSection', () => {
     expect(last.importBlacklistExtensions).toEqual(['.nfo', '.jpg'])
   })
 
+  it('saves series names kept whole as a JSON list', async () => {
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
+    const wrapper = mount(FileManagementSection, {
+      props: { settings: { seriesNamesKeptWholeJson: '[]' } },
+    })
+
+    const input = wrapper.find('input[placeholder="The Dune Sequence"]')
+    await input.setValue(' The Dune Sequence ,, Foo Cycle ')
+    await input.trigger('change')
+    const emitted = wrapper.emitted()['update:settings']!
+    const last = emitted[emitted.length - 1]![0] as { seriesNamesKeptWholeJson?: string }
+    expect(JSON.parse(last.seriesNamesKeptWholeJson!)).toEqual(['The Dune Sequence', 'Foo Cycle'])
+  })
+
   it('shows preview for multi-file pattern with chapter numbers', async () => {
     const { default: FileManagementSection } =
       await import('@/components/settings/FileManagementSection.vue')
