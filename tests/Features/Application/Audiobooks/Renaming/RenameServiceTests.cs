@@ -1825,6 +1825,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
             AudiobookSeriesMembershipHelper.ApplyPrimarySeriesFields(audiobook);
             db.Audiobooks.Add(audiobook);
             await db.SaveChangesAsync();
+            // Read back as the app would, not through the memberships still tracked here.
+            db.ChangeTracker.Clear();
 
             var preview = Assert.Single(await service.PreviewRenameAsync(new[] { 6 }));
 
