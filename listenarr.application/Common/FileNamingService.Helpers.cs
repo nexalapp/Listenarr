@@ -184,6 +184,19 @@ namespace Listenarr.Application.Common
             AudioMetadata? widths = null)
         {
             var builder = new StringBuilder();
+
+            // Two memberships can arrive at one bracket. Audible lists some series
+            // twice under two ASINs — "Species Imperative" holding only book 1 and
+            // "Species Imperative Series" holding all three — and a book in both is
+            // in both, faithfully. But the trailing "Series" is a drop word, so the
+            // two names render identically and the book filed as
+            // "[Species Imperative 1][Species Imperative 1]". The stored memberships
+            // are right and the Series page should keep showing both; it is only the
+            // written name that has nothing to say twice. The first entry wins, which
+            // is the primary series, so the number that survives is the one the rest
+            // of the metadata agrees with.
+            var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var entry in series)
             {
                 if (string.IsNullOrWhiteSpace(entry.Name))
@@ -196,6 +209,11 @@ namespace Listenarr.Application.Common
                     ? SanitizePathComponent(rendered)
                     : StripControlCharacters(rendered));
                 if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                if (!written.Add(name))
                 {
                     continue;
                 }
