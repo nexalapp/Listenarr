@@ -71,5 +71,28 @@ namespace Listenarr.Tests.Features.Api.Features.Library
             // Then
             Assert.Equal(Path.Join(RootPath, "Stephen King", "The Dark Tower", "The Gunslinger"), result);
         }
+
+        [Fact]
+        [Trait("Method", "ComputeAudiobookBaseDirectoryFromPattern")]
+        [Trait("Scenario", "SeriesBracketsPattern_NamesTheSeriesWithoutASeriesFolder")]
+        public void ComputeAudiobookBaseDirectoryFromPattern_SeriesBracketsPattern_NamesTheSeriesWithoutASeriesFolder()
+        {
+            // A pattern without a literal {Series} used to get a {Series}/ level inserted,
+            // and the planner's own variables had no {SeriesBrackets} to fill.
+            var audiobook = new AudiobookBuilder()
+                .WithTitle("The Gunslinger")
+                .WithAuthor("Stephen King")
+                .WithYear("1982")
+                .WithSeries("The Dark Tower")
+                .WithSeriesNumber("1")
+                .Build();
+
+            var fileNamingService = _provider.GetRequiredService<IFileNamingService>();
+
+            var result = LibraryPathPlanner.ComputeAudiobookBaseDirectoryFromPattern(
+                audiobook, RootPath, "{Author}/{SeriesBrackets} {Title}", fileNamingService);
+
+            Assert.Equal(Path.Join(RootPath, "Stephen King", "[The Dark Tower 1] The Gunslinger"), result);
+        }
     }
 }

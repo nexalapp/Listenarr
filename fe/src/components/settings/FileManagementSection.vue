@@ -114,6 +114,21 @@
 
       <FormRow
         v-if="showNaming"
+        label="Series Names Kept Whole"
+        help="Series written exactly as stored, even when they end in a word above. For a name that, shortened, would read as another series: 'The Dune Sequence' is the whole Dune universe, and as 'Dune' it is indistinguishable from the six novels it contains. Comma-separated."
+      >
+        <div class="input-group">
+          <input
+            v-model="seriesKeptWhole"
+            type="text"
+            placeholder="The Dune Sequence"
+            @change="updateSeriesKeptWhole"
+          />
+        </div>
+      </FormRow>
+
+      <FormRow
+        v-if="showNaming"
         label="Series Author"
         help="File every book of a series under the author of its first book — the earliest published one in your library — so a series that changed hands stays in one folder and on one author page, and the next book is where a reader looks for it. {Author} follows this; the book's own credit still goes wherever {Authors} is written. Off, {Author} is each book's own first author."
       >
@@ -450,6 +465,22 @@ watch(
   },
 )
 
+const seriesKeptWhole = ref(parseDropWords(props.settings.seriesNamesKeptWholeJson).join(', '))
+watch(
+  () => props.settings.seriesNamesKeptWholeJson,
+  (value) => {
+    seriesKeptWhole.value = parseDropWords(value).join(', ')
+  },
+)
+
+function updateSeriesKeptWhole() {
+  const names = seriesKeptWhole.value
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean)
+  updateField('seriesNamesKeptWholeJson', JSON.stringify(names))
+}
+
 function updateSeriesDropWords() {
   const words = seriesDropWords.value
     .split(',')
@@ -461,6 +492,11 @@ function updateSeriesDropWords() {
 // Mirrors SeriesNameStyle.Render on the server: trailing drop words, repeatedly,
 // case-insensitively, never leaving the name empty.
 function renderSeriesPreview(name: string): string {
+  const kept = seriesKeptWhole.value
+    .split(',')
+    .map((n) => n.trim().toLowerCase())
+    .filter(Boolean)
+  if (kept.includes(name.trim().toLowerCase())) return name.trim()
   const words = seriesDropWords.value
     .split(',')
     .map((w) => w.trim().toLowerCase())

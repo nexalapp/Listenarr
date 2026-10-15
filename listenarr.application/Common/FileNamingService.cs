@@ -296,7 +296,13 @@ namespace Listenarr.Application.Common
                     // Handle empty values
                     if (value == null || string.IsNullOrWhiteSpace(value.ToString()))
                     {
-                        return EmptySentinel;
+                        // {SeriesBrackets} is a whole bracket group, rendered; empty, it goes
+                        // the way an empty "[{Series} {SeriesNumber}]" does, leaving the
+                        // separators around it alone. As a sentinel it took the " - " in
+                        // "{Author} - {SeriesBrackets} {Title}" with it.
+                        return string.Equals(variableName, "SeriesBrackets", StringComparison.OrdinalIgnoreCase)
+                            ? string.Empty
+                            : EmptySentinel;
                     }
 
                     tokensResolved++;

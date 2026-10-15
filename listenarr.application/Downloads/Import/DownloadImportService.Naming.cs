@@ -54,6 +54,7 @@ public partial class DownloadImportService
                 Series = FirstNonEmpty(
                     audiobook.Series,
                     extractedMetadata?.Series),
+                AllSeries = audiobook.CreateBasicAudioMetadata().AllSeries,
                 // Parsed with InvariantCulture: the source value always uses '.' as the
                 // decimal separator, so parsing under the server's culture would read a
                 // position of "1.5" as 15 wherever '.' is the group separator.
@@ -129,10 +130,12 @@ public partial class DownloadImportService
         AudioMetadata namingMetadata,
         string file,
         int? effectiveDiskNumber,
-        int? effectiveChapterNumber) =>
+        int? effectiveChapterNumber,
+        string seriesBrackets) =>
         new Dictionary<string, object>
         {
             { "Author", namingMetadata.Artist ?? "Unknown Author" },
+            { "SeriesBrackets", seriesBrackets },
             { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
             { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
             { "Subtitle", string.IsNullOrWhiteSpace(namingMetadata.Subtitle) ? string.Empty : namingMetadata.Subtitle },

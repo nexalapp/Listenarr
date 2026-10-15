@@ -62,6 +62,13 @@ namespace Listenarr.Application.Downloads.Contracts
         string RenderSeriesName(string? name);
 
         /// <summary>
+        /// The <c>{SeriesBrackets}</c> token for a path: every series the book is in, each
+        /// bracketed with its own position, primary first. Naming paths that build their
+        /// own variables take it from here, so a folder and an album tag agree.
+        /// </summary>
+        string RenderSeriesBrackets(AudioMetadata metadata);
+
+        /// <summary>
         /// The author a book files under, for <c>{Author}</c>: its series' first author
         /// when that setting is on and the series is known, otherwise the first of its own.
         /// </summary>

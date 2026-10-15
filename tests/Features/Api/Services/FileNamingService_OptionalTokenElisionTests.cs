@@ -80,6 +80,21 @@ namespace Listenarr.Tests.Features.Api.Services
                 result);
         }
 
+        [Theory]
+        [InlineData("{Author}/{SeriesBrackets} {Title} {{Narrator}} ({Year})", "Peter F. Hamilton/Great North Road {Toby Longworth} (2012)")]
+        [InlineData("{Author} - {SeriesBrackets} {Title} {{Narrator}} ({Year})", "Peter F. Hamilton - Great North Road {Toby Longworth} (2012)")]
+        public void EmptySeriesBrackets_LeavesTheSeparatorsAroundIt(string pattern, string expected)
+        {
+            // {SeriesBrackets} renders its own bracket group, so an empty one must vanish
+            // exactly as an empty "[{Series} {SeriesNumber}]" group does, keeping the " - ".
+            var variables = Variables("Peter F. Hamilton", null, null, "Great North Road", "Toby Longworth", "2012");
+            variables["SeriesBrackets"] = string.Empty;
+
+            var result = CreateService().ApplyNamingPattern(pattern, variables, treatAsFilename: !pattern.Contains('/'));
+
+            Assert.Equal(expected.Replace('/', Path.DirectorySeparatorChar), result);
+        }
+
         [Fact]
         public void EmptySeriesAndNarrator_LeaveOnlyTitleAndYear()
         {

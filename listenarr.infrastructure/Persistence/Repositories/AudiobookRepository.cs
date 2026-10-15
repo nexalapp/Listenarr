@@ -129,6 +129,9 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return await _db.Audiobooks
                 .AsNoTracking()
                 .Include(a => a.Files)
+                // A rename renders {SeriesBrackets}, which names every series, not only
+                // the primary one denormalized onto the book.
+                .Include(a => a.SeriesMemberships)
                 .Where(a => idSet.Contains(a.Id))
                 .ToListAsync(ct);
         }

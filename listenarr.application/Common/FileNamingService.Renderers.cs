@@ -42,12 +42,16 @@ namespace Listenarr.Application.Common
                 narrators,
                 _settingsSnapshot?.Current?.MaxNarratorsInNames ?? 0);
 
+        public string RenderSeriesBrackets(AudioMetadata metadata) =>
+            BuildSeriesBrackets(metadata, sanitizeForPath: true);
+
         public string RenderSeriesName(string? name) =>
             SeriesNameStyle.Render(
                 name,
                 _settingsSnapshot?.Current == null
                     ? SeriesNameStyle.DefaultDropWords
-                    : SeriesNameStyle.ParseDropWords(_settingsSnapshot.Current.SeriesNameDropWordsJson));
+                    : SeriesNameStyle.ParseDropWords(_settingsSnapshot.Current.SeriesNameDropWordsJson),
+                SeriesNameStyle.ParseKeptWhole(_settingsSnapshot?.Current?.SeriesNamesKeptWholeJson));
 
         /// <summary>
         /// The author a book files under: its series' first author when the setting says

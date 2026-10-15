@@ -13,13 +13,18 @@ namespace Listenarr.Application.Audiobooks.Renaming
     /// </summary>
     public partial class RenameService
     {
-        private string BuildExpectedPath(Audiobook audiobook, PreviewFileEntry file, ApplicationSettings settings, string basePath, bool isCustomBasePath, bool isMultiFile, SeriesPositionStyle seriesPositionStyle)
+        private string BuildExpectedPath(Audiobook audiobook, PreviewFileEntry file, ApplicationSettings settings, string basePath, bool isCustomBasePath, bool isMultiFile, IReadOnlyDictionary<string, SeriesPositionStyle> seriesPositionStyles)
         {
+            var seriesPositionStyle = seriesPositionStyles.GetValueOrDefault(
+                SeriesNumberFormatting.SeriesKey(audiobook.Series),
+                SeriesPositionStyle.Plain);
             var folderPattern = settings.FolderNamingPattern;
             var filePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
             var variables = BuildNamingVariables(audiobook, folderPattern, filePattern, file.SequenceNumber, isMultiFile, seriesPositionStyle);
             // The same rendering the tag planner applies, so folder and album agree.
             variables["Series"] = _fileNamingService.RenderSeriesName(audiobook.Series);
+            variables["SeriesBrackets"] = _fileNamingService.RenderSeriesBrackets(
+                audiobook.CreateBasicAudioMetadata(seriesPositionStyles: seriesPositionStyles));
             var patternHasNumberTokens = !string.IsNullOrWhiteSpace(filePattern)
                 && (filePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0 || filePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0);
 

@@ -43,6 +43,16 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks
         public void Render_LeavesEveryOtherNameAlone(string stored) =>
             Assert.Equal(stored, SeriesNameStyle.Render(stored, SeriesNameStyle.DefaultDropWords));
 
+        [Theory]
+        [InlineData("The Dune Sequence")]
+        [InlineData("the dune sequence")]   // matched case-insensitively, written as stored
+        public void Render_KeepsANameOnTheKeptList(string stored) =>
+            Assert.Equal(stored, SeriesNameStyle.Render(stored, SeriesNameStyle.DefaultDropWords, ["The Dune Sequence"]));
+
+        [Fact]
+        public void Render_KeptListLeavesOtherNamesToTheDropWords() =>
+            Assert.Equal("Salvation", SeriesNameStyle.Render("The Salvation Sequence", SeriesNameStyle.DefaultDropWords, ["The Dune Sequence"]));
+
         [Fact]
         public void Render_NeverLeavesANameEmpty()
         {

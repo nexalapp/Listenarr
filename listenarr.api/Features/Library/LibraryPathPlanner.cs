@@ -62,7 +62,7 @@ namespace Listenarr.Api.Features.Library
                 directoryPattern = "{Author}/{Title}";
             }
 
-            if (!string.IsNullOrWhiteSpace(audiobook.Series) && !directoryPattern.Contains("{Series}"))
+            if (!string.IsNullOrWhiteSpace(audiobook.Series) && !directoryPattern.Contains("{Series"))
             {
                 if (directoryPattern.Contains("{Author}/{Title}"))
                 {
@@ -84,6 +84,8 @@ namespace Listenarr.Api.Features.Library
             {
                 { "Author", SanitizeDirectoryName(audiobook.Authors?.FirstOrDefault() ?? "Unknown Author") },
                 { "Series", SanitizeDirectoryName(fileNamingService.RenderSeriesName(audiobook.Series)) },
+                { "SeriesBrackets", fileNamingService.RenderSeriesBrackets(
+                    audiobook.CreateBasicAudioMetadata(seriesPositionStyles: seriesPositionStyles)) },
                 { "Title", SanitizeDirectoryName(audiobook.Title ?? "Unknown Title") },
                 { "Subtitle", SanitizeDirectoryName(audiobook.Subtitle ?? string.Empty) },
                 { "Edition", SanitizeDirectoryName(audiobook.Edition ?? string.Empty) },

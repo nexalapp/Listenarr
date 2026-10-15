@@ -163,9 +163,6 @@ namespace Listenarr.Application.Audiobooks.Renaming
             }
 
             var namingBase = ResolveNamingBasePath(preview.CurrentFolderPath, settings, rootFolders, semantics);
-            var seriesPositionStyle = seriesPositionStyles.GetValueOrDefault(
-                SeriesNumberFormatting.SeriesKey(audiobook.Series),
-                SeriesPositionStyle.Plain);
             var isMultiFile = files.Count > 1;
             var expectedPaths = new List<string>();
 
@@ -178,7 +175,7 @@ namespace Listenarr.Application.Audiobooks.Renaming
             {
                 var expectedPath = file.PathLocked
                     ? file.CurrentPath
-                    : BuildExpectedPath(audiobook, file, settings, namingBase.BasePath, namingBase.IsCustomBasePath, isMultiFile, seriesPositionStyle);
+                    : BuildExpectedPath(audiobook, file, settings, namingBase.BasePath, namingBase.IsCustomBasePath, isMultiFile, seriesPositionStyles);
 
                 if (folderPinned && !file.PathLocked)
                 {

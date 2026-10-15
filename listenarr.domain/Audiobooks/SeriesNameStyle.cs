@@ -55,7 +55,14 @@ namespace Listenarr.Domain.Audiobooks
         public static string DefaultDropWordsJson => JsonSerializer.Serialize(DefaultDropWords);
 
         /// <summary>The list as stored, or the default when the stored value is unreadable.</summary>
-        public static IReadOnlyList<string> ParseDropWords(string? json)
+        public static IReadOnlyList<string> ParseDropWords(string? json) =>
+            ParseList(json, DefaultDropWords);
+
+        /// <summary>The kept-whole names as stored, or none when the stored value is unreadable.</summary>
+        public static IReadOnlyList<string> ParseKeptWhole(string? json) =>
+            ParseList(json, []);
+
+        private static IReadOnlyList<string> ParseList(string? json, IReadOnlyList<string> unreadable)
         {
             if (string.IsNullOrWhiteSpace(json))
             {
@@ -72,7 +79,7 @@ namespace Listenarr.Domain.Audiobooks
             }
             catch (JsonException)
             {
-                return DefaultDropWords;
+                return unreadable;
             }
         }
 
@@ -91,10 +98,26 @@ namespace Listenarr.Domain.Audiobooks
         /// "The Expanse" stays "The Expanse". A name that is nothing but drop words is
         /// returned as it was: better a folder called "Series" than one called nothing.
         /// </summary>
-        public static string Render(string? name, IReadOnlyList<string>? dropWords)
+        /// <param name="name"></param>
+        /// <param name="dropWords"></param>
+        /// <param name="keptWhole">
+        /// Names written exactly as stored, whatever they end in. "The Dune Sequence"
+        /// is the whole Dune universe, and dropped to "Dune" it reads as the six-novel
+        /// series it contains; a book in both would carry <c>[Dune 17][Dune 6]</c>.
+        /// </param>
+        public static string Render(
+            string? name,
+            IReadOnlyList<string>? dropWords,
+            IReadOnlyList<string>? keptWhole = null)
         {
             var trimmed = (name ?? string.Empty).Trim();
             if (trimmed.Length == 0 || dropWords == null || dropWords.Count == 0)
+            {
+                return trimmed;
+            }
+
+            if (keptWhole != null
+                && keptWhole.Any(kept => string.Equals(kept?.Trim(), trimmed, StringComparison.OrdinalIgnoreCase)))
             {
                 return trimmed;
             }
