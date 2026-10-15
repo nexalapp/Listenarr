@@ -312,7 +312,8 @@ namespace Listenarr.Application.Downloads.Import
                                 namingMetadata,
                                 file,
                                 effectiveDiskNumber,
-                                effectiveChapterNumber);
+                                effectiveChapterNumber,
+                                fileNamingService.RenderSeriesBrackets(namingMetadata));
 
                             var folderRelative = fileNamingService.ApplyNamingPattern(folderPattern, variablesForFile, treatAsFilename: false);
                             if (string.IsNullOrEmpty(audiobook.BasePath) && !string.IsNullOrWhiteSpace(folderRelative))

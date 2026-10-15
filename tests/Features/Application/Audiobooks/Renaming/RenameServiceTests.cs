@@ -1793,6 +1793,46 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Renaming
             Assert.DoesNotContain("Publication Order", preview.NewFolderPath);
         }
 
+        [Fact]
+        public async Task PreviewRename_SeriesBrackets_NamesEverySeriesPrimaryFirst()
+        {
+            // The rename builds its own variables; without the token among them a
+            // {SeriesBrackets} pattern dropped the series from every name.
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _tempRoot,
+                FolderNamingPattern = "{Author}/{SeriesBrackets} {Title}",
+                FileNamingPattern = "{SeriesBrackets} {Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            var audiobook = new Audiobook
+            {
+                Id = 6,
+                Title = "The Abyss Beyond Dreams",
+                Authors = new List<string> { "Peter F. Hamilton" },
+                BasePath = Path.Join(_tempRoot, "Wrong", "Folder"),
+                SeriesMemberships = new List<AudiobookSeriesMembership>
+                {
+                    new() { SeriesName = "Chronicle of the Fallers", SeriesNumber = "1", IsPrimary = false, SortOrder = 0 },
+                    new() { SeriesName = "Commonwealth Universe", SeriesNumber = "6", IsPrimary = true, SortOrder = 1 },
+                },
+                Files = new List<AudiobookFile>
+                {
+                    new() { Id = 61, AudiobookId = 6, Path = Path.Join(_tempRoot, "Wrong", "Folder", "old.m4b"), Format = "m4b" }
+                }
+            };
+            AudiobookSeriesMembershipHelper.ApplyPrimarySeriesFields(audiobook);
+            db.Audiobooks.Add(audiobook);
+            await db.SaveChangesAsync();
+
+            var preview = Assert.Single(await service.PreviewRenameAsync(new[] { 6 }));
+
+            const string expected = "[Commonwealth Universe 6][Chronicle of the Fallers 1] The Abyss Beyond Dreams";
+            Assert.EndsWith(Path.Join("Peter F. Hamilton", expected), preview.NewFolderPath);
+            Assert.Contains(preview.FileRenames, rename => rename.NewPath?.EndsWith(expected + ".m4b", StringComparison.Ordinal) == true);
+        }
+
         private sealed class RecordingFilesystemMutationCoordinator(
             List<string> events) : IFilesystemMutationCoordinator
         {

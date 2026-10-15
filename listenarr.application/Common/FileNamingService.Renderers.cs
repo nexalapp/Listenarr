@@ -42,6 +42,9 @@ namespace Listenarr.Application.Common
                 narrators,
                 _settingsSnapshot?.Current?.MaxNarratorsInNames ?? 0);
 
+        public string RenderSeriesBrackets(AudioMetadata metadata) =>
+            BuildSeriesBrackets(metadata, sanitizeForPath: true);
+
         public string RenderSeriesName(string? name) =>
             SeriesNameStyle.Render(
                 name,

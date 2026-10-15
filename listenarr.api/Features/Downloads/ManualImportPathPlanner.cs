@@ -285,6 +285,8 @@ public sealed class ManualImportPathPlanner
             : "Unknown Title";
 
         if (!string.IsNullOrWhiteSpace(audiobook.Series)) variables["Series"] = _fileNamingService.RenderSeriesName(audiobook.Series);
+        variables["SeriesBrackets"] = _fileNamingService.RenderSeriesBrackets(
+            audiobook.CreateBasicAudioMetadata(seriesPositionStyles: metadata.SeriesPositionStyles));
 
         // Without this the token resolved to nothing and a manually imported book landed
         // in a folder with no position in it at all, whatever the pattern asked for.
