@@ -33,6 +33,13 @@ namespace Listenarr.Application.Audiobooks.Conversion
         /// <summary>A source file was unreadable or has since gone.</summary>
         SourceUnreadable,
 
+        /// <summary>
+        /// The sources cannot be put in play order with any confidence - their filenames
+        /// and their own tags disagree about which part comes first. Only a rename fixes
+        /// it, so retrying changes nothing.
+        /// </summary>
+        SourceOrderUnclear,
+
         /// <summary>The encoder ran and failed. Usually the source, occasionally the target.</summary>
         EncodeFailed,
 

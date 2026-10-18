@@ -54,6 +54,7 @@ namespace Listenarr.Application.Audiobooks.Conversion
         {
             ConversionFailureKind.EncoderUnavailable => false,
             ConversionFailureKind.SourceUnreadable => false,
+            ConversionFailureKind.SourceOrderUnclear => false,
             ConversionFailureKind.EncodeFailed => false,
             ConversionFailureKind.OutputRejected => false,
             _ => true

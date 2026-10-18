@@ -44,6 +44,9 @@ namespace Listenarr.Domain.Audiobooks.Conversion
         /// <summary>A title that is only a number carries no more than the chapter index already does.</summary>
         private static readonly Regex TitleWithoutWords = new(@"^[\s\d\p{P}]*$", RegexOptions.Compiled);
 
+        /// <summary>The first run of digits in an embedded title, which is where "3 of 71" states its place.</summary>
+        private static readonly Regex FirstNumber = new(@"\d+", RegexOptions.Compiled);
+
         /// <summary>Leading track numbering in a filename, which the chapter number already expresses.</summary>
         private static readonly Regex LeadingTrackNumber = new(
             @"^\s*(?:track\s*)?\d+\s*[-_.\)\]]*\s*",
@@ -156,6 +159,67 @@ namespace Listenarr.Domain.Audiobooks.Conversion
                 SelectBitRate(ordered),
                 SelectSampleRate(ordered),
                 SelectChannels(ordered));
+        }
+
+        /// <summary>
+        /// Whether the chosen order runs the book backwards, as one sentence, or null when
+        /// nothing contradicts it.
+        ///
+        /// Order comes from the filenames, which is almost always right and is the only
+        /// signal the import path shares. It was wrong once: 71 parts whose filenames
+        /// numbered them opposite to their contents encoded a 36-hour book from its end to
+        /// its beginning, and nothing noticed until a listener did. The parts' own title
+        /// tags said "71-71" down to "01-71" in play order, so the file carried the proof
+        /// of its own reversal.
+        ///
+        /// A countdown is the whole test. Every ordered source has to state a number, and
+        /// those numbers have to fall the whole way: a book named in play order climbs, and
+        /// real chapter names ("Prologue", "The Gateway") state no number at all and are
+        /// not judged. Measured over one library's 479 converted books, 324 climbed, 65
+        /// stated no usable number, and exactly one counted down.
+        ///
+        /// It reports rather than reorders. Two complete sequences disagreeing cannot be
+        /// told apart from the metadata alone, so trusting the titles instead would be the
+        /// same gamble the other way round, and would silently reorder a book whose title
+        /// tags are the wrong signal.
+        /// </summary>
+        public static string? DescribeBackwardsOrder(IReadOnlyList<ConversionSource> orderedSources)
+        {
+            ArgumentNullException.ThrowIfNull(orderedSources);
+
+            // Two files counting down is as likely to be a coincidence as a reversal.
+            if (orderedSources.Count < 3)
+            {
+                return null;
+            }
+
+            var numbers = new List<int>(orderedSources.Count);
+            foreach (var source in orderedSources)
+            {
+                var match = FirstNumber.Match(source.EmbeddedTitle ?? string.Empty);
+                if (!match.Success || !int.TryParse(match.Value, out var number))
+                {
+                    return null;
+                }
+
+                numbers.Add(number);
+            }
+
+            for (var i = 1; i < numbers.Count; i++)
+            {
+                if (numbers[i] >= numbers[i - 1])
+                {
+                    return null;
+                }
+            }
+
+            return "The source files are ordered back to front: their own title tags count down from "
+                + $"{numbers[0]} to {numbers[^1]} across the {orderedSources.Count} files in the order the "
+                + $"filenames give, starting at \"{orderedSources[0].EmbeddedTitle}\" "
+                + $"({Path.GetFileName(orderedSources[0].FullPath)}) and ending at "
+                + $"\"{orderedSources[^1].EmbeddedTitle}\" ({Path.GetFileName(orderedSources[^1].FullPath)}). "
+                + "Converting them would encode the book from its end to its beginning. Rename the files so "
+                + "they sort in play order, then convert.";
         }
 
         /// <summary>

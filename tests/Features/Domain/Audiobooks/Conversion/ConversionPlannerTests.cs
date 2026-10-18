@@ -408,6 +408,86 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Conversion
             Assert.Equal(2, plan.TargetChannels);
         }
 
+        // ---- a source order the files themselves contradict -------------------------
+
+        [Fact]
+        public void DescribeBackwardsOrder_NamesTheCountdownAcrossTheWholeBook()
+        {
+            // The shape that got through: 71 parts whose filenames sort in play order while
+            // their own title tags count the other way, so the first file to be encoded is
+            // the last part of the book.
+            var sources = Enumerable.Range(1, 71)
+                .Select(i => Source($"{i:D2}.mp3", embeddedTitle: $"Great North Road {72 - i:D2}-71"))
+                .ToList();
+
+            var plan = ConversionPlanner.BuildPlan(sources, StringComparer.Ordinal);
+            var described = ConversionPlanner.DescribeBackwardsOrder(plan.OrderedSources);
+
+            Assert.NotNull(described);
+            Assert.Contains("back to front", described);
+            Assert.Contains("count down from 71 to 1", described);
+            Assert.Contains("Great North Road 71-71", described);
+            Assert.Contains("01.mp3", described);
+        }
+
+        [Fact]
+        public void DescribeBackwardsOrder_IsSilentWhenTheTitlesClimb()
+        {
+            var plan = ConversionPlanner.BuildPlan(
+                [
+                    Source("01.mp3", embeddedTitle: "Part 1 of 3"),
+                    Source("02.mp3", embeddedTitle: "Part 2 of 3"),
+                    Source("03.mp3", embeddedTitle: "Part 3 of 3"),
+                ],
+                StringComparer.Ordinal);
+
+            Assert.Null(ConversionPlanner.DescribeBackwardsOrder(plan.OrderedSources));
+        }
+
+        [Fact]
+        public void DescribeBackwardsOrder_IsSilentWhenTheNumbersOnlyPartlyFall()
+        {
+            var plan = ConversionPlanner.BuildPlan(
+                [
+                    Source("01.mp3", embeddedTitle: "Part 3"),
+                    Source("02.mp3", embeddedTitle: "Part 1"),
+                    Source("03.mp3", embeddedTitle: "Part 2"),
+                ],
+                StringComparer.Ordinal);
+
+            Assert.Null(ConversionPlanner.DescribeBackwardsOrder(plan.OrderedSources));
+        }
+
+        [Fact]
+        public void DescribeBackwardsOrder_IsSilentWhenATitleStatesNoNumber()
+        {
+            // Real chapter names carry no place in a sequence, so they say nothing about
+            // whether the order is right and must not be read as if they did.
+            var plan = ConversionPlanner.BuildPlan(
+                [
+                    Source("01.mp3", embeddedTitle: "Chapter 3"),
+                    Source("02.mp3", embeddedTitle: "Prologue"),
+                    Source("03.mp3", embeddedTitle: "Chapter 1"),
+                ],
+                StringComparer.Ordinal);
+
+            Assert.Null(ConversionPlanner.DescribeBackwardsOrder(plan.OrderedSources));
+        }
+
+        [Fact]
+        public void DescribeBackwardsOrder_IsSilentForTwoFiles()
+        {
+            // Two files counting down is as likely to be a coincidence as a reversal.
+            var plan = ConversionPlanner.BuildPlan(
+                [
+                    Source("01.mp3", embeddedTitle: "Part 2"),
+                    Source("02.mp3", embeddedTitle: "Part 1"),
+                ],
+                StringComparer.Ordinal);
+
+            Assert.Null(ConversionPlanner.DescribeBackwardsOrder(plan.OrderedSources));
+        }
+
         // ---- failure path -----------------------------------------------------------
 
         [Fact]
