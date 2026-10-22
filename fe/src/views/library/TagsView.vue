@@ -608,14 +608,8 @@ import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepa
 import { apiService } from '@/services/api'
 import { useTagJobsStore } from '@/stores/tagJobs'
 import { logger } from '@/utils/logger'
-import { isAudioAuditFlagged } from '@/utils/audioAudit'
-import type {
-  AudioAuditVerdict,
-  ChapterHealth,
-  LibraryTagColumn,
-  LibraryTagRow,
-  RenameOperation,
-} from '@/types'
+import { AUDIO_AUDIT_LABELS, isAudioAuditFlagged } from '@/utils/audioAudit'
+import type { ChapterHealth, LibraryTagColumn, LibraryTagRow, RenameOperation } from '@/types'
 
 /**
  * The columns that are not tags: which books an action is for, the file, and where it
@@ -626,14 +620,6 @@ const AUDIO_KEY = '__audio'
 const PATH_KEY = '__path'
 const CHAPTERS_KEY = '__chapters'
 const AUDIT_KEY = '__audit'
-
-const AUDIO_AUDIT_LABELS: Record<AudioAuditVerdict, string> = {
-  match: 'Matches',
-  'narrator-mismatch': 'Narrator differs',
-  incomplete: 'Cuts off',
-  mismatch: 'Different book',
-  inconclusive: 'Unclear',
-}
 const FILENAME_KEY = 'fileName'
 
 /** How each chapter verdict reads in a cell, a filter and a tooltip. */

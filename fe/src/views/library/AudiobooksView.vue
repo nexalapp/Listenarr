@@ -1025,6 +1025,7 @@ import type { BulkConversionResponse } from '@/types'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText } from '@/utils/textUtils'
 import { formatSeriesMemberships, getSeriesNames, matchesSeries } from '@/utils/seriesUtils'
+import { audioAuditIssueLabel } from '@/utils/audioAudit'
 import { buildCollectionSections, buildLibrarySections } from '@/utils/libraryGrouping'
 import { buildVirtualRows, findVisibleRowRange } from '@/utils/libraryVirtualRows'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -1341,19 +1342,13 @@ const chapterIssueLabel = (book: Audiobook): string | null => {
   }
 }
 
-/** The badge for a book whose audio does not introduce itself as this book, or null. */
-const audioIssueLabel = (book: Audiobook): string | null => {
-  switch (book.audioAudit) {
-    case 'mismatch':
-      return 'Different book'
-    case 'narrator-mismatch':
-      return 'Narrator differs'
-    case 'incomplete':
-      return 'Cuts off'
-    default:
-      return null
-  }
-}
+/**
+ * The badge for a book the audit is flagging, or null. Decided by the same rule and the
+ * same words as the Tags page's audit column and its "Metadata mismatch" filter, so one
+ * book is never a problem on one page and fine on the other.
+ */
+const audioIssueLabel = (book: Audiobook): string | null =>
+  audioAuditIssueLabel(book.audioAudit, book.audioAuditAccepted)
 
 /** The badge for a book with files a scan could not find, or null. */
 const notFoundLabel = (book: Audiobook): string | null => {

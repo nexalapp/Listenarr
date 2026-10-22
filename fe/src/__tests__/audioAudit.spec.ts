@@ -16,7 +16,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 import { describe, it, expect } from 'vitest'
-import { isAudioAuditFlagged, isAudioAuditOverrulable } from '@/utils/audioAudit'
+import {
+  AUDIO_AUDIT_LABELS,
+  audioAuditIssueLabel,
+  isAudioAuditFlagged,
+  isAudioAuditOverrulable,
+} from '@/utils/audioAudit'
 
 /**
  * The Tags page and a book's own page each had their own copy of this list. When "nothing
@@ -50,5 +55,37 @@ describe('audio audit flagging', () => {
     // The button becomes "Flag it again" rather than disappearing.
     expect(isAudioAuditOverrulable('inconclusive')).toBe(true)
     expect(isAudioAuditOverrulable('match')).toBe(false)
+  })
+})
+
+/**
+ * The Books page badged covers from a switch of its own: it did not know `inconclusive`
+ * and did not look at acceptance, so a book answered on its own page stayed a problem in
+ * the library and its "Metadata Mismatch" filter while the Tags page had already let it
+ * go. The label and the flag are now one decision.
+ */
+describe('audio audit badge label', () => {
+  it('names every flagging verdict the way the Tags page does', () => {
+    expect(audioAuditIssueLabel('mismatch', false)).toBe('Different book')
+    expect(audioAuditIssueLabel('narrator-mismatch', false)).toBe('Narrator differs')
+    expect(audioAuditIssueLabel('incomplete', false)).toBe('Cuts off')
+    expect(audioAuditIssueLabel('inconclusive', false)).toBe('Unclear')
+  })
+
+  it('says nothing about a match, or a book nobody has listened to', () => {
+    expect(audioAuditIssueLabel('match', false)).toBeNull()
+    expect(audioAuditIssueLabel(null, false)).toBeNull()
+    expect(audioAuditIssueLabel(undefined, false)).toBeNull()
+  })
+
+  it('goes quiet once the verdict has been overruled', () => {
+    expect(audioAuditIssueLabel('mismatch', true)).toBeNull()
+    expect(audioAuditIssueLabel('narrator-mismatch', true)).toBeNull()
+    expect(audioAuditIssueLabel('incomplete', true)).toBeNull()
+    expect(audioAuditIssueLabel('inconclusive', true)).toBeNull()
+  })
+
+  it('has a word for every verdict, so a new one cannot reach a badge unnamed', () => {
+    for (const label of Object.values(AUDIO_AUDIT_LABELS)) expect(label).not.toBe('')
   })
 })
