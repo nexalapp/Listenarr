@@ -93,26 +93,49 @@
             <ul class="search-list">
               <li
                 v-for="s in suggestions"
-                :key="s.id"
+                :key="s.key"
                 class="search-result"
                 role="option"
                 @click="selectSuggestion(s)"
               >
+                <!-- A series is drawn as the first two books of its reading order,
+                     stacked, so the row says which series it is at a glance. One book,
+                     or one cover between them, fills the square on its own. -->
+                <div v-if="s.kind === 'series' && s.covers.length > 1" class="result-stack">
+                  <img
+                    :src="getProtectedImageSrc(s.covers[1], getPlaceholderUrl())"
+                    @error="handleImageError"
+                    alt=""
+                    class="stack-cover stack-cover--back"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <img
+                    :src="getProtectedImageSrc(s.covers[0], getPlaceholderUrl())"
+                    @error="handleImageError"
+                    alt=""
+                    class="stack-cover stack-cover--front"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
                 <img
+                  v-else
                   :src="
-                    s.imageUrl
-                      ? getProtectedImageSrc(s.imageUrl, getPlaceholderUrl())
+                    s.covers[0]
+                      ? getProtectedImageSrc(s.covers[0], getPlaceholderUrl())
                       : getPlaceholderUrl()
                   "
                   @error="handleImageError"
                   alt=""
                   class="result-thumb"
+                  :class="{ 'result-thumb--author': s.kind === 'author' }"
                   loading="lazy"
                   decoding="async"
                 />
                 <div class="result-text">
                   <div class="result-title">{{ s.title }}</div>
-                  <div class="result-sub">{{ s.author }}</div>
+                  <div class="result-sub">{{ s.sub }}</div>
                 </div>
               </li>
             </ul>
@@ -589,7 +612,8 @@ import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
-import { matchesSeries } from '@/utils/seriesUtils'
+import { searchLibrary } from '@/utils/librarySearch'
+import type { LibrarySearchHit } from '@/utils/librarySearch'
 import type { QueueItem } from '@/types'
 import { ref as vueRef, ref as vueRef2, reactive } from 'vue'
 import GlobalToast from '@/components/ui/GlobalToast.vue'
@@ -1223,9 +1247,7 @@ router.afterEach(() => {
   pendingNavPath.value = null
 })
 const searchQuery = vueRef('')
-const suggestions = vueRef<
-  Array<{ id: number; title: string; author?: string; imageUrl?: string }>
->([])
+const suggestions = vueRef<LibrarySearchHit[]>([])
 const searching = vueRef(false)
 const searchInputRef = vueRef<HTMLInputElement | null>(null)
 
@@ -1263,26 +1285,9 @@ const onSearchInput = async () => {
       if (libraryStore.audiobooks.length === 0) {
         await libraryStore.fetchLibrary()
       }
-      const lib = libraryStore.audiobooks
-      const lower = q.toLowerCase()
-      const localMatches = lib.filter(
-        (b) =>
-          (b.title || '').toLowerCase().includes(lower) ||
-          (Array.isArray(b.authors) ? b.authors.join(' ').toLowerCase() : '').includes(lower) ||
-          matchesSeries(b, q),
-      )
-      if (localMatches.length > 0) {
-        // Only show local library matches in the header search
-        suggestions.value = localMatches.slice(0, 8).map((b) => ({
-          id: b.id!,
-          title: b.title || 'Unknown',
-          author: Array.isArray(b.authors) ? b.authors[0] || '' : '',
-          imageUrl: b.imageUrl || '',
-        }))
-      } else {
-        // No fallback to indexers from header search; leave suggestions empty
-        suggestions.value = []
-      }
+      // Authors and series are offered alongside the books, each opening its own page.
+      // Nothing is asked of an indexer here: the header search answers for the library.
+      suggestions.value = searchLibrary(libraryStore.audiobooks, q)
     } catch (err) {
       logger.error('Header search failed', err)
       suggestions.value = []
@@ -1302,19 +1307,17 @@ const searchTheWeb = () => {
   void router.push({ name: 'add-new', query: { q: query } })
 }
 
-const selectSuggestion = (s: { id: number; title: string; author?: string }) => {
-  // Navigate to audiobook detail if local (id > 0), else open search view
+const selectSuggestion = (s: LibrarySearchHit) => {
   if (!s) return
   searchQuery.value = ''
   suggestions.value = []
   closeSearchResults()
-  if (s.id && s.id > 0) {
-    // Navigate to audiobook detail page (router name: 'audiobook-detail')
-    void router.push({ name: 'audiobook-detail', params: { id: String(s.id) } })
-  } else {
-    // Use the general search page for indexer results
-    void router.push({ name: 'search', query: { q: s.title } })
+  // An author or a series opens its collection page; a book opens itself.
+  if (s.collection) {
+    void router.push(`/collection/${s.collection.type}/${encodeURIComponent(s.collection.name)}`)
+    return
   }
+  if (s.bookId) void router.push({ name: 'audiobook-detail', params: { id: String(s.bookId) } })
 }
 
 const applyFirstResult = () => {
@@ -2612,6 +2615,45 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   border-radius: 6px;
   flex-shrink: 0;
   background: #2a2a2a;
+}
+
+/* A person, not a product: the portrait is round so an author row is never mistaken
+   for the book above it. */
+.result-thumb--author {
+  border-radius: 50%;
+}
+
+/*
+ * Two covers in the space of one, offset into opposite corners: the later book behind
+ * at the top right, the first of the series in front at the bottom left.
+ */
+.result-stack {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.stack-cover {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: #2a2a2a;
+}
+
+.stack-cover--back {
+  top: 0;
+  right: 0;
+  opacity: 0.85;
+}
+
+.stack-cover--front {
+  bottom: 0;
+  left: 0;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
 /* @keyframes spin is centralized in src/assets/animations.css */

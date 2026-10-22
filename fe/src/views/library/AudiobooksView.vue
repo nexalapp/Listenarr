@@ -645,7 +645,7 @@
                 :selected="libraryStore.isSelected(audiobook.id)"
                 :selection-active="selectedCount > 0"
                 :show-details="showItemDetails"
-                :image-src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                :image-src="getProtectedImageSrc(getBookCoverUrl(audiobook), getPlaceholderUrl())"
                 :image-loaded="isImageLoaded(getBookImageKey(audiobook))"
                 :quality-profile-name="getQualityProfileName(audiobook.qualityProfileId)"
                 :monitor-busy="monitorBusy.has(audiobook.id)"
@@ -753,7 +753,7 @@
                 :status-label="statusText(getAudiobookStatus(audiobook))"
                 :selected="libraryStore.isSelected(audiobook.id)"
                 :show-details="showItemDetails"
-                :image-src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                :image-src="getProtectedImageSrc(getBookCoverUrl(audiobook), getPlaceholderUrl())"
                 :image-loaded="isImageLoaded(getBookImageKey(audiobook))"
                 :quality-profile-name="getQualityProfileName(audiobook.qualityProfileId)"
                 :monitor-busy="monitorBusy.has(audiobook.id)"
@@ -1001,6 +1001,7 @@ import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
 import { useConversionJobsStore } from '@/stores/conversionJobs'
 import { apiService } from '@/services/api'
 import { buildApiPath } from '@/services/apiBase'
+import { getBookCoverUrl, isPlaceholderCoverUrl } from '@/utils/libraryCovers'
 import { logger } from '@/utils/logger'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
@@ -1536,30 +1537,8 @@ const authorCoverNotFound = new Set<string>()
 const authorImageLoaded = reactive<Record<string, boolean>>({})
 const loadedImageKeys = reactive(new Set<string>())
 
-function isPlaceholderCoverUrl(url: string | undefined): boolean {
-  const v = (url || '').trim()
-  if (!v) return true
-  return (
-    v === '/placeholder.svg' ||
-    v === 'placeholder.svg' ||
-    v.endsWith('/placeholder.svg') ||
-    v.includes('/placeholder.svg?')
-  )
-}
-
-function getBookImageUrl(
-  book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | undefined,
-): string | undefined {
-  if (!book) return undefined
-  const raw = (book.imageUrl || '').trim()
-  if (raw && !isPlaceholderCoverUrl(raw)) return raw
-  const asin = (book.asin || '').trim()
-  if (asin) return buildApiPath(`/images/${encodeURIComponent(asin)}`)
-  return raw || undefined
-}
-
 function getBookImageKey(book: Pick<Audiobook, 'id' | 'imageUrl' | 'asin'>): string {
-  return `book:${book.id}:${getBookImageUrl(book) || ''}`
+  return `book:${book.id}:${getBookCoverUrl(book) || ''}`
 }
 
 function getSeriesImageKey(
@@ -1784,7 +1763,7 @@ const groupedCollections = computed(() => {
       }
       const group = groups.get(key)!
       group.count++
-      const bookCover = getBookImageUrl(book)
+      const bookCover = getBookCoverUrl(book)
       if (groupBy.value === 'authors') {
         try {
           const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
