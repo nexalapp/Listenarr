@@ -880,6 +880,70 @@ describe('TagsView', () => {
     expect(shown).not.toContain('Radicalized')
   })
 
+  it('marks only the run of the proposal that differs from the value above it', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          fileId: 1,
+          fileName: 'Hamilton - [Commonwealth 1] The Abyss Beyond Dreams (2014).m4b',
+          expectedFileName: 'Hamilton - [Fallers 2] The Abyss Beyond Dreams (2014).m4b',
+          fileNameMismatched: true,
+        }),
+      ]),
+    )
+
+    const proposals = wrapper
+      .findAll('.toolbar-toggle input')
+      .find((input) =>
+        (input.element as HTMLInputElement).parentElement!.textContent!.includes('Proposals'),
+      )!
+    await proposals.setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const line = wrapper
+      .findAll('.cell-proposal')
+      .find((candidate) => candidate.text().includes('Abyss'))!
+
+    // The shared ends stay as context, so the reader can see where in the name it lands.
+    expect(line.findAll('.cell-proposal-context').map((part) => part.text())).toEqual([
+      'Hamilton - [',
+      '] The Abyss Beyond Dreams (2014).m4b',
+    ])
+    expect(line.find('.cell-proposal-change').text()).toBe('Fallers 2')
+
+    // Split for emphasis, never for content: the line still reads as the whole name.
+    expect(line.text()).toBe('Hamilton - [Fallers 2] The Abyss Beyond Dreams (2014).m4b')
+  })
+
+  it('marks the whole proposal when the change is a deletion with nothing left between', async () => {
+    const wrapper = await mountView(
+      table([
+        row({
+          fileId: 1,
+          fileName: 'Corey - [The Expanse 2.7] Drive.m4b',
+          expectedFileName: 'Corey - Drive.m4b',
+          fileNameMismatched: true,
+        }),
+      ]),
+    )
+
+    const proposals = wrapper
+      .findAll('.toolbar-toggle input')
+      .find((input) =>
+        (input.element as HTMLInputElement).parentElement!.textContent!.includes('Proposals'),
+      )!
+    await proposals.setValue(true)
+    await wrapper.vm.$nextTick()
+
+    const line = wrapper
+      .findAll('.cell-proposal')
+      .find((candidate) => candidate.text().includes('Drive.m4b'))!
+
+    // A line dimmed end to end would read as "nothing to see here".
+    expect(line.findAll('.cell-proposal-context')).toHaveLength(0)
+    expect(line.find('.cell-proposal-change').text()).toBe('Corey - Drive.m4b')
+  })
+
   it('proposes nothing for a cell whose lock means nothing will be written', async () => {
     const wrapper = await mountView(
       table([
