@@ -50,3 +50,35 @@ export function isAudioAuditFlagged(
 export function isAudioAuditOverrulable(verdict: AudioAuditVerdict | null | undefined): boolean {
   return !!verdict && FLAGGING.includes(verdict)
 }
+
+/**
+ * How each verdict reads wherever a book is listed: a badge on a cover, a cell on the
+ * Tags page, the word in a tooltip.
+ *
+ * The Books page kept its own copy of this and of the flagging rule, and both drifted
+ * from the ones here: it never learned `inconclusive`, so a book the Tags page called
+ * "Unclear" carried no badge at all, and it switched on the verdict alone, so a book
+ * whose owner had already answered it stayed badged and stayed in the library's
+ * "Metadata Mismatch" filter while being absent from the Tags page's. A status shown in
+ * two places is decided in one.
+ */
+export const AUDIO_AUDIT_LABELS: Record<AudioAuditVerdict, string> = {
+  match: 'Matches',
+  'narrator-mismatch': 'Narrator differs',
+  incomplete: 'Cuts off',
+  mismatch: 'Different book',
+  inconclusive: 'Unclear',
+}
+
+/**
+ * The badge for a book the audit is flagging, or null when there is nothing to show —
+ * the audio introduces itself as this book, nobody has listened yet, or someone listened
+ * and overruled the verdict.
+ */
+export function audioAuditIssueLabel(
+  verdict: AudioAuditVerdict | null | undefined,
+  accepted: boolean | null | undefined,
+): string | null {
+  if (!verdict || !isAudioAuditFlagged(verdict, accepted)) return null
+  return AUDIO_AUDIT_LABELS[verdict]
+}
