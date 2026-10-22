@@ -106,6 +106,46 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
         }
 
         [Fact]
+        public void TwoSeriesThatRenderTheSameName_WriteOneBracket()
+        {
+            // Audible lists the Czerneda trilogy twice, under two ASINs: "Species
+            // Imperative", which holds only book 1, and "Species Imperative Series",
+            // which holds all three. Survival is in both, and both memberships are
+            // worth keeping — the Series page should show what Audible says. But
+            // "Series" is a drop word, so the two names render identically and the
+            // book filed as "[Species Imperative 1][Species Imperative 1]".
+            var book = Book("Survival", "Species Imperative", "1");
+            book.AllSeries =
+            [
+                new SeriesReference("Species Imperative", "1"),
+                new SeriesReference("Species Imperative Series", "1")
+            ];
+
+            var value = CreateService().RenderTagValue("{SeriesBrackets} {Title}", book);
+
+            Assert.Equal("[Species Imperative 1] Survival", value);
+        }
+
+        [Fact]
+        public void TwoSeriesThatRenderTheSameName_KeepTheNumberOfTheFirst()
+        {
+            // The bracket that survives is the first, which is the primary series, so
+            // the number written is the one the rest of the metadata agrees with.
+            // "[Dune 17][Dune 6]" is the shape the kept-whole setting exists to avoid;
+            // where it has not been configured, this is how it degrades.
+            var book = Book("Dune Messiah", "Dune", "2");
+            book.AllSeries =
+            [
+                new SeriesReference("Dune", "2"),
+                new SeriesReference("The Dune Sequence", "13")
+            ];
+
+            var value = CreateService().RenderTagValue("{SeriesBrackets} {Title}", book);
+
+            Assert.Equal("[Dune 2] Dune Messiah", value);
+        }
+
+        [Fact]
         public void SeriesName_FollowsTheListInTheSettingsSnapshot()
         {
             // The words are a setting, not a rule baked in: an operator who wants
