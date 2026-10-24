@@ -103,10 +103,42 @@ public sealed partial class LibraryUpdateWorkflow
             LogRedaction.SanitizeText(existingAudiobook.Title),
             id);
 
+        if (metadataUpdateRequested)
+        {
+            RefreshHealthFactsInBackground(id);
+        }
+
         return new OkObjectResult(new
         {
             message = "Audiobook updated successfully",
             audiobook = existingAudiobook
+        });
+    }
+
+    /// <summary>
+    /// A record edit changes what a tag write would write and what the renamer would
+    /// name, so the stored health facts for this book are stale the moment the save
+    /// lands. Rebuilding the tag index for one book costs a stat per file against the
+    /// NAS, which does not belong on the edit's own latency — fire and forget, like the
+    /// scan hook's post-completion work.
+    /// </summary>
+    private void RefreshHealthFactsInBackground(int audiobookId)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var index = scope.ServiceProvider.GetService<ILibraryTagIndexService>();
+                if (index != null)
+                {
+                    await index.BuildAsync(refresh: false, CancellationToken.None, audiobookIds: [audiobookId]);
+                }
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException && exception is not StackOverflowException)
+            {
+                _logger.LogDebug(exception, "Could not refresh health facts for audiobook {AudiobookId} after its edit", audiobookId);
+            }
         });
     }
 }

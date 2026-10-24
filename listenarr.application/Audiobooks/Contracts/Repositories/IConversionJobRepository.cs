@@ -52,6 +52,7 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// </summary>
         Task<ConversionJob?> ClaimNextAsync(
             string leaseOwner,
+            ConversionJobKind kind,
             DateTime now,
             TimeSpan leaseDuration,
             CancellationToken cancellationToken = default);

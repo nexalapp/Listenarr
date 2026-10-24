@@ -685,3 +685,58 @@ describe('AudiobookDetailView audio preview', () => {
     expect(wrapper.find('.file-preview audio').exists()).toBe(true)
   })
 })
+
+describe('AudiobookDetailView health card', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  async function mountWithHealth() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Eaters of the Dead',
+        authors: ['Michael Crichton'],
+        audioAudit: 'match',
+        files: [{ id: 11, path: 'Eaters of the Dead.m4b' }],
+        health: {
+          score: 80,
+          tags: { state: 'good', reason: null },
+          naming: { state: 'warn', reason: 'The folder name differs from the naming pattern.' },
+          chapters: { state: 'good', reason: null },
+          audio: { state: 'warn', reason: 'A constant -37 dB background.' },
+          checkedAt: '2026-10-15T00:00:00Z',
+        },
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    return wrapper
+  }
+
+  it('shows the score in the hero and the four categories with reasons', async () => {
+    const wrapper = await mountWithHealth()
+
+    expect(wrapper.text()).toContain('Health 80')
+    const card = wrapper.find('.health-card')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('80 / 100')
+    expect(card.text()).toContain('The folder name differs from the naming pattern.')
+    expect(card.text()).toContain('A constant -37 dB background.')
+  })
+
+  it('offers the rename preview for a naming dent', async () => {
+    const wrapper = await mountWithHealth()
+
+    const button = wrapper
+      .findAll('.health-card button')
+      .find((b) => b.text().includes('Preview rename'))
+    expect(button).toBeTruthy()
+  })
+})

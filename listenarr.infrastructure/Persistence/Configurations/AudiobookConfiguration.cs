@@ -97,6 +97,11 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .HasMaxLength(24)
                 .HasDefaultValue(AudioAuditVerdict.NotAudited);
 
+            builder.Property(e => e.AudioQuality)
+                .HasConversion<string>()
+                .HasMaxLength(24)
+                .HasDefaultValue(Domain.Audiobooks.Quality.AudioQuality.Unknown);
+
             builder.HasMany(a => a.Files)
                 .WithOne(f => f.Audiobook)
                 .HasForeignKey(f => f.AudiobookId)

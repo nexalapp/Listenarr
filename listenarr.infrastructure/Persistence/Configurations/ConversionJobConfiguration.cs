@@ -35,6 +35,12 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .HasConversion<string>()
                 .HasMaxLength(16)
                 .HasDefaultValue(ConversionTrigger.Automatic);
+            builder.Property(job => job.Kind)
+                .HasConversion<string>()
+                .HasMaxLength(16)
+                .HasDefaultValue(ConversionJobKind.Convert);
+            builder.Property(job => job.CompletedSourceFiles).HasDefaultValue(0);
+            builder.Property(job => job.EnhancerVersion).HasMaxLength(64);
 
             builder.Property(job => job.ActiveDeduplicationKey).HasMaxLength(256);
             builder.Property(job => job.OutputPath).HasMaxLength(2000);
@@ -51,8 +57,8 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
                 .IsUnique()
                 .HasFilter("\"ActiveDeduplicationKey\" IS NOT NULL");
 
-            // The claim query orders by EnqueuedAt over runnable rows.
-            builder.HasIndex(job => new { job.Status, job.NextAttemptAt, job.LeaseExpiresAt });
+            // The claim query filters by lane and orders by EnqueuedAt over runnable rows.
+            builder.HasIndex(job => new { job.Kind, job.Status, job.NextAttemptAt, job.LeaseExpiresAt });
             builder.HasIndex(job => job.AudiobookId);
 
             // The concurrency token for claiming: a competing claim bumps the generation,

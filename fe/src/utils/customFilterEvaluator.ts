@@ -133,6 +133,12 @@ function evalSingle(a: Audiobook, r: RuleLike): boolean {
     case 'files':
       left = String(resolveFileCount(a))
       break
+    case 'healthScore':
+      // Unknown health is not zero health: a book nothing has measured yet matches no
+      // numeric comparison rather than sorting in as the sickest book in the library.
+      if ((a as unknown as Record<string, unknown>)['healthScore'] == null) return false
+      left = String((a as unknown as Record<string, unknown>)['healthScore'])
+      break
     case 'filesize':
       left = String((a as unknown as Record<string, unknown>)['fileSize'] ?? '')
       break
@@ -144,7 +150,13 @@ function evalSingle(a: Audiobook, r: RuleLike): boolean {
   const l = normalizeString(left)
   const v = normalizeString(val)
 
-  const numericFields = new Set(['publishYear', 'publishedYear', 'files', 'filesize'])
+  const numericFields = new Set([
+    'publishYear',
+    'publishedYear',
+    'files',
+    'filesize',
+    'healthScore',
+  ])
   if (numericFields.has(field)) {
     const leftNum = Number(left)
     const valNum = Number(val)

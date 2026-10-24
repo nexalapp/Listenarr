@@ -701,7 +701,17 @@ const estimateRemainingSeconds = (
 
 const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem => {
   const failed = job.status === 'Failed'
-  const phaseLabel = CONVERSION_PHASE_LABELS[job.phase] ?? 'Converting'
+  const repair = job.kind === 'Repair'
+  const phaseLabel = CONVERSION_PHASE_LABELS[job.phase] ?? (repair ? 'Repairing' : 'Converting')
+  // A repair runs for hours per file; "file 3 of 12" is the number worth watching.
+  const fileDetail = repair
+    ? job.sourceFileCount
+      ? ` · file ${Math.min(job.completedSourceFiles + 1, job.sourceFileCount)} of ${job.sourceFileCount}`
+      : ''
+    : job.sourceFileCount
+      ? ` · ${job.sourceFileCount} files`
+      : ''
+  const client = repair ? 'Audio repair' : 'MP3 to M4B'
 
   return {
     id: `conversion:${job.jobId}`,
@@ -714,13 +724,9 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
     downloadSpeed: 0,
     eta: estimateRemainingSeconds(job.startedAt, job.progress, job.status === 'Running'),
     quality: '',
-    actionLabel: 'Convert to M4B',
-    actionDetail: failed
-      ? undefined
-      : `${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
-    downloadClient: failed
-      ? 'MP3 to M4B'
-      : `MP3 to M4B · ${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
+    actionLabel: repair ? 'Repair audio' : 'Convert to M4B',
+    actionDetail: failed ? undefined : `${phaseLabel}${fileDetail}`,
+    downloadClient: failed ? client : `${client} · ${phaseLabel}${fileDetail}`,
     downloadClientId: 'LISTENARR_CONVERSION',
     downloadClientType: 'conversion',
     addedAt: job.enqueuedAt ?? '',
@@ -737,6 +743,7 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
 const CONVERSION_PHASE_LABELS: Record<string, string> = {
   None: 'Waiting',
   Probing: 'Reading source files',
+  Enhancing: 'Enhancing through the model',
   Encoding: 'Encoding',
   Verifying: 'Verifying',
   Publishing: 'Publishing',
@@ -821,6 +828,16 @@ const TAG_KIND_LABELS: Record<
     action: 'Transcribe',
     client: 'Transcript',
     phases: { None: 'Waiting', Reading: 'Listening to the opening and closing' },
+  },
+  AuditFurther: {
+    action: 'Transcribe further',
+    client: 'Transcript',
+    phases: { None: 'Waiting', Reading: 'Hunting for the credits, out to five minutes' },
+  },
+  Probe: {
+    action: 'Probe audio quality',
+    client: 'Audio quality',
+    phases: { None: 'Waiting', Reading: 'Listening for hiss, muffle and codec damage' },
   },
 }
 
