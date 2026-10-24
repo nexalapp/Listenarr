@@ -2026,6 +2026,14 @@ class ApiService {
     return this.request(`/repair/audiobooks/${audiobookId}`, { method: 'POST' })
   }
 
+  /** Queue full repairs for a selection, without previews. Reported per book, like bulk conversion. */
+  async repairAudiobooksBulk(audiobookIds: number[]): Promise<BulkConversionResponse> {
+    return this.request<BulkConversionResponse>('/repair/audiobooks/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ audiobookIds }),
+    })
+  }
+
   /**
    * Overrule the audit for one book, or withdraw that. Pinned to the files as they are
    * now: a recording swapped in later is judged on its own.

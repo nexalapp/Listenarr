@@ -197,6 +197,16 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     return response
   }
 
+  /** Queue repairs for a selection; they report through this store like conversions. */
+  async function repairMany(audiobookIds: number[]) {
+    const response = await apiService.repairAudiobooksBulk(audiobookIds)
+    if (response.queuedCount > 0) {
+      await refresh()
+    }
+
+    return response
+  }
+
   async function retry(jobId: string) {
     const response = await apiService.retryConversion(jobId)
     if (response.queued) {
@@ -229,6 +239,7 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     refresh,
     convert,
     convertMany,
+    repairMany,
     retry,
     start,
     stop,
