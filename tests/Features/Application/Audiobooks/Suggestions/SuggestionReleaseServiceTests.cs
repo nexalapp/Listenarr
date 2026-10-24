@@ -98,6 +98,23 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         }
 
         [Fact]
+        public async Task AnAbookLinkPostWithNoAsinIsMatchedByItsParsedTitleAndAuthor()
+        {
+            // Most posts, older ones especially, declare no ASIN.
+            Returns(Abook,
+                new IndexerSearchResult { Id = "abook:1", Album = "Breakaway Point", Artist = "Craig Alanson" },
+                new IndexerSearchResult { Id = "abook:2", Album = "Breakaway", Artist = "Someone Else" },
+                new IndexerSearchResult { Id = "abook:74590", Album = "Breakaway", Artist = "Craig Alanson", Title = "Craig Alanson - Expeditionary Force 12 - Breakaway (2021) [M4B]" });
+            var service = Build(Abook);
+
+            var release = await service.CheckAsync(Book("B08XYZ1234", "Breakaway", "Craig Alanson"));
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+            Assert.Contains("abook:74590", release.ProtectedResult);
+            Assert.Equal("The post's title and author match.", release.Detail);
+        }
+
+        [Fact]
         public async Task ANewznabReleaseMustCarryTheTitleAndTheAuthorsSurname()
         {
             Returns(Abook);
