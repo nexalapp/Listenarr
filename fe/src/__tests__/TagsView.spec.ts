@@ -1058,6 +1058,22 @@ describe('TagsView', () => {
     expect(wrapper.find('.tags-td--chapters-issue').attributes('title')).toContain('Forever War')
   })
 
+  it('narrows to the files of books worth a generative audio repair', async () => {
+    const wrapper = await mountView(
+      table([
+        row({ audiobookId: 7, fileId: 1, fileName: 'Starved.m4b', audioRepairRecommended: true }),
+        row({ audiobookId: 9, fileId: 2, fileName: 'Clean.m4b', audioRepairRecommended: false }),
+        row({ audiobookId: 11, fileId: 3, fileName: 'Unprobed.m4b' }),
+      ]),
+    )
+
+    await wrapper.find('.toolbar-select').setValue('audio-repair')
+    await wrapper.vm.$nextTick()
+    const listed = wrapper.findAll('.tags-row').map((r) => r.text())
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toContain('Starved.m4b')
+  })
+
   it('queues one audit per ticked book', async () => {
     auditAudio.mockResolvedValue({ queued: true, jobId: 'a1' })
     const wrapper = await mountView(

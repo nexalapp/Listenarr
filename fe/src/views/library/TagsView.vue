@@ -608,14 +608,8 @@ import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepa
 import { apiService } from '@/services/api'
 import { useTagJobsStore } from '@/stores/tagJobs'
 import { logger } from '@/utils/logger'
-import { isAudioAuditFlagged } from '@/utils/audioAudit'
-import type {
-  AudioAuditVerdict,
-  ChapterHealth,
-  LibraryTagColumn,
-  LibraryTagRow,
-  RenameOperation,
-} from '@/types'
+import { AUDIO_AUDIT_LABELS, isAudioAuditFlagged } from '@/utils/audioAudit'
+import type { ChapterHealth, LibraryTagColumn, LibraryTagRow, RenameOperation } from '@/types'
 
 /**
  * The columns that are not tags: which books an action is for, the file, and where it
@@ -626,14 +620,6 @@ const AUDIO_KEY = '__audio'
 const PATH_KEY = '__path'
 const CHAPTERS_KEY = '__chapters'
 const AUDIT_KEY = '__audit'
-
-const AUDIO_AUDIT_LABELS: Record<AudioAuditVerdict, string> = {
-  match: 'Matches',
-  'narrator-mismatch': 'Narrator differs',
-  incomplete: 'Cuts off',
-  mismatch: 'Different book',
-  inconclusive: 'Unclear',
-}
 const FILENAME_KEY = 'fileName'
 
 /** How each chapter verdict reads in a cell, a filter and a tooltip. */
@@ -646,14 +632,20 @@ const CHAPTER_HEALTH_LABELS: Record<ChapterHealth, string> = {
   none: 'No chapters',
 }
 
-type ChapterFilter = 'all' | 'issues' | ChapterHealth | 'audio-mismatch' | 'audio-unheard'
+type ChapterFilter =
+  | 'all'
+  | 'issues'
+  | ChapterHealth
+  | 'audio-mismatch'
+  | 'audio-unheard'
+  | 'audio-repair'
 
 const ALL_FILTER: { value: ChapterFilter; label: string } = { value: 'all', label: 'No filter' }
 
 /**
- * One control, two questions: what a file's chapters look like, and whether its audio
- * agrees with its record. They are grouped so the metadata verdicts are not read as
- * more chapter verdicts.
+ * One control, three questions: what a file's chapters look like, whether its audio
+ * agrees with its record, and whether the recording is worth a generative repair. They
+ * are grouped so the metadata and audio verdicts are not read as more chapter verdicts.
  */
 const FILTER_GROUPS: { label: string; options: { value: ChapterFilter; label: string }[] }[] = [
   {
@@ -673,6 +665,10 @@ const FILTER_GROUPS: { label: string; options: { value: ChapterFilter; label: st
       { value: 'audio-mismatch', label: 'Metadata mismatch' },
       { value: 'audio-unheard', label: 'Not listened to' },
     ],
+  },
+  {
+    label: 'Audio',
+    options: [{ value: 'audio-repair', label: 'Repair candidates' }],
   },
 ]
 
@@ -1188,6 +1184,8 @@ const filteredRows = computed(() => {
     result = result.filter(hasAudioIssue)
   } else if (chapterFilter.value === 'audio-unheard') {
     result = result.filter((row) => !row.audioAudit)
+  } else if (chapterFilter.value === 'audio-repair') {
+    result = result.filter((row) => !!row.audioRepairRecommended)
   } else if (chapterFilter.value !== 'all') {
     result = result.filter((row) => row.chapterHealth === chapterFilter.value)
   }

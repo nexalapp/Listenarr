@@ -41,7 +41,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Conversion
         {
             Directory.CreateDirectory(_scratch);
             _queue.Setup(q => q.RecoverAbandonedJobsAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-            _queue.Setup(q => q.ClaimNextAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((ConversionJob?)null);
+            _queue.Setup(q => q.ClaimNextAsync(It.IsAny<string>(), It.IsAny<ConversionJobKind>(), It.IsAny<CancellationToken>())).ReturnsAsync((ConversionJob?)null);
             _queue.Setup(q => q.ClearVerifiedOutputAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         }
 

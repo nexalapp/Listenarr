@@ -98,6 +98,12 @@ namespace Listenarr.Application.Audiobooks.Tagging
             CancellationToken cancellationToken = default,
             bool listenFurther = false);
 
+        /// <summary>Queue an audio-quality probe for a book. Writes nothing to any file; its own key.</summary>
+        Task<TagEnqueueResult> EnqueueAudioQualityProbeAsync(
+            int audiobookId,
+            TagTrigger trigger,
+            CancellationToken cancellationToken = default);
+
         /// <summary>Queue the working-out of a chapter fix for a book's files. Writes nothing; its own key.</summary>
         Task<TagEnqueueResult> EnqueueChapterPlanAsync(
             int audiobookId,

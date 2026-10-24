@@ -57,7 +57,13 @@ namespace Listenarr.Domain.Audiobooks.Tagging
         /// and out to five minutes. Only ever asked for by hand, for a book whose credits sit
         /// behind an open long enough that the ordinary sweep passes over them.
         /// </summary>
-        AuditFurther
+        AuditFurther,
+
+        /// <summary>
+        /// Decode a couple of minutes of the book and judge what the recording sounds
+        /// like — hiss, muffle, codec damage. Writes nothing to the file.
+        /// </summary>
+        Probe
     }
 
     public enum TagTrigger
@@ -231,5 +237,8 @@ namespace Listenarr.Domain.Audiobooks.Tagging
 
         /// <summary>Planning writes nothing either, so it too queues beside a tag write.</summary>
         public static string BuildPlanDeduplicationKey(int audiobookId) => $"plan:{audiobookId}";
+
+        /// <summary>A probe reads a few windows and writes only columns, so it also queues beside a write.</summary>
+        public static string BuildProbeDeduplicationKey(int audiobookId) => $"probe:{audiobookId}";
     }
 }

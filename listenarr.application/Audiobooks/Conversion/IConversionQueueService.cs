@@ -43,7 +43,10 @@ namespace Listenarr.Application.Audiobooks.Conversion
         Disabled,
 
         /// <summary>The audiobook does not exist.</summary>
-        NotFound
+        NotFound,
+
+        /// <summary>Repair only: the enhancement model is not provisioned and ready.</summary>
+        EnhancerUnavailable
     }
 
     public sealed record ConversionEnqueueResult(
@@ -70,6 +73,16 @@ namespace Listenarr.Application.Audiobooks.Conversion
         Task<ConversionEnqueueResult> EnqueueAsync(
             int audiobookId,
             ConversionTrigger trigger,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Queue a repair: every source enhanced through the generative model, then
+        /// encoded as a conversion would encode it. Always a person's explicit request —
+        /// a repair rewrites what the library serves and runs for hours to days, so
+        /// nothing queues one automatically.
+        /// </summary>
+        Task<ConversionEnqueueResult> EnqueueRepairAsync(
+            int audiobookId,
             CancellationToken cancellationToken = default);
 
         /// <summary>Re-queue a terminal job that is allowed to retry.</summary>
@@ -110,8 +123,16 @@ namespace Listenarr.Application.Audiobooks.Conversion
         /// Take the next job whose lease is free and whose retry time has arrived, marking
         /// it Running under <paramref name="leaseOwner"/>. Returns null when there is none.
         /// </summary>
+        /// <param name="leaseOwner">Who is claiming.</param>
+        /// <param name="kind">
+        /// Which lane is asking. Conversions and repairs share the table and the
+        /// one-job-per-book guarantee but run on separate serial workers, because a
+        /// repair lasting days must not park every ordinary conversion behind it.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation.</param>
         Task<ConversionJob?> ClaimNextAsync(
             string leaseOwner,
+            ConversionJobKind kind = ConversionJobKind.Convert,
             CancellationToken cancellationToken = default);
 
         /// <summary>

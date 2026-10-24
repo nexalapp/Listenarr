@@ -19,6 +19,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using Listenarr.Domain.Audiobooks.Audit;
+using Listenarr.Domain.Audiobooks.Quality;
 
 namespace Listenarr.Domain.Audiobooks
 {
@@ -102,6 +103,50 @@ namespace Listenarr.Domain.Audiobooks
 
 
         public DateTime? AudioAuditAcceptedAt { get; set; }
+
+        /// <summary>
+        /// What the recording sounds like — hiss, muffle, codec damage. Written by the
+        /// audio-quality probe, never by a scan; <see cref="Quality.AudioQuality.Unknown"/>
+        /// until one has run.
+        /// </summary>
+        public AudioQuality AudioQuality { get; set; } = AudioQuality.Unknown;
+
+        [MaxLength(512)]
+        public string? AudioQualityReason { get; set; }
+
+        /// <summary>What was measured, as JSON, so a verdict can be re-examined without decoding again.</summary>
+        [MaxLength(1024)]
+        public string? AudioQualityMetricsJson { get; set; }
+
+        /// <summary>
+        /// The files as they were when probed, plus the probe's version — the verdict is
+        /// trusted only while both still hold. See
+        /// <see cref="Quality.AudioQualityIdentity"/>.
+        /// </summary>
+        [MaxLength(256)]
+        public string? AudioQualityIdentity { get; set; }
+
+        public DateTime? AudioQualityProbedAt { get; set; }
+
+        /// <summary>
+        /// Whether a tag write would change nothing, as of the last time the tag table
+        /// read this book's files. Null while no snapshot exists. Stored because the
+        /// health score is served on every library page and the check costs a stat per
+        /// file against a NAS share; freshness comes from the places that change the
+        /// answer all passing through the tag index.
+        /// </summary>
+        public bool? HealthTagsClean { get; set; }
+
+        [MaxLength(512)]
+        public string? HealthTagsReason { get; set; }
+
+        /// <summary>Whether a rename would change nothing, measured the same way. Path locks count as clean.</summary>
+        public bool? HealthNamingClean { get; set; }
+
+        [MaxLength(512)]
+        public string? HealthNamingReason { get; set; }
+
+        public DateTime? HealthCheckedAt { get; set; }
 
         // OpenLibrary identifier (OLID) when the audiobook originates from OpenLibrary
         public string? OpenLibraryId { get; set; }
