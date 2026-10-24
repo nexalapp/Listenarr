@@ -1,0 +1,20 @@
+
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet type="text/xsl" href="/static/rss.xsl"?>
+<rss version="2.0">
+<channel>
+<title>nzbking RSS feed</title>
+<link>https://nzbking.com</link>
+<description>Usenet search engine RSS feed</description>
+
+
+<item>
+<title>820c9aa85c1b42f5a07b41af820856d8 [1/32] &quot;820c9aa85c1b42f5a07b41af820856d8.par2&quot; yEnc </title>
+<pubDate>Tue Dec 15 11:51:16 2020</pubDate>
+<link>http://www.nzbking.com/nzb:601b5e57fbf3ad1c564deda8/</link>
+<guid isPermaLink="true">http://www.nzbking.com/nzb:601b5e57fbf3ad1c564deda8/</guid>
+</item>
+
+
+</channel>
+</rss>

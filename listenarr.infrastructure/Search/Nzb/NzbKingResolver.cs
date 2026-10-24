@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using Listenarr.Application.Search.Nzb;
 using Listenarr.Application.Search.NzbKing;
 using Listenarr.Infrastructure.Search.NzbKing;
@@ -32,9 +34,6 @@ namespace Listenarr.Infrastructure.Search.Nzb
     /// </summary>
     public partial class NzbKingResolver : INzbResolver
     {
-        // The feed's exact structure is not pinned - confirming it costs a token - but the
-        // NZB URL format is verified, so links are lifted from the body directly rather
-        // than assuming an element layout that may not hold.
         [GeneratedRegex(@"nzbking\.com/(nzb:[0-9a-f]{24})/?", RegexOptions.IgnoreCase)]
         private static partial Regex NzbLink();
 
@@ -79,16 +78,82 @@ namespace Listenarr.Infrastructure.Search.Nzb
                     result.Reason ?? "NZBKing did not answer.");
             }
 
-            var match = NzbLink().Match(result.Body ?? string.Empty);
-            if (!match.Success)
+            var candidates = ParseFeed(result.Body);
+            if (candidates is null)
+            {
+                return NzbResolverResult.Failed(Name, NzbResolutionFailure.Unavailable,
+                    "NZBKing answered with something other than its RSS feed.");
+            }
+
+            if (candidates.Count == 0)
             {
                 return NzbResolverResult.Failed(Name, NzbResolutionFailure.NotIndexed,
                     "NZBKing answered but holds nothing for this search string.");
             }
 
-            var id = match.Groups[1].Value;
-            return NzbResolverResult.Found(Name, $"https://nzbking.com/{id}/",
-                [new NzbCandidate(id, searchString)]);
+            // The feed is a word search, newest first: for "abook.link - <code>" it lists
+            // every recent abook.link upload, and the first of them is someone else's book.
+            // Only an item carrying the code is this release.
+            var matching = NzbSearchStringMatch.Filter(searchString, candidates);
+            if (matching.Count == 0)
+            {
+                return NzbResolverChain.NotThisRelease(Name, candidates);
+            }
+
+            return NzbResolverResult.Found(Name, $"https://nzbking.com/{matching[0].Id}/", matching);
+        }
+
+        /// <summary>
+        /// Reads the search feed's items: the subject from <c>title</c> and the NZB id from
+        /// <c>link</c> (or <c>guid</c>), which point at <c>nzbking.com/nzb:&lt;id&gt;/</c>.
+        /// Returns null when the body is not an RSS feed at all - NZBKing serves an HTML
+        /// page with a 200 for a request it will not answer - so that is not mistaken for
+        /// an index holding nothing.
+        /// </summary>
+        internal static IReadOnlyList<NzbCandidate>? ParseFeed(string? body)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                return null;
+            }
+
+            XDocument document;
+            try
+            {
+                // The real feed opens with a blank line before its XML declaration, which
+                // the parser otherwise refuses outright.
+                document = XDocument.Parse(body.TrimStart());
+            }
+            catch (XmlException)
+            {
+                return null;
+            }
+
+            if (document.Root?.Name.LocalName != "rss")
+            {
+                return null;
+            }
+
+            var candidates = new List<NzbCandidate>();
+            foreach (var item in document.Descendants("item"))
+            {
+                var link = NzbLink().Match((string?)item.Element("link") ?? string.Empty);
+                if (!link.Success)
+                {
+                    link = NzbLink().Match((string?)item.Element("guid") ?? string.Empty);
+                }
+
+                if (!link.Success)
+                {
+                    continue;
+                }
+
+                candidates.Add(new NzbCandidate(
+                    link.Groups[1].Value,
+                    ((string?)item.Element("title") ?? string.Empty).Trim()));
+            }
+
+            return candidates;
         }
 
         /// <summary>

@@ -81,9 +81,14 @@ namespace Listenarr.Infrastructure.Search.Nzb
         /// bandwidth is spent, and the release may complete later — so it is reported as
         /// "held but incomplete" rather than "not indexed", which are different problems
         /// with different remedies.
+        ///
+        /// Hits whose subject does not carry the whole search string are discarded first;
+        /// see <see cref="NzbSearchStringMatch"/>. They are other releases that merely share
+        /// a word with it, and the largest of them is no more likely to be this one.
         /// </summary>
         internal static NzbResolverResult SelectBest(
             string resolver,
+            string searchString,
             IReadOnlyList<NzbCandidate> candidates,
             Func<string, string> buildNzbUrl)
         {
@@ -93,18 +98,34 @@ namespace Listenarr.Infrastructure.Search.Nzb
                     "No articles match this search string.");
             }
 
-            var complete = candidates.Where(c => c.Complete != false).ToList();
+            var matching = NzbSearchStringMatch.Filter(searchString, candidates);
+            if (matching.Count == 0)
+            {
+                return NotThisRelease(resolver, candidates);
+            }
+
+            var complete = matching.Where(c => c.Complete != false).ToList();
             if (complete.Count == 0)
             {
                 return NzbResolverResult.Failed(resolver, NzbResolutionFailure.OnlyIncomplete,
-                    $"Found {candidates.Count} match(es), all missing parts. The release may still be propagating.",
-                    candidates);
+                    $"Found {matching.Count} match(es), all missing parts. The release may still be propagating.",
+                    matching);
             }
 
             // Largest first: a release split into parts lists the collection alongside its
             // fragments, and the collection is the one worth taking.
             var best = complete.OrderByDescending(c => c.SizeBytes ?? 0).First();
-            return NzbResolverResult.Found(resolver, buildNzbUrl(best.Id), candidates);
+            return NzbResolverResult.Found(resolver, buildNzbUrl(best.Id), matching);
         }
+
+        /// <summary>
+        /// The index answered, but only with other releases. Reported as not indexed, with
+        /// the hits kept so a person can see what was turned away and why.
+        /// </summary>
+        internal static NzbResolverResult NotThisRelease(string resolver, IReadOnlyList<NzbCandidate> candidates) =>
+            NzbResolverResult.Failed(resolver, NzbResolutionFailure.NotIndexed,
+                $"{candidates.Count} hit(s) came back, but none carries the whole search string, "
+                + "so none is this release.",
+                candidates);
     }
 }

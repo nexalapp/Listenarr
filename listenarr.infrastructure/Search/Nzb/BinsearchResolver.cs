@@ -71,8 +71,14 @@ namespace Listenarr.Infrastructure.Search.Nzb
                     }
 
                     var candidates = BinsearchResultParser.Parse(await response.Content.ReadAsStringAsync(ct));
-                    return NzbResolverChain.SelectBest(Name, candidates,
-                        _ => BuildNzbUrl(candidates, searchString));
+
+                    // The NZB is assembled from every part passed to it, so the parts of
+                    // other releases must be left out here as well as by SelectBest.
+                    var matching = NzbSearchStringMatch.Filter(searchString, candidates);
+                    return matching.Count == 0 && candidates.Count > 0
+                        ? NzbResolverChain.NotThisRelease(Name, candidates)
+                        : NzbResolverChain.SelectBest(Name, searchString, matching,
+                            _ => BuildNzbUrl(matching, searchString));
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

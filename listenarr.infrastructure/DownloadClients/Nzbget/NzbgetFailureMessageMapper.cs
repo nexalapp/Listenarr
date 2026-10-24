@@ -35,9 +35,35 @@ internal static class NzbgetFailureMessageMapper
             return "NZBGet failed while verifying or repairing the download. The release may be incomplete or damaged.";
         }
 
-        if (status.StartsWith("FAILURE/HEALTH", StringComparison.OrdinalIgnoreCase))
+        if (status.StartsWith("FAILURE/HEALTH", StringComparison.OrdinalIgnoreCase) ||
+            status.StartsWith("WARNING/HEALTH", StringComparison.OrdinalIgnoreCase) ||
+            status.StartsWith("DELETED/HEALTH", StringComparison.OrdinalIgnoreCase))
         {
             return "NZBGet marked the download failed because its health dropped below the required threshold.";
+        }
+
+        if (status.StartsWith("WARNING/PASSWORD", StringComparison.OrdinalIgnoreCase))
+        {
+            return "NZBGet could not unpack the download because the archive password was wrong. The NZB may not be the release the password belongs to.";
+        }
+
+        if (status.StartsWith("WARNING/DAMAGED", StringComparison.OrdinalIgnoreCase) ||
+            status.StartsWith("DELETED/BAD", StringComparison.OrdinalIgnoreCase))
+        {
+            return "NZBGet finished the download but its files are damaged and could not be repaired.";
+        }
+
+        if (status.StartsWith("WARNING/SPACE", StringComparison.OrdinalIgnoreCase))
+        {
+            return "NZBGet ran out of disk space before the download could be unpacked.";
+        }
+
+        if (status.StartsWith("DELETED/COPY", StringComparison.OrdinalIgnoreCase) ||
+            status.StartsWith("DELETED/DUPE", StringComparison.OrdinalIgnoreCase))
+        {
+            // Usually the same NZB grabbed again after the first copy failed, so the
+            // first copy's failure is the one to look at.
+            return "NZBGet discarded the download as a duplicate of one already in its history, so nothing new was fetched.";
         }
 
         return string.IsNullOrWhiteSpace(status)
