@@ -10,6 +10,7 @@
 using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Infrastructure.FoundBooks.Workers;
 using Listenarr.Infrastructure.Library.Suggestions.Workers;
+using Listenarr.Infrastructure.Library.Discover.Workers;
 using Listenarr.Infrastructure.Library.Quality;
 using Listenarr.Infrastructure.Library.Series;
 using Listenarr.Infrastructure.HostedServices;
@@ -105,6 +106,13 @@ internal static class WorkerRegistrationExtensions
             SuggestionCatalogProcessor,
             ISuggestionCatalogProcessor,
             SuggestionCatalogBackgroundService>(services);
+
+        // Discovery: one chart page, board page or metadata lookup per interval, so a
+        // followed chart fills out over an hour instead of in one burst at startup.
+        AddHostedProcessor<
+            DiscoverFetchProcessor,
+            IDiscoverFetchProcessor,
+            DiscoverBackgroundService>(services);
         return services;
     }
 

@@ -183,6 +183,19 @@ namespace Listenarr.Domain.Configuration
         // page's own Fetch button as the only way catalogs arrive.
         public int SuggestionsBackgroundFetchIntervalMinutes { get; set; } = 1;
 
+        // Which sections each discovery tab draws from, keyed by source: the Audible
+        // chart categories to follow, and the abook.link boards to watch. One column
+        // rather than four because the shape is a choice per source and is edited from
+        // the tab itself, not from the settings page. See DiscoverSettings for the
+        // document and for the validation its ids go through before a URL is built
+        // from them.
+        public string DiscoverSettingsJson { get; set; } = "{}";
+
+        // Minutes between background steps of a discovery fetch: one chart page, one
+        // board page, or one metadata lookup for a forum post. Zero turns it off,
+        // leaving the tabs' own Refresh and Load more buttons.
+        public int DiscoverBackgroundFetchIntervalMinutes { get; set; } = 5;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

@@ -688,6 +688,68 @@ describe('AudiobookDetailView audio preview', () => {
   })
 })
 
+describe('AudiobookDetailView adopting the heard narrator', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  async function mountWithNarratorMismatch() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: "Ender's Shadow",
+        authors: ['Orson Scott Card'],
+        narrators: ['Scott Brick'],
+        audioAudit: 'narrator-mismatch',
+        audioAuditHeardNarrator: 'Michael Gross',
+        // The transcript tab shows an empty state for a book with no files, so the
+        // recommendation never renders without one.
+        files: [{ id: 11, path: "Ender's Shadow.m4b" }],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('Transcript'))
+    await tab!.trigger('click')
+    return wrapper
+  }
+
+  it('puts the heard narrator on the record', async () => {
+    const wrapper = await mountWithNarratorMismatch()
+    const button = wrapper
+      .findAll('.credits-recommend button')
+      .find((b) => b.text().includes('Set narrator to Michael Gross'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(5, { narrators: ['Michael Gross'] })
+  })
+
+  // Saving the record re-judges the audit against the transcript already stored
+  // (AudiobookRepository.RejudgeAudioAuditAsync), so listening again would spend a
+  // minute of the worker's CPU re-deriving the same heard narrator from the same audio
+  // to reach the verdict the save already produced.
+  it('does not queue a transcribe job', async () => {
+    const wrapper = await mountWithNarratorMismatch()
+    const button = wrapper
+      .findAll('.credits-recommend button')
+      .find((b) => b.text().includes('Set narrator to Michael Gross'))
+
+    await button!.trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(apiService.auditAudio).not.toHaveBeenCalled()
+  })
+})
+
 describe('AudiobookDetailView health card', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
