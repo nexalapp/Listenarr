@@ -72,6 +72,39 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             return GetAsync(sessionCookie, uri, ct);
         }
 
+        /// <summary>
+        /// The board index: every board the account can see, with its id and name.
+        /// Free, and the page is small.
+        /// </summary>
+        public Task<AbookResponse> GetBoardIndexAsync(string sessionCookie, CancellationToken ct = default)
+        {
+            return GetAsync(sessionCookie, new Uri($"{BaseUrl}index.php"), ct);
+        }
+
+        /// <summary>
+        /// One page of a board's topics. SMF addresses pages by the index of the first
+        /// topic on them, not by a page number: <c>board=7.20</c> is the second page.
+        ///
+        /// <para>
+        /// The board id is checked here rather than trusted: it comes from stored
+        /// settings and is pasted straight into the URL, so anything but digits is
+        /// refused before a request is made.
+        /// </para>
+        /// </summary>
+        public Task<AbookResponse> GetBoardAsync(
+            string sessionCookie,
+            string boardId,
+            int start,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(boardId) || !boardId.All(char.IsAsciiDigit))
+            {
+                return Task.FromResult(new AbookResponse(false, null, true, $"'{boardId}' is not a board id."));
+            }
+
+            return GetAsync(sessionCookie, new Uri($"{BaseUrl}index.php?board={boardId}.{Math.Max(0, start)}"), ct);
+        }
+
         /// <summary>Fetches a topic. Free, and returns the full NFO even while gated.</summary>
         public Task<AbookResponse> GetTopicAsync(string sessionCookie, int topicId, CancellationToken ct = default)
         {

@@ -1026,6 +1026,73 @@ export interface SuggestionRefreshStatus {
   failed: number
 }
 
+/** One of the discovery tabs' sources, as the API addresses it. */
+export type DiscoverSource = 'charts' | 'abook'
+
+/** A chart category or a forum board the user can follow. */
+export interface DiscoverSectionOption {
+  id: string
+  name: string
+  slug?: string
+  group?: string
+  count?: number
+}
+
+/** What a source offers to follow, and what is followed now. */
+export interface DiscoverSectionCatalog {
+  source: string
+  options: DiscoverSectionOption[]
+  selected: string[]
+  pagesPerSection: number
+  available: boolean
+  unavailable?: string
+}
+
+export interface DiscoverSelectedSection {
+  id: string
+  name: string
+  slug?: string
+}
+
+export interface DiscoverSelection {
+  sections: DiscoverSelectedSection[]
+  pagesPerSection: number
+}
+
+/** A book a source offered, with what the source said that a catalogue cannot know. */
+export interface DiscoverEntry {
+  rank: number
+  postedAt?: string
+  sourceUrl?: string
+  sourceNote?: string
+  /** False while a forum post is still only the words of its title. */
+  resolved: boolean
+  book: SuggestedBook
+}
+
+export interface DiscoverSectionFeed {
+  sectionId: string
+  sectionName: string
+  pagesFetched: number
+  totalItems?: number
+  lastFetchedAt?: string
+  lastError?: string
+  /** How many of the section's books are already in the library. */
+  held: number
+  books: DiscoverEntry[]
+}
+
+export interface DiscoverFeed {
+  source: string
+  sections: DiscoverSectionFeed[]
+  pagesPerSection: number
+  available: boolean
+  unavailable?: string
+  status: DiscoverRefreshStatus
+}
+
+export type DiscoverRefreshStatus = SuggestionRefreshStatus
+
 export interface RelatedAuthorItem {
   asin?: string
   name: string

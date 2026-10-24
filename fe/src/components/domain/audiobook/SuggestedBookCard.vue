@@ -34,7 +34,8 @@
     <div class="body">
       <div class="head">
         <h3 class="title" :title="book.title">
-          <span v-if="showPosition && book.seriesNumber" class="position"
+          <span v-if="rank" class="position">#{{ rank }}</span>
+          <span v-else-if="showPosition && book.seriesNumber" class="position"
             >#{{ book.seriesNumber }}</span
           >
           {{ book.title }}
@@ -86,6 +87,11 @@
         <span v-if="facts">{{ facts }}</span>
       </div>
 
+      <p v-if="note" class="source-note">
+        <a v-if="noteUrl" :href="noteUrl" target="_blank" rel="noopener noreferrer">{{ note }}</a>
+        <span v-else>{{ note }}</span>
+      </p>
+
       <p v-if="description" class="description" :class="{ clamped: !expanded }">
         {{ description }}
       </p>
@@ -111,6 +117,12 @@ const props = defineProps<{
   added?: boolean
   /** An add from the button is in flight. */
   adding?: boolean
+  /** A place in a list the source ordered - a chart position. Shown before the title. */
+  rank?: number
+  /** What the source said that a catalogue does not carry: a forum post's own line. */
+  note?: string
+  /** Where the note came from, when it is somewhere worth opening. */
+  noteUrl?: string
 }>()
 
 const emit = defineEmits<{
@@ -338,6 +350,25 @@ function compactCount(count: number): string {
 
 .dot {
   opacity: 0.4;
+}
+
+.source-note {
+  margin: 0.15rem 0 0 0;
+  font-size: 0.75rem;
+  color: #8d8d8d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-note a {
+  color: #8d8d8d;
+  text-decoration: none;
+}
+
+.source-note a:hover {
+  color: #ddd;
+  text-decoration: underline;
 }
 
 .description {

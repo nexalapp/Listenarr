@@ -17,6 +17,8 @@ using Listenarr.Infrastructure.Ffmpeg.Analysis;
 using Listenarr.Infrastructure.Library.Transcription;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Infrastructure.Library.Suggestions;
+using Listenarr.Application.Audiobooks.Discover;
+using Listenarr.Infrastructure.Library.Discover;
 using Listenarr.Application.Audiobooks.Deletion;
 using Listenarr.Application.Audiobooks.RootFolders;
 using Listenarr.Infrastructure.Library.Realtime;
@@ -77,6 +79,17 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<ISuggestionService, SuggestionService>();
         services.AddScoped<AuthorAliasApplyService>();
         services.AddSingleton<ISuggestionRefreshService, SuggestionRefreshService>();
+
+        // Discovery: the Suggested page's two outward-looking tabs. One reader per
+        // source, resolved by name; the refresher is a singleton because it holds the
+        // progress the page polls, and it opens its own scope for every unit of work.
+        services.AddScoped<IDiscoverRepository, EfDiscoverRepository>();
+        services.AddScoped<IDiscoverSourceReader, AudibleChartsReader>();
+        services.AddScoped<IDiscoverSourceReader, AbookBoardsReader>();
+        services.AddScoped<IDiscoverMetadataResolver, AudibleDiscoverMetadataResolver>();
+        services.AddSingleton<DiscoverSectionCatalogCache>();
+        services.AddSingleton<IDiscoverRefreshService, DiscoverRefreshService>();
+        services.AddScoped<IDiscoverService, DiscoverService>();
         services.AddScoped<ILibraryDestinationMutationGuard, LibraryDestinationMutationGuard>();
         services.AddScoped<ILibraryAddService, LibraryAddService>();
         services.AddScoped<IAudiobookFilesystemDeleteService, AudiobookFilesystemDeleteService>();

@@ -112,6 +112,13 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.FoundBooksAutoAdd).HasDefaultValue(false);
             builder.Property(e => e.SuggestionsBackgroundFetchIntervalMinutes).HasDefaultValue(1);
 
+            // An empty JSON object, not an empty string: a row written before the
+            // discovery tabs existed is read as "nothing followed yet", and the default
+            // interval has to survive the upgrade or the background fetcher arrives
+            // switched off on every existing install.
+            builder.Property(e => e.DiscoverSettingsJson).HasDefaultValue("{}");
+            builder.Property(e => e.DiscoverBackgroundFetchIntervalMinutes).HasDefaultValue(5);
+
             // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
             // written before this feature existed has no mapping, and that has to read
             // back as "use the shipped defaults" rather than as "write no tags".

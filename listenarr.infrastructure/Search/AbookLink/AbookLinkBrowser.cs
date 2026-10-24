@@ -37,6 +37,13 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         private readonly INzbKingTokenBudget _budget;
         private readonly INzbKingLedgerRepository _ledger;
         private readonly ILogger<AbookLinkBrowser> _logger;
+        private readonly TimeProvider _time;
+
+        /// <summary>Topics SMF shows on one board page, which is what addresses the next one.</summary>
+        private const int TopicsPerBoardPage = 20;
+
+        private const string NotConfigured =
+            "No abook.link source is configured. Add a username and password in its settings.";
 
         public AbookLinkBrowser(
             AbookLinkClient client,
@@ -45,7 +52,8 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             ISecretProtector secrets,
             INzbKingTokenBudget budget,
             INzbKingLedgerRepository ledger,
-            ILogger<AbookLinkBrowser> logger)
+            ILogger<AbookLinkBrowser> logger,
+            TimeProvider? timeProvider = null)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -54,6 +62,48 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             _budget = budget ?? throw new ArgumentNullException(nameof(budget));
             _ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _time = timeProvider ?? TimeProvider.System;
+        }
+
+        public async Task<AbookListingResult<AbookBoard>> ListBoardsAsync(CancellationToken ct = default)
+        {
+            var credentials = await ResolveCredentialsAsync(ct);
+            if (credentials is null || !credentials.HasAnything)
+            {
+                return AbookListingResult<AbookBoard>.Failed(NotConfigured);
+            }
+
+            var response = await WithSessionAsync(credentials, cookie => _client.GetBoardIndexAsync(cookie, ct), ct);
+            return response.Succeeded
+                ? new AbookListingResult<AbookBoard>(true, AbookBoardIndexParser.Parse(response.Body), null)
+                : AbookListingResult<AbookBoard>.Failed(response.Reason ?? "abook.link's board list could not be read.");
+        }
+
+        public async Task<AbookListingResult<AbookTopicListing>> BoardTopicsAsync(
+            string boardId,
+            int page,
+            CancellationToken ct = default)
+        {
+            var credentials = await ResolveCredentialsAsync(ct);
+            if (credentials is null || !credentials.HasAnything)
+            {
+                return AbookListingResult<AbookTopicListing>.Failed(NotConfigured);
+            }
+
+            // SMF counts pages by the first topic on them. Twenty a page is what this
+            // forum shows; a board that showed more would be read with an overlap, which
+            // the cache absorbs, rather than with a gap.
+            var start = Math.Max(0, page - 1) * TopicsPerBoardPage;
+            var response = await WithSessionAsync(
+                credentials, cookie => _client.GetBoardAsync(cookie, boardId, start, ct), ct);
+            if (!response.Succeeded)
+            {
+                return AbookListingResult<AbookTopicListing>.Failed(
+                    response.Reason ?? $"abook.link board {boardId} could not be read.");
+            }
+
+            var topics = AbookTopicListParser.ParseBoard(response.Body, boardId, _time.GetUtcNow().UtcDateTime);
+            return new AbookListingResult<AbookTopicListing>(true, topics, null);
         }
 
         public async Task<AbookBrowseResult> SearchAsync(string query, int inspect, CancellationToken ct = default)
@@ -61,7 +111,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             var credentials = await ResolveCredentialsAsync(ct);
             if (credentials is null || !credentials.HasAnything)
             {
-                return Failed("No abook.link source is configured. Add a username and password in its settings.");
+                return Failed(NotConfigured);
             }
 
             var response = await WithSessionAsync(credentials,
@@ -101,7 +151,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             var credentials = await ResolveCredentialsAsync(ct);
             if (credentials is null || !credentials.HasAnything)
             {
-                return Failed("No abook.link source is configured. Add a username and password in its settings.");
+                return Failed(NotConfigured);
             }
 
             var topic = await WithSessionAsync(credentials,
