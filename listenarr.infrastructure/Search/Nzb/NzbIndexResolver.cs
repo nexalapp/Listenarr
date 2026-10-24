@@ -69,7 +69,7 @@ namespace Listenarr.Infrastructure.Search.Nzb
                     }
 
                     var candidates = NzbIndexResponseParser.Parse(await response.Content.ReadAsStringAsync(ct));
-                    return NzbResolverChain.SelectBest(Name, candidates,
+                    return NzbResolverChain.SelectBest(Name, searchString, candidates,
                         id => string.Format(DownloadFormat, id));
                 }
             }

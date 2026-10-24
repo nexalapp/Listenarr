@@ -103,10 +103,10 @@ public sealed class NzbResolverChainTests : BaseTests
     {
         var candidates = new List<NzbCandidate>
         {
-            new("a", "part one", SizeBytes: 100, Complete: false)
+            new("a", "code part one", SizeBytes: 100, Complete: false)
         };
 
-        var result = NzbResolverChain.SelectBest("Index", candidates, id => $"https://example.test/{id}");
+        var result = NzbResolverChain.SelectBest("Index", "code", candidates, id => $"https://example.test/{id}");
 
         Assert.False(result.Succeeded);
         Assert.Equal(NzbResolutionFailure.OnlyIncomplete, result.Failure);
@@ -119,12 +119,12 @@ public sealed class NzbResolverChainTests : BaseTests
         // the one worth taking.
         var candidates = new List<NzbCandidate>
         {
-            new("small", "part", SizeBytes: 100, Complete: true),
-            new("big", "collection", SizeBytes: 9000, Complete: true),
-            new("broken", "collection", SizeBytes: 99000, Complete: false)
+            new("small", "code part", SizeBytes: 100, Complete: true),
+            new("big", "code collection", SizeBytes: 9000, Complete: true),
+            new("broken", "code collection", SizeBytes: 99000, Complete: false)
         };
 
-        var result = NzbResolverChain.SelectBest("Index", candidates, id => $"https://example.test/{id}");
+        var result = NzbResolverChain.SelectBest("Index", "code", candidates, id => $"https://example.test/{id}");
 
         Assert.True(result.Succeeded);
         Assert.Equal("https://example.test/big", result.NzbUrl);
@@ -134,9 +134,9 @@ public sealed class NzbResolverChainTests : BaseTests
     public void ACandidateWithNoCompletenessFlagIsAllowed()
     {
         // Not every index reports completeness. Absent must mean "did not say", not "no".
-        var candidates = new List<NzbCandidate> { new("a", "thing", SizeBytes: 100) };
+        var candidates = new List<NzbCandidate> { new("a", "code thing", SizeBytes: 100) };
 
-        var result = NzbResolverChain.SelectBest("Index", candidates, id => $"https://example.test/{id}");
+        var result = NzbResolverChain.SelectBest("Index", "code", candidates, id => $"https://example.test/{id}");
 
         Assert.True(result.Succeeded);
     }

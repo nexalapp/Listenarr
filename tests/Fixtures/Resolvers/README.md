@@ -97,3 +97,23 @@ genuine second opinion rather than the same answer twice.
 |---|---|
 | Search feed | `GET https://nzbking.com/rss/search/?q=<term>&key=<apikey>` |
 | NZB | `GET https://nzbking.com/nzb:<24-hex-id>/` |
+
+The feed is a **word search, newest first** — verified 2026-10-23. Asked for
+`abook.link - fm8lssqHWLW7Bownef` (Solaris), it returned 25 recent `abook.link - …`
+uploads and not one of them carried `fm8lssqHWLW7Bownef`. The resolver used to take the
+first `nzb:` link in the body, so it fetched an unrelated 847 MB book; the post's password
+could not open it (`WARNING/PASSWORD`), and every later grab of an `abook.link - <code>`
+string fetched the same upload again. An item is now accepted only when its subject
+carries every word of the search string (`NzbSearchStringMatch`), and the same rule
+applies to NZBIndex and Binsearch hits.
+
+Each item carries the subject in `<title>` and the NZB in `<link>`/`<guid>`
+(`http://www.nzbking.com/nzb:<24-hex-id>/`). Without a key the same path answers 200 with
+an HTML page, which must not be read as "holds nothing".
+
+### Fixtures
+
+| File | Why |
+|---|---|
+| `nzbking-search-feed-other-releases.xml` | Real feed for `abook.link - fm8lssqHWLW7Bownef`: 25 hits, none of them the release |
+| `nzbking-search-feed-exact-hit.xml` | Real feed for `820c9aa85c1b42f5a07b41af820856d8` (Brushfire): one item, the release |
