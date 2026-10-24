@@ -70,6 +70,13 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         internal static readonly TimeSpan FoundRecheck = TimeSpan.FromDays(30);
 
         /// <summary>
+        /// A check that learned nothing is tried again after this long: an indexer outage
+        /// is usually over in hours, and until it is there is no point asking again every
+        /// cycle - nor waiting a week, which is the answer for a book nobody holds.
+        /// </summary>
+        internal static readonly TimeSpan UnknownRecheck = TimeSpan.FromHours(6);
+
+        /// <summary>
         /// How long the list of books still to check is trusted. Building it reads the
         /// whole library and every cached catalog, which is too much to do per check.
         /// </summary>
@@ -102,8 +109,13 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
                 var snapshot = await scope.ServiceProvider
                     .GetRequiredService<ISuggestionService>()
                     .GetAsync(cancellationToken);
+                // The snapshot does not report a check that learned nothing, so the stored
+                // checks are read directly to pace those apart from the books nobody holds.
+                var checks = await scope.ServiceProvider
+                    .GetRequiredService<ISuggestionReleaseRepository>()
+                    .GetAllAsync(cancellationToken);
                 _work.Clear();
-                foreach (var book in Due(snapshot, now))
+                foreach (var book in Due(snapshot, checks, now))
                 {
                     _work.Enqueue(book);
                 }
@@ -142,14 +154,37 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         /// author catalogs, each in the order the page shows them. Each book once, however
         /// many groups list it.
         /// </summary>
-        internal static IEnumerable<SuggestedBook> Due(SuggestionSnapshot snapshot, DateTime now)
+        internal static IEnumerable<SuggestedBook> Due(
+            SuggestionSnapshot snapshot,
+            IReadOnlyDictionary<string, SuggestionRelease> checks,
+            DateTime now)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             return snapshot.Series.SelectMany(group => group.Missing)
                 .Concat(snapshot.Authors.SelectMany(group => group.Missing))
                 .Where(book => !string.IsNullOrWhiteSpace(book.Asin) && seen.Add(book.Asin.Trim()))
-                .Where(book => book.Release is not { } release
-                    || now - release.CheckedAt > (release.Found ? FoundRecheck : NotFoundRecheck));
+                .Where(book => IsDue(book.Asin!.Trim(), checks, now));
+        }
+
+        /// <summary>
+        /// Whether this ASIN is due another check: never checked, or checked long enough
+        /// ago for the answer it gave to be worth asking again.
+        /// </summary>
+        internal static bool IsDue(string asin, IReadOnlyDictionary<string, SuggestionRelease> checks, DateTime now)
+        {
+            if (!checks.TryGetValue(asin, out var check))
+            {
+                return true;
+            }
+
+            var after = check.Status switch
+            {
+                SuggestionReleaseStatus.Found => FoundRecheck,
+                SuggestionReleaseStatus.Unknown => UnknownRecheck,
+                _ => NotFoundRecheck
+            };
+
+            return now - check.CheckedAt > after;
         }
     }
 }

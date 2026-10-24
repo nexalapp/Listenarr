@@ -65,6 +65,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 .ToList();
 
             var asked = new List<string>();
+            var answered = new List<string>();
             foreach (var indexer in ordered)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -80,6 +81,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     logger.LogWarning(ex, "Suggestion release check: {Indexer} failed for {Query}", indexer.Name, query);
                     continue;
                 }
+
+                // Only an indexer that answered can be evidence of absence.
+                answered.Add(indexer.Name);
 
                 var matching = results
                     .Where(result => IsAbookLink(indexer)
@@ -107,13 +111,19 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 }
             }
 
+            // "Nobody has it" is a claim about the indexers' catalogs, so it may only be
+            // made by an indexer that actually answered. When none did, the honest answer
+            // is that nothing was learned - see SuggestionReleaseStatus.Unknown.
+            var learnedNothing = asked.Count > 0 && answered.Count == 0;
             return await SaveAsync(new SuggestionRelease
             {
                 Asin = book.Asin,
-                Status = SuggestionReleaseStatus.NotFound,
+                Status = learnedNothing ? SuggestionReleaseStatus.Unknown : SuggestionReleaseStatus.NotFound,
                 Detail = asked.Count == 0
                     ? "No indexer is enabled."
-                    : $"No confident match from {string.Join(", ", asked)} for \"{query}\".",
+                    : learnedNothing
+                        ? $"No indexer could be reached: {string.Join(", ", asked)} all failed."
+                        : $"No confident match from {string.Join(", ", answered)} for \"{query}\".",
                 CheckedAt = DateTime.UtcNow
             }, cancellationToken);
         }

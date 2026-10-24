@@ -40,11 +40,17 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
             new SuggestionCoverage(1, 1, 1, 1),
             []);
 
+        private static IReadOnlyDictionary<string, SuggestionRelease> Checks(params SuggestionRelease[] checks) =>
+            checks.ToDictionary(check => check.Asin, StringComparer.OrdinalIgnoreCase);
+
+        private static SuggestionRelease Check(string asin, SuggestionReleaseStatus status, DateTime checkedAt) =>
+            new() { Asin = asin, Status = status, CheckedAt = checkedAt };
+
         [Fact]
         public void SeriesGapsComeBeforeAuthorCatalogsAndEachBookOnlyOnce()
         {
             var due = SuggestionReleaseCheckProcessor.Due(
-                Snapshot([Book("A1"), Book("A2")], [Book("A2"), Book("S1")]), Now);
+                Snapshot([Book("A1"), Book("A2")], [Book("A2"), Book("S1")]), Checks(), Now);
 
             Assert.Equal(["A2", "S1", "A1"], due.Select(book => book.Asin));
         }
@@ -52,16 +58,40 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
         [Fact]
         public void ACheckedBookWaitsUntilItsAnswerIsStale()
         {
-            var due = SuggestionReleaseCheckProcessor.Due(Snapshot(
-                [
-                    Book("fresh-miss", new SuggestedRelease(false, null, null, null, Now.AddDays(-6))),
-                    Book("stale-miss", new SuggestedRelease(false, null, null, null, Now.AddDays(-8))),
-                    Book("fresh-hit", new SuggestedRelease(true, "Abook.link", "t", null, Now.AddDays(-29))),
-                    Book("stale-hit", new SuggestedRelease(true, "Abook.link", "t", null, Now.AddDays(-31)))
-                ],
-                []), Now);
+            var due = SuggestionReleaseCheckProcessor.Due(
+                Snapshot([Book("fresh-miss"), Book("stale-miss"), Book("fresh-hit"), Book("stale-hit")], []),
+                Checks(
+                    Check("fresh-miss", SuggestionReleaseStatus.NotFound, Now.AddDays(-6)),
+                    Check("stale-miss", SuggestionReleaseStatus.NotFound, Now.AddDays(-8)),
+                    Check("fresh-hit", SuggestionReleaseStatus.Found, Now.AddDays(-29)),
+                    Check("stale-hit", SuggestionReleaseStatus.Found, Now.AddDays(-31))),
+                Now);
 
             Assert.Equal(["stale-miss", "stale-hit"], due.Select(book => book.Asin));
+        }
+
+        /// <summary>
+        /// An indexer outage is not evidence that nobody holds the book, so the answer is
+        /// worth asking again in hours rather than the week a real miss waits.
+        /// </summary>
+        [Fact]
+        public void ACheckThatLearnedNothingIsTriedAgainInHoursNotDays()
+        {
+            var due = SuggestionReleaseCheckProcessor.Due(
+                Snapshot([Book("fresh-unknown"), Book("stale-unknown"), Book("fresh-miss")], []),
+                Checks(
+                    Check("fresh-unknown", SuggestionReleaseStatus.Unknown, Now.AddHours(-5)),
+                    Check("stale-unknown", SuggestionReleaseStatus.Unknown, Now.AddHours(-7)),
+                    Check("fresh-miss", SuggestionReleaseStatus.NotFound, Now.AddHours(-7))),
+                Now);
+
+            Assert.Equal(["stale-unknown"], due.Select(book => book.Asin));
+        }
+
+        [Fact]
+        public void ABookNothingIsStoredForIsCheckedAtOnce()
+        {
+            Assert.True(SuggestionReleaseCheckProcessor.IsDue("never-seen", Checks(), Now));
         }
     }
 }

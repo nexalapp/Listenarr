@@ -167,6 +167,40 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             _search.VerifyNoOtherCalls();
         }
 
+        /// <summary>
+        /// "Nobody has it" is a claim about the indexers' catalogs, and only an indexer
+        /// that answered can make it. When they all fail the honest answer is that nothing
+        /// was learned - otherwise a bad night at the indexer reads as a missing book.
+        /// </summary>
+        [Fact]
+        public async Task EveryIndexerFailingIsNotTheSameAsNobodyHavingTheBook()
+        {
+            _search.Setup(s => s.SearchIndexerResultsAsync(It.IsAny<string>(), It.IsAny<string>(), null, null))
+                .ThrowsAsync(new HttpRequestException("indexer is down"));
+            var service = Build(Abook, Geek);
+
+            var release = await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
+
+            Assert.Equal(SuggestionReleaseStatus.Unknown, release.Status);
+            Assert.Contains("could be reached", release.Detail);
+        }
+
+        [Fact]
+        public async Task AnIndexerThatAnsweredCanStillReportNobodyHasIt()
+        {
+            Returns(Abook);
+            _search.Setup(s => s.SearchIndexerResultsAsync(Geek.Id.ToString(), It.IsAny<string>(), null, null))
+                .ThrowsAsync(new HttpRequestException("indexer is down"));
+            var service = Build(Abook, Geek);
+
+            var release = await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
+
+            Assert.Equal(SuggestionReleaseStatus.NotFound, release.Status);
+            // Only the indexer that actually answered may be named as having looked.
+            Assert.Contains("Abook.link", release.Detail);
+            Assert.DoesNotContain("NZBgeek", release.Detail);
+        }
+
         [Fact]
         public async Task AddingABookNothingHeldSendsNothing()
         {
