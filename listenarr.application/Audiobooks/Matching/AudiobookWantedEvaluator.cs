@@ -37,5 +37,16 @@ namespace Listenarr.Application.Audiobooks.Matching
 
             return !hasTrackedFiles && string.IsNullOrWhiteSpace(legacyFilePath);
         }
+
+        /// <summary>
+        /// Whether a wanted book is one nothing can be done about: every indexer was asked
+        /// and none of them holds it.
+        ///
+        /// Only a check that actually reached an indexer counts. A book never checked, or
+        /// one whose check learned nothing because the indexers could not be reached, is
+        /// still wanted - hiding it would turn an indexer outage into a missing book.
+        /// </summary>
+        public static bool IsUnobtainable(SuggestionReleaseStatus? status) =>
+            status == SuggestionReleaseStatus.NotFound;
     }
 }

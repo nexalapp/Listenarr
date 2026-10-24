@@ -53,6 +53,9 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         }
     }
 
+    /// <summary>One book to ask the indexers about, wherever it came from.</summary>
+    internal sealed record AvailabilityCheckTarget(string Asin, string Title, IReadOnlyList<string> Authors);
+
     public interface ISuggestionReleaseCheckProcessor
     {
         Task RunCycleAsync(CancellationToken cancellationToken);
@@ -63,8 +66,12 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         IServiceScopeFactory serviceScopeFactory,
         TimeProvider timeProvider) : ISuggestionReleaseCheckProcessor
     {
-        /// <summary>A book nothing held is asked about again after this long.</summary>
-        internal static readonly TimeSpan NotFoundRecheck = TimeSpan.FromDays(7);
+        /// <summary>
+        /// How long a book nothing held is left before asking again, when the setting is
+        /// missing or nonsense. A day is the floor: anything less is a checking loop.
+        /// </summary>
+        internal static readonly TimeSpan DefaultNotFoundRecheck = TimeSpan.FromDays(7);
+        internal static readonly TimeSpan MinimumNotFoundRecheck = TimeSpan.FromDays(1);
 
         /// <summary>A found release is confirmed again after this long; posts get pulled.</summary>
         internal static readonly TimeSpan FoundRecheck = TimeSpan.FromDays(30);
@@ -82,7 +89,7 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         /// </summary>
         private static readonly TimeSpan WorkListLifetime = TimeSpan.FromMinutes(10);
 
-        private readonly Queue<SuggestedBook> _work = new();
+        private readonly Queue<AvailabilityCheckTarget> _work = new();
         private DateTime? _workBuiltAt;
         private DateTime? _lastCheckAt;
 
@@ -104,6 +111,8 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
                 return;
             }
 
+            var notFoundRecheck = NotFoundRecheckFrom(settings.UnobtainableRecheckDays);
+
             if (_work.Count == 0 || _workBuiltAt is null || now - _workBuiltAt.Value > WorkListLifetime)
             {
                 var snapshot = await scope.ServiceProvider
@@ -114,10 +123,22 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
                 var checks = await scope.ServiceProvider
                     .GetRequiredService<ISuggestionReleaseRepository>()
                     .GetAllAsync(cancellationToken);
+                var library = await scope.ServiceProvider
+                    .GetRequiredService<ILibraryListService>()
+                    .GetAllAsync();
+
                 _work.Clear();
-                foreach (var book in Due(snapshot, checks, now))
+                // The library's own missing books lead: there are far fewer of them than
+                // there are suggestions, and their answer decides whether a book stands in
+                // the Wanted list or sits in the collapsed group beneath it.
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var target in DueInLibrary(library, checks, now, notFoundRecheck)
+                    .Concat(Due(snapshot, checks, now, notFoundRecheck)))
                 {
-                    _work.Enqueue(book);
+                    if (seen.Add(target.Asin))
+                    {
+                        _work.Enqueue(target);
+                    }
                 }
 
                 _workBuiltAt = now;
@@ -133,9 +154,9 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
             {
                 var release = await scope.ServiceProvider
                     .GetRequiredService<ISuggestionReleaseService>()
-                    .CheckAsync(next, cancellationToken);
+                    .CheckAsync(next.Asin, next.Title, next.Authors, cancellationToken);
                 logger.LogDebug(
-                    "Suggestion release check for '{Title}' ({Asin}): {Status} {Detail}",
+                    "Release availability check for '{Title}' ({Asin}): {Status} {Detail}",
                     next.Title, next.Asin, release.Status, release.Detail);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -144,7 +165,7 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
             }
             catch (Exception ex) when (WorkerExceptionClassifier.IsNonFatal(ex))
             {
-                logger.LogWarning(ex, "Suggestion release check failed for '{Title}' ({Asin})", next.Title, next.Asin);
+                logger.LogWarning(ex, "Release availability check failed for '{Title}' ({Asin})", next.Title, next.Asin);
             }
         }
 
@@ -154,23 +175,64 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         /// author catalogs, each in the order the page shows them. Each book once, however
         /// many groups list it.
         /// </summary>
-        internal static IEnumerable<SuggestedBook> Due(
+        internal static IEnumerable<AvailabilityCheckTarget> Due(
             SuggestionSnapshot snapshot,
             IReadOnlyDictionary<string, SuggestionRelease> checks,
-            DateTime now)
+            DateTime now,
+            TimeSpan notFoundRecheck)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             return snapshot.Series.SelectMany(group => group.Missing)
                 .Concat(snapshot.Authors.SelectMany(group => group.Missing))
                 .Where(book => !string.IsNullOrWhiteSpace(book.Asin) && seen.Add(book.Asin.Trim()))
-                .Where(book => IsDue(book.Asin!.Trim(), checks, now));
+                .Where(book => IsDue(book.Asin!.Trim(), checks, now, notFoundRecheck))
+                .Select(book => new AvailabilityCheckTarget(book.Asin!.Trim(), book.Title, book.Authors));
+        }
+
+        /// <summary>
+        /// The library's own books that are monitored and have no file: the ones whose
+        /// answer decides whether they stand in the Wanted list or in the collapsed group
+        /// of books nothing holds. A book with no ASIN cannot be asked about by ASIN and
+        /// is left to a manual search.
+        /// </summary>
+        internal static IEnumerable<AvailabilityCheckTarget> DueInLibrary(
+            IEnumerable<LibraryAudiobookListItem> library,
+            IReadOnlyDictionary<string, SuggestionRelease> checks,
+            DateTime now,
+            TimeSpan notFoundRecheck)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return library
+                .Where(item => item.Wanted || item.Unobtainable)
+                .Where(item => !string.IsNullOrWhiteSpace(item.Asin) && seen.Add(item.Asin!.Trim()))
+                .Where(item => IsDue(item.Asin!.Trim(), checks, now, notFoundRecheck))
+                .Select(item => new AvailabilityCheckTarget(
+                    item.Asin!.Trim(),
+                    item.Title ?? string.Empty,
+                    item.Authors ?? []));
+        }
+
+        /// <summary>The recheck window for a book nothing held, as the settings ask for it.</summary>
+        internal static TimeSpan NotFoundRecheckFrom(int configuredDays)
+        {
+            if (configuredDays <= 0)
+            {
+                return DefaultNotFoundRecheck;
+            }
+
+            var requested = TimeSpan.FromDays(configuredDays);
+            return requested < MinimumNotFoundRecheck ? MinimumNotFoundRecheck : requested;
         }
 
         /// <summary>
         /// Whether this ASIN is due another check: never checked, or checked long enough
         /// ago for the answer it gave to be worth asking again.
         /// </summary>
-        internal static bool IsDue(string asin, IReadOnlyDictionary<string, SuggestionRelease> checks, DateTime now)
+        internal static bool IsDue(
+            string asin,
+            IReadOnlyDictionary<string, SuggestionRelease> checks,
+            DateTime now,
+            TimeSpan notFoundRecheck)
         {
             if (!checks.TryGetValue(asin, out var check))
             {
@@ -181,7 +243,7 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
             {
                 SuggestionReleaseStatus.Found => FoundRecheck,
                 SuggestionReleaseStatus.Unknown => UnknownRecheck,
-                _ => NotFoundRecheck
+                _ => notFoundRecheck
             };
 
             return now - check.CheckedAt > after;

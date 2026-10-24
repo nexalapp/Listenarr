@@ -157,6 +157,12 @@ namespace Listenarr.Domain.Configuration
         // of them. Zero turns it off.
         public int SuggestionReleaseCheckIntervalSeconds { get; set; } = 30;
 
+        // How long a book nothing holds is left alone before the indexers are asked about
+        // it again. A week is often enough for a post to appear without asking every day;
+        // raise it for a quieter library, lower it to chase a book you are waiting for.
+        // Clamped when read, so a stray zero cannot turn this into a checking loop.
+        public int UnobtainableRecheckDays { get; set; } = 7;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

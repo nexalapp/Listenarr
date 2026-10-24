@@ -28,6 +28,17 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         Task<SuggestionRelease> CheckAsync(SuggestedBook book, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// The same check for any book that carries an ASIN, suggested or already in the
+        /// library. The question - does an indexer hold this book - is the same one, and
+        /// the answer is stored against the ASIN either way.
+        /// </summary>
+        Task<SuggestionRelease> CheckAsync(
+            string asin,
+            string title,
+            IReadOnlyList<string> authors,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Sends the release stored for the book's ASIN to a download client. Returns false,
         /// having done nothing, when no release was found for it.
         /// </summary>
@@ -45,7 +56,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
     {
         private const string AbookLinkImplementation = "AbookLink";
 
-        public async Task<SuggestionRelease> CheckAsync(SuggestedBook book, CancellationToken cancellationToken = default)
+        public Task<SuggestionRelease> CheckAsync(SuggestedBook book, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(book);
             if (string.IsNullOrWhiteSpace(book.Asin))
@@ -53,7 +64,21 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 throw new ArgumentException("A suggested book is checked by its ASIN.", nameof(book));
             }
 
-            var query = SuggestionReleaseMatch.QueryFor(book.Title, book.Authors);
+            return CheckAsync(book.Asin, book.Title, book.Authors, cancellationToken);
+        }
+
+        public async Task<SuggestionRelease> CheckAsync(
+            string asin,
+            string title,
+            IReadOnlyList<string> authors,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(asin))
+            {
+                throw new ArgumentException("A book is checked by its ASIN.", nameof(asin));
+            }
+
+            var query = SuggestionReleaseMatch.QueryFor(title, authors);
             var enabled = await indexers.GetEnabledAsync(isAutomaticSearch: false, cancellationToken);
             var profile = await qualityProfiles.GetDefaultAsync();
 
@@ -88,8 +113,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 var matching = results
                     .Where(result => IsAbookLink(indexer)
                         ? SuggestionReleaseMatch.AbookPostMatches(
-                            result.Asin, result.Album, result.Artist, book.Asin, book.Title, book.Authors)
-                        : SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, book.Title, book.Authors))
+                            result.Asin, result.Album, result.Artist, asin, title, authors)
+                        : SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, title, authors))
                     .ToList();
 
                 var best = await BestAsync(matching, profile);
@@ -97,7 +122,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 {
                     return await SaveAsync(new SuggestionRelease
                     {
-                        Asin = book.Asin,
+                        Asin = asin,
                         Status = SuggestionReleaseStatus.Found,
                         IndexerName = indexer.Name,
                         ReleaseTitle = best.Title,
@@ -117,7 +142,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var learnedNothing = asked.Count > 0 && answered.Count == 0;
             return await SaveAsync(new SuggestionRelease
             {
-                Asin = book.Asin,
+                Asin = asin,
                 Status = learnedNothing ? SuggestionReleaseStatus.Unknown : SuggestionReleaseStatus.NotFound,
                 Detail = asked.Count == 0
                     ? "No indexer is enabled."

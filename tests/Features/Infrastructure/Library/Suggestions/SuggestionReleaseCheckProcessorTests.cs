@@ -28,6 +28,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
     public sealed class SuggestionReleaseCheckProcessorTests : BaseTests
     {
         private static readonly DateTime Now = new(2026, 10, 24, 0, 0, 0, DateTimeKind.Utc);
+        private static readonly TimeSpan Week = TimeSpan.FromDays(7);
+
+        private static LibraryAudiobookListItem LibraryBook(
+            string asin, bool wanted = true, bool unobtainable = false) => new()
+            {
+                Id = 1,
+                Title = asin,
+                Asin = asin,
+                Authors = ["Author"],
+                Wanted = wanted,
+                Unobtainable = unobtainable
+            };
 
         private static SuggestedBook Book(string asin, SuggestedRelease? release = null) => new(
             asin, asin, null, ["Author"], [], null, null, "english", null, [], null, null, null, null, null, null,
@@ -50,7 +62,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
         public void SeriesGapsComeBeforeAuthorCatalogsAndEachBookOnlyOnce()
         {
             var due = SuggestionReleaseCheckProcessor.Due(
-                Snapshot([Book("A1"), Book("A2")], [Book("A2"), Book("S1")]), Checks(), Now);
+                Snapshot([Book("A1"), Book("A2")], [Book("A2"), Book("S1")]), Checks(), Now, Week);
 
             Assert.Equal(["A2", "S1", "A1"], due.Select(book => book.Asin));
         }
@@ -65,7 +77,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
                     Check("stale-miss", SuggestionReleaseStatus.NotFound, Now.AddDays(-8)),
                     Check("fresh-hit", SuggestionReleaseStatus.Found, Now.AddDays(-29)),
                     Check("stale-hit", SuggestionReleaseStatus.Found, Now.AddDays(-31))),
-                Now);
+                Now,
+                Week);
 
             Assert.Equal(["stale-miss", "stale-hit"], due.Select(book => book.Asin));
         }
@@ -83,7 +96,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
                     Check("fresh-unknown", SuggestionReleaseStatus.Unknown, Now.AddHours(-5)),
                     Check("stale-unknown", SuggestionReleaseStatus.Unknown, Now.AddHours(-7)),
                     Check("fresh-miss", SuggestionReleaseStatus.NotFound, Now.AddHours(-7))),
-                Now);
+                Now,
+                Week);
 
             Assert.Equal(["stale-unknown"], due.Select(book => book.Asin));
         }
@@ -91,7 +105,55 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
         [Fact]
         public void ABookNothingIsStoredForIsCheckedAtOnce()
         {
-            Assert.True(SuggestionReleaseCheckProcessor.IsDue("never-seen", Checks(), Now));
+            Assert.True(SuggestionReleaseCheckProcessor.IsDue("never-seen", Checks(), Now, Week));
+        }
+
+        /// <summary>
+        /// The library's own missing books are checked too: their answer is what decides
+        /// whether they stand in the Wanted list or in the collapsed group beneath it.
+        /// </summary>
+        [Fact]
+        public void TheLibrarysMissingBooksAreCheckedAlongsideTheSuggestions()
+        {
+            var due = SuggestionReleaseCheckProcessor.DueInLibrary(
+                [LibraryBook("wanted"), LibraryBook("hidden", wanted: false, unobtainable: true), LibraryBook("held", wanted: false)],
+                Checks(),
+                Now,
+                Week);
+
+            // The book that already has a file is not missing, so it is not asked about.
+            Assert.Equal(["wanted", "hidden"], due.Select(target => target.Asin));
+        }
+
+        [Fact]
+        public void ALibraryBookWithNoAsinCannotBeAskedAboutAndIsSkipped()
+        {
+            var nameless = LibraryBook("x");
+            nameless.Asin = null;
+
+            var due = SuggestionReleaseCheckProcessor.DueInLibrary([nameless], Checks(), Now, Week);
+
+            Assert.Empty(due);
+        }
+
+        /// <summary>A book already hidden is asked about again on the configured cadence.</summary>
+        [Fact]
+        public void TheConfiguredCadenceDecidesWhenAHiddenBookIsTriedAgain()
+        {
+            var checks = Checks(Check("hidden", SuggestionReleaseStatus.NotFound, Now.AddDays(-10)));
+
+            Assert.Empty(SuggestionReleaseCheckProcessor.DueInLibrary(
+                [LibraryBook("hidden", wanted: false, unobtainable: true)], checks, Now, TimeSpan.FromDays(14)));
+            Assert.Single(SuggestionReleaseCheckProcessor.DueInLibrary(
+                [LibraryBook("hidden", wanted: false, unobtainable: true)], checks, Now, TimeSpan.FromDays(7)));
+        }
+
+        [Fact]
+        public void AnAbsentOrAbsurdCadenceFallsBackToSomethingSane()
+        {
+            Assert.Equal(TimeSpan.FromDays(7), SuggestionReleaseCheckProcessor.NotFoundRecheckFrom(0));
+            Assert.Equal(TimeSpan.FromDays(7), SuggestionReleaseCheckProcessor.NotFoundRecheckFrom(-3));
+            Assert.Equal(TimeSpan.FromDays(14), SuggestionReleaseCheckProcessor.NotFoundRecheckFrom(14));
         }
     }
 }

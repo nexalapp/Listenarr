@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
 
@@ -36,17 +37,20 @@ namespace Listenarr.Application.Audiobooks.Catalog
         private readonly IAudiobookFileRepository _audiobookFileRepository;
         private readonly IQualityProfileRepository _qualityProfileRepository;
         private readonly IDownloadRepository _downloadRepository;
+        private readonly ISuggestionReleaseRepository _releaseChecks;
 
         public LibraryListService(
             IAudiobookRepository audiobookRepository,
             IAudiobookFileRepository audiobookFileRepository,
             IQualityProfileRepository qualityProfileRepository,
-            IDownloadRepository downloadRepository)
+            IDownloadRepository downloadRepository,
+            ISuggestionReleaseRepository releaseChecks)
         {
             _audiobookRepository = audiobookRepository;
             _audiobookFileRepository = audiobookFileRepository;
             _qualityProfileRepository = qualityProfileRepository;
             _downloadRepository = downloadRepository;
+            _releaseChecks = releaseChecks;
         }
 
         public async Task<IReadOnlyList<LibraryAudiobookListItem>> GetAllAsync()
@@ -98,13 +102,27 @@ namespace Listenarr.Application.Audiobooks.Catalog
             // date cannot land on opposite sides of a midnight boundary within one response.
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
+            // What the background check last learned about each ASIN, so a book nothing
+            // holds can be told apart from one still worth searching for.
+            var availability = await _releaseChecks.GetAllAsync();
+
             return audiobooks.Select(a =>
             {
                 filesByAudiobookId.TryGetValue(a.Id, out var files);
                 var hasTrackedFiles = files != null && files.Count > 0;
                 var hasLegacyFileSummary = !string.IsNullOrWhiteSpace(a.FilePath);
                 var hasAnyFile = hasTrackedFiles || hasLegacyFileSummary;
-                var wanted = AudiobookWantedEvaluator.Compute(a.Monitored, hasTrackedFiles, a.FilePath);
+                var missing = AudiobookWantedEvaluator.Compute(a.Monitored, hasTrackedFiles, a.FilePath);
+                SuggestionRelease? availabilityCheck = null;
+                if (!string.IsNullOrWhiteSpace(a.Asin))
+                {
+                    availability.TryGetValue(a.Asin.Trim(), out availabilityCheck);
+                }
+
+                // A book nobody holds is still missing, but it is not work waiting to be
+                // done, so it leaves the Wanted list rather than sitting in it unanswerable.
+                var unobtainable = missing && AudiobookWantedEvaluator.IsUnobtainable(availabilityCheck?.Status);
+                var wanted = missing && !unobtainable;
                 QualityProfile? qualityProfile = null;
                 if (a.QualityProfileId.HasValue)
                 {
@@ -152,6 +170,9 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     QualityProfileId = a.QualityProfileId,
                     AuthorAsins = a.AuthorAsins?.ToArray(),
                     Wanted = wanted,
+                    Unobtainable = unobtainable,
+                    UnobtainableReason = unobtainable ? availabilityCheck?.Detail : null,
+                    UnobtainableCheckedAt = unobtainable ? availabilityCheck?.CheckedAt : null,
                     ChapterHealth = chapterHealthById.TryGetValue(a.Id, out var chapterSummary)
                         ? ChapterHealthNames.Of(chapterSummary.Health)
                         : null,
