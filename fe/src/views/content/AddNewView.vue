@@ -357,7 +357,7 @@
       </div>
     </div>
     <!-- Loading State -->
-    <div v-if="isSearching && !hasResults" class="loading-results">
+    <div v-if="isSearching" class="loading-results">
       <div class="loading-spinner">
         <PhSpinner class="ph-spin" />
         <p>Searching for audiobooks...</p>
@@ -366,7 +366,7 @@
     </div>
 
     <!-- Results Section -->
-    <div v-if="hasResults" class="search-results">
+    <div v-if="hasResults && !isSearching" class="search-results">
       <!-- ASIN Results -->
       <div v-if="searchType === 'asin' && audibleResult">
         <h2>Audiobook Found</h2>
@@ -617,12 +617,8 @@
       </div>
 
       <!-- ISBN Auto-processing Status -->
-      <div v-if="searchType === 'isbn' && isSearching" class="inline-status">
-        <PhSpinner class="ph-spin" />
-        <span>Searching Amazon/Audible for audiobook...</span>
-      </div>
       <div
-        v-else-if="searchType === 'isbn' && !isSearching && isbnLookupMessage"
+        v-if="searchType === 'isbn' && isbnLookupMessage"
         class="inline-status"
         :class="{ warning: isbnLookupWarning }"
       >
@@ -1807,14 +1803,28 @@ watch(
 
 // Scroll to top of results when page changes
 watch(currentAdvancedPage, () => {
-  nextTick(() => {
-    const titleResultsElement = document.querySelector('.title-results')
-    if (titleResultsElement) {
-      const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-      window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-    }
-  })
+  void scrollToResults()
 })
+
+/**
+ * Bring the results into view once they are on screen.
+ *
+ * They are hidden while a search is underway and the flag only clears after the
+ * search function returns, so the element can be a tick or two behind the call -
+ * and on a page change it is already there. Both cases are the same wait.
+ */
+async function scrollToResults(): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await nextTick()
+    const element = document.querySelector('.title-results')
+    if (element) {
+      const elementTop = element.getBoundingClientRect().top + window.scrollY
+      window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
 
 // Computed properties
 const hasResults = computed(() => {
@@ -2295,13 +2305,7 @@ const performAdvancedSearch = async () => {
         await handleAdvancedSearchResults(filtered.length ? filtered : results)
 
         // done: scroll into view
-        nextTick(() => {
-          const titleResultsElement = document.querySelector('.title-results')
-          if (titleResultsElement) {
-            const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-            window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-          }
-        })
+        void scrollToResults()
         return
       }
 
@@ -2309,13 +2313,7 @@ const performAdvancedSearch = async () => {
       await handleAdvancedSearchResults(results)
 
       // Scroll to top of results after search
-      nextTick(() => {
-        const titleResultsElement = document.querySelector('.title-results')
-        if (titleResultsElement) {
-          const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-          window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-        }
-      })
+      void scrollToResults()
     } catch (err) {
       advancedSearchError.value = err instanceof Error ? err.message : 'Search failed'
       errorMessage.value = advancedSearchError.value
@@ -2451,13 +2449,7 @@ const changeAudiblePage = async (newPage: number) => {
     await handleAdvancedSearchResults(converted)
 
     // Scroll to top of results after page change
-    nextTick(() => {
-      const titleResultsElement = document.querySelector('.title-results')
-      if (titleResultsElement) {
-        const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-        window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-      }
-    })
+    void scrollToResults()
   } else {
     // Fallback: call API if no cached results
     await performAdvancedSearch()
