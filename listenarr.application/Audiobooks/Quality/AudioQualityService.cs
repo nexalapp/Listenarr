@@ -98,7 +98,8 @@ namespace Listenarr.Application.Audiobooks.Quality
                 GenerativeDeficitDb = settings.GenerativeOfferThresholdDb
             };
 
-            var report = AudioQualityProbe.Analyze(samples.Windows, samples.SampleRate, thresholds);
+            var report = AudioQualityProbe.Analyze(
+                samples.Windows, samples.SampleRate, longest.File.Bitrate, thresholds);
             report = await StoreAsync(audiobookId, audiobook, report, cancellationToken);
             progress?.Report(100);
             return report;

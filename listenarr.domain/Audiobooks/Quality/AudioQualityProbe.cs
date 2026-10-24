@@ -57,9 +57,14 @@ namespace Listenarr.Domain.Audiobooks.Quality
         private const double VoicedPercentile = 70;
         private const double QuietPercentile = 25;
 
+        /// <param name="windows">Decoded mono windows of the file.</param>
+        /// <param name="sampleRate">Their sample rate.</param>
+        /// <param name="bitRate">The file's encoded bit rate, when known — what decides codec damage.</param>
+        /// <param name="thresholds">Where the lines are drawn; the research defaults when null.</param>
         public static AudioQualityReport Analyze(
             IReadOnlyList<float[]> windows,
             int sampleRate,
+            int? bitRate = null,
             AudioQualityThresholds? thresholds = null)
         {
             var t = thresholds ?? AudioQualityThresholds.Default;
@@ -99,12 +104,16 @@ namespace Listenarr.Domain.Audiobooks.Quality
                 harmonicity == null ? null : Math.Round(harmonicity.Value, 3),
                 analysed.Count);
 
-            return Judge(metrics, t);
+            return Judge(metrics, bitRate, t);
         }
 
-        private static AudioQualityReport Judge(AudioQualityMetrics m, AudioQualityThresholds t)
+        private static AudioQualityReport Judge(AudioQualityMetrics m, int? bitRate, AudioQualityThresholds t)
         {
-            var codec = m.Harmonicity != null && m.Harmonicity < t.DamagedHarmonicity;
+            // The encode's bit rate, not harmonicity, decides codec damage. Harmonicity was
+            // calibrated within one recording against crushed copies of itself, and across
+            // narrators it does not separate: on the live library a clean 130 kbps reading
+            // measured 0.45 and the 34 kbps Ender's Shadow 0.40. It stays a metric.
+            var codec = bitRate is > 0 && bitRate < t.CodecDamagedBitRate;
             var noisy = m.NoiseFloorDb > t.NoiseFloorDb;
             var production = noisy && m.FloorSpreadDb != null && m.FloorSpreadDb > t.ProductionSpreadDb;
             var hiss = noisy && !production;
@@ -117,8 +126,8 @@ namespace Listenarr.Domain.Audiobooks.Quality
                 // lesser finding, so one verdict carries both.
                 return new AudioQualityReport(
                     AudioQuality.CodecDamaged,
-                    $"Quantisation noise inside the voice (harmonicity {m.Harmonicity:0.00}; " +
-                    $"an undamaged recording measures 0.72). A denoiser would delete the consonants along with it.",
+                    $"Encoded at {bitRate / 1000} kbps, too few bits for speech: the encoder leaves its noise " +
+                    "between the voice's harmonics. A denoiser would delete the consonants along with it.",
                     m, generative, NeverPreDenoise: true);
             }
 
