@@ -167,3 +167,92 @@ describe('WantedView image recache behavior', () => {
     expect(wrapper.findAll('.wanted-row')).toHaveLength(30)
   })
 })
+
+/**
+ * A book no indexer holds is still monitored and still missing, but nothing can be done
+ * about it, so it must not stand in the Wanted list as work waiting to be done.
+ */
+describe('WantedView unobtainable books', () => {
+  const mountWanted = async (books: unknown[]) => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation(() => ({
+        matches: true,
+        media: '(max-width: 768px)',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    )
+
+    const libraryStore = useLibraryStore()
+    libraryStore.audiobooks = books as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    libraryStore.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    return wrapper
+  }
+
+  const searchable = { id: 1, title: 'Can Be Had', monitored: true, files: [], wanted: true }
+  const gone = {
+    id: 2,
+    title: 'Nobody Has This',
+    authors: ['J.K. Rowling'],
+    monitored: true,
+    files: [],
+    wanted: false,
+    unobtainable: true,
+    unobtainableReason: 'No confident match from NZBgeek, NzbPlanet.',
+    unobtainableCheckedAt: new Date().toISOString(),
+  }
+
+  it('keeps a book nothing holds out of the wanted list', async () => {
+    const wrapper = await mountWanted([searchable, gone])
+
+    expect(wrapper.findAll('.wanted-row')).toHaveLength(1)
+    expect(wrapper.find('.wanted-row').text()).toContain('Can Be Had')
+  })
+
+  it('collapses them into their own group, counted and hidden by default', async () => {
+    const wrapper = await mountWanted([searchable, gone])
+
+    expect(wrapper.find('.unobtainable-section').exists()).toBe(true)
+    expect(wrapper.find('.toggle-count').text()).toBe('1')
+    // Hidden by default: the group says how many there are without listing them.
+    expect(wrapper.find('.unobtainable-list').exists()).toBe(false)
+    expect(wrapper.find('.unobtainable-toggle').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('shows them when the group is opened, with a manual search still available', async () => {
+    const wrapper = await mountWanted([searchable, gone])
+
+    await wrapper.find('.unobtainable-toggle').trigger('click')
+
+    const rows = wrapper.findAll('.unobtainable-row')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.text()).toContain('Nobody Has This')
+    expect(rows[0]!.find('button[title="Manual Search"]').exists()).toBe(true)
+    expect(rows[0]!.find('.unobtainable-checked').attributes('title')).toContain('NZBgeek')
+  })
+
+  it('says nothing at all when no book is unobtainable', async () => {
+    const wrapper = await mountWanted([searchable])
+
+    expect(wrapper.find('.unobtainable-section').exists()).toBe(false)
+    expect(wrapper.findAll('.wanted-row')).toHaveLength(1)
+  })
+
+  /** An older server sends neither flag, and every missing book stays in the list. */
+  it('leaves a book from a server that knows nothing of this in the wanted list', async () => {
+    const wrapper = await mountWanted([{ id: 3, title: 'Legacy', monitored: true, files: [] }])
+
+    expect(wrapper.findAll('.wanted-row')).toHaveLength(1)
+    expect(wrapper.find('.unobtainable-section').exists()).toBe(false)
+  })
+})

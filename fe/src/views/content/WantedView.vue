@@ -177,6 +177,41 @@
       </template>
     </EmptyState>
 
+    <!--
+      The books nothing holds. Still monitored and still missing, but every indexer was
+      asked and none has a release, so they are not work waiting to be done and are kept
+      out of the list above. Collapsed, because the answer is "nothing to do" - the
+      background check keeps asking on its own, and a manual search is one click away.
+    -->
+    <div v-if="unobtainableAudiobooks.length > 0" class="unobtainable-section">
+      <button
+        type="button"
+        class="unobtainable-toggle"
+        :aria-expanded="showUnobtainable"
+        @click="showUnobtainable = !showUnobtainable"
+      >
+        <PhCaretRight :class="['toggle-caret', { open: showUnobtainable }]" :size="14" />
+        <span class="toggle-label">Unobtainable</span>
+        <span class="toggle-count">{{ unobtainableAudiobooks.length }}</span>
+        <span class="toggle-hint">no indexer holds a release</span>
+      </button>
+
+      <div v-if="showUnobtainable" class="unobtainable-list">
+        <div v-for="item in unobtainableAudiobooks" :key="item.id" class="unobtainable-row">
+          <RouterLink :to="`/books/${item.id}`" class="title-link">{{
+            safeText(item.title)
+          }}</RouterLink>
+          <span class="unobtainable-author">{{ (item.authors || []).join(', ') || '-' }}</span>
+          <span class="unobtainable-checked" :title="item.unobtainableReason || ''">{{
+            lastCheckedLabel(item)
+          }}</span>
+          <button class="btn-icon" @click="openManualSearch(item)" title="Manual Search">
+            <PhMagnifyingGlass />
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Manual Search Modal -->
     <ManualSearchModal
       :is-open="showManualSearchModal"
@@ -215,6 +250,7 @@ import {
   PhX,
   PhCheckCircle,
   PhDownloadSimple,
+  PhCaretRight,
 } from '@phosphor-icons/vue'
 import { logger } from '@/utils/logger'
 import { useDownloadsStore } from '@/stores/downloads'
@@ -330,12 +366,50 @@ const wantedAudiobooks = computed(() => {
     if (serverWanted === true) return true
     if (serverWanted === false) return false
 
+    // Older servers send no `wanted` at all; they also send no `unobtainable`, so every
+    // missing book simply stays in the list, which is what they did before.
     const hasFiles = Array.isArray(audiobook.files) ? audiobook.files.length > 0 : false
     const hasPrimaryFile = !!(audiobook.filePath && audiobook.filePath.toString().trim() !== '')
 
     return !!audiobook.monitored && !hasFiles && !hasPrimaryFile
   })
 })
+
+/**
+ * The monitored books that are missing and that no indexer holds. They are kept out of
+ * the list above because nothing can be done about them, and collapsed beneath it
+ * because they are still worth knowing about - the background check keeps asking, and a
+ * manual search is one click away.
+ */
+const unobtainableAudiobooks = computed(() => {
+  const items = libraryStore.audiobooks.filter(
+    (audiobook) => (audiobook as unknown as Record<string, unknown>)['unobtainable'] === true,
+  )
+  if (!filterText.value) return items
+
+  const query = filterText.value.toLowerCase()
+  return items.filter((item) => {
+    const title = (item.title || '').toLowerCase()
+    const authors = (item.authors || []).join(' ').toLowerCase()
+    const series = (item.series || '').toLowerCase()
+    return title.includes(query) || authors.includes(query) || series.includes(query)
+  })
+})
+
+const showUnobtainable = ref(false)
+
+/** When the indexers were last asked, in words a row has room for. */
+const lastCheckedLabel = (item: Audiobook): string => {
+  const raw = (item as unknown as Record<string, unknown>)['unobtainableCheckedAt']
+  if (typeof raw !== 'string' || !raw) return 'not checked yet'
+  const checked = new Date(raw)
+  if (Number.isNaN(checked.getTime())) return 'not checked yet'
+
+  const days = Math.floor((Date.now() - checked.getTime()) / 86400000)
+  if (days <= 0) return 'checked today'
+  if (days === 1) return 'checked yesterday'
+  return `checked ${days} days ago`
+}
 
 // Categorize wanted audiobooks by their current search state
 const categorizedWanted = computed(() => {
@@ -540,6 +614,98 @@ const markAsSkipped = async (item: Audiobook) => {
 </script>
 
 <style scoped>
+/* The collapsed group of books nothing holds; quieter than the list it sits beneath. */
+.unobtainable-section {
+  margin-top: 1.25rem;
+}
+
+.unobtainable-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #8b949e;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.unobtainable-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6edf3;
+}
+
+.toggle-caret {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.toggle-caret.open {
+  transform: rotate(90deg);
+}
+
+.toggle-label {
+  font-weight: 600;
+}
+
+.toggle-count {
+  padding: 0.05rem 0.4rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+
+.toggle-hint {
+  margin-left: auto;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.unobtainable-list {
+  margin-top: 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.unobtainable-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.unobtainable-row:last-child {
+  border-bottom: none;
+}
+
+.unobtainable-author,
+.unobtainable-checked {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: #8b949e;
+}
+
+@media (max-width: 640px) {
+  .unobtainable-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .unobtainable-author,
+  .unobtainable-checked {
+    display: none;
+  }
+}
+
 .wanted-view {
   padding: 1em;
 }
