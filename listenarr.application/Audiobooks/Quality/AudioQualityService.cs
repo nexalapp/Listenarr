@@ -37,9 +37,12 @@ namespace Listenarr.Application.Audiobooks.Quality
         IFileSystem fileSystem,
         ILogger<AudioQualityService> logger) : IAudioQualityService
     {
-        /// <summary>Four windows of thirty seconds: enough spread for stationarity, two minutes of decode.</summary>
-        private const int WindowCount = 4;
-        private const double WindowSeconds = 30;
+        /// <summary>
+        /// Ten windows of fifteen seconds, the research's sampling. Four were too few for a
+        /// spread: one scene change among four windows moves the deviation by several dB.
+        /// </summary>
+        private const int WindowCount = 10;
+        private const double WindowSeconds = 15;
 
         public async Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default)
         {

@@ -57,6 +57,25 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Quality
         }
 
         /// <summary>
+        /// The quiet-quartile trap: a narrator who pauses only briefly. The quietest quarter
+        /// of frames still holds word tails, and its power mean is carried by them, so a
+        /// clean studio reading measured −46 dB and was called hiss or a score. The floor is
+        /// what the pauses hold, which the 5th percentile finds.
+        /// </summary>
+        [Fact]
+        public void ContinuousNarration_FloorIsThePauses_NotTheWordTails()
+        {
+            var windows = Enumerable.Range(0, 10)
+                .Select(i => Window(noiseDb: -90, seed: i, burstSeconds: 0.52, pauseSeconds: 0.08))
+                .ToArray();
+
+            var report = Analyze(windows);
+
+            Assert.Equal(AudioQuality.Clean, report.Verdict);
+            Assert.True(report.Metrics.NoiseFloorDb < -70, $"floor {report.Metrics.NoiseFloorDb}");
+        }
+
+        /// <summary>
         /// The energy-bandwidth trap: wideband hiss under a voice that stops at 3 kHz.
         /// Band energy reports the hiss ceiling as bandwidth; speech-above-floor must
         /// report the voice's own ceiling.
@@ -86,17 +105,18 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Quality
         /// <summary>
         /// The stationarity rule: a background whose level moves window to window is a
         /// score, not the medium. Spectral flatness called exactly this hiss; the spread
-        /// must not.
+        /// must not. The floor is pooled, so the quietest window decides whether the book
+        /// is noisy at all: every window here is over the line.
         /// </summary>
         [Fact]
         public void VaryingBackground_IsProductionAudio_NotHiss()
         {
             var windows = new[]
             {
-                Window(noiseDb: -30),
-                Window(noiseDb: -52),
-                Window(noiseDb: -38),
-                Window(noiseDb: -58),
+                Window(noiseDb: -26),
+                Window(noiseDb: -44),
+                Window(noiseDb: -34),
+                Window(noiseDb: -48),
             };
 
             var report = Analyze(windows);
@@ -197,13 +217,19 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Quality
 
         /// <summary>
         /// A voice-like window: a 140 Hz harmonic series with 1/f amplitude rolloff,
-        /// spoken in bursts (0.35 s on, 0.25 s off, 10 ms cosine ramps so the gating
+        /// spoken in bursts (0.35 s on, 0.25 s off by default, 10 ms cosine ramps so the gating
         /// itself adds no broadband splatter) over a white-noise floor.
         /// <paramref name="inBandNoiseDb"/> adds noise gated WITH the voice and limited
         /// to the voice's own band — the codec signature: energy between the harmonics,
         /// present only while there is signal to damage, invisible to any floor measure.
         /// </summary>
-        private static float[] Window(double noiseDb, int voiceTopHz = 9000, double? inBandNoiseDb = null, int seed = 1)
+        private static float[] Window(
+            double noiseDb,
+            int voiceTopHz = 9000,
+            double? inBandNoiseDb = null,
+            int seed = 1,
+            double burstSeconds = 0.35,
+            double pauseSeconds = 0.25)
         {
             const double fundamental = 140;
             var length = (int)(WindowSeconds * SampleRate);
@@ -232,11 +258,11 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Quality
             for (var i = 0; i < length; i++)
             {
                 var t = (double)i / SampleRate;
-                var cycle = t % 0.6;
+                var cycle = t % (burstSeconds + pauseSeconds);
                 // 10 ms raised-cosine edges on each burst.
-                var envelope = cycle >= 0.35 ? 0
+                var envelope = cycle >= burstSeconds ? 0
                     : cycle < 0.01 ? 0.5 - 0.5 * Math.Cos(Math.PI * cycle / 0.01)
-                    : cycle > 0.34 ? 0.5 - 0.5 * Math.Cos(Math.PI * (0.35 - cycle) / 0.01)
+                    : cycle > burstSeconds - 0.01 ? 0.5 - 0.5 * Math.Cos(Math.PI * (burstSeconds - cycle) / 0.01)
                     : 1;
                 double v = 0;
                 if (envelope > 0)
