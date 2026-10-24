@@ -23,11 +23,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
     /// <summary>
     /// Whether an indexer's release is, with high confidence, a suggested book.
     ///
-    /// An abook.link post declares the book's ASIN, so it is held to that and nothing
-    /// else: a matching title is not enough when the post can say which edition it is.
-    /// A Newznab release only has a title, so it must carry the book's title as a phrase
-    /// and its first author's surname as a word - the two things a release of some other
-    /// book is least likely to share.
+    /// An abook.link post that declares an ASIN is held to it and nothing else: a matching
+    /// title is not enough when the post says which edition it is. Most posts, the older
+    /// ones especially, declare none, but their title and author are parsed fields rather
+    /// than free text, so the title must equal the book's and the author must carry its
+    /// first author's surname. A Newznab release only has a free-text title, so it must
+    /// carry the book's title as a phrase and the surname as a word - the two things a
+    /// release of some other book is least likely to share.
     /// </summary>
     public static partial class SuggestionReleaseMatch
     {
@@ -38,6 +40,28 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             !string.IsNullOrWhiteSpace(releaseAsin)
             && !string.IsNullOrWhiteSpace(bookAsin)
             && string.Equals(releaseAsin.Trim(), bookAsin.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Whether an abook.link post, as its parsed fields describe it, is this book.</summary>
+        public static bool AbookPostMatches(
+            string? postAsin,
+            string? postTitle,
+            string? postAuthor,
+            string? bookAsin,
+            string? bookTitle,
+            IReadOnlyList<string>? authors)
+        {
+            if (!string.IsNullOrWhiteSpace(postAsin))
+            {
+                return AsinMatches(postAsin, bookAsin);
+            }
+
+            var title = Normalize(MainTitle(bookTitle));
+            var surname = Surname(authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)));
+            return title.Length > 0
+                && surname.Length > 0
+                && Normalize(MainTitle(postTitle)) == title
+                && (" " + Normalize(postAuthor) + " ").Contains(" " + surname + " ", StringComparison.Ordinal);
+        }
 
         public static bool TitleAndAuthorMatch(string? releaseTitle, string? bookTitle, IReadOnlyList<string>? authors)
         {
