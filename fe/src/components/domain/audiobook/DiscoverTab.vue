@@ -54,6 +54,28 @@
       </div>
     </div>
 
+    <div v-if="feed && feed.sections.length > 0" class="discover-view">
+      <label class="view-control">
+        <span>Sort</span>
+        <select v-model="sort" class="view-select" :aria-label="`Sort ${noun}`">
+          <option v-for="option in sortOptions" :key="option.id" :value="option.id">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+      <label
+        class="view-control"
+        :title="`Off, the ${noun} become one list and a book in two of them is listed once.`"
+      >
+        <input v-model="grouped" type="checkbox" />
+        <span>Group by {{ nounSingular }}</span>
+      </label>
+      <span v-if="!grouped && mergedCount > 0" class="view-note">
+        {{ mergedCount }} {{ mergedCount === 1 ? 'book was' : 'books were' }} in more than one
+        {{ nounSingular }}
+      </span>
+    </div>
+
     <LoadingState v-if="loading" :message="`Reading what ${sourceName} offered…`" />
 
     <EmptyState v-else-if="error" title="Could not load this tab" :message="error" />
@@ -71,11 +93,11 @@
     />
 
     <template v-else-if="feed">
-      <section v-for="section in feed.sections" :key="section.sectionId" class="group">
+      <section v-for="section in displaySections" :key="section.key" class="group">
         <header class="group-header">
-          <span class="group-title">{{ section.sectionName }}</span>
+          <span class="group-title">{{ section.title }}</span>
           <span class="group-meta">
-            {{ section.books.length }} to look at
+            {{ section.entries.length }} to look at
             <template v-if="section.held > 0"> · {{ section.held }} already yours</template>
             <template v-if="section.pagesFetched > 0">
               · {{ section.pagesFetched }} {{ section.pagesFetched === 1 ? 'page' : 'pages' }} read
@@ -89,19 +111,19 @@
           </span>
         </header>
 
-        <p v-if="section.books.length === 0 && section.pagesFetched === 0" class="group-empty">
+        <p v-if="section.entries.length === 0 && section.pagesFetched === 0" class="group-empty">
           Nothing read yet. Refresh, or wait for the background fetch.
         </p>
-        <p v-else-if="section.books.length === 0" class="group-empty">
+        <p v-else-if="section.entries.length === 0" class="group-empty">
           Everything here is already in your library, or ignored.
         </p>
 
         <div v-else class="cards">
           <SuggestedBookCard
-            v-for="entry in section.books"
-            :key="`${section.sectionId}:${entry.book.asin || entry.book.title}:${entry.rank}`"
+            v-for="entry in section.entries"
+            :key="`${section.key}:${bookKey(entry.book)}`"
             :book="entry.book"
-            :rank="source === 'charts' ? entry.rank : undefined"
+            :rank="grouped && source === 'charts' ? entry.rank : undefined"
             :note="noteFor(entry)"
             :note-url="entry.sourceUrl"
             :added="addedKeys.has(bookKey(entry.book))"
@@ -118,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { PhArrowsClockwise } from '@phosphor-icons/vue'
 import { EmptyState, LoadingState } from '@/components/base'
 import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.vue'
@@ -195,11 +217,214 @@ function bookKey(book: SuggestedBook): string {
   return book.asin || `${book.title}|${book.authors[0] ?? ''}`
 }
 
+/** An entry as the page shows it: the feed's, plus every section it turned up in. */
+type DisplayEntry = DiscoverEntry & { sections: string[] }
+
+type DisplaySection = {
+  key: string
+  title: string
+  held: number
+  pagesFetched: number
+  lastFetchedAt?: string
+  lastError?: string
+  entries: DisplayEntry[]
+}
+
+type SortId = 'default' | 'rating' | 'ratings' | 'newest' | 'title'
+
+const sortOptions = computed<{ id: SortId; label: string }[]>(() => [
+  { id: 'default', label: charts.value ? 'Chart position' : 'Recently posted' },
+  { id: 'rating', label: 'Highest rated' },
+  { id: 'ratings', label: 'Most ratings' },
+  { id: 'newest', label: 'Newest' },
+  { id: 'title', label: 'Title' },
+])
+
+// How the list is laid out is a per-person preference, not a setting the server
+// needs: it is remembered per browser, per tab.
+const sort = ref<SortId>(readStored<SortId>('sort', 'default', isSortId))
+const grouped = ref(
+  readStored<boolean>('grouped', true, (v): v is boolean => typeof v === 'boolean'),
+)
+
+watch([sort, grouped], () => {
+  writeStored('sort', sort.value)
+  writeStored('grouped', grouped.value)
+})
+
+function isSortId(value: unknown): value is SortId {
+  return (
+    value === 'default' ||
+    value === 'rating' ||
+    value === 'ratings' ||
+    value === 'newest' ||
+    value === 'title'
+  )
+}
+
+function storageKey(name: string): string {
+  return `listenarr.discover.${props.source}.${name}`
+}
+
+function readStored<T>(name: string, fallback: T, isValid: (value: unknown) => value is T): T {
+  try {
+    const raw = localStorage.getItem(storageKey(name))
+    if (raw === null) return fallback
+    const parsed: unknown = JSON.parse(raw)
+    return isValid(parsed) ? parsed : fallback
+  } catch {
+    // Storage unavailable or holding nonsense: the default still works.
+    return fallback
+  }
+}
+
+function writeStored(name: string, value: unknown) {
+  try {
+    localStorage.setItem(storageKey(name), JSON.stringify(value))
+  } catch {
+    // The choice still holds for this visit.
+  }
+}
+
+/**
+ * What the page renders: one block per section, or one block for the lot.
+ *
+ * Ungrouped is not just the sections concatenated. A book that sells well is in
+ * several chart categories at once, and listing it three times is three chances
+ * to act on the same book; so the duplicates are merged, the copy with the best
+ * standing is kept, and the card says which sections it came from.
+ */
+const displaySections = computed<DisplaySection[]>(() => {
+  const sections = feed.value?.sections ?? []
+  if (grouped.value) {
+    return sections.map((section) => ({
+      key: section.sectionId,
+      title: section.sectionName,
+      held: section.held,
+      pagesFetched: section.pagesFetched,
+      lastFetchedAt: section.lastFetchedAt,
+      lastError: section.lastError,
+      entries: sorted(
+        section.books.map((entry) => ({ ...entry, sections: [section.sectionName] })),
+      ),
+    }))
+  }
+
+  return [
+    {
+      key: 'all',
+      title: `All ${noun.value}`,
+      held: sections.reduce((total, section) => total + section.held, 0),
+      pagesFetched: sections.reduce((total, section) => total + section.pagesFetched, 0),
+      lastFetchedAt: sections
+        .map((section) => section.lastFetchedAt)
+        .filter((at): at is string => !!at)
+        .sort()
+        .at(-1),
+      lastError: sections.find((section) => section.lastError)?.lastError,
+      entries: sorted(merged.value),
+    },
+  ]
+})
+
+/** Every section's books as one list, each book once. */
+const merged = computed<DisplayEntry[]>(() => {
+  const byBook = new Map<string, DisplayEntry>()
+
+  for (const section of feed.value?.sections ?? []) {
+    for (const entry of section.books) {
+      const key = bookKey(entry.book)
+      const existing = byBook.get(key)
+      if (!existing) {
+        byBook.set(key, { ...entry, sections: [section.sectionName] })
+        continue
+      }
+
+      // Keep the copy that stands best: the higher chart place, or the newer
+      // post. Its own section leads the list, because that is the one its rank
+      // and its link belong to.
+      if (beats(entry, existing)) {
+        byBook.set(key, {
+          ...entry,
+          sections: [section.sectionName, ...existing.sections],
+        })
+      } else {
+        existing.sections.push(section.sectionName)
+      }
+    }
+  }
+
+  return [...byBook.values()]
+})
+
+const mergedCount = computed(() => merged.value.filter((entry) => entry.sections.length > 1).length)
+
+function beats(candidate: DiscoverEntry, incumbent: DiscoverEntry): boolean {
+  if (charts.value) return candidate.rank < incumbent.rank
+  return (candidate.postedAt ?? '') > (incumbent.postedAt ?? '')
+}
+
+function sorted(entries: DisplayEntry[]): DisplayEntry[] {
+  const list = [...entries]
+  switch (sort.value) {
+    case 'rating':
+      return list.sort((a, b) => weightedRating(b.book) - weightedRating(a.book))
+    case 'ratings':
+      return list.sort((a, b) => (b.book.ratingCount ?? 0) - (a.book.ratingCount ?? 0))
+    case 'newest':
+      return list.sort((a, b) => released(b) - released(a))
+    case 'title':
+      return list.sort((a, b) => a.book.title.localeCompare(b.book.title))
+    default:
+      // The source's own order. Within a section the feed already arrives that
+      // way, but across sections it does not: two boards concatenated would list
+      // yesterday's posts from the first above this morning's from the second.
+      return list.sort((a, b) =>
+        charts.value
+          ? a.rank - b.rank
+          : (b.postedAt ?? '').localeCompare(a.postedAt ?? '') || a.rank - b.rank,
+      )
+  }
+}
+
+/**
+ * A rating worth sorting by.
+ *
+ * Audible's average alone puts a book with three five-star ratings above one with
+ * seventy thousand at 4.8, which is not what "highest rated" means to anyone. Each
+ * average is pulled toward the middle by how little it is based on, so a rating has
+ * to be earned by enough listeners to beat a well-rated favourite. A book nobody has
+ * rated sorts last rather than in the middle.
+ */
+function weightedRating(book: SuggestedBook): number {
+  const rating = book.ratingOverall
+  if (rating == null) return -1
+  const count = book.ratingCount ?? 0
+  const prior = 4.2
+  const weight = 50
+  return (count * rating + weight * prior) / (count + weight)
+}
+
+function released(entry: DiscoverEntry): number {
+  const when = entry.postedAt ?? entry.book.publishedDate
+  const parsed = when ? Date.parse(when) : Number.NaN
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 /** The line under a card: what the source said, and when it said it. */
-function noteFor(entry: DiscoverEntry): string | undefined {
+function noteFor(entry: DisplayEntry): string | undefined {
   const parts: string[] = []
   if (entry.postedAt) parts.push(timeAgo(entry.postedAt))
   if (!entry.resolved) parts.push('not looked up yet')
+  // Ungrouped, the card is the only place left that can say where a book came
+  // from. A chart place belongs to one chart, so it moves here with the name of
+  // that chart: two books both badged "#1" from different categories read as a
+  // bug, while "#1 in Science Fiction & Fantasy" reads as the fact it is.
+  if (!grouped.value && entry.sections.length > 0) {
+    const [home, ...also] = entry.sections
+    parts.push(charts.value ? `#${entry.rank} in ${home}` : home!)
+    if (also.length > 0) parts.push(`also in ${also.join(', ')}`)
+  }
   if (props.source !== 'charts' && entry.sourceNote) parts.push(entry.sourceNote)
   return parts.length > 0 ? parts.join(' · ') : undefined
 }
@@ -345,6 +570,37 @@ onBeforeUnmount(stopPolling)
 .discover-progress {
   color: #aaa;
   font-size: 0.8rem;
+}
+
+.discover-view {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: -0.4rem;
+}
+
+.view-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #bbb;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.view-select {
+  background: #1b1b1b;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  color: #ddd;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.82rem;
+}
+
+.view-note {
+  color: #777;
+  font-size: 0.78rem;
 }
 
 .group {

@@ -31,6 +31,38 @@ function book(title: string, asin: string): SuggestedBook {
   } as unknown as SuggestedBook
 }
 
+function rated(title: string, asin: string, rating?: number, count?: number): SuggestedBook {
+  return { ...book(title, asin), ratingOverall: rating, ratingCount: count } as SuggestedBook
+}
+
+/** Two chart categories that share a book, which is what ungrouped has to handle. */
+function twoSections(): DiscoverFeed {
+  return feed({
+    sections: [
+      {
+        sectionId: '1',
+        sectionName: 'Science Fiction & Fantasy',
+        pagesFetched: 1,
+        held: 0,
+        books: [
+          { rank: 2, resolved: true, book: rated('Shared', 'B1', 4.9, 3) },
+          { rank: 5, resolved: true, book: rated('Only SF', 'B2', 4.5, 9000) },
+        ],
+      },
+      {
+        sectionId: '2',
+        sectionName: 'Literature & Fiction',
+        pagesFetched: 1,
+        held: 1,
+        books: [
+          { rank: 9, resolved: true, book: rated('Shared', 'B1', 4.9, 3) },
+          { rank: 11, resolved: true, book: rated('Only Lit', 'B3', 4.7, 400) },
+        ],
+      },
+    ],
+  })
+}
+
 function feed(overrides: Partial<DiscoverFeed> = {}): DiscoverFeed {
   return {
     source: 'audible-charts',
@@ -95,6 +127,9 @@ function mountTab(source: 'charts' | 'abook' = 'charts') {
 
 describe('DiscoverTab', () => {
   beforeEach(() => {
+    // Sort and grouping are remembered per browser, so one test's choice would
+    // otherwise be the next test's starting point.
+    localStorage.clear()
     vi.clearAllMocks()
     api.getDiscover.mockImplementation(async () => feed())
     api.getDiscoverRefreshStatus.mockImplementation(async () => idle)
@@ -186,6 +221,125 @@ describe('DiscoverTab', () => {
         .find((button) => button.text().includes('Load more'))!
         .attributes('disabled'),
     ).toBeDefined()
+  })
+
+  it('lists a book once when the sections are turned off, keeping its best place', async () => {
+    api.getDiscover.mockImplementation(async () => twoSections())
+    const wrapper = mountTab()
+    await flushPromises()
+    expect(wrapper.findAll('.card-stub')).toHaveLength(4)
+
+    await wrapper.find('.view-control input[type="checkbox"]').setValue(false)
+
+    // One block, three books: the shared one is not offered twice.
+    const titles = wrapper.findAll('.card-stub').map((card) => card.text())
+    expect(titles).toHaveLength(3)
+    expect(titles.filter((title) => title.includes('Shared'))).toHaveLength(1)
+    // Second in one chart and ninth in the other: it keeps the better place,
+    // which now rides on the note rather than the badge.
+    expect(wrapper.findAll('.card-stub')[0]!.attributes('data-note')).toContain('#2 in')
+  })
+
+  it('says on the card which sections a book came from once they are off', async () => {
+    api.getDiscover.mockImplementation(async () => twoSections())
+    const wrapper = mountTab()
+    await flushPromises()
+    await wrapper.find('.view-control input[type="checkbox"]').setValue(false)
+
+    const shared = wrapper.findAll('.card-stub').find((card) => card.text().includes('Shared'))!
+    // The place belongs to the chart it was read from, and the badge is gone:
+    // two cards both badged "#1" from different categories read as a bug.
+    expect(shared.attributes('data-rank')).toBeUndefined()
+    expect(shared.attributes('data-note')).toContain('#2 in Science Fiction & Fantasy')
+    expect(shared.attributes('data-note')).toContain('also in Literature & Fiction')
+  })
+
+  it('counts how many books were in more than one section', async () => {
+    api.getDiscover.mockImplementation(async () => twoSections())
+    const wrapper = mountTab()
+    await flushPromises()
+    await wrapper.find('.view-control input[type="checkbox"]').setValue(false)
+
+    expect(wrapper.text()).toContain('1 book was in more than one category')
+  })
+
+  it('does not let a handful of five-star ratings outrank a thousand good ones', async () => {
+    api.getDiscover.mockImplementation(async () => twoSections())
+    const wrapper = mountTab()
+    await flushPromises()
+    await wrapper.find('.view-control input[type="checkbox"]').setValue(false)
+    await wrapper.find('.view-select').setValue('rating')
+
+    // 4.9 from three people, 4.7 from four hundred, 4.5 from nine thousand.
+    const titles = wrapper.findAll('.card-stub').map((card) => card.text())
+    expect(titles).toEqual(['Only Lit', 'Only SF', 'Shared'])
+  })
+
+  it('sorts by title across every section when asked', async () => {
+    api.getDiscover.mockImplementation(async () => twoSections())
+    const wrapper = mountTab()
+    await flushPromises()
+    await wrapper.find('.view-control input[type="checkbox"]').setValue(false)
+    await wrapper.find('.view-select').setValue('title')
+
+    expect(wrapper.findAll('.card-stub').map((card) => card.text())).toEqual([
+      'Only Lit',
+      'Only SF',
+      'Shared',
+    ])
+  })
+
+  it('keeps the chart order when nothing else is asked for', async () => {
+    api.getDiscover.mockImplementation(async () => twoSections())
+    const wrapper = mountTab()
+    await flushPromises()
+    await wrapper.find('.view-control input[type="checkbox"]').setValue(false)
+
+    expect(wrapper.findAll('.card-stub').map((card) => card.text())).toEqual([
+      'Shared',
+      'Only SF',
+      'Only Lit',
+    ])
+  })
+
+  it('puts the newest post first across boards, not one board after another', async () => {
+    const posted = (title: string, asin: string, iso: string, rank: number) => ({
+      rank,
+      resolved: true,
+      postedAt: iso,
+      book: book(title, asin),
+    })
+    api.getDiscover.mockImplementation(async () =>
+      feed({
+        source: 'abook-link',
+        sections: [
+          {
+            sectionId: '7',
+            sectionName: 'Science Fiction',
+            pagesFetched: 1,
+            held: 0,
+            books: [posted('Yesterday SF', 'B1', '2026-10-23T09:00:00Z', 1)],
+          },
+          {
+            sectionId: '8',
+            sectionName: 'Horror',
+            pagesFetched: 1,
+            held: 0,
+            books: [posted('This morning Horror', 'B2', '2026-10-24T08:00:00Z', 1)],
+          },
+        ],
+      }),
+    )
+
+    const wrapper = mountTab('abook')
+    await flushPromises()
+    await wrapper.find('.view-control input[type="checkbox"]').setValue(false)
+
+    // Concatenating the boards would bury this morning's post under yesterday's.
+    expect(wrapper.findAll('.card-stub').map((card) => card.text())).toEqual([
+      'This morning Horror',
+      'Yesterday SF',
+    ])
   })
 
   it('explains itself rather than looking empty when the source cannot be used', async () => {
