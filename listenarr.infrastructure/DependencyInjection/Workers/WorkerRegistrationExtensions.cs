@@ -96,6 +96,13 @@ internal static class WorkerRegistrationExtensions
             SuggestionCatalogProcessor,
             ISuggestionCatalogProcessor,
             SuggestionCatalogBackgroundService>(services);
+
+        // Suggested: one suggested book per interval checked for a release an indexer
+        // holds, on its own pace so abook.link and Audible never wait on each other.
+        AddHostedProcessor<
+            SuggestionReleaseCheckProcessor,
+            ISuggestionReleaseCheckProcessor,
+            SuggestionReleaseCheckBackgroundService>(services);
         return services;
     }
 

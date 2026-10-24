@@ -30,7 +30,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         IReadOnlyList<SeriesSuggestionGroup> Series,
         IReadOnlyList<RelatedAuthorSuggestion> RelatedAuthors,
         SuggestionCoverage Coverage,
-        IReadOnlyList<IgnoredSuggestion> Ignored);
+        IReadOnlyList<IgnoredSuggestion> Ignored,
+        SuggestionReleaseCoverage? Releases = null);
 
     /// <summary>A book the user said no to, listed so the decision can be undone.</summary>
     public sealed record IgnoredSuggestion(string Key, string Title, string? Author, DateTime DismissedAt);
@@ -85,7 +86,27 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         double? RatingOverall,
         int? RatingCount,
         double? RatingStory,
-        string? Description);
+        string? Description,
+        SuggestedRelease? Release = null);
+
+    /// <summary>
+    /// What the background check found for a suggested book. Null on the book means it
+    /// has not been checked yet.
+    /// </summary>
+    /// <param name="Found">Whether an indexer holds a release that is this book.</param>
+    /// <param name="Indexer">Where it was found.</param>
+    /// <param name="Title">The release as that indexer lists it.</param>
+    /// <param name="SizeBytes">The release's size, when the indexer says.</param>
+    /// <param name="CheckedAt">When the indexers were last asked.</param>
+    public sealed record SuggestedRelease(
+        bool Found,
+        string? Indexer,
+        string? Title,
+        long? SizeBytes,
+        DateTime CheckedAt);
+
+    /// <summary>How far the background check has got through the suggested books.</summary>
+    public sealed record SuggestionReleaseCoverage(int Total, int Checked, int Found);
 
     /// <summary>How much of the library the cached catalogs cover.</summary>
     public sealed record SuggestionCoverage(

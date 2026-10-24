@@ -84,6 +84,13 @@ namespace Listenarr.Domain.Search
         public string? Language { get; set; }
         public string? Publisher { get; set; }
         public string? Narrator { get; set; }
+
+        /// <summary>
+        /// The ASIN the release declares for itself, when its indexer says. abook.link posts
+        /// do, which is what lets a release be matched to a book without guessing from its
+        /// title.
+        /// </summary>
+        public string? Asin { get; set; }
         [JsonIgnore]
         public IReadOnlyList<DirectDownloadArtifactDescriptor> DirectDownloadArtifacts { get; set; } = [];
     }
@@ -238,7 +245,7 @@ namespace Listenarr.Domain.Search
     /// <summary>
     /// Conversion methods for search result types
     /// </summary>
-    public static class SearchResultConverters
+    public static partial class SearchResultConverters
     {
         // Helper: do a lightweight language detection on a text block when Indexer did not provide language
         private static string? DetectLanguageFromText(string text)
@@ -335,6 +342,7 @@ namespace Listenarr.Domain.Search
                 // Copy indexer metadata for MAM server-side downloads
                 IndexerId = result.IndexerId,
                 IndexerImplementation = result.IndexerImplementation,
+                Asin = result.Asin,
                 DirectDownloadArtifacts = result.DirectDownloadArtifacts
             };
         }
@@ -366,57 +374,12 @@ namespace Listenarr.Domain.Search
                 Grabs = result.Grabs,
                 Files = result.Files,
                 TorrentFileName = result.TorrentFileName,
+                Asin = result.Asin,
                 DirectDownloadArtifacts = result.DirectDownloadArtifacts
             };
         }
 
         // Map an IndexerSearchResult into an API-friendly Prowlarr-like DTO
-        public static IndexerResultDto ToIndexerResultDto(IndexerSearchResult result)
-        {
-            var dto = new IndexerResultDto
-            {
-                Guid = !string.IsNullOrWhiteSpace(result.ResultUrl) ? result.ResultUrl : (!string.IsNullOrWhiteSpace(result.TorrentUrl) ? result.TorrentUrl : result.Id),
-                Size = result.Size,
-                Files = result.Files,
-                Grabs = result.Grabs,
-                IndexerId = result.IndexerId,
-                Indexer = result.Source,
-                Title = result.Title ?? string.Empty,
-                PublishDate = result.PublishedDate,
-                DownloadUrl = !string.IsNullOrWhiteSpace(result.TorrentUrl) ? result.TorrentUrl : (!string.IsNullOrWhiteSpace(result.NzbUrl) ? result.NzbUrl : null),
-                InfoUrl = result.ResultUrl,
-                Seeders = result.Seeders,
-                Leechers = result.Leechers,
-                Protocol = !string.IsNullOrWhiteSpace(result.DownloadType) ? result.DownloadType.ToLowerInvariant() : null,
-                FileName = result.TorrentFileName,
-                DownloadReference = result.DownloadReference,
-                FileType = string.IsNullOrWhiteSpace(result.Format) ? null : result.Format,
-                Language = NormalizeLanguage(result.Language)
-            };
-
-            // Derive age fields from publishDate if available
-            if (!string.IsNullOrWhiteSpace(dto.PublishDate) && DateTimeOffset.TryParse(dto.PublishDate, out var dtoPub))
-            {
-                var ageSpan = DateTimeOffset.UtcNow - dtoPub;
-                dto.Age = (int)Math.Floor(ageSpan.TotalDays);
-                dto.AgeHours = ageSpan.TotalHours;
-                dto.AgeMinutes = ageSpan.TotalMinutes;
-            }
-
-            // SortTitle: normalized lower-case, remove punctuation
-            dto.SortTitle = System.Text.RegularExpressions.Regex.Replace(dto.Title?.ToLowerInvariant() ?? string.Empty, "[^a-z0-9 ]", "").Trim();
-
-            // IndexerFlags and Categories: best-effort mapping (not always present in result); keep empty lists if not available
-            dto.IndexerFlags = new List<string>();
-            if (!string.IsNullOrWhiteSpace(result.Category))
-            {
-                // Keep a simple category object with name
-                dto.Categories.Add(new { id = 0, name = result.Category, subCategories = new object[0] });
-            }
-
-            return dto;
-        }
-
         public static SearchResult ToSearchResult(MetadataSearchResult result)
         {
             return new SearchResult

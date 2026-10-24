@@ -86,6 +86,8 @@
         <span v-if="facts">{{ facts }}</span>
       </div>
 
+      <div class="release" :class="releaseClass" :title="releaseTitle">{{ releaseLabel }}</div>
+
       <p v-if="description" class="description" :class="{ clamped: !expanded }">
         {{ description }}
       </p>
@@ -112,6 +114,17 @@ const props = defineProps<{
   /** An add from the button is in flight. */
   adding?: boolean
 }>()
+
+// What the background check found: a release to grab, nothing, or not asked yet.
+const releaseClass = computed(() =>
+  !props.book.release ? 'checking' : props.book.release.found ? 'found' : 'missing',
+)
+const releaseLabel = computed(() => {
+  const release = props.book.release
+  if (!release) return 'Checking indexers…'
+  return release.found ? `Release on ${release.indexer ?? 'an indexer'}` : 'No release found'
+})
+const releaseTitle = computed(() => props.book.release?.title ?? '')
 
 const emit = defineEmits<{
   /** The Add button: add straight away, no modal. */
@@ -376,5 +389,19 @@ function compactCount(count: number): string {
     width: 96px;
     height: 96px;
   }
+}
+
+.release {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.release.found {
+  color: var(--success-500, #2f9e44);
+}
+
+.release.missing {
+  color: var(--text-muted);
+  font-style: italic;
 }
 </style>

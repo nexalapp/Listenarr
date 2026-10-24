@@ -955,6 +955,24 @@ export interface SuggestedBook extends AuthorCatalogBook {
   ratingCount?: number
   ratingStory?: number
   description?: string
+  /** What the background release check found; absent until the book has been checked. */
+  release?: SuggestedRelease
+}
+
+/** Whether an indexer holds a release that is this book, with high confidence. */
+export interface SuggestedRelease {
+  found: boolean
+  indexer?: string
+  title?: string
+  sizeBytes?: number
+  checkedAt: string
+}
+
+/** How far the background release check has got through the suggested books. */
+export interface SuggestionReleaseCoverage {
+  total: number
+  checked: number
+  found: number
 }
 
 export interface AuthorSuggestionGroup {
@@ -1000,6 +1018,7 @@ export interface SuggestionSnapshot {
   relatedAuthors: RelatedAuthorSuggestion[]
   coverage: SuggestionCoverage
   ignored: IgnoredSuggestion[]
+  releases?: SuggestionReleaseCoverage
 }
 
 export interface SuggestionRefreshStatus {

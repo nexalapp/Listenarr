@@ -150,6 +150,13 @@ namespace Listenarr.Domain.Configuration
         // page's own Fetch button as the only way catalogs arrive.
         public int SuggestionsBackgroundFetchIntervalMinutes { get; set; } = 1;
 
+        // Seconds between background checks of one suggested book for a release an
+        // indexer holds. Each check is one abook.link search (which reads up to 15
+        // topics) and, when that finds nothing, one search of each Newznab indexer;
+        // half a minute walks a few thousand suggestions in a day without leaning on any
+        // of them. Zero turns it off.
+        public int SuggestionReleaseCheckIntervalSeconds { get; set; } = 30;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

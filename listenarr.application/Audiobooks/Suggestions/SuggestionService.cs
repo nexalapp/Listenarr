@@ -30,11 +30,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
     /// a book already on the shelf is the fastest way to make the page ignorable.
     /// </para>
     /// </summary>
-    public sealed class SuggestionService(
+    public sealed partial class SuggestionService(
         IAudiobookRepository repository,
         IAuthorMonitoringService authorMonitoring,
         ISeriesMonitoringService seriesMonitoring,
-        IConfigurationService configuration) : ISuggestionService
+        IConfigurationService configuration,
+        ISuggestionReleaseRepository? releases = null) : ISuggestionService
     {
         public async Task<SuggestionSnapshot> GetAsync(CancellationToken cancellationToken = default)
         {
@@ -54,6 +55,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var dismissals = await repository.GetSuggestionDismissalsAsync(cancellationToken);
             var held = new HeldBooks(library, memberships, dismissals.Select(d => d.Key), languages);
 
+            IReadOnlyDictionary<string, SuggestionRelease> checks = releases == null
+                ? new Dictionary<string, SuggestionRelease>()
+                : await releases.GetAllAsync(cancellationToken);
             var cachedAuthors = await repository.GetAllCachedAuthorsAsync(cancellationToken);
             var cachedSeries = await repository.GetAllCachedSeriesAsync(cancellationToken);
 
@@ -107,6 +111,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     .Where(book => !held.CoversSameStory(book.Title, book.Authors, book.Series, book.SeriesNumber))
                     .Where(book => !held.Ignored(book.Asin, book.Title, book.Authors))
                     .Select(Map)
+                    .Select(book => WithRelease(book, checks))
                     .ToList();
                 DistinctEditions(missing);
 
@@ -141,6 +146,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     .Where(book => !held.CoversSameStory(book.Title, book.Authors, book.Series, book.SeriesNumber))
                     .Where(book => !held.Ignored(book.Asin, book.Title, book.Authors))
                     .Select(Map)
+                    .Select(book => WithRelease(book, checks))
                     .OrderBy(book => SeriesPosition(book.SeriesNumber))
                     .ToList();
                 DistinctEditions(missing);
@@ -173,7 +179,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     seriesWithCatalog.Count),
                 dismissals
                     .Select(d => new IgnoredSuggestion(d.Key, d.Title, d.Author, d.DismissedAt))
-                    .ToList());
+                    .ToList(),
+                ReleaseCoverage(authorGroups, seriesGroups));
         }
 
         public async Task<string> IgnoreAsync(IgnoreSuggestionRequest request, CancellationToken cancellationToken = default)
