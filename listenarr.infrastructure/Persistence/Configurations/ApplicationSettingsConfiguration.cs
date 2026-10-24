@@ -108,6 +108,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.FoundBooksAutoAdd).HasDefaultValue(false);
             builder.Property(e => e.SuggestionsBackgroundFetchIntervalMinutes).HasDefaultValue(1);
             builder.Property(e => e.SuggestionReleaseCheckIntervalSeconds).HasDefaultValue(30);
+            builder.Property(e => e.UnobtainableRecheckDays).HasDefaultValue(7);
 
             // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
             // written before this feature existed has no mapping, and that has to read

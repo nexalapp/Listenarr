@@ -2392,6 +2392,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<int>("UnmatchedScanConcurrency")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("UnobtainableRecheckDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(7);
+
                     b.Property<int>("Version")
                         .IsConcurrencyToken()
                         .HasColumnType("INTEGER");

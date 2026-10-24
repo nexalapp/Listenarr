@@ -112,6 +112,9 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string SuggestionReleasesMigrationId =
         "20261024025603_AddSuggestionReleases";
 
+    private const string UnobtainableRecheckDaysMigrationId =
+        "20261024233641_AddUnobtainableRecheckDays";
+
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
     {
@@ -268,7 +271,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 AudioAuditFileIdentityMigrationId,
                 AudioAuditAcceptanceMigrationId,
                 DropUnusedAcceptedVerdictMigrationId,
-                SuggestionReleasesMigrationId
+                SuggestionReleasesMigrationId,
+                UnobtainableRecheckDaysMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
