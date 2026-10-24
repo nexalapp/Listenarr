@@ -53,9 +53,30 @@ namespace Listenarr.Domain.Audiobooks.Quality
         private const int Frame = 2048;
         private const int Hop = Frame / 2;
 
-        /// <summary>Frames in the loudest 30% carry the voice; the quietest 25% are the background.</summary>
+        /// <summary>
+        /// The noise floor is the 5th percentile of frame level, the research's measure. The
+        /// quietest quarter was tried and is wrong: in continuous narration it still holds
+        /// word tails and breaths, and a power mean over it is carried by them. Deployed, it
+        /// put 667 of 1,386 books over the −60 dB line, where the 5th percentile put 142 of
+        /// 1,225.
+        /// </summary>
+        private const double FloorPercentile = 5;
+
+        /// <summary>Frames in the loudest 30% carry the voice.</summary>
         private const double VoicedPercentile = 70;
-        private const double QuietPercentile = 25;
+
+        /// <summary>A band's speech level is the 80th percentile of its frames.</summary>
+        private const double SpeechPercentile = 80;
+
+        /// <summary>A band more than this far under the loudest one is a trace, not bandwidth.</summary>
+        private const double TraceBelowLoudestDb = 30;
+
+        /// <summary>
+        /// Stationarity is judged on 2–6 kHz, where hiss lives, so a loud low-frequency
+        /// scene rumble cannot stand in for the floor.
+        /// </summary>
+        private const int HissBandLoHz = 2000;
+        private const int HissBandHiHz = 6000;
 
         /// <param name="windows">Decoded mono windows of the file.</param>
         /// <param name="sampleRate">Their sample rate.</param>
@@ -86,9 +107,12 @@ namespace Listenarr.Domain.Audiobooks.Quality
                     NeverPreDenoise: false);
             }
 
-            var floors = analysed.Select(s => s.FloorDb).OrderBy(f => f).ToList();
-            var floorDb = floors[floors.Count / 2];
-            double? spreadDb = floors.Count >= 3 ? StdDev(floors) : null;
+            // Pooled, not per window then averaged: a narration pauses far more than 5% of
+            // the time across the book, but one window can be a breathless passage.
+            var floorDb = PowerDb(WindowSpectra.Percentile(
+                analysed.SelectMany(s => s.FramePower).ToArray(), FloorPercentile));
+            var bandFloors = analysed.Select(s => s.HissBandFloorDb).ToList();
+            double? spreadDb = bandFloors.Count >= 3 ? StdDev(bandFloors) : null;
 
             var bandwidthHz = SpeechBandwidth(analysed, sampleRate, t.SpeechClearanceDb);
             var brightnessDb = Brightness(analysed, sampleRate);
@@ -183,42 +207,68 @@ namespace Listenarr.Domain.Audiobooks.Quality
 
         private static string Khz(int hz) => $"{hz / 1000.0:0.#} kHz";
 
+        /// <summary>Lower edges of the bands bandwidth is judged in; each spans edge to 1.4 × edge.</summary>
+        private static readonly int[] BandEdgesHz = [1000, 2000, 4000, 6000, 8000, 10_000, 12_000, 14_000, 16_000, 18_000];
+
         /// <summary>
-        /// The highest band in which the loud frames stand clear of the quiet ones.
+        /// The lower edge of the highest band in which speech stands clear of that band's
+        /// own floor and is not a mere trace beside the loudest band — the research's measure.
         ///
-        /// Loud-over-quiet rather than band energy over anything absolute: hiss is in the
-        /// loud frames and the quiet frames alike, so it cancels, and only frequencies the
-        /// voice actually reaches show a margin.
+        /// <para>
+        /// Each band's level is a distribution over frames: its 80th percentile is the
+        /// speech, its 5th the floor. Hiss is in both, so it cancels, and only frequencies
+        /// the voice reaches show a margin. Band energy alone is exactly wrong on a hissy
+        /// transfer: the hiss reaches the tape's ceiling and reads as bandwidth.
+        /// </para>
+        /// <para>
+        /// The trace test matters as much as the margin. A dark transfer's voice still
+        /// clears its floor at 8 kHz by a few faint harmonics, 40 dB under the vowels;
+        /// without the test such books read as full-band: 30 of the library came out
+        /// muffled where the research's 1,225-book pass found 108.
+        /// </para>
         /// </summary>
         private static int SpeechBandwidth(List<WindowSpectra> windows, int sampleRate, double clearanceDb)
         {
-            var top = (int)Math.Min(10_000, 0.45 * sampleRate);
-            var best = 0;
-            for (var lo = 300; lo < top; lo = (int)(lo * 1.25))
+            var bands = new List<(int Edge, double SpeechDb, double FloorDb)>();
+            foreach (var edge in BandEdgesHz)
             {
-                var hi = Math.Min((int)(lo * 1.25), top);
-                var loud = MeanBandPower(windows, lo, hi, loudFrames: true);
-                var quiet = MeanBandPower(windows, lo, hi, loudFrames: false);
-                if (loud <= 0 || quiet <= 0)
+                if (edge >= 0.45 * sampleRate)
+                {
+                    break;
+                }
+
+                var hi = (int)Math.Min(edge * 1.4, 0.5 * sampleRate);
+                var levels = windows.SelectMany(w => w.FrameBandPower(edge, hi)).ToArray();
+                if (levels.Length == 0)
                 {
                     continue;
                 }
 
-                if (10 * Math.Log10(loud / quiet) >= clearanceDb)
-                {
-                    best = hi;
-                }
+                bands.Add((
+                    edge,
+                    PowerDb(WindowSpectra.Percentile(levels, SpeechPercentile)),
+                    PowerDb(WindowSpectra.Percentile(levels, FloorPercentile))));
             }
 
-            return best;
+            if (bands.Count == 0)
+            {
+                return 0;
+            }
+
+            var loudestDb = bands.Max(b => b.SpeechDb);
+            return bands
+                .Where(b => b.SpeechDb - b.FloorDb >= clearanceDb && b.SpeechDb > loudestDb - TraceBelowLoudestDb)
+                .Select(b => b.Edge)
+                .DefaultIfEmpty(0)
+                .Max();
         }
 
         private static double Brightness(List<WindowSpectra> windows, int sampleRate)
         {
-            var speech = MeanBandPower(windows, 300, 3000, loudFrames: true);
+            var speech = MeanBandPower(windows, 300, 3000);
             var trebleTop = (int)Math.Min(9000, 0.45 * sampleRate);
             var treble = trebleTop > 4000
-                ? MeanBandPower(windows, 4000, trebleTop, loudFrames: true)
+                ? MeanBandPower(windows, 4000, trebleTop)
                 : 0;
             if (speech <= 0)
             {
@@ -230,13 +280,13 @@ namespace Listenarr.Domain.Audiobooks.Quality
             return treble <= 0 ? -80 : 10 * Math.Log10(treble / speech);
         }
 
-        private static double MeanBandPower(List<WindowSpectra> windows, int loHz, int hiHz, bool loudFrames)
+        private static double MeanBandPower(List<WindowSpectra> windows, int loHz, int hiHz)
         {
             double sum = 0;
             long count = 0;
             foreach (var w in windows)
             {
-                var (bandSum, bandCount) = w.BandPower(loHz, hiHz, loudFrames);
+                var (bandSum, bandCount) = w.VoicedBandPower(loHz, hiHz);
                 sum += bandSum;
                 count += bandCount;
             }
@@ -271,6 +321,9 @@ namespace Listenarr.Domain.Audiobooks.Quality
             return scores.Count == 0 ? null : scores.Average();
         }
 
+        /// <summary>Digital silence reads as −120 dB rather than −∞.</summary>
+        private static double PowerDb(double power) => Math.Max(10 * Math.Log10(Math.Max(power, 1e-12)), -120);
+
         private static double StdDev(IReadOnlyList<double> values)
         {
             var mean = values.Average();
@@ -282,18 +335,21 @@ namespace Listenarr.Domain.Audiobooks.Quality
         {
             private readonly double[][] _power;        // [frame][bin]
             private readonly bool[] _loud;
-            private readonly bool[] _quiet;
             private readonly double _binHz;
 
-            public double FloorDb { get; }
+            /// <summary>Each frame's whole-band power: the level the ACX floor is quoted against.</summary>
+            public double[] FramePower { get; }
 
-            private WindowSpectra(double[][] power, bool[] loud, bool[] quiet, double binHz, double floorDb)
+            /// <summary>This window's floor in the band where hiss lives, for stationarity.</summary>
+            public double HissBandFloorDb { get; }
+
+            private WindowSpectra(double[][] power, bool[] loud, double binHz, double[] framePower, double hissBandFloorDb)
             {
                 _power = power;
                 _loud = loud;
-                _quiet = quiet;
                 _binHz = binHz;
-                FloorDb = floorDb;
+                FramePower = framePower;
+                HissBandFloorDb = hissBandFloorDb;
             }
 
             public static WindowSpectra? Of(float[] samples, int sampleRate)
@@ -342,62 +398,57 @@ namespace Listenarr.Domain.Audiobooks.Quality
                 }
 
                 var loudCut = Percentile(totals, VoicedPercentile);
-                var quietCut = Percentile(totals, QuietPercentile);
                 var loud = new bool[frames];
-                var quiet = new bool[frames];
                 for (var f = 0; f < frames; f++)
                 {
                     loud[f] = totals[f] >= loudCut;
-                    quiet[f] = totals[f] <= quietCut;
                 }
 
-                var binHz = (double)sampleRate / Frame;
-                var floorLo = (int)(300 / binHz);
-                var floorHi = (int)Math.Min(10_000 / binHz, Frame / 2 - 1);
-                double floorSum = 0;
-                long floorFrames = 0;
-                for (var f = 0; f < frames; f++)
-                {
-                    if (!quiet[f])
-                    {
-                        continue;
-                    }
-
-                    // The whole band's power per frame, not the per-bin mean: the ACX
-                    // −60 dB line is about how loud the background IS, and a floor spread
-                    // over a thousand bins reads ~30 dB quieter per bin than it sounds.
-                    double frameBand = 0;
-                    for (var b = floorLo; b <= floorHi; b++)
-                    {
-                        frameBand += power[f][b];
-                    }
-
-                    floorSum += frameBand;
-                    floorFrames++;
-                }
-
-                var floorDb = floorFrames == 0
-                    ? -120
-                    : 10 * Math.Log10(Math.Max(floorSum / floorFrames, 1e-12));
-
-                return new WindowSpectra(power, loud, quiet, binHz, floorDb);
+                var spectra = new WindowSpectra(power, loud, (double)sampleRate / Frame, totals, -120);
+                var hissBand = spectra.FrameBandPower(HissBandLoHz, (int)Math.Min(HissBandHiHz, 0.45 * sampleRate));
+                return hissBand.Length == 0
+                    ? spectra
+                    : new WindowSpectra(power, loud, spectra._binHz, totals, PowerDb(Percentile(hissBand, FloorPercentile)));
             }
 
-            public (double Sum, long Count) BandPower(int loHz, int hiHz, bool loudFrames)
+            /// <summary>
+            /// Each frame's summed power in a band, not the per-bin mean: a level is about
+            /// how loud the band IS, and spread over a thousand bins a floor reads ~30 dB
+            /// quieter per bin than it sounds. Empty when the band holds no bins.
+            /// </summary>
+            public double[] FrameBandPower(int loHz, int hiHz)
             {
-                var lo = Math.Max(1, (int)(loHz / _binHz));
-                var hi = Math.Min((int)(hiHz / _binHz), _power[0].Length - 1);
+                var (lo, hi) = Bins(loHz, hiHz);
+                if (hi <= lo)
+                {
+                    return [];
+                }
+
+                var levels = new double[_power.Length];
+                for (var f = 0; f < _power.Length; f++)
+                {
+                    for (var b = lo; b <= hi; b++)
+                    {
+                        levels[f] += _power[f][b];
+                    }
+                }
+
+                return levels;
+            }
+
+            public (double Sum, long Count) VoicedBandPower(int loHz, int hiHz)
+            {
+                var (lo, hi) = Bins(loHz, hiHz);
                 if (hi <= lo)
                 {
                     return (0, 0);
                 }
 
-                var mask = loudFrames ? _loud : _quiet;
                 double sum = 0;
                 long count = 0;
                 for (var f = 0; f < _power.Length; f++)
                 {
-                    if (!mask[f])
+                    if (!_loud[f])
                     {
                         continue;
                     }
@@ -412,6 +463,9 @@ namespace Listenarr.Domain.Audiobooks.Quality
 
                 return (sum, count);
             }
+
+            private (int Lo, int Hi) Bins(int loHz, int hiHz) =>
+                (Math.Max(1, (int)(loHz / _binHz)), Math.Min((int)(hiHz / _binHz), _power[0].Length - 1));
 
             public void HarmonicityScores(int loBin, int hiBin, int minLag, int maxLag, List<double> into)
             {
@@ -460,7 +514,7 @@ namespace Listenarr.Domain.Audiobooks.Quality
                 }
             }
 
-            private static double Percentile(double[] values, double percentile)
+            public static double Percentile(double[] values, double percentile)
             {
                 var sorted = (double[])values.Clone();
                 Array.Sort(sorted);

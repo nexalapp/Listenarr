@@ -40,10 +40,10 @@ namespace Listenarr.Domain.Audiobooks.Quality
 
         /// <summary>
         /// Speech standing clear of its own floor by less than this is not usable
-        /// bandwidth. Band energy alone is exactly wrong on a hissy transfer — the hiss
+        /// bandwidth (80th percentile over 5th, per band). Band energy alone is exactly wrong on a hissy transfer — the hiss
         /// reaches the tape's ceiling and reads as bandwidth.
         /// </summary>
-        public double SpeechClearanceDb { get; init; } = 8;
+        public double SpeechClearanceDb { get; init; } = 12;
 
         /// <summary>Speech clear of its floor only at or below this is a muffled book.</summary>
         public int MuffleWallHz { get; init; } = 4000;

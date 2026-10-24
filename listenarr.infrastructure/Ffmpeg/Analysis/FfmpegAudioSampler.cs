@@ -36,11 +36,12 @@ namespace Listenarr.Infrastructure.Ffmpeg.Analysis
         public static readonly TimeSpan WindowTimeout = TimeSpan.FromMinutes(3);
 
         /// <summary>
-        /// Windows sit at these fractions of the duration: clear of the intro music at
-        /// the front and the publisher outro at the back, spread enough that a score's
-        /// coming and going shows up as floor movement between them.
+        /// Windows spread evenly between these fractions of the duration: clear of the
+        /// intro music at the front and the publisher outro at the back, and many enough
+        /// that a score's coming and going shows up as floor movement between them.
         /// </summary>
-        private static readonly double[] Positions = [0.10, 0.35, 0.60, 0.85];
+        private const double SpreadStart = 0.04;
+        private const double SpreadEnd = 0.94;
 
         public async Task<AudioSampleWindows?> ReadWindowsAsync(
             string path,
@@ -70,9 +71,11 @@ namespace Listenarr.Infrastructure.Ffmpeg.Analysis
             var starts = new List<double>();
             if (durationSeconds > windowSeconds * (windowCount + 1))
             {
-                for (var i = 0; i < Math.Min(windowCount, Positions.Length); i++)
+                var first = durationSeconds * SpreadStart;
+                var span = Math.Max(0, durationSeconds * SpreadEnd - first - windowSeconds);
+                for (var i = 0; i < windowCount; i++)
                 {
-                    starts.Add(durationSeconds * Positions[i]);
+                    starts.Add(first + span * i / Math.Max(1, windowCount - 1));
                 }
             }
             else
