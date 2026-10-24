@@ -41,6 +41,7 @@ namespace Listenarr.Application.Downloads.Queue
                     Score = queueItem.GetMatchScore(download)
                 })
                 .Where(x => x.Score > 0)
+                .Where(x => !IsAnotherJobOfTheSameName(queueItem, x.Download, x.Score))
                 .OrderByDescending(x => x.Score)
                 .ThenByDescending(x => x.Download.StartedAt)
                 .ToList();
@@ -62,6 +63,33 @@ namespace Listenarr.Application.Downloads.Queue
             }
 
             return bestMatch.Download;
+        }
+
+        /// <summary>
+        /// True for a title-only match against a download already bound to a different
+        /// client job.
+        ///
+        /// Title matching is how a download whose client id is not yet known finds its job.
+        /// Once the id is known, the job is identified by it, and another job carrying the
+        /// same name is a different job - typically an earlier failed attempt still in the
+        /// client's history. Matching it anyway rebound a re-grab of The Truth and Other
+        /// Stories to its predecessor's DELETED/COPY entry, failing a download that had
+        /// just unpacked.
+        /// </summary>
+        private static bool IsAnotherJobOfTheSameName(QueueItem queueItem, Download download, int score)
+        {
+            const int IdMatchScore = 3;
+            if (score >= IdMatchScore || string.IsNullOrWhiteSpace(queueItem.Id))
+            {
+                return false;
+            }
+
+            var knownIds = GetKnownClientItemIds(download.Metadata)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToList();
+
+            return knownIds.Count > 0
+                && !knownIds.Contains(queueItem.Id, StringComparer.OrdinalIgnoreCase);
         }
 
         public static IEnumerable<string> GetKnownClientItemIds(Dictionary<string, object>? metadata)
