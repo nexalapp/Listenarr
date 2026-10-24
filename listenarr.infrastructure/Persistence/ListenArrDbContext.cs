@@ -66,6 +66,8 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; } = null!;
         public DbSet<SeriesCacheEntry> SeriesCacheEntries { get; set; } = null!;
         public DbSet<UserSession> UserSessions { get; set; } = null!;
+        public DbSet<Listenarr.Domain.Audiobooks.Discover.DiscoverSection> DiscoverSections { get; set; } = null!;
+        public DbSet<Listenarr.Domain.Audiobooks.Discover.DiscoverItem> DiscoverItems { get; set; } = null!;
 
         public ListenArrDbContext(DbContextOptions<ListenArrDbContext> options)
             : base(options)

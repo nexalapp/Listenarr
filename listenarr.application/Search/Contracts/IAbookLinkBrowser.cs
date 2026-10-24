@@ -34,11 +34,29 @@ namespace Listenarr.Application.Search.Contracts
         string? Reason);
 
     /// <summary>
+    /// What a listing page yielded. Separate from <see cref="AbookBrowseResult"/>
+    /// because a listing is a list of titles, not parsed posts: nothing has been opened.
+    /// </summary>
+    public sealed record AbookListingResult<T>(bool Succeeded, IReadOnlyList<T> Items, string? Reason)
+    {
+        public static AbookListingResult<T> Failed(string reason) => new(false, [], reason);
+    }
+
+    /// <summary>
     /// Reads abook.link. Everything here is free — no "thanks" is posted and no metered
     /// index is queried — so it is safe to call as often as needed.
     /// </summary>
     public interface IAbookLinkBrowser
     {
+        /// <summary>The boards the forum lists, with the topic counts it shows.</summary>
+        Task<AbookListingResult<AbookBoard>> ListBoardsAsync(CancellationToken ct = default);
+
+        /// <summary>One page of a single board's topics. <paramref name="page"/> is 1-based.</summary>
+        Task<AbookListingResult<AbookTopicListing>> BoardTopicsAsync(
+            string boardId,
+            int page,
+            CancellationToken ct = default);
+
         /// <summary>
         /// Searches, then fetches and parses up to <paramref name="inspect"/> of the hits.
         /// </summary>

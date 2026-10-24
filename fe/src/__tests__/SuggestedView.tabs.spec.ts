@@ -72,7 +72,7 @@ function buildRouter(): Router {
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
       {
-        path: '/suggested/:tab(authors|series|related|found)?',
+        path: '/suggested/:tab(authors|series|related|found|discover|abook)?',
         name: 'suggested',
         component: SuggestedView,
         meta: { keepAcrossParams: true },
@@ -89,6 +89,10 @@ async function mountAt(router: Router, path: string) {
       plugins: [router],
       stubs: {
         FoundBooksTab: { template: '<div class="found-tab-stub" />' },
+        DiscoverTab: {
+          props: ['source'],
+          template: '<div class="discover-tab-stub">{{ source }}</div>',
+        },
         AddLibraryModal: true,
         ManualSearchModal: true,
         SuggestedBookCard: true,
@@ -131,6 +135,27 @@ describe('SuggestedView tabs in the path', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(router.currentRoute.value.fullPath).toBe('/suggested')
     expect(activeTabLabel(wrapper)).toContain('From your authors')
+  })
+
+  it('opens the discovery tabs from the path, each against its own source', async () => {
+    const router = buildRouter()
+    const wrapper = await mountAt(router, '/suggested/discover')
+    expect(activeTabLabel(wrapper)).toContain('Discover')
+    expect(wrapper.find('.discover-tab-stub').text()).toBe('charts')
+
+    await router.push('/suggested/abook')
+    await flushPromises()
+    expect(activeTabLabel(wrapper)).toContain('Newly posted')
+    expect(wrapper.find('.discover-tab-stub').text()).toBe('abook')
+  })
+
+  it('hides the catalogue coverage line and its fetch button on a discovery tab', async () => {
+    const router = buildRouter()
+    const wrapper = await mountAt(router, '/suggested/discover')
+
+    // Those describe the cached author and series catalogues, which this tab is not.
+    expect(wrapper.find('.coverage').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Fetch catalogs')
   })
 
   it('does not add a history entry for the tab already open', async () => {

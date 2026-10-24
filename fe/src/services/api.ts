@@ -58,6 +58,12 @@ import type {
   AuthorCatalogResponse,
   SuggestionSnapshot,
   SuggestionRefreshStatus,
+  DiscoverFeed,
+  DiscoverRefreshStatus,
+  DiscoverSectionCatalog,
+  DiscoverSelectedSection,
+  DiscoverSelection,
+  DiscoverSource,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
   MonitorAuthorResponse,
@@ -488,6 +494,42 @@ class ApiService {
   /** Starts fetching missing/stale catalogs in the background; 409 when already running. */
   async refreshSuggestions(): Promise<SuggestionRefreshStatus> {
     return this.request<SuggestionRefreshStatus>('/suggestions/refresh', { method: 'POST' })
+  }
+
+  // ---- Discover --------------------------------------------------------------
+
+  /** Cached rows only; a refresh is what goes to Audible or the forum. */
+  async getDiscover(source: DiscoverSource): Promise<DiscoverFeed> {
+    return this.request<DiscoverFeed>(`/discover/${source}`)
+  }
+
+  /** Reads the source's own index of sections, cached server-side for a few minutes. */
+  async getDiscoverSections(source: DiscoverSource): Promise<DiscoverSectionCatalog> {
+    return this.request<DiscoverSectionCatalog>(`/discover/${source}/sections`)
+  }
+
+  async saveDiscoverSections(
+    source: DiscoverSource,
+    selection: { sections?: DiscoverSelectedSection[]; pagesPerSection?: number },
+  ): Promise<DiscoverSelection> {
+    return this.request<DiscoverSelection>(`/discover/${source}/sections`, {
+      method: 'PUT',
+      body: JSON.stringify(selection),
+    })
+  }
+
+  async getDiscoverRefreshStatus(source: DiscoverSource): Promise<DiscoverRefreshStatus> {
+    return this.request<DiscoverRefreshStatus>(`/discover/${source}/refresh`)
+  }
+
+  /** Re-reads the head of every followed section; 409 when a fetch is already running. */
+  async refreshDiscover(source: DiscoverSource): Promise<DiscoverRefreshStatus> {
+    return this.request<DiscoverRefreshStatus>(`/discover/${source}/refresh`, { method: 'POST' })
+  }
+
+  /** Reads one more page of every followed section. */
+  async loadMoreDiscover(source: DiscoverSource): Promise<DiscoverRefreshStatus> {
+    return this.request<DiscoverRefreshStatus>(`/discover/${source}/more`, { method: 'POST' })
   }
 
   async getAuthorCatalog(
