@@ -55,18 +55,16 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 return AsinMatches(postAsin, bookAsin);
             }
 
-            var title = Normalize(MainTitle(bookTitle));
             var surname = Surname(authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)));
-            return title.Length > 0
-                && surname.Length > 0
-                && Normalize(MainTitle(postTitle)) == title
+            return surname.Length > 0
+                && TitlesMatch(postTitle, bookTitle)
                 && (" " + Normalize(postAuthor) + " ").Contains(" " + surname + " ", StringComparison.Ordinal);
         }
 
         public static bool TitleAndAuthorMatch(string? releaseTitle, string? bookTitle, IReadOnlyList<string>? authors)
         {
             var release = " " + Normalize(releaseTitle) + " ";
-            var title = Normalize(MainTitle(bookTitle));
+            var title = Normalize(DistinctiveTitle(bookTitle));
             var surname = Surname(authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)));
 
             return title.Length > 0
@@ -75,9 +73,78 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 && release.Contains(" " + surname + " ", StringComparison.Ordinal);
         }
 
-        /// <summary>What to search for: the main title and the first author.</summary>
+        /// <summary>What to search for: the book's distinctive title and its first author.</summary>
         public static string QueryFor(string title, IReadOnlyList<string>? authors) =>
-            $"{MainTitle(title)} {authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))}".Trim();
+            $"{DistinctiveTitle(title)} {CleanAuthor(authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)))}".Trim();
+
+        /// <summary>
+        /// Two parsed titles are one book when they agree in full, or when one has no
+        /// subtitle and their main titles agree - but only if that main title tells books
+        /// apart. "Solaris" is "Solaris: The Definitive Edition"; "1636: The Barbie
+        /// Consortium" is not "1636: The Saxon Uprising", and a bare "1636" is neither.
+        /// </summary>
+        private static bool TitlesMatch(string? postTitle, string? bookTitle)
+        {
+            var post = Normalize(postTitle);
+            var book = Normalize(bookTitle);
+            if (book.Length == 0)
+            {
+                return false;
+            }
+
+            if (post == book)
+            {
+                return true;
+            }
+
+            var bookMain = MainTitle(bookTitle);
+            var postMain = MainTitle(postTitle);
+            var oneHasNoSubtitle = !HasSubtitle(postTitle) || !HasSubtitle(bookTitle);
+            return oneHasNoSubtitle
+                && IsDistinctive(bookMain)
+                && Normalize(postMain) == Normalize(bookMain);
+        }
+
+        /// <summary>
+        /// The title to look for: the main title when it identifies the book, otherwise the
+        /// whole of it. A main title that is one bare word or a number - "1636", "Sten" - is
+        /// shared by every book in its series, so the subtitle has to come too.
+        /// </summary>
+        private static string DistinctiveTitle(string? title) =>
+            IsDistinctive(MainTitle(title)) ? MainTitle(title) : (title ?? string.Empty).Trim();
+
+        private static bool IsDistinctive(string mainTitle)
+        {
+            var words = Normalize(mainTitle).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return words.Length >= 2 || (words.Length == 1 && words[0].Length > 4 && !words[0].All(char.IsDigit));
+        }
+
+        private static bool HasSubtitle(string? title)
+        {
+            var value = (title ?? string.Empty).Trim();
+            var colon = value.IndexOf(':');
+            return colon > 0 && colon < value.Length - 1;
+        }
+
+        /// <summary>
+        /// The author's name without a role: "Eric Flint - editor", "Eric Flint (Editor)"
+        /// and "Eric Flint [editor]" are all Eric Flint, and taking the last word as the
+        /// surname would otherwise make it "editor".
+        /// </summary>
+        private static string CleanAuthor(string? author)
+        {
+            var value = (author ?? string.Empty).Trim();
+            var dash = value.IndexOf(" - ", StringComparison.Ordinal);
+            if (dash > 0)
+            {
+                value = value[..dash];
+            }
+
+            return RoleInBrackets().Replace(value, " ").Trim();
+        }
+
+        [GeneratedRegex(@"[\(\[][^\)\]]*[\)\]]")]
+        private static partial Regex RoleInBrackets();
 
         /// <summary>
         /// The title before any subtitle: "Solaris: The Definitive Edition" is posted as
@@ -92,7 +159,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
         private static string Surname(string? author)
         {
-            var words = Normalize(author).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var words = Normalize(CleanAuthor(author)).Split(' ', StringSplitOptions.RemoveEmptyEntries);
             return words.Length == 0 ? string.Empty : words[^1];
         }
 
