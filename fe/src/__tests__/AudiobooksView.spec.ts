@@ -1369,6 +1369,36 @@ describe('AudiobooksView Filter Persistence', () => {
     expect(wrapper.text()).toContain('2 files not found')
   })
 
+  it('filters to the books the probe recommends for a generative repair', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'repair-candidates')
+
+    const wrapper = await mountView([
+      {
+        id: 1,
+        title: 'Starved Encode',
+        authors: ['Author A'],
+        monitored: true,
+        files: [],
+        audioQuality: 'codec-damaged',
+        audioRepairRecommended: true,
+      },
+      {
+        id: 2,
+        title: 'Clean Reading',
+        authors: ['Author B'],
+        monitored: true,
+        files: [],
+        audioQuality: 'clean',
+        audioRepairRecommended: false,
+      },
+      { id: 3, title: 'Never Probed', authors: ['Author C'], monitored: true, files: [] },
+    ])
+
+    expect(wrapper.text()).toContain('Starved Encode')
+    expect(wrapper.text()).not.toContain('Clean Reading')
+    expect(wrapper.text()).not.toContain('Never Probed')
+  })
+
   /**
    * The library badged and filtered on the verdict alone while the Tags page honoured
    * acceptance, so a book its owner had already answered was a problem in one place and

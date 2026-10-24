@@ -109,6 +109,16 @@ namespace Listenarr.Domain.Audiobooks.Quality
 
         private static AudioQualityReport Judge(AudioQualityMetrics m, int? bitRate, AudioQualityThresholds t)
         {
+            var report = JudgeVerdict(m, bitRate, t);
+            return report with
+            {
+                GenerativeRecommended = AudioRepairRecommendation.Of(
+                    report.Verdict, m.BrightnessDeficitDb, t.GenerativeDeficitDb)
+            };
+        }
+
+        private static AudioQualityReport JudgeVerdict(AudioQualityMetrics m, int? bitRate, AudioQualityThresholds t)
+        {
             // The encode's bit rate, not harmonicity, decides codec damage. Harmonicity was
             // calibrated within one recording against crushed copies of itself, and across
             // narrators it does not separate: on the live library a clean 130 kbps reading
@@ -118,7 +128,6 @@ namespace Listenarr.Domain.Audiobooks.Quality
             var production = noisy && m.FloorSpreadDb != null && m.FloorSpreadDb > t.ProductionSpreadDb;
             var hiss = noisy && !production;
             var muffled = m.SpeechBandwidthHz <= t.MuffleWallHz;
-            var generative = codec || m.BrightnessDeficitDb >= t.GenerativeDeficitDb;
 
             if (codec)
             {
@@ -128,7 +137,7 @@ namespace Listenarr.Domain.Audiobooks.Quality
                     AudioQuality.CodecDamaged,
                     $"Encoded at {bitRate / 1000} kbps, too few bits for speech: the encoder leaves its noise " +
                     "between the voice's harmonics. A denoiser would delete the consonants along with it.",
-                    m, generative, NeverPreDenoise: true);
+                    m, GenerativeRecommended: false, NeverPreDenoise: true);
             }
 
             if (production)
@@ -146,7 +155,7 @@ namespace Listenarr.Domain.Audiobooks.Quality
                     AudioQuality.HissAndMuffled,
                     $"A constant {m.NoiseFloorDb:0} dB floor and speech clear of it only to " +
                     $"{Khz(m.SpeechBandwidthHz)}.",
-                    m, generative, NeverPreDenoise: false);
+                    m, GenerativeRecommended: false, NeverPreDenoise: false);
             }
 
             if (hiss)
@@ -154,7 +163,7 @@ namespace Listenarr.Domain.Audiobooks.Quality
                 return new AudioQualityReport(
                     AudioQuality.Hiss,
                     $"A constant {m.NoiseFloorDb:0} dB background; a listenable transfer keeps under {t.NoiseFloorDb:0} dB.",
-                    m, generative, NeverPreDenoise: false);
+                    m, GenerativeRecommended: false, NeverPreDenoise: false);
             }
 
             if (muffled)
@@ -163,7 +172,7 @@ namespace Listenarr.Domain.Audiobooks.Quality
                     AudioQuality.Muffled,
                     $"Speech stands clear of its floor only to {Khz(m.SpeechBandwidthHz)}, so the fricatives " +
                     $"that separate 's' from 'f' are not in the file.",
-                    m, generative, NeverPreDenoise: false);
+                    m, GenerativeRecommended: false, NeverPreDenoise: false);
             }
 
             return new AudioQualityReport(

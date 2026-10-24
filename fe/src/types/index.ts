@@ -622,6 +622,8 @@ export interface LibraryTagRow {
   /** Someone listened and overruled the verdict for these files. */
   audioAuditAccepted?: boolean
   audioAuditHeardNarrator?: string | null
+  /** The book is worth a generative audio repair (the probe's verdict, at the offer threshold). */
+  audioRepairRecommended?: boolean
 }
 
 /** One chapter as a repair would write it. */
@@ -1352,6 +1354,8 @@ export interface Audiobook {
   audioQualityReason?: string | null
   audioQualityProbedAt?: string | null
   /** The book summed up as a number, 0–100 over the checks that have run; null while none have. */
+  /** The book is worth a generative audio repair (the probe's verdict, at the offer threshold). */
+  audioRepairRecommended?: boolean
   healthScore?: number | null
   /** Each category's state, list responses only; the detail response carries `health` instead. */
   healthTags?: HealthState | null
