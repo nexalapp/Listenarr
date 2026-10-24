@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 import type { Audiobook } from '@/types'
+import { collectionCountLabel } from '@/utils/collectionRows'
 import { getAuthorAsin, getAuthorCoverUrl, getBookCoverUrl } from '@/utils/libraryCovers'
 import { getSeriesNames } from '@/utils/seriesUtils'
 
@@ -118,10 +119,6 @@ interface CollectionAccumulator {
   books: Audiobook[]
 }
 
-function countLabel(kind: 'Author' | 'Series', count: number): string {
-  return `${kind} · ${count === 1 ? '1 book' : `${count} books`}`
-}
-
 function take(groups: Map<string, CollectionAccumulator>, limit: number): CollectionAccumulator[] {
   return Array.from(groups.values())
     .sort(
@@ -204,7 +201,7 @@ export function searchLibrary(
       kind: 'author',
       key: `author:${group.name}`,
       title: group.name,
-      sub: countLabel('Author', group.count),
+      sub: collectionCountLabel('author', group.count),
       covers: group.cover ? [group.cover] : [],
       collection: { type: 'author', name: group.name },
       count: group.count,
@@ -227,7 +224,7 @@ export function searchLibrary(
       kind: 'series',
       key: `series:${group.name}`,
       title: group.name,
-      sub: countLabel('Series', group.count),
+      sub: collectionCountLabel('series', group.count),
       covers,
       collection: { type: 'series', name: group.name },
       count: group.count,

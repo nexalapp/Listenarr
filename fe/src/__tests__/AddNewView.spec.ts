@@ -1291,3 +1291,44 @@ describe('AddNewView search activity', () => {
     expect(wrapper.text()).toContain('Demon in White')
   })
 })
+
+describe('AddNewView result collections', () => {
+  beforeEach(resetAddNewEnvironment)
+
+  it('offers the author and the series the results have in common', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = sunEaterResults
+    await wrapper.vm.$nextTick()
+
+    const rows = wrapper.findAll('.collection-row')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('Christopher Ruocchio')
+    expect(rows[0]!.text()).toContain('Author · 2 books')
+    expect(rows[1]!.text()).toContain('Sun Eater')
+    expect(rows[1]!.text()).toContain('Series · 2 books')
+  })
+
+  it('stacks the series covers in reading order, not the order they were returned', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = sunEaterResults
+    await wrapper.vm.$nextTick()
+
+    const series = wrapper.findAll('.collection-row')[1]!
+    expect(series.findAll('.row-stack img')).toHaveLength(2)
+    // Book 1 in front, book 3 behind it, although book 3 was returned first.
+    expect(series.find('.stack-cover--front').attributes('src')).toContain('empire.jpg')
+    expect(series.find('.stack-cover--back').attributes('src')).toContain('demon.jpg')
+  })
+
+  it('says nothing about a collection that stands for a single result', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = [sunEaterResults[0]]
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.result-collections').exists()).toBe(false)
+    expect(wrapper.find('.title-results').exists()).toBe(true)
+  })
+})
