@@ -52,7 +52,7 @@ namespace Listenarr.Infrastructure.Search.Nzb
         {
             var uri = new Uri(QueryHelpers.AddQueryString(SearchEndpoint, new Dictionary<string, string?>
             {
-                ["q"] = searchString,
+                ["q"] = NzbSearchStringMatch.QueryFor(searchString),
                 ["max"] = "25"
             }));
 

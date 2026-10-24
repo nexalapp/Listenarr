@@ -52,6 +52,25 @@ namespace Listenarr.Application.Search.Nzb
             return wanted.All(present.Contains);
         }
 
+        /// <summary>
+        /// What to ask an index for: the search string's longest word, which is the
+        /// upload's code.
+        ///
+        /// Asked for the whole string, indexes rank by the shared words and list the newest
+        /// "abook.link - …" uploads first, so an older release falls off the page entirely:
+        /// Solaris, posted 2033 days earlier, was missing from all 25 hits NZBKing returned
+        /// for "abook.link - fm8lssqHWLW7Bownef" and was its only hit for "fm8lssqHWLW7Bownef".
+        /// The hits still have to carry the whole string; see <see cref="Matches"/>.
+        /// </summary>
+        public static string QueryFor(string searchString)
+        {
+            var longest = Separators()
+                .Split(searchString)
+                .Aggregate(string.Empty, (best, word) => word.Length > best.Length ? word : best);
+
+            return longest.Length > 0 ? longest : searchString;
+        }
+
         /// <summary>The hits that are the named release, in their original order.</summary>
         public static IReadOnlyList<NzbCandidate> Filter(
             string? searchString,

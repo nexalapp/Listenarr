@@ -107,6 +107,11 @@ string fetched the same upload again. An item is now accepted only when its subj
 carries every word of the search string (`NzbSearchStringMatch`), and the same rule
 applies to NZBIndex and Binsearch hits.
 
+Solaris *is* on NZBKing — posted 2033 days earlier, it is simply not among the 25 newest
+"abook.link" uploads. Asked for `fm8lssqHWLW7Bownef` alone the feed has exactly one item,
+the release. So every index is asked for the search string's longest word, its code, and
+the hits are then held to the whole string.
+
 Each item carries the subject in `<title>` and the NZB in `<link>`/`<guid>`
 (`http://www.nzbking.com/nzb:<24-hex-id>/`). Without a key the same path answers 200 with
 an HTML page, which must not be read as "holds nothing".
@@ -116,4 +121,5 @@ an HTML page, which must not be read as "holds nothing".
 | File | Why |
 |---|---|
 | `nzbking-search-feed-other-releases.xml` | Real feed for `abook.link - fm8lssqHWLW7Bownef`: 25 hits, none of them the release |
+| `nzbking-search-feed-code-only.xml` | Real feed for `fm8lssqHWLW7Bownef` alone: one item, Solaris |
 | `nzbking-search-feed-exact-hit.xml` | Real feed for `820c9aa85c1b42f5a07b41af820856d8` (Brushfire): one item, the release |

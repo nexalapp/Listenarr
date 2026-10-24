@@ -66,7 +66,8 @@ namespace Listenarr.Infrastructure.Search.Nzb
                     "No NZBKing API key is configured, so this index was not asked.");
             }
 
-            var result = await _client.SearchAsync(apiKey, searchString, NzbKingAccessPurpose.Grab, ct);
+            var result = await _client.SearchAsync(
+                apiKey, NzbSearchStringMatch.QueryFor(searchString), NzbKingAccessPurpose.Grab, ct);
 
             if (!result.Succeeded)
             {
@@ -91,9 +92,9 @@ namespace Listenarr.Infrastructure.Search.Nzb
                     "NZBKing answered but holds nothing for this search string.");
             }
 
-            // The feed is a word search, newest first: for "abook.link - <code>" it lists
-            // every recent abook.link upload, and the first of them is someone else's book.
-            // Only an item carrying the code is this release.
+            // The feed is a word search, newest first: even asked for the code alone it may
+            // list other uploads, and the first of them can be someone else's book. Only an
+            // item carrying the whole search string is this release.
             var matching = NzbSearchStringMatch.Filter(searchString, candidates);
             if (matching.Count == 0)
             {

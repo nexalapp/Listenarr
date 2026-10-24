@@ -48,6 +48,27 @@ public sealed class NzbSearchStringMatchTests : BaseTests
         Assert.Equal(expected, NzbSearchStringMatch.Matches(searchString, subject));
     }
 
+    [Theory]
+    [InlineData(Solaris, "fm8lssqHWLW7Bownef")]
+    [InlineData("abook - LooquipahZuo4apha6unee7ahf", "LooquipahZuo4apha6unee7ahf")]
+    [InlineData("820c9aa85c1b42f5a07b41af820856d8", "820c9aa85c1b42f5a07b41af820856d8")]
+    [InlineData("PW - JK-EV03-MPRDWN", "MPRDWN")]
+    public void IndexesAreAskedForTheCodeAlone(string searchString, string expected)
+    {
+        // Asked for the whole string, NZBKing ranks the newest "abook.link" uploads first
+        // and an older release is not on the page at all.
+        Assert.Equal(expected, NzbSearchStringMatch.QueryFor(searchString));
+    }
+
+    [Fact]
+    public void NzbKing_TheRealFeedForSolarisCodeAloneHoldsTheRelease()
+    {
+        var candidates = NzbKingResolver.ParseFeed(Fixture("nzbking-search-feed-code-only.xml"));
+
+        var hit = Assert.Single(NzbSearchStringMatch.Filter(Solaris, candidates!));
+        Assert.Equal("nzb:606398662df75814e94d38fb", hit.Id);
+    }
+
     [Fact]
     public void AnEmptySearchStringMatchesNothing()
     {

@@ -50,7 +50,7 @@ namespace Listenarr.Infrastructure.Search.Nzb
             // default one, which reads as "nothing indexed" and is not.
             var uri = new Uri(QueryHelpers.AddQueryString(SearchEndpoint, new Dictionary<string, string?>
             {
-                ["q"] = searchString,
+                ["q"] = NzbSearchStringMatch.QueryFor(searchString),
                 ["size"] = PageSize.ToString()
             }));
 

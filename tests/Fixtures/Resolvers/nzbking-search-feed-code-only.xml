@@ -1,0 +1,20 @@
+
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet type="text/xsl" href="/static/rss.xsl"?>
+<rss version="2.0">
+<channel>
+<title>nzbking RSS feed</title>
+<link>https://nzbking.com</link>
+<description>Usenet search engine RSS feed</description>
+
+
+<item>
+<title>abook.link - fm8lssqHWLW7Bownef - [1/5] - &quot;fm8lssqHWLW7Bownef.rar&quot; yEnc </title>
+<pubDate>Tue Mar 30 19:48:31 2021</pubDate>
+<link>http://www.nzbking.com/nzb:606398662df75814e94d38fb/</link>
+<guid isPermaLink="true">http://www.nzbking.com/nzb:606398662df75814e94d38fb/</guid>
+</item>
+
+
+</channel>
+</rss>
