@@ -53,6 +53,12 @@ namespace Listenarr.Application.Downloads.Contracts
         Task<string?> ReprocessDownloadAsync(string downloadId);
 
         /// <summary>
+        /// Submits an NZB found inside a finished Usenet download as the download it points
+        /// to, for the same book and client, with the outer grab's archive password.
+        /// </summary>
+        Task<string> SendNestedNzbAsync(Download outer, string fileName, byte[] nzbBytes);
+
+        /// <summary>
         /// Reprocesses multiple completed downloads
         /// </summary>
         /// <param name="downloadIds">List of download IDs to reprocess</param>

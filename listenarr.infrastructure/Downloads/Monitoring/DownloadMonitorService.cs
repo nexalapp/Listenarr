@@ -440,7 +440,8 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             }
 
             var clientFailureReason = download.GetMetadataString("ClientFailureReason") ?? errorMessage;
-            return NzbgetFailureMessageMapper.IsMoveOrPostProcessingFailure(clientFailureReason);
+            return NzbgetFailureMessageMapper.IsMoveOrPostProcessingFailure(clientFailureReason)
+                || NzbgetFailureMessageMapper.IsRepeatProof(clientFailureReason);
         }
     }
 }

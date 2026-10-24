@@ -71,6 +71,20 @@ internal static class NzbgetFailureMessageMapper
             : $"NZBGet reported a failed download: {status}";
     }
 
+    /// <summary>
+    /// Failures that grabbing again cannot cure. A search after one of these finds the
+    /// same release first, NZBGet discards it as a copy of the job that just failed, and
+    /// that failure starts another search - a loop that grabs nothing. The archive
+    /// password is the post's, so a wrong one stays wrong however often it is tried.
+    /// </summary>
+    public static bool IsRepeatProof(string? rawStatus)
+    {
+        var status = (rawStatus ?? string.Empty).Trim();
+        return status.StartsWith("DELETED/COPY", StringComparison.OrdinalIgnoreCase) ||
+            status.StartsWith("DELETED/DUPE", StringComparison.OrdinalIgnoreCase) ||
+            status.StartsWith("WARNING/PASSWORD", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static bool IsMoveOrPostProcessingFailure(string? rawStatus)
     {
         var status = (rawStatus ?? string.Empty).Trim();

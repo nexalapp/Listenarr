@@ -282,6 +282,13 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     return;
                 }
 
+                if (!isDirectDownload && IsOnlyNzbFiles(files))
+                {
+                    await ContinueAsNestedNzbAsync(job, scope.ServiceProvider, downloadRepository, downloadProcessingJobService,
+                        historyRepository, download, audiobook, files, correlationId, cancellationToken);
+                    return;
+                }
+
                 List<ImportResult> results;
                 try
                 {
