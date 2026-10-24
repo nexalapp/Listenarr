@@ -106,6 +106,7 @@ const builtInOptions = [
   { value: 'recent', label: 'Recently Added' },
   { value: 'chapter-issues', label: 'Chapter Issues' },
   { value: 'audio-mismatch', label: 'Metadata Mismatch' },
+  { value: 'health-issues', label: 'Health Issues' },
 ]
 
 const customFilters = computed(() => props.customFilters || [])

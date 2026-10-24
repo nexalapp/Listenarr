@@ -691,7 +691,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
         [Fact]
         public async Task ProcessJobAsync_QueuesNoTagWrite_WhenAutomaticTaggingIsOff()
         {
-            await UpdateSettingsAsync(settings => settings.WriteMetadataTags = false);
+            // The audio probe rides the tag queue too, and is not a write.
+            await UpdateSettingsAsync(settings =>
+            {
+                settings.WriteMetadataTags = false;
+                settings.AudioQualityProbeEnabled = false;
+            });
 
             var basePath = FileService.GetTempDirectory("scan-processor-no-autotag");
             _ = await FileService.GetFileAsync(basePath, "Untagged Book.m4b", "audio");

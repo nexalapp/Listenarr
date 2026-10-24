@@ -189,6 +189,51 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Tagging
             Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
         }
 
+        [Fact]
+        public async Task EnqueueAudioQualityProbeAsync_QueuesBesideATagWriteForTheSameBook()
+        {
+            var audiobook = GivenAudiobook("Book.m4b");
+            audiobook.Files![0].Id = 41;
+            // A tag write is active, but a probe writes nothing and has its own key.
+            _repository
+                .Setup(repository => repository.GetActiveForAudiobookAsync(7, TagJobKind.Probe, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob?)null);
+            TagJob? stored = null;
+            _repository
+                .Setup(repository => repository.AddAsync(It.IsAny<TagJob>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((TagJob job, CancellationToken _) => stored = job);
+
+            var result = await BuildService().EnqueueAudioQualityProbeAsync(7, TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.Queued, result.Outcome);
+            Assert.Equal(TagJobKind.Probe, stored!.Kind);
+            Assert.Equal(TagJob.BuildProbeDeduplicationKey(7), stored.ActiveDeduplicationKey);
+        }
+
+        [Fact]
+        public async Task EnqueueAudioQualityProbeAsync_RefusesASecondProbeForTheSameBook()
+        {
+            var audiobook = GivenAudiobook("Book.m4b");
+            audiobook.Files![0].Id = 41;
+            _repository
+                .Setup(repository => repository.GetActiveForAudiobookAsync(7, TagJobKind.Probe, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TagJob { AudiobookId = 7, Kind = TagJobKind.Probe });
+
+            var result = await BuildService().EnqueueAudioQualityProbeAsync(7, TagTrigger.Automatic);
+
+            Assert.Equal(TagEnqueueOutcome.AlreadyQueued, result.Outcome);
+        }
+
+        [Fact]
+        public async Task EnqueueAudioQualityProbeAsync_RefusesABookWithNoAudio()
+        {
+            GivenAudiobook("cover.jpg");
+
+            var result = await BuildService().EnqueueAudioQualityProbeAsync(7, TagTrigger.Manual);
+
+            Assert.Equal(TagEnqueueOutcome.NothingToTag, result.Outcome);
+        }
+
         // ---- what gets queued -------------------------------------------------------
 
         [Fact]

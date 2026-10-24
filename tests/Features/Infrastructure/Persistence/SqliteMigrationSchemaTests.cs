@@ -112,6 +112,12 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string SeriesNamesKeptWholeMigrationId =
         "20261015052813_AddSeriesNamesKeptWhole";
 
+    private const string AudioQualityAndHealthMigrationId =
+        "20261015155101_AddAudioQualityAndHealth";
+
+    private const string RepairPipelineMigrationId =
+        "20261015225743_AddRepairPipeline";
+
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
     {
@@ -268,7 +274,9 @@ public class SqliteMigrationSchemaTests : BaseTests
                 AudioAuditFileIdentityMigrationId,
                 AudioAuditAcceptanceMigrationId,
                 DropUnusedAcceptedVerdictMigrationId,
-                SeriesNamesKeptWholeMigrationId
+                SeriesNamesKeptWholeMigrationId,
+                AudioQualityAndHealthMigrationId,
+                RepairPipelineMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

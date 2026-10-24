@@ -75,6 +75,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
 
         public async Task<ConversionJob?> ClaimNextAsync(
             string leaseOwner,
+            ConversionJobKind kind,
             DateTime now,
             TimeSpan leaseDuration,
             CancellationToken cancellationToken = default)
@@ -88,7 +89,8 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             {
                 var candidate = await db.ConversionJobs
                     .Where(job =>
-                        (job.Status == ConversionJobStatus.Queued
+                        job.Kind == kind
+                        && (job.Status == ConversionJobStatus.Queued
                          || job.Status == ConversionJobStatus.RetryScheduled)
                         && (job.NextAttemptAt == null || job.NextAttemptAt <= now)
                         && (job.LeaseExpiresAt == null || job.LeaseExpiresAt <= now))

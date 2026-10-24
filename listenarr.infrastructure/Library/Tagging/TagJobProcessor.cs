@@ -78,7 +78,9 @@ namespace Listenarr.Infrastructure.Library.Tagging
                         return;
                     }
 
-                    if (job.Kind != TagJobKind.Plan)
+                    // Probes ride the planning lane: both read files, write only columns,
+                    // and finish in seconds to minutes — neither belongs behind a write.
+                    if (job.Kind is not (TagJobKind.Plan or TagJobKind.Probe))
                     {
                         await RunJobAsync(job, cancellationToken);
                         continue;

@@ -64,6 +64,11 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 return await ExecuteAudioAuditAsync(job, audiobook, services, queue, cancellationToken);
             }
 
+            if (job.Kind == TagJobKind.Probe)
+            {
+                return await ExecuteAudioQualityProbeAsync(job, audiobook, services, queue, cancellationToken);
+            }
+
             var tagsWritten = 0;
             var filesWritten = 0;
 

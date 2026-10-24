@@ -121,6 +121,24 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// nothing to pin the acceptance to.
         /// </summary>
         Task<bool> SetAudioAuditAcceptedAsync(int audiobookId, bool accepted, DateTime nowUtc, CancellationToken ct = default);
+
+        /// <summary>Record what the audio-quality probe measured and decided. A dedicated write, like the audit's.</summary>
+        Task SetAudioQualityAsync(int audiobookId, AudioQualityRecord quality, CancellationToken ct = default);
+
+        /// <summary>
+        /// Record whether a tag write or a rename would change anything, as the tag table
+        /// last measured it. Writes only when something changed, so the index rebuild the
+        /// scan hook runs on every import does not dirty a thousand rows.
+        /// </summary>
+        Task SetTagNamingHealthAsync(int audiobookId, TagNamingHealthRecord health, CancellationToken ct = default);
+
+        /// <summary>
+        /// Books with files but no audio-quality verdict under the current probe version:
+        /// never probed, or probed before the probe last changed meaning. A book whose
+        /// files changed is not found here — every file change arrives through a scan,
+        /// and the scan hook re-probes it. Ordered by id so the sweep walks the library once.
+        /// </summary>
+        Task<List<int>> GetIdsNeedingAudioQualityProbeAsync(string currentVersionSuffix, int limit, CancellationToken ct = default);
         Task<bool> RewritePathReferencesAsync(
             int audiobookId,
             string? sourceBasePath,
@@ -152,4 +170,20 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         AudioCredits Credits,
         DateTime AuditedAtUtc,
         string? FileIdentity = null);
+
+    /// <summary>The probe's outcome as it is stored on the book.</summary>
+    public sealed record AudioQualityRecord(
+        Listenarr.Domain.Audiobooks.Quality.AudioQuality Verdict,
+        string Reason,
+        string? MetricsJson,
+        string? FileIdentity,
+        DateTime ProbedAtUtc);
+
+    /// <summary>The tag table's two health facts, as they are stored on the book.</summary>
+    public sealed record TagNamingHealthRecord(
+        bool? TagsClean,
+        string? TagsReason,
+        bool? NamingClean,
+        string? NamingReason,
+        DateTime CheckedAtUtc);
 }

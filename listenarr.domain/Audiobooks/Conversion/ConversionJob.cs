@@ -38,10 +38,27 @@ namespace Listenarr.Domain.Audiobooks.Conversion
     {
         None,
         Probing,
+
+        /// <summary>Repair only: the sources are going through the enhancement model, which is most of a repair's life.</summary>
+        Enhancing,
         Encoding,
         Verifying,
         Publishing,
         RetiringSources
+    }
+
+    /// <summary>
+    /// What the job does to the book. One entity for both because they replace the same
+    /// files through the same publication path, and the shared deduplication key is what
+    /// makes "a book cannot convert and repair at once" a database guarantee rather than
+    /// a check.
+    /// </summary>
+    public enum ConversionJobKind
+    {
+        Convert,
+
+        /// <summary>Enhance every source through the generative model, then encode as a conversion would.</summary>
+        Repair
     }
 
     /// <summary>How the job came to exist. A manual request is never skipped by the setting.</summary>
@@ -78,6 +95,21 @@ namespace Listenarr.Domain.Audiobooks.Conversion
         public ConversionJobStatus Status { get; set; } = ConversionJobStatus.Queued;
         public ConversionJobPhase Phase { get; set; } = ConversionJobPhase.None;
         public ConversionTrigger Trigger { get; set; } = ConversionTrigger.Automatic;
+        public ConversionJobKind Kind { get; set; } = ConversionJobKind.Convert;
+
+        /// <summary>
+        /// Repair only: how many source files have finished enhancement, so Activity can
+        /// say "file 3 of 12" across a job that runs for days.
+        /// </summary>
+        public int CompletedSourceFiles { get; set; }
+
+        /// <summary>
+        /// Repair only: the enhancer pipeline version the intermediates were made with.
+        /// A resume under a different version redoes them rather than mixing models
+        /// within one book.
+        /// </summary>
+        [MaxLength(64)]
+        public string? EnhancerVersion { get; set; }
 
         /// <summary>
         /// Set while the job is active and cleared when it reaches a terminal state. A

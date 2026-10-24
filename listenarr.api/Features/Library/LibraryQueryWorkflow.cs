@@ -10,6 +10,8 @@
 using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
 using Microsoft.AspNetCore.Mvc;
+using Listenarr.Domain.Audiobooks.Health;
+using Listenarr.Domain.Audiobooks.Quality;
 
 namespace Listenarr.Api.Features.Library;
 
@@ -135,6 +137,12 @@ public sealed class LibraryQueryWorkflow(
             notFoundSince = file.NotFoundSinceUtc
         }).ToList(),
         wanted = AudiobookWantedEvaluator.Compute(audiobook),
+        audioQuality = audiobook.AudioQuality == Domain.Audiobooks.Quality.AudioQuality.Unknown
+            ? null
+            : AudioQualityNames.Of(audiobook.AudioQuality),
+        audioQualityReason = audiobook.AudioQualityReason,
+        audioQualityProbedAt = audiobook.AudioQualityProbedAt,
+        health = MapHealth(audiobook),
         audioAudit = AudioAuditVerdictNames.Of(audiobook.AudioAuditVerdict),
         audioAuditReason = audiobook.AudioAuditReason,
         audioAuditHeard = audiobook.AudioAuditHeard,
@@ -145,4 +153,37 @@ public sealed class LibraryQueryWorkflow(
         audioAuditAccepted = AudioAuditAcceptance.IsAccepted(audiobook),
         audioAuditAcceptedAt = audiobook.AudioAuditAcceptedAt
     };
+
+    /// <summary>
+    /// The same judgement the library list makes, from the same stored facts, so a book's
+    /// page and its row can never disagree about how healthy it is.
+    /// </summary>
+    private static object MapHealth(Audiobook audiobook)
+    {
+        var worstChapters = (audiobook.Files ?? [])
+            .Select(file => file.ChapterHealth)
+            .DefaultIfEmpty(ChapterHealth.Unknown)
+            .MaxBy(ChapterHealthSeverity.Rank);
+
+        var report = AudiobookHealth.Judge(new AudiobookHealthFacts(
+            audiobook.AudioAuditVerdict,
+            AudioAuditAcceptance.IsAccepted(audiobook),
+            audiobook.HealthTagsClean,
+            audiobook.HealthTagsReason,
+            audiobook.HealthNamingClean,
+            audiobook.HealthNamingReason,
+            worstChapters,
+            audiobook.AudioQuality,
+            audiobook.AudioQualityReason));
+
+        return new
+        {
+            score = report.Score,
+            tags = new { state = AudiobookHealth.NameOf(report.Tags.State), reason = report.Tags.Reason },
+            naming = new { state = AudiobookHealth.NameOf(report.Naming.State), reason = report.Naming.Reason },
+            chapters = new { state = AudiobookHealth.NameOf(report.Chapters.State), reason = report.Chapters.Reason },
+            audio = new { state = AudiobookHealth.NameOf(report.Audio.State), reason = report.Audio.Reason },
+            checkedAt = audiobook.HealthCheckedAt
+        };
+    }
 }

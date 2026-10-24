@@ -22,5 +22,11 @@ namespace Listenarr.Application.Audiobooks.Conversion
     public interface IConversionJobProcessor
     {
         Task RunCycleAsync(CancellationToken cancellationToken);
+
+        /// <summary>
+        /// One pass of the repair lane: the same queue, claimed by kind, driven by its
+        /// own worker so a days-long repair cannot park ordinary conversions.
+        /// </summary>
+        Task RunRepairCycleAsync(CancellationToken cancellationToken);
     }
 }

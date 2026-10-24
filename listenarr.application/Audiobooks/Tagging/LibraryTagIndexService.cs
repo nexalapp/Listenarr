@@ -207,6 +207,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     .ToList(),
                 cancellationToken);
             await QueuePlanningAsync(rows, cancellationToken);
+            await PersistBookHealthAsync(rows, cancellationToken);
             return new LibraryTagIndex(rows, filesRead, DateTime.UtcNow);
         }
 

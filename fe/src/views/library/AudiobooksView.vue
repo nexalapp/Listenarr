@@ -679,6 +679,14 @@
                     {{ audioIssueLabel(audiobook) }}
                   </div>
                   <div
+                    v-if="healthLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="healthTitle(audiobook)"
+                  >
+                    <PhHeartbeat />
+                    {{ healthLabel(audiobook) }}
+                  </div>
+                  <div
                     v-if="notFoundLabel(audiobook)"
                     class="chapter-badge chapter-badge--not-found"
                     title="A scan could not find these files at their paths. They are kept until you remove them from the book's Files tab."
@@ -812,6 +820,14 @@
                   >
                     <PhEar />
                     {{ audioIssueLabel(audiobook) }}
+                  </div>
+                  <div
+                    v-if="healthLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="healthTitle(audiobook)"
+                  >
+                    <PhHeartbeat />
+                    {{ healthLabel(audiobook) }}
                   </div>
                   <div
                     v-if="notFoundLabel(audiobook)"
@@ -978,6 +994,7 @@ import {
   PhListNumbers,
   PhCheckCircle,
   PhEar,
+  PhHeartbeat,
   PhFileX,
   PhLightning,
   PhCaretDown,
@@ -1299,6 +1316,7 @@ const BUILT_IN_FILTER_IDS = [
   'recent',
   'chapter-issues',
   'audio-mismatch',
+  'health-issues',
 ]
 
 function loadSelectedFilter() {
@@ -1351,6 +1369,24 @@ const chapterIssueLabel = (book: Audiobook): string | null => {
 const audioIssueLabel = (book: Audiobook): string | null =>
   audioAuditIssueLabel(book.audioAudit, book.audioAuditAccepted)
 
+/**
+ * The health badge for a book whose score is dented, or null when it is 100 or unknown.
+ * A full score earns silence: the badge exists to be worth clicking, not as a grade on
+ * every cover.
+ */
+const healthLabel = (book: Audiobook): string | null =>
+  book.healthScore != null && book.healthScore < 100 ? `Health ${book.healthScore}` : null
+
+const healthTitle = (book: Audiobook): string => {
+  const parts = [
+    book.healthTagsReason,
+    book.healthNamingReason,
+    book.healthChaptersReason,
+    book.healthAudioReason,
+  ].filter(Boolean)
+  return parts.length ? parts.join(' ') : 'Open the book to see what is dented.'
+}
+
 /** The badge for a book with files a scan could not find, or null. */
 const notFoundLabel = (book: Audiobook): string | null => {
   const count = book.notFoundFiles ?? 0
@@ -1395,6 +1431,8 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => !!chapterIssueLabel(b))
     } else if (sid === 'audio-mismatch') {
       filtered = filtered.filter((b) => !!audioIssueLabel(b))
+    } else if (sid === 'health-issues') {
+      filtered = filtered.filter((b) => (b.healthScore ?? 100) < 100)
     } else if (sid === 'recent') {
       // For now: approximate by publishYear being this year or last year
       const thisYear = new Date().getFullYear()
@@ -1513,6 +1551,13 @@ const filteredAndSortedAudiobooks = computed(() => {
         av = getAudiobookStatus(a)
         bv = getAudiobookStatus(b)
         break
+      case 'health': {
+        // Unknown health sorts with the healthy books: ascending surfaces the measured
+        // problems first rather than a wall of books nothing has probed yet.
+        const ah = a.healthScore ?? 100
+        const bh = b.healthScore ?? 100
+        return (ah - bh) * (sortOrder.value === 'asc' ? 1 : -1)
+      }
     }
 
     if (typeof av === 'boolean' && typeof bv === 'boolean') {
@@ -1913,6 +1958,7 @@ const sortOptions = computed(() => {
       { value: 'year', label: 'Release Year' },
       { value: 'monitored', label: 'Monitored' },
       { value: 'status', label: 'Status' },
+      { value: 'health', label: 'Health' },
     ]
   }
 

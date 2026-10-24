@@ -9,6 +9,8 @@
  */
 using Listenarr.Application.Audiobooks.Audit;
 using Listenarr.Application.Audiobooks.Authors;
+using Listenarr.Application.Audiobooks.Repair;
+using Listenarr.Infrastructure.Library.Repair;
 using Listenarr.Application.Audiobooks.Chapters;
 using Listenarr.Application.Audiobooks.Transcription;
 using Listenarr.Infrastructure.Ffmpeg.Analysis;
@@ -129,6 +131,15 @@ internal static class LibraryRegistrationExtensions
         services.AddSingleton<ITranscriber>(provider => provider.GetRequiredService<WhisperTranscriber>());
         services.AddSingleton<TranscriptCache>();
         services.AddScoped<IAudioAuditService, AudioAuditService>();
+        services.AddScoped<IAudioSampleReader, FfmpegAudioSampler>();
+        services.AddScoped<IAudioQualityService, AudioQualityService>();
+        // The enhancer is a singleton for the same reason the transcriber is: its state
+        // (the provisioning task, the install's standing) is per process, and the gate
+        // exists precisely to be the only one.
+        services.AddSingleton<IAudioEnhancer, ResembleAudioEnhancer>();
+        services.AddSingleton<EnhancerGate>();
+        services.AddSingleton<IRepairPreviewService, RepairPreviewService>();
+        services.AddScoped<IRepairCheckpointRepository, EfRepairCheckpointRepository>();
         services.AddScoped<IEditionCheckService, EditionCheckService>();
         services.AddScoped<IMonitoredAuthorRepository, EfMonitoredAuthorRepository>();
         services.AddScoped<IMonitoredSeriesRepository, EfMonitoredSeriesRepository>();
