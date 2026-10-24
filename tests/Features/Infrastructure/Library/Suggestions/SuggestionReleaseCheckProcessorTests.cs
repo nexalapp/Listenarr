@@ -41,12 +41,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Suggestions
             []);
 
         [Fact]
-        public void UncheckedBooksComeInPageOrderAndEachOnlyOnce()
+        public void SeriesGapsComeBeforeAuthorCatalogsAndEachBookOnlyOnce()
         {
             var due = SuggestionReleaseCheckProcessor.Due(
                 Snapshot([Book("A1"), Book("A2")], [Book("A2"), Book("S1")]), Now);
 
-            Assert.Equal(["A1", "A2", "S1"], due.Select(book => book.Asin));
+            Assert.Equal(["A2", "S1", "A1"], due.Select(book => book.Asin));
         }
 
         [Fact]
