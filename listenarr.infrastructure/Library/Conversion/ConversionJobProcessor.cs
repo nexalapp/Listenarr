@@ -58,7 +58,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 // an encode measured in minutes.
                 await queue.RecoverAbandonedJobsAsync(cancellationToken);
 
-                var job = await queue.ClaimNextAsync(_leaseOwner, cancellationToken);
+                var job = await queue.ClaimNextAsync(_leaseOwner, ConversionJobKind.Convert, cancellationToken);
                 if (job == null)
                 {
                     return;
@@ -86,7 +86,9 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             try
             {
-                var outcome = await ExecuteAsync(job, services, queue, linked.Token);
+                var outcome = job.Kind == ConversionJobKind.Repair
+                    ? await ExecuteRepairAsync(job, services, queue, linked.Token)
+                    : await ExecuteAsync(job, services, queue, linked.Token);
 
                 if (outcome.Success)
                 {
@@ -310,6 +312,13 @@ namespace Listenarr.Infrastructure.Library.Conversion
         /// </summary>
         private static async Task<bool> IsKeptOutputSupersededAsync(ConversionJob job, IServiceProvider services)
         {
+            // A repair's sources are expected to be all-M4B — that is what it repairs —
+            // so the heuristic below would discard every repair's kept encode on sight.
+            if (job.Kind == ConversionJobKind.Repair)
+            {
+                return false;
+            }
+
             var audiobook = await services.GetRequiredService<IAudiobookRepository>().GetByIdAsync(job.AudiobookId);
             if (audiobook == null)
             {

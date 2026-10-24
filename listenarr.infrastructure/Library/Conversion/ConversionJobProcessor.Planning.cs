@@ -49,7 +49,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
             IReadOnlyList<TagMapping> tagMappings,
             IReadOnlyDictionary<string, SeriesPositionStyle> seriesPositionStyles,
             StringComparer pathComparer,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Func<IReadOnlyList<ConversionSource>, ConversionTarget>? targetSelector = null)
         {
             var sources = new List<ConversionSource>(sourceFiles.Count);
             AudioMetadata? bookTags = null;
@@ -126,7 +127,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     "No readable source files were found for this book.");
             }
 
-            var plan = ConversionPlanner.BuildPlan(sources, pathComparer);
+            var plan = ConversionPlanner.BuildPlan(sources, pathComparer, targetSelector);
 
             // The output is brand new, so there are no existing tags to preserve or
             // protect: every mapping that resolves to something is written. Routing

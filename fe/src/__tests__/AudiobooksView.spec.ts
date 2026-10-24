@@ -1275,7 +1275,7 @@ describe('AudiobooksView Filter Persistence', () => {
   const SELECTED_FILTER_KEY = 'listenarr.selectedFilter'
   const CUSTOM_FILTERS_KEY = 'listenarr.customFilters'
 
-  const mountView = async () => {
+  const mountView = async (books?: import('@/types').Audiobook[]) => {
     if (
       typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
     ) {
@@ -1308,17 +1308,19 @@ describe('AudiobooksView Filter Persistence', () => {
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
-    store.audiobooks = [
-      { id: 1, title: 'Watched Book', authors: ['Author A'], monitored: true, files: [] },
-      {
-        id: 2,
-        title: 'Ignored Book',
-        authors: ['Author B'],
-        monitored: false,
-        files: [],
-        notFoundFiles: 2,
-      },
-    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks =
+      books ??
+      ([
+        { id: 1, title: 'Watched Book', authors: ['Author A'], monitored: true, files: [] },
+        {
+          id: 2,
+          title: 'Ignored Book',
+          authors: ['Author B'],
+          monitored: false,
+          files: [],
+          notFoundFiles: 2,
+        },
+      ] as unknown as import('@/types').Audiobook[])
     store.fetchLibrary = vi.fn(async () => undefined)
 
     const wrapper = mount(AudiobooksView, {
@@ -1365,6 +1367,52 @@ describe('AudiobooksView Filter Persistence', () => {
     expect(wrapper.text()).toContain('Ignored Book')
     expect(wrapper.text()).not.toContain('Watched Book')
     expect(wrapper.text()).toContain('2 files not found')
+  })
+
+  /**
+   * The library badged and filtered on the verdict alone while the Tags page honoured
+   * acceptance, so a book its owner had already answered was a problem in one place and
+   * settled in the other - and an "Unclear" book, which the Books page's own switch had
+   * never heard of, carried no badge here at all.
+   */
+  it('shows the audit the same books the Tags page does: unanswered ones, Unclear included', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'audio-mismatch')
+
+    const wrapper = await mountView([
+      {
+        id: 1,
+        title: 'Flagged Book',
+        authors: ['Author A'],
+        monitored: true,
+        files: [],
+        audioAudit: 'mismatch',
+        audioAuditAccepted: false,
+      },
+      {
+        id: 2,
+        title: 'Answered Book',
+        authors: ['Author B'],
+        monitored: true,
+        files: [],
+        audioAudit: 'mismatch',
+        audioAuditAccepted: true,
+      },
+      {
+        id: 3,
+        title: 'Quiet Opening',
+        authors: ['Author C'],
+        monitored: true,
+        files: [],
+        audioAudit: 'inconclusive',
+        audioAuditAccepted: false,
+      },
+    ] as unknown as import('@/types').Audiobook[])
+
+    expect(wrapper.text()).toContain('Flagged Book')
+    expect(wrapper.text()).toContain('Different book')
+    expect(wrapper.text()).toContain('Quiet Opening')
+    expect(wrapper.text()).toContain('Unclear')
+    expect(wrapper.text()).not.toContain('Answered Book')
   })
 
   it('restores a custom filter that still exists', async () => {

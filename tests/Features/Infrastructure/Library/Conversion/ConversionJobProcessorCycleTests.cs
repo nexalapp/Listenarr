@@ -83,7 +83,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Conversion
         {
             var remaining = new Queue<ConversionJob>(jobs);
             _queue
-                .Setup(q => q.ClaimNextAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .Setup(q => q.ClaimNextAsync(It.IsAny<string>(), It.IsAny<ConversionJobKind>(), It.IsAny<CancellationToken>()))
                 .Callback(() => _calls.Add("claim"))
                 .ReturnsAsync(() => remaining.Count > 0 ? remaining.Dequeue() : null);
         }

@@ -34,7 +34,8 @@ namespace Listenarr.Application.Audiobooks.Conversion
         IAudiobookConverter converter,
         IHubBroadcaster broadcaster,
         TimeProvider timeProvider,
-        ILogger<ConversionQueueService> logger) : IConversionQueueService
+        ILogger<ConversionQueueService> logger,
+        Listenarr.Application.Audiobooks.Repair.IAudioEnhancer? enhancer = null) : IConversionQueueService
     {
         /// <summary>
         /// How long a claim is good for before another worker may take the job. Long
@@ -56,6 +57,8 @@ namespace Listenarr.Application.Audiobooks.Conversion
             ConversionFailureKind.SourceUnreadable => false,
             ConversionFailureKind.EncodeFailed => false,
             ConversionFailureKind.OutputRejected => false,
+            ConversionFailureKind.EnhancerUnavailable => false,
+            ConversionFailureKind.EnhanceFailed => false,
             _ => true
         };
 
@@ -224,10 +227,12 @@ namespace Listenarr.Application.Audiobooks.Conversion
 
         public async Task<ConversionJob?> ClaimNextAsync(
             string leaseOwner,
+            ConversionJobKind kind = ConversionJobKind.Convert,
             CancellationToken cancellationToken = default)
         {
             var claimed = await repository.ClaimNextAsync(
                 leaseOwner,
+                kind,
                 timeProvider.GetUtcNow().UtcDateTime,
                 LeaseDuration,
                 cancellationToken);
@@ -420,9 +425,11 @@ namespace Listenarr.Application.Audiobooks.Conversion
                     audiobookId = job.AudiobookId,
                     status = job.Status.ToString(),
                     phase = job.Phase.ToString(),
+                    kind = job.Kind.ToString(),
                     progress = job.Progress,
                     chapterCount = job.ChapterCount,
                     sourceFileCount = job.SourceFileCount,
+                    completedSourceFiles = job.CompletedSourceFiles,
                     error = job.Error,
                     failureKind = job.FailureKind,
                     canRetry = job.CanRetry,

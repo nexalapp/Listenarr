@@ -56,10 +56,18 @@ namespace Listenarr.Domain.Audiobooks.Conversion
         /// </summary>
         /// <param name="sources">Input files in any order.</param>
         /// <param name="pathComparer">Comparer matching the source filesystem's case semantics.</param>
+        /// <param name="targetSelector">
+        /// How the encode target is chosen from the ordered sources. Null means
+        /// <see cref="SelectDefaultTarget"/> — the transcode policy, which clamps to what
+        /// the sources carry. A repair passes its own policy, because its sources are
+        /// enhanced intermediates whose restored treble the default selectors would
+        /// throw away; the chapter and ordering logic is identical either way.
+        /// </param>
         /// <exception cref="ArgumentException">No usable sources were supplied.</exception>
         public static ConversionPlan BuildPlan(
             IEnumerable<ConversionSource> sources,
-            StringComparer pathComparer)
+            StringComparer pathComparer,
+            Func<IReadOnlyList<ConversionSource>, ConversionTarget>? targetSelector = null)
         {
             ArgumentNullException.ThrowIfNull(sources);
             ArgumentNullException.ThrowIfNull(pathComparer);
@@ -150,13 +158,23 @@ namespace Listenarr.Domain.Audiobooks.Conversion
                 cursor += duration;
             }
 
+            var target = (targetSelector ?? SelectDefaultTarget)(ordered);
             return new ConversionPlan(
                 ordered,
                 chapters,
-                SelectBitRate(ordered),
-                SelectSampleRate(ordered),
-                SelectChannels(ordered));
+                target.BitRate,
+                target.SampleRate,
+                target.Channels);
         }
+
+        /// <summary>
+        /// The transcode policy: the strongest of the inputs, under the cap. Right for a
+        /// transcode — it never recovers detail the source encoder discarded — and wrong
+        /// for anything whose sources exceed their origin, which is why it is a selector
+        /// rather than the law.
+        /// </summary>
+        public static ConversionTarget SelectDefaultTarget(IReadOnlyList<ConversionSource> sources) =>
+            new(SelectBitRate(sources), SelectSampleRate(sources), SelectChannels(sources));
 
         /// <summary>
         /// Highest source bitrate, held between the floor and the cap. Taking the highest
@@ -198,9 +216,10 @@ namespace Listenarr.Domain.Audiobooks.Conversion
 
         /// <summary>
         /// Highest source channel count, capped at stereo. Mixing a mono file up to
-        /// stereo is lossless; folding a stereo file down to mono is not.
+        /// stereo is lossless; folding a stereo file down to mono is not. Public because
+        /// the repair policy keeps exactly this rule while fixing the other two.
         /// </summary>
-        private static int SelectChannels(IReadOnlyList<ConversionSource> sources)
+        public static int SelectChannels(IReadOnlyList<ConversionSource> sources)
         {
             var best = sources
                 .Select(s => s.Channels)

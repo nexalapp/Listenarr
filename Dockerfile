@@ -43,6 +43,17 @@ FROM base AS final
 WORKDIR /app
 COPY docker/runtime/ /tmp/listenarr-runtime/
 
+# The two shared libraries the audio-repair enhancer's Python packages link against:
+# libgomp for torch's CPU kernels, libsndfile for soundfile. The enhancer itself is
+# provisioned into the config volume on first use, so the image carries no Python and no
+# model — but a shared library cannot be provisioned into a venv, and without these the
+# provisioned install fails at import. A couple of megabytes together; verified by
+# rehearsing the full provision in a bare Debian container.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends libgomp1 libsndfile1 \
+	&& apt-get clean \
+	&& rm -rf /var/lib/apt/lists/*
+
 # Use the gosu binary built above instead of the apt package.
 COPY --from=gosu-builder /go/bin/gosu /usr/local/bin/gosu
 RUN chmod +x /usr/local/bin/gosu

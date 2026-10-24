@@ -174,3 +174,26 @@ describe('customFilterEvaluator - format', () => {
     ).toBe(true)
   })
 })
+
+describe('healthScore rules', () => {
+  const book = (healthScore: number | null) => ({ id: 1, title: 'A', healthScore }) as never
+
+  it('compares numerically', () => {
+    expect(evaluateRules(book(85), [{ field: 'healthScore', operator: 'lt', value: '100' }])).toBe(
+      true,
+    )
+    expect(evaluateRules(book(100), [{ field: 'healthScore', operator: 'lt', value: '100' }])).toBe(
+      false,
+    )
+  })
+
+  // A book nothing has measured yet is not the sickest book in the library.
+  it('unknown health matches no comparison', () => {
+    expect(
+      evaluateRules(book(null), [{ field: 'healthScore', operator: 'lt', value: '100' }]),
+    ).toBe(false)
+    expect(evaluateRules(book(null), [{ field: 'healthScore', operator: 'gte', value: '0' }])).toBe(
+      false,
+    )
+  })
+})
