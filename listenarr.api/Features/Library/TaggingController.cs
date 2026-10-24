@@ -127,7 +127,8 @@ namespace Listenarr.Api.Features.Library
                     audioAudit = AudioAuditVerdictNames.Of(row.AudioAudit),
                     audioAuditReason = row.AudioAuditReason,
                     audioAuditAccepted = row.AudioAuditAccepted,
-                    audioAuditHeardNarrator = row.AudioAuditHeardNarrator
+                    audioAuditHeardNarrator = row.AudioAuditHeardNarrator,
+                    audioRepairRecommended = row.AudioRepairRecommended
                 })
             });
         }

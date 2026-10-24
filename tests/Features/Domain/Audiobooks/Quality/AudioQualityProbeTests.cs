@@ -145,6 +145,35 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Quality
             Assert.NotEqual(AudioQuality.CodecDamaged, report.Verdict);
         }
 
+        /// <summary>
+        /// One rule decides a repair candidate, for the probe and for the library's filter.
+        /// A clean but dark reading qualifies on its treble alone — the research's biggest
+        /// group of generative wins — and a production never does, because the model
+        /// destroys a score it takes for noise.
+        /// </summary>
+        [Theory]
+        [InlineData(AudioQuality.CodecDamaged, 0, true)]
+        [InlineData(AudioQuality.Clean, 30, true)]
+        [InlineData(AudioQuality.Clean, 10, false)]
+        [InlineData(AudioQuality.Hiss, 25, true)]
+        [InlineData(AudioQuality.Hiss, 24.9, false)]
+        [InlineData(AudioQuality.ProductionAudio, 40, false)]
+        [InlineData(AudioQuality.Unknown, 40, false)]
+        public void RepairRecommendation_FollowsOneRule(AudioQuality verdict, double deficitDb, bool expected)
+        {
+            Assert.Equal(expected, AudioRepairRecommendation.Of(verdict, deficitDb, offerThresholdDb: 25));
+            var stored = $"{{\"NoiseFloorDb\":-70,\"BrightnessDeficitDb\":{deficitDb.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}";
+            Assert.Equal(expected, AudioRepairRecommendation.Of(verdict, stored, offerThresholdDb: 25));
+        }
+
+        [Fact]
+        public void RepairRecommendation_UnreadableMetrics_RecommendsOnlyCodecDamage()
+        {
+            Assert.False(AudioRepairRecommendation.Of(AudioQuality.Hiss, "not json", 25));
+            Assert.False(AudioRepairRecommendation.Of(AudioQuality.Hiss, (string?)null, 25));
+            Assert.True(AudioRepairRecommendation.Of(AudioQuality.CodecDamaged, (string?)null, 25));
+        }
+
         [Fact]
         public void TooLittleAudio_IsUnknown()
         {

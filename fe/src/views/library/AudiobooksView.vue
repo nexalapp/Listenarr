@@ -1317,6 +1317,7 @@ const BUILT_IN_FILTER_IDS = [
   'chapter-issues',
   'audio-mismatch',
   'health-issues',
+  'repair-candidates',
 ]
 
 function loadSelectedFilter() {
@@ -1433,6 +1434,8 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => !!audioIssueLabel(b))
     } else if (sid === 'health-issues') {
       filtered = filtered.filter((b) => (b.healthScore ?? 100) < 100)
+    } else if (sid === 'repair-candidates') {
+      filtered = filtered.filter((b) => !!b.audioRepairRecommended)
     } else if (sid === 'recent') {
       // For now: approximate by publishYear being this year or last year
       const thisYear = new Date().getFullYear()
