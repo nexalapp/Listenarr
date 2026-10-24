@@ -273,6 +273,14 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         [InlineData("  failure/health  ", 2)]
         [InlineData("WARNING/REPAIRABLE", 0)]
         [InlineData("DELETED/MANUAL", 0)]
+        [InlineData("DELETED/GOOD", 0)]
+        [InlineData("WARNING/SCRIPT", 0)]
+        // The book is not coming after these, so they must not read as nothing: a wrong
+        // archive password, and a re-grab of an NZB NZBGet already has.
+        [InlineData("WARNING/PASSWORD", 2)]
+        [InlineData("  warning/damaged  ", 2)]
+        [InlineData("DELETED/COPY", 2)]
+        [InlineData("DELETED/DUPE", 2)]
         [InlineData("", 0)]
         [InlineData("SUCCESS", 0)]
         [InlineData("UNKNOWN/FUTURE", 0)]
@@ -548,6 +556,41 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal(0L, download.Metadata["AmountLeft"]);
             Assert.Equal(DownloadStatus.Completed, download.Status);
             Assert.Equal("/destination/destdir-book", download.DownloadPath);
+        }
+
+        [Fact]
+        public async Task QueuePath_WrongArchivePassword_FailsTheDownloadInsteadOfLeavingItToVanish()
+        {
+            // The Solaris grab: the NZB was another upload, the post's password could not open
+            // it, and NZBGet finished with WARNING/PASSWORD. Ignored, the job left the queue and
+            // orphan cleanup deleted the download, so the book showed no trace of having failed.
+            using var apiMock = new NzbgetApiMock();
+            QueuePollingResponses(
+                apiMock,
+                [],
+                [
+                    HistoryEntryValue(
+                        nzbId: "37604",
+                        title: "Solaris",
+                        status: "WARNING/PASSWORD",
+                        fileSizeMb: "847",
+                        downloadedSizeMb: "847")
+                ]);
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(http);
+            var download = CreateDownload("solaris", "Solaris", "37604", 100);
+
+            await FetchDownloadsThroughQueuePathAsync(
+                adapter,
+                CreateClient(),
+                [download],
+                CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.Failed, download.Status);
+            Assert.Equal(
+                "NZBGet could not unpack the download because the archive password was wrong. The NZB may not be the release the password belongs to.",
+                download.ErrorMessage);
+            Assert.Equal("WARNING/PASSWORD", download.Metadata["ClientFailureReason"]);
         }
 
         [Fact]
@@ -911,7 +954,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         public async Task QueuePath_IgnoredHistoryStatus_DoesNotMutateTrackedDownload(
             string status)
         {
-            // AC: AC-NZB-005 requires warning, deleted, empty, and unknown history statuses to be ignored.
+            // AC: AC-NZB-005 requires warning, deleted, empty, and unknown history statuses to be ignored,
+            // except the few after which the book is not coming (WARNING/PASSWORD, DELETED/COPY, ...).
             // Behavior: Non-terminal history status -> public poll -> tracked object remains unchanged.
             // @category: edge-case
             // @lane: integration

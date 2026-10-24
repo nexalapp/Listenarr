@@ -42,6 +42,25 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
     internal sealed class NzbgetHistoryReader
     {
         private const decimal BytesPerMegabyte = 1_048_576m;
+
+        /// <summary>
+        /// Non-<c>FAILURE</c> statuses after which nothing usable will be left: the archive
+        /// could not be opened or repaired, the disk filled, or NZBGet threw the job away as
+        /// unusable or as a repeat of one it already has.
+        /// </summary>
+        private static readonly HashSet<string> NotComingStatuses = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "WARNING/PASSWORD",
+            "WARNING/DAMAGED",
+            "WARNING/SPACE",
+            "WARNING/HEALTH",
+            "DELETED/COPY",
+            "DELETED/DUPE",
+            "DELETED/HEALTH",
+            "DELETED/BAD",
+            "DELETED/SCAN"
+        };
+
         private readonly NzbgetXmlRpcClient _xmlRpcClient;
 
         public NzbgetHistoryReader(NzbgetXmlRpcClient xmlRpcClient)
@@ -140,6 +159,16 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                     : string.Empty;
         }
 
+        /// <summary>
+        /// Sorts NZBGet's final statuses into done, failed and nothing to report.
+        ///
+        /// Most <c>WARNING/*</c> and <c>DELETED/*</c> statuses are noise, but a few mean the
+        /// book is not coming. A wrong archive password ends as <c>WARNING/PASSWORD</c>, and a
+        /// second grab of an NZB already in the history as <c>DELETED/COPY</c>. Read as
+        /// nothing, the job simply left the queue, orphan cleanup removed the download
+        /// without a word, and a book that would never arrive looked as if it had never been
+        /// grabbed. Those are reported as failures; the rest stay ignored.
+        /// </summary>
         private static NzbgetHistoryOutcome ClassifyOutcome(string rawStatus)
         {
             if (rawStatus.StartsWith("SUCCESS/", StringComparison.OrdinalIgnoreCase))
@@ -148,8 +177,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             }
 
             return rawStatus.StartsWith("FAILURE/", StringComparison.OrdinalIgnoreCase)
-                ? NzbgetHistoryOutcome.Failed
-                : NzbgetHistoryOutcome.Ignored;
+                || NotComingStatuses.Contains(rawStatus)
+                    ? NzbgetHistoryOutcome.Failed
+                    : NzbgetHistoryOutcome.Ignored;
         }
 
         private static (long Bytes, bool IsKnown) ParseMegabytes(string value)
