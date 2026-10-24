@@ -293,6 +293,19 @@ describe('ActivityView row titles', () => {
     expect(fetchLibraryMock).not.toHaveBeenCalled()
   })
 
+  it('re-reads a loaded library that does not hold a row’s book', async () => {
+    // The page fetches the library once. A book imported since - or a fetch that failed
+    // while the server restarted - left its rows reading "Audiobook #267" until a reload.
+    const wrapper = await mountWith({
+      audiobooks: [{ id: 1, title: 'Another Book' }],
+      lateAudiobooks: [{ id: 267, title: 'Blackout' }],
+      conversionJobs: [runningConversion],
+    })
+
+    expect(fetchLibraryMock).toHaveBeenCalled()
+    expect(wrapper.find('.queue-row .title-link').text()).toBe('Blackout')
+  })
+
   it('names the book rather than repeating the action already in the badge below', async () => {
     // The book is gone from the library, so the row has to fall back. The old fallback
     // was the action name, which read "Convert to M4B" directly above a badge saying

@@ -2496,7 +2496,15 @@ async function removeNotFoundFiles() {
   }
 }
 
-/** Put the narrator the audio names on the record, then transcribe again to confirm. */
+/**
+ * Put the narrator the audio names on the record.
+ *
+ * No re-transcribe follows. Saving the record re-judges the audit against the transcript
+ * already stored (AudiobookRepository.RejudgeAudioAuditAsync), so reloading the book
+ * shows the corrected verdict immediately. Listening again would spend a minute of the
+ * worker's CPU re-deriving the same heard narrator from the same audio with the same
+ * model, to reach the verdict the save already produced.
+ */
 async function adoptHeardNarrator() {
   if (!audiobook.value?.audioAuditHeardNarrator) return
   settingNarrator.value = true
@@ -2512,7 +2520,6 @@ async function adoptHeardNarrator() {
     await apiService.updateAudiobook(audiobook.value.id, { narrators })
     toast.success('Narrator updated', `Set to ${narrators.join(', ')}.`)
     await loadAudiobook()
-    await auditAudio()
   } catch (err) {
     toast.error('Could not update the narrator', err instanceof Error ? err.message : String(err))
   } finally {
