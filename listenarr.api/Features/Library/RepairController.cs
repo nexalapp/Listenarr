@@ -146,6 +146,64 @@ namespace Listenarr.Api.Features.Library
             };
         }
 
+        /// <summary>
+        /// Queue full repairs for a set of books chosen in the library, without a preview
+        /// of each. The caller confirms first; the repair lane still runs one book at a time.
+        /// </summary>
+        /// <remarks>
+        /// Shaped like the bulk conversion request: every book is reported on individually
+        /// and the response is 200 even when none were queued, because a selection is
+        /// expected to hold books already queued or with nothing to repair. Queued one at a
+        /// time for the same reason conversion is - the unique dedup index.
+        /// </remarks>
+        /// <response code="200">Every requested book was considered; see the per-book results.</response>
+        /// <response code="400">No ids were supplied.</response>
+        [HttpPost("audiobooks/bulk")]
+        public async Task<IActionResult> RepairBulk(
+            [FromBody] BulkConvertRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var audiobookIds = (request?.AudiobookIds ?? []).Distinct().ToList();
+            if (audiobookIds.Count == 0)
+            {
+                return BadRequest(new { message = "No audiobooks were selected." });
+            }
+
+            var results = new List<object>(audiobookIds.Count);
+            var queued = 0;
+
+            foreach (var audiobookId in audiobookIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var result = await conversionQueue.EnqueueRepairAsync(audiobookId, cancellationToken);
+                if (result.Queued)
+                {
+                    queued++;
+                }
+
+                results.Add(new
+                {
+                    audiobookId,
+                    outcome = result.Outcome.ToString(),
+                    jobId = result.JobId?.ToString(),
+                    reason = result.Reason
+                });
+            }
+
+            logger.LogInformation(
+                "Bulk repair request for {RequestedCount} audiobook(s): {QueuedCount} queued.",
+                audiobookIds.Count,
+                queued);
+
+            return Ok(new
+            {
+                requestedCount = audiobookIds.Count,
+                queuedCount = queued,
+                results
+            });
+        }
+
         private static object Project(EnhancerStatus status) => new
         {
             state = status.State.ToString(),
