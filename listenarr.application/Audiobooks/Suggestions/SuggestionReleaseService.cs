@@ -83,7 +83,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
                 var matching = results
                     .Where(result => IsAbookLink(indexer)
-                        ? SuggestionReleaseMatch.AsinMatches(result.Asin, book.Asin)
+                        ? SuggestionReleaseMatch.AbookPostMatches(
+                            result.Asin, result.Album, result.Artist, book.Asin, book.Title, book.Authors)
                         : SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, book.Title, book.Authors))
                     .ToList();
 
@@ -98,7 +99,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                         ReleaseTitle = best.Title,
                         SizeBytes = best.Size > 0 ? best.Size : null,
                         ProtectedResult = secrets.Protect(JsonSerializer.Serialize(best)),
-                        Detail = IsAbookLink(indexer) ? "The post names this ASIN." : "Title and author match.",
+                        Detail = !IsAbookLink(indexer)
+                            ? "Title and author match."
+                            : string.IsNullOrWhiteSpace(best.Asin) ? "The post's title and author match." : "The post names this ASIN.",
                         CheckedAt = DateTime.UtcNow
                     }, cancellationToken);
                 }
