@@ -75,6 +75,8 @@ internal static class LibraryRegistrationExtensions
         services.AddSingleton<IEmbeddedCoverExtractor, TagLibEmbeddedCoverExtractor>();
         services.AddScoped<ISeriesCatalogService, SeriesCatalogService>();
         services.AddScoped<ISuggestionService, SuggestionService>();
+        services.AddScoped<ISuggestionReleaseRepository, EfSuggestionReleaseRepository>();
+        services.AddScoped<ISuggestionReleaseService, SuggestionReleaseService>();
         services.AddScoped<AuthorAliasApplyService>();
         services.AddSingleton<ISuggestionRefreshService, SuggestionRefreshService>();
         services.AddScoped<ILibraryDestinationMutationGuard, LibraryDestinationMutationGuard>();

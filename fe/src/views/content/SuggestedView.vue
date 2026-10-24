@@ -66,6 +66,17 @@
       </div>
     </div>
 
+    <p v-if="snapshot?.releases && snapshot.releases.total > 0" class="coverage release-coverage">
+      <template v-if="snapshot.releases.checked < snapshot.releases.total">
+        Checked {{ snapshot.releases.checked }} of {{ snapshot.releases.total }} suggested books
+        for a release;
+      </template>
+      <strong>{{ snapshot.releases.found }}</strong> can be downloaded.
+      <Checkbox v-model="showUnavailable" class="show-unavailable"
+        >Show books with no release found</Checkbox
+      >
+    </p>
+
     <div class="tabs">
       <button
         v-for="tab in tabs"
@@ -90,15 +101,17 @@
       <!-- Missing from your authors -->
       <template v-if="activeTab === 'authors'">
         <EmptyState
-          v-if="snapshot.authors.length === 0"
+          v-if="shown.authors.length === 0"
           title="Nothing missing from your authors"
           :message="
             snapshot.coverage.authorsWithCatalog === 0
               ? 'No author catalogs are cached yet. Fetch catalogs to look at them.'
-              : 'Every cached author catalog is fully represented in your library.'
+              : snapshot.authors.length > 0
+                ? HIDDEN_MESSAGE
+                : 'Every cached author catalog is fully represented in your library.'
           "
         />
-        <section v-for="group in snapshot.authors" :key="group.author" class="group">
+        <section v-for="group in shown.authors" :key="group.author" class="group">
           <header class="group-header">
             <RouterLink
               :to="{ name: 'collection', params: { type: 'author', name: group.author } }"
@@ -137,15 +150,17 @@
       <!-- Missing from your series -->
       <template v-else-if="activeTab === 'series'">
         <EmptyState
-          v-if="snapshot.series.length === 0"
+          v-if="shown.series.length === 0"
           title="No gaps in your series"
           :message="
             snapshot.coverage.seriesWithCatalog === 0
               ? 'No series catalogs are cached yet. Fetch catalogs to look at them.'
-              : 'Every cached series is complete in your library.'
+              : snapshot.series.length > 0
+                ? HIDDEN_MESSAGE
+                : 'Every cached series is complete in your library.'
           "
         />
-        <section v-for="group in snapshot.series" :key="group.series" class="group">
+        <section v-for="group in shown.series" :key="group.series" class="group">
           <header class="group-header">
             <RouterLink
               :to="{ name: 'collection', params: { type: 'series', name: group.series } }"
@@ -246,7 +261,9 @@ import { describeApiError, getAlreadyExistingAudiobook } from '@/utils/apiError'
 import type {
   AudibleBookMetadata,
   Audiobook,
+  AuthorSuggestionGroup,
   SearchResult,
+  SeriesSuggestionGroup,
   SuggestedBook,
   SuggestionRefreshStatus,
   SuggestionSnapshot,
@@ -296,6 +313,46 @@ function readSearchOnAdd(): boolean {
   }
 }
 
+// Suggestions are for adding in bulk, so by default only books an indexer holds a
+// release of are shown; the rest are a toggle away, marked as not found or still being
+// checked. Remembered per browser like the search toggle.
+const SHOW_UNAVAILABLE_KEY = 'listenarr.suggested.showUnavailable'
+const showUnavailable = ref(readFlag(SHOW_UNAVAILABLE_KEY, false))
+watch(showUnavailable, (value) => {
+  try {
+    localStorage.setItem(SHOW_UNAVAILABLE_KEY, value ? '1' : '0')
+  } catch {
+    // Storage unavailable: the toggle still works for this visit.
+  }
+})
+
+function readFlag(key: string, fallback: boolean): boolean {
+  try {
+    const value = localStorage.getItem(key)
+    return value === null ? fallback : value === '1'
+  } catch {
+    return fallback
+  }
+}
+
+const HIDDEN_MESSAGE =
+  'No release has been found yet for what is missing here. Books are checked in the background; show the rest with "Show books with no release found".'
+
+function hasRelease(book: SuggestedBook): boolean {
+  return book.release?.found === true
+}
+
+const shown = computed<{ authors: AuthorSuggestionGroup[]; series: SeriesSuggestionGroup[] }>(() => {
+  const value = snapshot.value
+  if (!value) return { authors: [], series: [] }
+  if (showUnavailable.value) return { authors: value.authors, series: value.series }
+  const keep = <T extends { missing: SuggestedBook[] }>(groups: T[]): T[] =>
+    groups
+      .map((group) => ({ ...group, missing: group.missing.filter(hasRelease) }))
+      .filter((group) => group.missing.length > 0)
+  return { authors: keep(value.authors), series: keep(value.series) }
+})
+
 const refreshStatus = ref<SuggestionRefreshStatus | null>(null)
 const refreshing = ref(false)
 let refreshPoll: number | null = null
@@ -304,12 +361,12 @@ const tabs = computed(() => [
   {
     id: 'authors' as TabId,
     label: 'From your authors',
-    count: snapshot.value?.authors.reduce((n, g) => n + g.missing.length, 0) ?? 0,
+    count: shown.value.authors.reduce((n, g) => n + g.missing.length, 0),
   },
   {
     id: 'series' as TabId,
     label: 'From your series',
-    count: snapshot.value?.series.reduce((n, g) => n + g.missing.length, 0) ?? 0,
+    count: shown.value.series.reduce((n, g) => n + g.missing.length, 0),
   },
   {
     id: 'related' as TabId,

@@ -37,6 +37,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
         private readonly IFilesystemMutationCoordinator _mutationCoordinator;
         private readonly INotificationService? _notificationService;
         private readonly ISuggestionRefreshService? _suggestionRefresh;
+        private readonly ISuggestionReleaseService? _suggestionReleases;
 
         public LibraryAddService(
             IAudiobookRepository repo,
@@ -53,7 +54,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
             IFileSystem fileSystem,
             IFilesystemMutationCoordinator mutationCoordinator,
             INotificationService? notificationService = null,
-            ISuggestionRefreshService? suggestionRefresh = null)
+            ISuggestionRefreshService? suggestionRefresh = null,
+            ISuggestionReleaseService? suggestionReleases = null)
         {
             _repo = repo;
             _commitStore = commitStore;
@@ -72,6 +74,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             _mutationCoordinator = mutationCoordinator ?? throw new ArgumentNullException(nameof(mutationCoordinator));
             _notificationService = notificationService;
             _suggestionRefresh = suggestionRefresh;
+            _suggestionReleases = suggestionReleases;
         }
 
         public async Task<LibraryAddOperationResult> AddToLibraryAsync(
@@ -196,6 +199,11 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 audiobook.Authors ?? [],
                 string.IsNullOrWhiteSpace(audiobook.Series) ? [] : [audiobook.Series]);
 
+            if (request.AutoSearch && request.Monitored)
+            {
+                await TryGrabStoredReleaseAsync(audiobook, cancellationToken);
+            }
+
             _logger.LogInformation(
                 "Added audiobook '{Title}' (ASIN: {Asin}) to library with Monitored={Monitored}, QualityProfileId={QualityProfileId}, AutoSearch={AutoSearch}",
                 audiobook.Title,
@@ -205,6 +213,33 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 request.AutoSearch);
 
             return result;
+        }
+
+        /// <summary>
+        /// Sends the release the Suggested page's background check already found for this
+        /// book, so adding it there downloads it without searching again. A post-commit
+        /// effect like the notification: a failure here leaves the book added and says why
+        /// in the log, rather than turning the add into an error.
+        /// </summary>
+        private async Task TryGrabStoredReleaseAsync(Audiobook audiobook, CancellationToken cancellationToken)
+        {
+            if (_suggestionReleases == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _suggestionReleases.GrabStoredAsync(audiobook, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Could not grab the stored release for '{Title}' ({Asin}); the book is added but not downloading",
+                    audiobook.Title,
+                    audiobook.Asin);
+            }
         }
 
         private async Task<LibraryAddOperationResult> CommitAsync(

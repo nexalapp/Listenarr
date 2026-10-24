@@ -118,6 +118,9 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string RepairPipelineMigrationId =
         "20261015225743_AddRepairPipeline";
 
+    private const string SuggestionReleasesMigrationId =
+        "20261024025603_AddSuggestionReleases";
+
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
     {
@@ -276,7 +279,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 DropUnusedAcceptedVerdictMigrationId,
                 SeriesNamesKeptWholeMigrationId,
                 AudioQualityAndHealthMigrationId,
-                RepairPipelineMigrationId
+                RepairPipelineMigrationId,
+                SuggestionReleasesMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
