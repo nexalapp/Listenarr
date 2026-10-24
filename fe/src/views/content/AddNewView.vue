@@ -357,7 +357,7 @@
       </div>
     </div>
     <!-- Loading State -->
-    <div v-if="isSearching && !hasResults" class="loading-results">
+    <div v-if="isSearching" class="loading-results">
       <div class="loading-spinner">
         <PhSpinner class="ph-spin" />
         <p>Searching for audiobooks...</p>
@@ -366,7 +366,7 @@
     </div>
 
     <!-- Results Section -->
-    <div v-if="hasResults" class="search-results">
+    <div v-if="hasResults && !isSearching" class="search-results">
       <!-- ASIN Results -->
       <div v-if="searchType === 'asin' && audibleResult">
         <h2>Audiobook Found</h2>
@@ -617,12 +617,8 @@
       </div>
 
       <!-- ISBN Auto-processing Status -->
-      <div v-if="searchType === 'isbn' && isSearching" class="inline-status">
-        <PhSpinner class="ph-spin" />
-        <span>Searching Amazon/Audible for audiobook...</span>
-      </div>
       <div
-        v-else-if="searchType === 'isbn' && !isSearching && isbnLookupMessage"
+        v-if="searchType === 'isbn' && isbnLookupMessage"
         class="inline-status"
         :class="{ warning: isbnLookupWarning }"
       >
@@ -700,6 +696,86 @@
             </div>
           </div>
         </div>
+        <!--
+          The authors and series the results have in common, each a thing you can
+          browse or monitor in its own right: a search for a prolific writer answers
+          with twenty of their books, and what you often want is the person or the
+          series rather than any one book. Only collections holding more than one of
+          the results appear - a lone book's author and series are already chips on
+          its own card.
+        -->
+        <div v-if="resultCollections.length > 0" class="result-collections">
+          <h3 class="collections-heading">Authors &amp; series in these results</h3>
+          <ul class="collection-rows">
+            <li
+              v-for="row in resultCollections"
+              :key="`${row.kind}:${row.name}`"
+              class="collection-row"
+            >
+              <div v-if="row.covers.length > 1" class="row-stack">
+                <img
+                  :src="row.covers[1]"
+                  alt=""
+                  class="stack-cover stack-cover--back"
+                  loading="lazy"
+                  decoding="async"
+                  @error="handleLazyImageError"
+                />
+                <img
+                  :src="row.covers[0]"
+                  alt=""
+                  class="stack-cover stack-cover--front"
+                  loading="lazy"
+                  decoding="async"
+                  @error="handleLazyImageError"
+                />
+              </div>
+              <img
+                v-else
+                :src="row.covers[0] || getPlaceholderUrl()"
+                alt=""
+                class="row-thumb"
+                loading="lazy"
+                decoding="async"
+                @error="handleLazyImageError"
+              />
+
+              <div class="row-text">
+                <button
+                  type="button"
+                  class="entity-link row-name"
+                  :title="`Browse ${row.name}`"
+                  @click="openCollection(row.kind, row.name)"
+                >
+                  {{ safeText(row.name) }}
+                </button>
+                <span class="row-sub">{{ collectionCountLabel(row.kind, row.count) }}</span>
+              </div>
+
+              <button
+                type="button"
+                class="monitor-chip"
+                :class="{ monitoring: isMonitored(row.kind, row.name) }"
+                :disabled="isMonitorBusy(row.kind, row.name)"
+                :title="
+                  isMonitored(row.kind, row.name)
+                    ? `Stop monitoring ${row.name}`
+                    : `Monitor ${row.name} and add any books you are missing`
+                "
+                @click="toggleMonitor(row.kind, row.name)"
+              >
+                <PhArrowClockwise v-if="isMonitorBusy(row.kind, row.name)" class="ph-spin" />
+                <span
+                  v-else-if="isMonitored(row.kind, row.name)"
+                  class="monitor-dot"
+                  aria-hidden="true"
+                />
+                {{ monitorChipLabel(row.kind, row.name, false) }}
+              </button>
+            </li>
+          </ul>
+        </div>
+
         <div class="title-results">
           <div
             v-for="book in displayedTitleResults"
@@ -1072,6 +1148,7 @@ import type {
 } from '@/types'
 import { apiService } from '@/services/api'
 import { getPlaceholderUrl } from '@/utils/placeholder'
+import { collectionCountLabel, groupCollectionRows } from '@/utils/collectionRows'
 import { handleImageError } from '@/utils/imageFallback'
 import type { OpenLibraryBook } from '@/services/openlibrary'
 import { openLibraryService } from '@/services/openlibrary'
@@ -1807,14 +1884,28 @@ watch(
 
 // Scroll to top of results when page changes
 watch(currentAdvancedPage, () => {
-  nextTick(() => {
-    const titleResultsElement = document.querySelector('.title-results')
-    if (titleResultsElement) {
-      const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-      window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-    }
-  })
+  void scrollToResults()
 })
+
+/**
+ * Bring the results into view once they are on screen.
+ *
+ * They are hidden while a search is underway and the flag only clears after the
+ * search function returns, so the element can be a tick or two behind the call -
+ * and on a page change it is already there. Both cases are the same wait.
+ */
+async function scrollToResults(): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await nextTick()
+    const element = document.querySelector('.title-results')
+    if (element) {
+      const elementTop = element.getBoundingClientRect().top + window.scrollY
+      window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
 
 // Computed properties
 const hasResults = computed(() => {
@@ -2295,13 +2386,7 @@ const performAdvancedSearch = async () => {
         await handleAdvancedSearchResults(filtered.length ? filtered : results)
 
         // done: scroll into view
-        nextTick(() => {
-          const titleResultsElement = document.querySelector('.title-results')
-          if (titleResultsElement) {
-            const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-            window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-          }
-        })
+        void scrollToResults()
         return
       }
 
@@ -2309,13 +2394,7 @@ const performAdvancedSearch = async () => {
       await handleAdvancedSearchResults(results)
 
       // Scroll to top of results after search
-      nextTick(() => {
-        const titleResultsElement = document.querySelector('.title-results')
-        if (titleResultsElement) {
-          const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-          window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-        }
-      })
+      void scrollToResults()
     } catch (err) {
       advancedSearchError.value = err instanceof Error ? err.message : 'Search failed'
       errorMessage.value = advancedSearchError.value
@@ -2451,13 +2530,7 @@ const changeAudiblePage = async (newPage: number) => {
     await handleAdvancedSearchResults(converted)
 
     // Scroll to top of results after page change
-    nextTick(() => {
-      const titleResultsElement = document.querySelector('.title-results')
-      if (titleResultsElement) {
-        const elementTop = titleResultsElement.getBoundingClientRect().top + window.scrollY
-        window.scrollTo({ top: elementTop - 125, behavior: 'smooth' })
-      }
-    })
+    void scrollToResults()
   } else {
     // Fallback: call API if no cached results
     await performAdvancedSearch()
@@ -2536,6 +2609,37 @@ const getCoverUrl = (book: TitleSearchResult): string => {
   const imageUrl = book.searchResult?.imageUrl || ''
   return getProtectedImageSrc(imageUrl, getPlaceholderUrl())
 }
+
+/** Four of each is enough to recognise what the search turned up without burying it. */
+const MAX_COLLECTION_ROWS_PER_KIND = 4
+
+/**
+ * The authors and series worth offering as rows of their own: the ones holding more
+ * than one of the results. A collection standing for a single book says nothing the
+ * book's own card does not already say, and twenty of them would bury the books.
+ */
+const resultCollections = computed(() => {
+  const books = titleResults.value
+  const coverOf = (book: TitleSearchResult) => getCoverUrl(book) || undefined
+  const rows = [
+    ...groupCollectionRows(books, 'author', {
+      namesOf: authorNamesFor,
+      coverOf,
+      limit: MAX_COLLECTION_ROWS_PER_KIND,
+    }),
+    ...groupCollectionRows(books, 'series', {
+      namesOf: seriesNamesFor,
+      coverOf,
+      // Reading order, so the stack opens with the first book of the series.
+      positionOf: (book) => {
+        const position = Number(book.searchResult?.seriesNumber)
+        return Number.isFinite(position) ? position : undefined
+      },
+      limit: MAX_COLLECTION_ROWS_PER_KIND,
+    }),
+  ]
+  return rows.filter((row) => row.count > 1)
+})
 
 const getAudibleResultImageSrc = (): string => {
   const result = audibleResult.value
@@ -4975,6 +5079,112 @@ select.form-input:focus {
 }
 
 /* Title Search Results */
+/*
+ * The collection rows sit above the books as a compact strip: they are a shortcut to
+ * a person or a series, not results in their own right, so they must not compete with
+ * the cards underneath.
+ */
+.result-collections {
+  margin-bottom: 1.25rem;
+}
+
+.collections-heading {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #8b949e;
+}
+
+.collection-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collection-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0.7rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.row-thumb {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 6px;
+  background-color: #555;
+}
+
+/*
+ * Two covers in the space of one, offset into opposite corners: the later book behind
+ * at the top right, the first of the series in front at the bottom left.
+ */
+.row-stack {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+
+.row-stack .stack-cover {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 5px;
+  background-color: #555;
+}
+
+.row-stack .stack-cover--back {
+  top: 0;
+  right: 0;
+  opacity: 0.85;
+}
+
+.row-stack .stack-cover--front {
+  bottom: 0;
+  left: 0;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.row-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.row-name {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.row-sub {
+  font-size: 0.78rem;
+  white-space: nowrap;
+  color: #8b949e;
+}
+
+/* The name gives way before the chip does, and the chip never splits across lines. */
+.collection-row .monitor-chip {
+  flex-shrink: 0;
+}
+
 .title-results {
   display: flex;
   flex-direction: column;

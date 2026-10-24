@@ -1202,3 +1202,133 @@ describe('AddNewView pagination', () => {
     expect(addBtn.attributes('disabled')).toBeDefined()
   })
 })
+
+/**
+ * Two searches in a row left the first one's results on screen while the second ran, with
+ * nothing to say they were out of date, and a search that found twenty books by one
+ * writer answered with twenty cards and no way to reach the writer.
+ */
+const addNewTestRouter = () =>
+  createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: { template: '<div />' } }],
+  })
+
+const mountAddNew = () => {
+  const wrapper = mount(AddNewView, {
+    global: { plugins: [createPinia(), addNewTestRouter()] },
+  })
+  return {
+    wrapper,
+    vm: wrapper.vm as unknown as {
+      searchType?: string
+      titleResults?: unknown[]
+      isSearching?: boolean
+    },
+  }
+}
+
+const sunEaterResults = [
+  {
+    key: 'demon-in-white',
+    title: 'Demon in White',
+    author_name: ['Christopher Ruocchio'],
+    imageUrl: '/covers/demon.jpg',
+    searchResult: { artist: 'Christopher Ruocchio', series: 'Sun Eater', seriesNumber: '3' },
+  },
+  {
+    key: 'empire-of-silence',
+    title: 'Empire of Silence',
+    author_name: ['Christopher Ruocchio'],
+    imageUrl: '/covers/empire.jpg',
+    searchResult: { artist: 'Christopher Ruocchio', series: 'Sun Eater', seriesNumber: '1' },
+  },
+]
+
+const resetAddNewEnvironment = async () => {
+  vi.clearAllMocks()
+  window.localStorage.clear()
+  const apiModule = await import('@/services/api')
+  const apiService = apiModule.apiService as unknown as {
+    getApplicationSettings?: Mock
+    searchAudibleByTitleAndAuthor?: Mock
+  }
+  apiService.getApplicationSettings?.mockResolvedValue({})
+  apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({ totalResults: 0, results: [] })
+  setActivePinia(createPinia())
+}
+
+describe('AddNewView search activity', () => {
+  beforeEach(resetAddNewEnvironment)
+
+  it('shows an activity indicator in place of the last search while one is underway', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = sunEaterResults
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.title-results').exists()).toBe(true)
+
+    vm.isSearching = true
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.loading-results').exists()).toBe(true)
+    expect(wrapper.find('.search-results').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Demon in White')
+  })
+
+  it('brings the results back when the search finishes', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = sunEaterResults
+    vm.isSearching = true
+    await wrapper.vm.$nextTick()
+
+    vm.isSearching = false
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.loading-results').exists()).toBe(false)
+    expect(wrapper.find('.title-results').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Demon in White')
+  })
+})
+
+describe('AddNewView result collections', () => {
+  beforeEach(resetAddNewEnvironment)
+
+  it('offers the author and the series the results have in common', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = sunEaterResults
+    await wrapper.vm.$nextTick()
+
+    const rows = wrapper.findAll('.collection-row')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('Christopher Ruocchio')
+    expect(rows[0]!.text()).toContain('Author · 2 books')
+    expect(rows[1]!.text()).toContain('Sun Eater')
+    expect(rows[1]!.text()).toContain('Series · 2 books')
+  })
+
+  it('stacks the series covers in reading order, not the order they were returned', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = sunEaterResults
+    await wrapper.vm.$nextTick()
+
+    const series = wrapper.findAll('.collection-row')[1]!
+    expect(series.findAll('.row-stack img')).toHaveLength(2)
+    // Book 1 in front, book 3 behind it, although book 3 was returned first.
+    expect(series.find('.stack-cover--front').attributes('src')).toContain('empire.jpg')
+    expect(series.find('.stack-cover--back').attributes('src')).toContain('demon.jpg')
+  })
+
+  it('says nothing about a collection that stands for a single result', async () => {
+    const { wrapper, vm } = mountAddNew()
+    vm.searchType = 'title'
+    vm.titleResults = [sunEaterResults[0]]
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.result-collections').exists()).toBe(false)
+    expect(wrapper.find('.title-results').exists()).toBe(true)
+  })
+})
