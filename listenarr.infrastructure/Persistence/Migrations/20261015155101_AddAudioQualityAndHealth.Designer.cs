@@ -2370,6 +2370,12 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("[\"Series\",\"Trilogy\",\"Saga\",\"Cycle\",\"Sequence\",\"Duology\",\"Quartet\",\"Quintet\",\"Tetralogy\"]");
 
+                    b.Property<string>("SeriesNamesKeptWholeJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]");
+
                     b.Property<bool>("ShowCompletedExternalDownloads")
                         .HasColumnType("INTEGER");
 

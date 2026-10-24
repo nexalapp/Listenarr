@@ -178,7 +178,11 @@
           class="form-select"
           :value="settings.repairSourceDisposition ?? 'Archive'"
           @change="
-            (e) => updateField('repairSourceDisposition', (e.target as HTMLSelectElement).value)
+            (e) =>
+              updateField(
+                'repairSourceDisposition',
+                (e.target as HTMLSelectElement).value as 'Archive' | 'Keep' | 'Delete',
+              )
           "
         >
           <option value="Archive">Archive them</option>
