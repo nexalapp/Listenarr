@@ -59,11 +59,10 @@ namespace Listenarr.Domain.Audiobooks.Quality
         public double GenerativeDeficitDb { get; init; } = 25;
 
         /// <summary>
-        /// Harmonicity below this is codec damage. Calibrated by crushing a clean file:
-        /// 0.715 clean, 0.658 at 48 kbps, 0.586 at 33 kbps; the library's worst genuine
-        /// case measures 0.413. Valid only at the probe's own frame size — the measure
-        /// moves with FFT resolution.
+        /// An encode below this many bits per second is codec-damaged. The library's
+        /// genuine case is Ender's Shadow at 34 kbps; crushing a clean reading audibly
+        /// filled the gaps between its harmonics from 48 kbps down, and not above.
         /// </summary>
-        public double DamagedHarmonicity { get; init; } = 0.55;
+        public int CodecDamagedBitRate { get; init; } = 48_000;
     }
 }

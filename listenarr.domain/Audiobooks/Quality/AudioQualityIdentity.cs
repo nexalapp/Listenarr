@@ -27,7 +27,7 @@ namespace Listenarr.Domain.Audiobooks.Quality
     public static class AudioQualityIdentity
     {
         /// <summary>Bumped when the probe's measures change meaning, never for a refactor.</summary>
-        public const int ProbeVersion = 1;
+        public const int ProbeVersion = 2;
 
         public static string Of(IEnumerable<double> fileDurationsSeconds)
         {

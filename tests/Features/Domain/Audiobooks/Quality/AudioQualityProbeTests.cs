@@ -106,19 +106,43 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Quality
         }
 
         /// <summary>
-        /// Codec damage: noise shaped to sit only between the voice's harmonics, at the
-        /// in-band level of the voice itself, under a 4.5 kHz wall. The floor stays
-        /// clean — only harmonicity sees it, and the verdict must forbid pre-denoising.
+        /// Codec damage is decided by the encode's bit rate: a 34 kbps file is damaged
+        /// whatever it sounds like to a level measure, and the verdict must forbid
+        /// pre-denoising.
         /// </summary>
         [Fact]
-        public void NoiseBetweenTheHarmonics_IsCodecDamage()
+        public void StarvedEncode_IsCodecDamage()
         {
-            var report = Analyze(Windows(4, noiseDb: -90, voiceTopHz: 4500, inBandNoiseDb: -18));
+            var report = AudioQualityProbe.Analyze(Windows(4, noiseDb: -90), SampleRate, bitRate: 34_000);
 
             Assert.Equal(AudioQuality.CodecDamaged, report.Verdict);
-            Assert.True(report.Metrics.Harmonicity < 0.55, $"harmonicity {report.Metrics.Harmonicity}");
             Assert.True(report.GenerativeRecommended);
             Assert.True(report.NeverPreDenoise);
+        }
+
+        /// <summary>
+        /// Harmonicity alone must not call a book damaged. Calibrated within one recording,
+        /// it did not separate narrators on the live library — a clean 130 kbps reading
+        /// measured 0.45 against Ender's Shadow's 0.40 — and flagged every book probed.
+        /// Low harmonicity at a healthy bit rate is still measured, and is not a verdict.
+        /// </summary>
+        [Fact]
+        public void LowHarmonicityAtAHealthyBitRate_IsNotCodecDamage()
+        {
+            var report = AudioQualityProbe.Analyze(
+                Windows(4, noiseDb: -90, voiceTopHz: 4500, inBandNoiseDb: -18), SampleRate, bitRate: 128_000);
+
+            Assert.NotEqual(AudioQuality.CodecDamaged, report.Verdict);
+            Assert.True(report.Metrics.Harmonicity < 0.55, $"harmonicity {report.Metrics.Harmonicity}");
+            Assert.False(report.NeverPreDenoise);
+        }
+
+        [Fact]
+        public void UnknownBitRate_IsNotCodecDamage()
+        {
+            var report = AudioQualityProbe.Analyze(Windows(4, noiseDb: -90), SampleRate, bitRate: null);
+
+            Assert.NotEqual(AudioQuality.CodecDamaged, report.Verdict);
         }
 
         [Fact]
