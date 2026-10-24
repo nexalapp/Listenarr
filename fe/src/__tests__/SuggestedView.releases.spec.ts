@@ -115,16 +115,16 @@ describe('SuggestedView shows what can be downloaded', () => {
     localStorage.clear()
   })
 
-  it('lists only books an indexer holds a release of, and drops groups left empty', async () => {
+  it('hides books no indexer holds, keeps unchecked ones, and drops groups left empty', async () => {
     const wrapper = await mountSeries()
 
-    expect(wrapper.findAll('.card').map((card) => card.text())).toEqual(['FOUND'])
+    expect(wrapper.findAll('.card').map((card) => card.text())).toEqual(['FOUND', 'UNCHECKED'])
     expect(wrapper.text()).not.toContain('Nothing Held')
-    expect(wrapper.find('.tab.active').text()).toContain('1')
+    expect(wrapper.find('.tab.active').text()).toContain('2')
     expect(wrapper.find('.release-coverage').text()).toContain('Checked 3 of 4')
   })
 
-  it('shows the rest, unchecked ones included, when asked', async () => {
+  it('shows the books found unavailable when asked', async () => {
     const wrapper = await mountSeries()
 
     await wrapper.find('.show-unavailable input').setValue(true)

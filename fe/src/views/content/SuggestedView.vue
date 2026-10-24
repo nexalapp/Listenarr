@@ -327,9 +327,10 @@ function readSearchOnAdd(): boolean {
   }
 }
 
-// Suggestions are for adding in bulk, so by default only books an indexer holds a
-// release of are shown; the rest are a toggle away, marked as not found or still being
-// checked. Remembered per browser like the search toggle.
+// Suggestions are for adding in bulk, so by default a book the background check found
+// no release of is hidden; it is a toggle away, marked as not found. A book not checked
+// yet stays, marked as being checked: unknown is not unavailable. Remembered per browser
+// like the search toggle.
 const SHOW_UNAVAILABLE_KEY = 'listenarr.suggested.showUnavailable'
 const showUnavailable = ref(readFlag(SHOW_UNAVAILABLE_KEY, false))
 watch(showUnavailable, (value) => {
@@ -350,10 +351,10 @@ function readFlag(key: string, fallback: boolean): boolean {
 }
 
 const HIDDEN_MESSAGE =
-  'No release has been found yet for what is missing here. Books are checked in the background; show the rest with "Show books with no release found".'
+  'No indexer holds a release of what is missing here. Show those books with "Show books with no release found".'
 
-function hasRelease(book: SuggestedBook): boolean {
-  return book.release?.found === true
+function notKnownUnavailable(book: SuggestedBook): boolean {
+  return book.release?.found !== false
 }
 
 const shown = computed<{ authors: AuthorSuggestionGroup[]; series: SeriesSuggestionGroup[] }>(() => {
@@ -362,7 +363,7 @@ const shown = computed<{ authors: AuthorSuggestionGroup[]; series: SeriesSuggest
   if (showUnavailable.value) return { authors: value.authors, series: value.series }
   const keep = <T extends { missing: SuggestedBook[] }>(groups: T[]): T[] =>
     groups
-      .map((group) => ({ ...group, missing: group.missing.filter(hasRelease) }))
+      .map((group) => ({ ...group, missing: group.missing.filter(notKnownUnavailable) }))
       .filter((group) => group.missing.length > 0)
   return { authors: keep(value.authors), series: keep(value.series) }
 })

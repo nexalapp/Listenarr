@@ -137,14 +137,16 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         }
 
         /// <summary>
-        /// The books to check, in the order the page shows them: authors the library holds
-        /// most of first, then series. Each book once, however many groups list it.
+        /// The books to check: series gaps first, because a missing book in a series the
+        /// library has started is the likeliest add and there are far fewer of them, then
+        /// author catalogs, each in the order the page shows them. Each book once, however
+        /// many groups list it.
         /// </summary>
         internal static IEnumerable<SuggestedBook> Due(SuggestionSnapshot snapshot, DateTime now)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            return snapshot.Authors.SelectMany(group => group.Missing)
-                .Concat(snapshot.Series.SelectMany(group => group.Missing))
+            return snapshot.Series.SelectMany(group => group.Missing)
+                .Concat(snapshot.Authors.SelectMany(group => group.Missing))
                 .Where(book => !string.IsNullOrWhiteSpace(book.Asin) && seen.Add(book.Asin.Trim()))
                 .Where(book => book.Release is not { } release
                     || now - release.CheckedAt > (release.Found ? FoundRecheck : NotFoundRecheck));
