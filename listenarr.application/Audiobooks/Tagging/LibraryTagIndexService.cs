@@ -20,6 +20,7 @@ using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 using Listenarr.Domain.Audiobooks.Audit;
+using Listenarr.Domain.Audiobooks.Quality;
 
 namespace Listenarr.Application.Audiobooks.Tagging
 {
@@ -372,7 +373,9 @@ namespace Listenarr.Application.Audiobooks.Tagging
                 audiobook.AudioAuditVerdict,
                 audiobook.AudioAuditReason,
                 AudioAuditAcceptance.IsAccepted(audiobook),
-                audiobook.AudioAuditHeardNarrator);
+                audiobook.AudioAuditHeardNarrator,
+                AudioRepairRecommendation.Of(
+                    audiobook.AudioQuality, audiobook.AudioQualityMetricsJson, settings.GenerativeOfferThresholdDb));
         }
     }
 }

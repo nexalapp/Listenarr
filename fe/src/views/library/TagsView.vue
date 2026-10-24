@@ -632,14 +632,20 @@ const CHAPTER_HEALTH_LABELS: Record<ChapterHealth, string> = {
   none: 'No chapters',
 }
 
-type ChapterFilter = 'all' | 'issues' | ChapterHealth | 'audio-mismatch' | 'audio-unheard'
+type ChapterFilter =
+  | 'all'
+  | 'issues'
+  | ChapterHealth
+  | 'audio-mismatch'
+  | 'audio-unheard'
+  | 'audio-repair'
 
 const ALL_FILTER: { value: ChapterFilter; label: string } = { value: 'all', label: 'No filter' }
 
 /**
- * One control, two questions: what a file's chapters look like, and whether its audio
- * agrees with its record. They are grouped so the metadata verdicts are not read as
- * more chapter verdicts.
+ * One control, three questions: what a file's chapters look like, whether its audio
+ * agrees with its record, and whether the recording is worth a generative repair. They
+ * are grouped so the metadata and audio verdicts are not read as more chapter verdicts.
  */
 const FILTER_GROUPS: { label: string; options: { value: ChapterFilter; label: string }[] }[] = [
   {
@@ -659,6 +665,10 @@ const FILTER_GROUPS: { label: string; options: { value: ChapterFilter; label: st
       { value: 'audio-mismatch', label: 'Metadata mismatch' },
       { value: 'audio-unheard', label: 'Not listened to' },
     ],
+  },
+  {
+    label: 'Audio',
+    options: [{ value: 'audio-repair', label: 'Repair candidates' }],
   },
 ]
 
@@ -1174,6 +1184,8 @@ const filteredRows = computed(() => {
     result = result.filter(hasAudioIssue)
   } else if (chapterFilter.value === 'audio-unheard') {
     result = result.filter((row) => !row.audioAudit)
+  } else if (chapterFilter.value === 'audio-repair') {
+    result = result.filter((row) => !!row.audioRepairRecommended)
   } else if (chapterFilter.value !== 'all') {
     result = result.filter((row) => row.chapterHealth === chapterFilter.value)
   }

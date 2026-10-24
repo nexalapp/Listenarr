@@ -38,13 +38,16 @@ namespace Listenarr.Application.Audiobooks.Catalog
         private readonly IAudiobookFileRepository _audiobookFileRepository;
         private readonly IQualityProfileRepository _qualityProfileRepository;
         private readonly IDownloadRepository _downloadRepository;
+        private readonly IConfigurationService? _configurationService;
 
         public LibraryListService(
             IAudiobookRepository audiobookRepository,
             IAudiobookFileRepository audiobookFileRepository,
             IQualityProfileRepository qualityProfileRepository,
-            IDownloadRepository downloadRepository)
+            IDownloadRepository downloadRepository,
+            IConfigurationService? configurationService = null)
         {
+            _configurationService = configurationService;
             _audiobookRepository = audiobookRepository;
             _audiobookFileRepository = audiobookFileRepository;
             _qualityProfileRepository = qualityProfileRepository;
@@ -54,6 +57,9 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public async Task<IReadOnlyList<LibraryAudiobookListItem>> GetAllAsync()
         {
             var allAudiobooks = await _audiobookRepository.GetAllAsync();
+            var repairOfferThresholdDb = _configurationService == null
+                ? AudioQualityThresholds.Default.GenerativeDeficitDb
+                : (await _configurationService.GetApplicationSettingsAsync()).GenerativeOfferThresholdDb;
             var audiobooks = allAudiobooks
                 .OrderBy(a => a.Title)
                 .ToList();
@@ -177,6 +183,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
                         ? null
                         : AudioQualityNames.Of(a.AudioQuality),
                     AudioQualityReason = a.AudioQualityReason,
+                    AudioRepairRecommended = AudioRepairRecommendation.Of(
+                        a.AudioQuality, a.AudioQualityMetricsJson, repairOfferThresholdDb),
                     HealthScore = health.Score,
                     HealthTags = AudiobookHealth.NameOf(health.Tags.State),
                     HealthTagsReason = health.Tags.Reason,

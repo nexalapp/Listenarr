@@ -103,6 +103,13 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public string? AudioQualityReason { get; set; }
 
         /// <summary>
+        /// Whether the probe's verdict makes this book worth a generative repair — the
+        /// "Repair candidates" filter. Derived at query time, so changing the offer
+        /// threshold re-sorts the library without re-probing it.
+        /// </summary>
+        public bool AudioRepairRecommended { get; set; }
+
+        /// <summary>
         /// The book summed up as a number, 0–100 over the checks that have run; null
         /// while none have. Computed at query time from the four stored category facts,
         /// never persisted, so reweighing it re-scores the whole library at once.
