@@ -353,7 +353,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, unref } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, unref, watch } from 'vue'
 import {
   PhActivity,
   PhSpinner,
@@ -988,6 +988,32 @@ const audiobookTitleMap = computed(() => {
   return map
 })
 
+/**
+ * Re-read the library when a row names a book it does not hold. The list is fetched once
+ * on mount, so a fetch that failed - the server restarting under an open tab - or a book
+ * imported since left every such row reading "Audiobook #152" until a reload. Throttled:
+ * a book removed while its job was queued is never going to appear.
+ */
+const LIBRARY_REFETCH_INTERVAL_MS = 60_000
+let lastLibraryRefetch = 0
+const hasUnnamedRows = computed(() =>
+  allActivityItems.value.some(
+    (item) => item.audiobookId && !audiobookTitleMap.value.has(item.audiobookId),
+  ),
+)
+const refetchLibraryIfRowsUnnamed = async () => {
+  const now = Date.now()
+  if (!hasUnnamedRows.value || now - lastLibraryRefetch < LIBRARY_REFETCH_INTERVAL_MS) return
+  lastLibraryRefetch = now
+  try {
+    await libraryStore.fetchLibrary()
+  } catch {
+    // The row keeps its numbered label; the next refresh tries again.
+  }
+}
+// A new row arrives over SignalR between refreshes, so react to it as well.
+watch(hasUnnamedRows, refetchLibraryIfRowsUnnamed)
+
 const getDisplayTitle = (item: QueueItem): string => {
   if (item.audiobookId) {
     const abTitle = audiobookTitleMap.value.get(item.audiobookId)
@@ -1245,6 +1271,7 @@ const refreshQueue = async () => {
       downloadsStore.loadDownloads(),
     ])
     applyQueueSnapshot(queueSnapshot)
+    await refetchLibraryIfRowsUnnamed()
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'ActivityView',
