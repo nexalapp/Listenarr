@@ -854,9 +854,9 @@
             <div class="edition-check">
               <h4>Which edition is this?</h4>
               <p class="edition-explain">
-                Two recordings of one book differ in length far more than a recording
-                differs from its own stated runtime, so the catalogue's runtime per
-                edition can say which one is on disk.
+                Two recordings of one book differ in length far more than a recording differs from
+                its own stated runtime, so the catalogue's runtime per edition can say which one is
+                on disk.
               </p>
               <button
                 type="button"
@@ -875,7 +875,9 @@
                   :disabled="applyingEdition"
                   @click="adoptEdition"
                 >
-                  {{ applyingEdition ? 'Re-matching…' : `Re-match to the ${editionNarrators} edition` }}
+                  {{
+                    applyingEdition ? 'Re-matching…' : `Re-match to the ${editionNarrators} edition`
+                  }}
                 </button>
               </template>
             </div>
@@ -902,8 +904,8 @@
                   :src="closingClip"
                 ></audio>
                 <p class="credits-clip-hint">
-                  Plays the last stretch the audit listened to, so a verdict about how the
-                  book ends can be checked by ear.
+                  Plays the last stretch the audit listened to, so a verdict about how the book ends
+                  can be checked by ear.
                 </p>
               </template>
             </div>
@@ -2338,7 +2340,15 @@ async function removeNotFoundFiles() {
   }
 }
 
-/** Put the narrator the audio names on the record, then transcribe again to confirm. */
+/**
+ * Put the narrator the audio names on the record.
+ *
+ * No re-transcribe follows. Saving the record re-judges the audit against the transcript
+ * already stored (AudiobookRepository.RejudgeAudioAuditAsync), so reloading the book
+ * shows the corrected verdict immediately. Listening again would spend a minute of the
+ * worker's CPU re-deriving the same heard narrator from the same audio with the same
+ * model, to reach the verdict the save already produced.
+ */
 async function adoptHeardNarrator() {
   if (!audiobook.value?.audioAuditHeardNarrator) return
   settingNarrator.value = true
@@ -2354,7 +2364,6 @@ async function adoptHeardNarrator() {
     await apiService.updateAudiobook(audiobook.value.id, { narrators })
     toast.success('Narrator updated', `Set to ${narrators.join(', ')}.`)
     await loadAudiobook()
-    await auditAudio()
   } catch (err) {
     toast.error('Could not update the narrator', err instanceof Error ? err.message : String(err))
   } finally {
@@ -2758,8 +2767,8 @@ const editionCheck = ref<EditionCheck | null>(null)
 const checkingEdition = ref(false)
 const applyingEdition = ref(false)
 
-const editionNarrators = computed(() =>
-  (editionCheck.value?.best?.narrators || []).join(' / ') || 'other',
+const editionNarrators = computed(
+  () => (editionCheck.value?.best?.narrators || []).join(' / ') || 'other',
 )
 
 async function runEditionCheck() {
