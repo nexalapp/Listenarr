@@ -28,7 +28,8 @@ namespace Listenarr.Infrastructure.Library.Repair
     {
         private async Task ProvisionCoreAsync(CancellationToken cancellationToken)
         {
-            var staging = Path.Combine(EnhancerRoot, $"staging-{Guid.NewGuid():N}");
+            // Made where it will run from: see the class remarks for why it never moves.
+            var staging = Path.Combine(EnhancerRoot, $"install-{Guid.NewGuid():N}");
             try
             {
                 Directory.CreateDirectory(staging);
@@ -100,13 +101,7 @@ namespace Listenarr.Infrastructure.Library.Repair
                     JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
                     cancellationToken);
 
-                if (Directory.Exists(CurrentRoot))
-                {
-                    // An install with stale pins; it was already judged not-Ready.
-                    Directory.Delete(CurrentRoot, recursive: true);
-                }
-
-                Directory.Move(staging, CurrentRoot);
+                PointCurrentAt(staging);
                 lock (_stateLock)
                 {
                     _status = new EnhancerStatus(EnhancerState.Ready, 100, null, PipelineVersion, diskBytes, null);
@@ -169,7 +164,8 @@ namespace Listenarr.Infrastructure.Library.Repair
         }
 
         /// <summary>
-        /// Enhance two seconds of generated 22.05 kHz tone through the staged install.
+        /// Enhance two seconds of generated 22.05 kHz tone through the new install, at the
+        /// path it will run from.
         /// The rate is the point: 22.05 kHz forces the resample path, whose lazily loaded
         /// packages are exactly what a missing dependency would take down on day three of
         /// a repair rather than now.
@@ -245,6 +241,42 @@ namespace Listenarr.Infrastructure.Library.Repair
             }
         }
 
+        /// <summary>
+        /// Make <c>current</c> a link to a finished install and remove whatever it named
+        /// before — an install with stale pins or a broken one, both already judged
+        /// not-Ready. The link is relative, so the config volume may be mounted anywhere.
+        /// </summary>
+        internal void PointCurrentAt(string install)
+        {
+            var previous = CurrentLinkTarget();
+            var current = new DirectoryInfo(CurrentRoot);
+            if (current.LinkTarget != null)
+            {
+                File.Delete(CurrentRoot);
+            }
+            else if (current.Exists)
+            {
+                // An install from before installs stayed put: it was renamed into place.
+                Directory.Delete(CurrentRoot, recursive: true);
+            }
+
+            Directory.CreateSymbolicLink(CurrentRoot, Path.GetFileName(install));
+
+            if (previous != null
+                && !string.Equals(previous, Path.GetFullPath(install), StringComparison.Ordinal)
+                && Directory.Exists(previous))
+            {
+                Directory.Delete(previous, recursive: true);
+            }
+        }
+
+        /// <summary>The install <c>current</c> links to, as a full path, or null.</summary>
+        private string? CurrentLinkTarget()
+        {
+            var target = new DirectoryInfo(CurrentRoot).LinkTarget;
+            return target == null ? null : Path.GetFullPath(Path.Combine(EnhancerRoot, target));
+        }
+
         // ------------------------------------------------------------------ resolution
 
         private void SweepStaleStaging(string except)
@@ -254,17 +286,20 @@ namespace Listenarr.Infrastructure.Library.Repair
                 return;
             }
 
-            foreach (var directory in Directory.GetDirectories(EnhancerRoot, "staging-*"))
+            var live = CurrentLinkTarget();
+            foreach (var directory in Directory.GetDirectories(EnhancerRoot, "install-*")
+                         .Concat(Directory.GetDirectories(EnhancerRoot, "staging-*")))
             {
-                if (string.Equals(directory, except, StringComparison.Ordinal))
+                if (string.Equals(directory, except, StringComparison.Ordinal)
+                    || string.Equals(Path.GetFullPath(directory), live, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
                 try
                 {
-                    // Anything still here is a previous attempt that died; a live one
-                    // would have been renamed to current within the hour.
+                    // Anything still here that current does not name is a previous
+                    // attempt that died; a live one finishes within the hour.
                     if (Directory.GetLastWriteTimeUtc(directory) < DateTime.UtcNow.AddHours(-6))
                     {
                         Directory.Delete(directory, recursive: true);

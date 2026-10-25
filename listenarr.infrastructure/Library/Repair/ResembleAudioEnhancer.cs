@@ -34,11 +34,14 @@ namespace Listenarr.Infrastructure.Library.Repair
     /// redeploys because the config volume does.
     /// </para>
     /// <para>
-    /// Everything is staged under <c>staging-*</c> and atomically renamed to
-    /// <c>current</c> only after a real inference has passed through it, with the
-    /// manifest written last inside the stage. A directory without a manifest is a
-    /// failed provision and is redone; a manifest whose pins differ from this build's is
-    /// an upgrade and is redone the same way.
+    /// Everything is installed under <c>install-*</c> and <c>current</c> is pointed at it,
+    /// as a link, only after a real inference has passed through it, with the manifest
+    /// written last inside it. The install never moves: a venv is not relocatable —
+    /// its interpreter link, its <c>pyvenv.cfg</c> and every script's shebang name the
+    /// directory it was made in — and the first install, renamed into place, passed its
+    /// smoke test and then could not start a single repair. A directory without a
+    /// manifest is a failed provision and is redone; a manifest whose pins differ from
+    /// this build's is an upgrade and is redone the same way.
     /// </para>
     /// </summary>
     public sealed partial class ResembleAudioEnhancer(
@@ -56,12 +59,12 @@ namespace Listenarr.Infrastructure.Library.Repair
         /// </summary>
         public const string PipelineVersion = "v1";
 
-        private const string UvVersion = "0.13.1";
+        internal const string UvVersion = "0.13.1";
         private const string UvShaX64 = "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220";
         private const string UvShaArm64 = "9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14";
-        private const string PythonVersion = "3.11.15";
+        internal const string PythonVersion = "3.11.15";
         private const string ModelRepo = "ResembleAI/resemble-enhance";
-        private const string ModelRevision = "4e3510ce4a8391159f665903544c5150bee7b2cb";
+        internal const string ModelRevision = "4e3510ce4a8391159f665903544c5150bee7b2cb";
 
         /// <summary>
         /// Solver steps per chunk. Sixteen runs at ~1.2× realtime on eight threads where
@@ -200,7 +203,7 @@ namespace Listenarr.Infrastructure.Library.Repair
                 startInfo.EnvironmentVariables["HF_HUB_OFFLINE"] = "1";
                 startInfo.EnvironmentVariables["PYTHONNOUSERSITE"] = "1";
 
-                using var process = processRunner.StartProcess(startInfo);
+                using var process = StartInference(startInfo);
                 var stderr = process.StandardError.ReadToEndAsync(linked.Token);
                 var stdout = process.StandardOutput.ReadToEndAsync(linked.Token);
                 try
@@ -242,6 +245,21 @@ namespace Listenarr.Infrastructure.Library.Repair
                 {
                     // A straggler handle; the job's scratch sweep gets it later.
                 }
+            }
+        }
+
+        private Process StartInference(ProcessStartInfo startInfo)
+        {
+            try
+            {
+                return processRunner.StartProcess(startInfo);
+            }
+            catch (System.ComponentModel.Win32Exception exception)
+            {
+                // The install is there but cannot run: not this chunk's fault, and
+                // retrying the chunk will not help.
+                throw new EnhancerUnavailableException(
+                    $"The enhancement model is installed but cannot start: {exception.Message}");
             }
         }
 
@@ -291,12 +309,36 @@ namespace Listenarr.Infrastructure.Library.Repair
                 }
 
                 return File.Exists(Path.Combine(CurrentRoot, "venv", "bin", "resemble-enhance"))
+                       && Resolves(Path.Combine(CurrentRoot, "venv", "bin", "python"))
                     ? new Install(CurrentRoot, manifest)
                     : null;
             }
             catch (JsonException)
             {
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Whether a path, following every link, ends at a file. The venv's interpreter is
+        /// a link into the Python install; an install moved after it was made keeps every
+        /// file and loses that link's target, and nothing in it can start.
+        /// </summary>
+        internal static bool Resolves(string path)
+        {
+            var file = new FileInfo(path);
+            if (file.LinkTarget == null)
+            {
+                return file.Exists;
+            }
+
+            try
+            {
+                return file.ResolveLinkTarget(returnFinalTarget: true) is { Exists: true };
+            }
+            catch (IOException)
+            {
+                return false;
             }
         }
 
