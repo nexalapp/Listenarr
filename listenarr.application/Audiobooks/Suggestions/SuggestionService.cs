@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Domain.Audiobooks.Catalog;
+
 namespace Listenarr.Application.Audiobooks.Suggestions
 {
     /// <summary>
@@ -38,6 +40,10 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         {
             var settings = await configuration.GetApplicationSettingsAsync();
             var languages = LanguageFilter.Parse(LanguageFilter.FromSettings(settings));
+            // The operator's own list of spellings for one person, which until now the
+            // page did not consult: a library stored under the canonical name was being
+            // offered the variant as a book it lacked.
+            var aliases = AuthorAliases.Parse(settings.AuthorAliasesJson);
 
             var monitoredAuthors = (await authorMonitoring.GetAllMonitoredAuthorsAsync(cancellationToken))
                 .Select(author => SuggestionNames.Normalize(author.AuthorName))
@@ -50,7 +56,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             cancellationToken.ThrowIfCancellationRequested();
             var memberships = await repository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync(cancellationToken);
             var dismissals = await repository.GetSuggestionDismissalsAsync(cancellationToken);
-            var held = new HeldBooks(library, memberships, dismissals.Select(d => d.Key), languages);
+            var held = new HeldBooks(library, memberships, dismissals.Select(d => d.Key), languages, aliases);
 
             var cachedAuthors = await repository.GetAllCachedAuthorsAsync(cancellationToken);
             var cachedSeries = await repository.GetAllCachedSeriesAsync(cancellationToken);
@@ -67,6 +73,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 {
                     continue;
                 }
+
+                var authorMatchKey = SuggestionNames.AuthorMatchKey(entry.AuthorName);
 
                 foreach (var similar in entry.SimilarAuthors ?? [])
                 {
@@ -97,8 +105,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 var missing = entry.CatalogBooks
                     .Where(book => held.SpeaksLanguage(book.Language))
                     // An author's catalog includes anthologies they contributed a story
-                    // to; those are not "their books you are missing".
-                    .Where(book => book.Authors.Any(name => SuggestionNames.Normalize(name) == key))
+                    // to; those are not "their books you are missing". The comparison
+                    // forgives an initial, because a catalogue credits one edition to
+                    // "Richard Morgan" and the next to "Richard K. Morgan", and the
+                    // strict form dropped half an author's own books here.
+                    .Where(book => book.Authors.Any(name =>
+                        SuggestionNames.Normalize(name) == key
+                        || SuggestionNames.AuthorMatchKey(name) == authorMatchKey))
                     .Where(book => !held.Contains(book.Asin, book.Isbn, book.Title, book.Authors))
                     // Another publication of a book already held — a re-release, a second
                     // narration, a retitled tie-in — is not a book anyone is missing.
@@ -106,7 +119,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     .Where(book => !held.Ignored(book.Asin, book.Title, book.Authors))
                     .Select(Map)
                     .ToList();
-                DistinctEditions(missing);
+                DistinctEditions(missing, aliases);
 
                 if (missing.Count > 0)
                 {
@@ -141,7 +154,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                     .Select(Map)
                     .OrderBy(book => SeriesPosition(book.SeriesNumber))
                     .ToList();
-                DistinctEditions(missing);
+                DistinctEditions(missing, aliases);
 
                 if (missing.Count > 0)
                 {
@@ -198,12 +211,15 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// One card per book, not per edition: a catalog lists every narration and
         /// re-release, and offering "Childhood's End" four times is noise.
         /// </summary>
-        private static void DistinctEditions(List<SuggestedBook> books)
+        private static void DistinctEditions(List<SuggestedBook> books, IReadOnlyList<AuthorAlias> aliases)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             books.RemoveAll(book =>
                 (!string.IsNullOrWhiteSpace(book.Asin) && !seen.Add("asin:" + book.Asin.Trim()))
-                || (SuggestionNames.TitleAuthorKey(book.Title, book.Authors) is { } key && !seen.Add("key:" + key)));
+                // The match key, not the stored one: a catalogue that credits one
+                // edition to "Richard Morgan" and the next to "Richard K. Morgan" was
+                // offering both as separate books.
+                || (SuggestionNames.MatchKey(book.Title, book.Authors, aliases) is { } key && !seen.Add("key:" + key)));
         }
 
         private static decimal SeriesPosition(string? value) =>
@@ -291,6 +307,100 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var titleKey = Normalize((title ?? string.Empty).Split(':')[0]);
             var authorKey = Normalize(authors?.FirstOrDefault(author => !string.IsNullOrWhiteSpace(author)));
             return titleKey.Length == 0 || authorKey.Length == 0 ? null : $"{titleKey}|{authorKey}";
+        }
+
+        /// <summary>
+        /// The key two records are judged to be the same book by.
+        ///
+        /// <para>
+        /// Looser than <see cref="TitleAuthorKey"/> in two ways, and deliberately kept
+        /// apart from it because that one is written into the database as a dismissal
+        /// and must never change meaning. Here the operator's name aliases are applied
+        /// first, and then a middle initial is dropped: Audible credits "Altered Carbon"
+        /// to "Richard Morgan" and "Broken Angels" to "Richard K. Morgan", and a library
+        /// holding one of them was being offered the other as a book it lacked.
+        /// </para>
+        /// <para>
+        /// The initial is dropped only while two real name parts remain, so an author
+        /// who writes under initials keeps them: "M. R. Carey" stays "mr carey" rather
+        /// than collapsing to "carey", where it would meet every other Carey.
+        /// </para>
+        /// </summary>
+        public static string? MatchKey(
+            string? title,
+            IEnumerable<string>? authors,
+            IReadOnlyList<AuthorAlias>? aliases = null)
+        {
+            var titleKey = StoryIdentity.TitleKey(title);
+            if (titleKey.Length == 0)
+            {
+                return null;
+            }
+
+            var author = authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+            if (author is null)
+            {
+                return null;
+            }
+
+            if (aliases is { Count: > 0 })
+            {
+                author = AuthorAliases.Apply([author], aliases).FirstOrDefault() ?? author;
+            }
+
+            var authorKey = AuthorMatchKey(author);
+            return authorKey.Length == 0 ? null : $"{titleKey}|{authorKey}";
+        }
+
+        /// <summary>
+        /// An author's name with the initials dropped, where a name remains without
+        /// them. "Richard K. Morgan" and "James S. A. Corey" give "richard morgan" and
+        /// "james corey"; "B. V. Larson" and "M. R. Carey" keep theirs, because
+        /// "larson" and "carey" alone would meet every other Larson and Carey.
+        ///
+        /// <para>
+        /// What marks an initial is the full stop, not the length: "Ed McBain" and "Jo
+        /// Nesbo" are names. A part with no stop is kept whatever its length, so an
+        /// author who is credited "BV Larson" is reached through
+        /// <see cref="Normalize"/>, which joins initials, rather than through here.
+        /// </para>
+        /// </summary>
+        public static string AuthorMatchKey(string? author)
+        {
+            var parts = (author ?? string.Empty)
+                .Split([' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+            var named = parts.Where(part => !IsInitials(part)).ToArray();
+            return Normalize(string.Join(' ', named.Length >= 2 ? named : parts));
+        }
+
+        /// <summary>
+        /// Whether a part of a name is initials: a lone letter, or letters each
+        /// followed by a stop — "K", "K.", "S.A.".
+        /// </summary>
+        private static bool IsInitials(string part)
+        {
+            var trimmed = part.Trim().TrimEnd(',');
+            if (trimmed.Length == 1 && char.IsLetter(trimmed[0]))
+            {
+                return true;
+            }
+
+            if (trimmed.Length < 2 || !trimmed.Contains('.'))
+            {
+                return false;
+            }
+
+            for (var index = 0; index < trimmed.Length; index += 2)
+            {
+                if (!char.IsLetter(trimmed[index])
+                    || index + 1 >= trimmed.Length
+                    || trimmed[index + 1] != '.')
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }
