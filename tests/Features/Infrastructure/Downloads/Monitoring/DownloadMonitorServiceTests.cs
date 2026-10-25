@@ -358,6 +358,29 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
                 "NZBGet failed while unpacking."));
         }
 
+        [Theory]
+        // Grabbing again finds the same release, NZBGet discards it as a copy of the job
+        // that just failed, and that failure starts another search: a loop.
+        [InlineData("DELETED/COPY")]
+        [InlineData("DELETED/DUPE")]
+        // The password is the post's; it is as wrong the second time.
+        [InlineData("WARNING/PASSWORD")]
+        public void OnDownloadFailed_NzbgetFailureARepeatCannotCure_SuppressesImmediateAutoSearch(string status)
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "nzbget-1",
+                Type = "nzbget"
+            };
+            var download = new DownloadBuilder().Build();
+            download.Metadata["ClientFailureReason"] = status;
+
+            Assert.True(DownloadMonitorProcessor.ShouldSuppressFailedDownloadAutoSearch(
+                client,
+                download,
+                "NZBGet discarded the download."));
+        }
+
         private sealed class MutableTimeProvider(DateTimeOffset currentTime) : TimeProvider
         {
             public override DateTimeOffset GetUtcNow() => currentTime;
