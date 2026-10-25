@@ -1047,6 +1047,69 @@ export interface SuggestionRefreshStatus {
   failed: number
 }
 
+/** A Suggested list auto-grab can draw from. */
+export type AutoGrabKind = 'authors' | 'series' | 'discover' | 'abook'
+
+export interface AutoGrabSource {
+  kind: AutoGrabKind
+  /** The chart category or board, for the two tabs that have sections. */
+  sectionId?: string | null
+  enabled: boolean
+}
+
+export interface AutoGrabSettings {
+  enabled: boolean
+  perRun: number
+  intervalMinutes: number
+  /** In the order a run draws from them. */
+  sources: AutoGrabSource[]
+}
+
+export interface AutoGrabCandidate {
+  asin: string
+  book: SuggestedBook
+  sourceKind: string
+  sourceLabel: string
+  releaseTitle?: string
+  indexerName?: string
+  sizeBytes?: number
+  title: string
+  author?: string
+}
+
+export interface AutoGrabSourceCount {
+  kind: string
+  sectionId?: string
+  label: string
+  available: number
+}
+
+export interface AutoGrabPlan {
+  enabled: boolean
+  perRun: number
+  /** How many could be grabbed in total, before the cap. */
+  available: number
+  candidates: AutoGrabCandidate[]
+  bySource: AutoGrabSourceCount[]
+  unavailable?: string
+}
+
+export interface AutoGrabOutcome {
+  asin: string
+  title: string
+  sourceLabel: string
+  added: boolean
+  error?: string
+}
+
+export interface AutoGrabReport {
+  startedAt: string
+  finishedAt: string
+  added: number
+  failed: number
+  outcomes: AutoGrabOutcome[]
+}
+
 /** One of the discovery tabs' sources, as the API addresses it. */
 export type DiscoverSource = 'charts' | 'abook'
 

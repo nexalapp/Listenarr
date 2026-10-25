@@ -2400,6 +2400,12 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AutoGrabSettingsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("{}");
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 

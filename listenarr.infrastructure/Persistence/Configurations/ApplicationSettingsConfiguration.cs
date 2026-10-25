@@ -119,6 +119,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // switched off on every existing install.
             builder.Property(e => e.DiscoverSettingsJson).HasDefaultValue("{}");
             builder.Property(e => e.DiscoverBackgroundFetchIntervalMinutes).HasDefaultValue(5);
+            builder.Property(e => e.AutoGrabSettingsJson).HasDefaultValue("{}");
 
             // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
             // written before this feature existed has no mapping, and that has to read

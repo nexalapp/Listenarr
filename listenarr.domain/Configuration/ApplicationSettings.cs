@@ -203,6 +203,12 @@ namespace Listenarr.Domain.Configuration
         // leaving the tabs' own Refresh and Load more buttons.
         public int DiscoverBackgroundFetchIntervalMinutes { get; set; } = 5;
 
+        // Which of the Suggested page's lists are grabbed from without being asked, in
+        // what order, and how many books one run may add. Off until someone ticks a
+        // list: this spends disk and a usenet allowance, so it starts doing nothing.
+        // See AutoGrabSettingsJson for the document.
+        public string AutoGrabSettingsJson { get; set; } = "{}";
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.
