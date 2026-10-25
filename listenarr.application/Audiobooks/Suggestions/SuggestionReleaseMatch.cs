@@ -48,7 +48,10 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             string? postAuthor,
             string? bookAsin,
             string? bookTitle,
-            IReadOnlyList<string>? authors)
+            IReadOnlyList<string>? authors,
+            string? postSeries = null,
+            string? postSeriesPosition = null,
+            string? bookSeriesNumber = null)
         {
             if (!string.IsNullOrWhiteSpace(postAsin))
             {
@@ -58,8 +61,48 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var surname = Surname(authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)));
             return surname.Length > 0
                 && TitlesMatch(postTitle, bookTitle)
-                && (" " + Normalize(postAuthor) + " ").Contains(" " + surname + " ", StringComparison.Ordinal);
+                && (" " + Normalize(postAuthor) + " ").Contains(" " + surname + " ", StringComparison.Ordinal)
+                && !TitleIsOnlyTheSeries(postTitle, postSeries, postSeriesPosition, bookSeriesNumber);
         }
+
+        /// <summary>
+        /// True when the post's title is just its series name and its position is not the
+        /// book's. Such a title names the series, not a book in it: "Aer-ki Jyr - Gauntlet
+        /// Wars 04 - Gauntlet Wars" is book 4, and matched Gauntlet Wars book 1 on title and
+        /// author alone. Only then are positions compared - elsewhere they disagree for
+        /// reasons that are no part of identity, a second numbering scheme or a parse of
+        /// "1 633 - 1633" as 633 - and comparing them would turn away the right book.
+        /// </summary>
+        private static bool TitleIsOnlyTheSeries(
+            string? postTitle,
+            string? postSeries,
+            string? postSeriesPosition,
+            string? bookSeriesNumber)
+        {
+            if (string.IsNullOrWhiteSpace(postSeries) || Normalize(postTitle) != Normalize(postSeries))
+            {
+                return false;
+            }
+
+            var post = Position(postSeriesPosition);
+            var book = Position(bookSeriesNumber);
+            return post is null || book is null || post != book;
+        }
+
+        private static decimal? Position(string? value)
+        {
+            var match = PositionNumber().Match(value ?? string.Empty);
+            return match.Success && decimal.TryParse(
+                match.Value,
+                System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var number)
+                ? number
+                : null;
+        }
+
+        [GeneratedRegex(@"\d+(?:\.\d+)?")]
+        private static partial Regex PositionNumber();
 
         public static bool TitleAndAuthorMatch(string? releaseTitle, string? bookTitle, IReadOnlyList<string>? authors)
         {

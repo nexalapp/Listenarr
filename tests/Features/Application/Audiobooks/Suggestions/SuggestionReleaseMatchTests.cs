@@ -46,6 +46,25 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
                 null, postTitle, postAuthor, "B000000000", bookTitle, [bookAuthor]));
         }
 
+        [Theory]
+        // The post's title is only its series name, so its position decides: this post is
+        // book 4 and matched Gauntlet Wars book 1 on title and author.
+        [InlineData("Gauntlet Wars", "Gauntlet Wars", "04", "Gauntlet Wars", "1", false)]
+        [InlineData("Gauntlet Wars", "Gauntlet Wars", "04", "Gauntlet Wars", "4", true)]
+        [InlineData("Gauntlet Wars", "Gauntlet Wars", null, "Gauntlet Wars", "1", false)]
+        // A title that names the book is not second-guessed by a position that disagrees:
+        // a parse of "1 633 - 1633" as 633, or a series numbered two ways.
+        [InlineData("1633", "Ring of Fire", "633", "1633", "3", true)]
+        [InlineData("Partner In Crime", "Joanna Brady", "10", "Partner in Crime", "16", true)]
+        [InlineData("Den Of Iniquity", "Stone Barrington", "26", "Den of Iniquity", "23", true)]
+        public void APostTitledOnlyWithItsSeriesMustHaveTheBooksPosition(
+            string postTitle, string postSeries, string? postPosition, string bookTitle, string bookNumber, bool expected)
+        {
+            Assert.Equal(expected, SuggestionReleaseMatch.AbookPostMatches(
+                null, postTitle, "Some Author", "B000000000", bookTitle, ["Some Author"],
+                postSeries, postPosition, bookNumber));
+        }
+
         [Fact]
         public void APostThatDeclaresAnAsinIsHeldToIt()
         {
