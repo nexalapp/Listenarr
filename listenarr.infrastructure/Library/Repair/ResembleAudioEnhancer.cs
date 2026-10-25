@@ -192,6 +192,7 @@ namespace Listenarr.Infrastructure.Library.Repair
                     startInfo.ArgumentList.Add(argument);
                 }
 
+                GiveAHome(startInfo);
                 startInfo.EnvironmentVariables["OMP_NUM_THREADS"] = Threads.ToString();
                 startInfo.EnvironmentVariables["MKL_NUM_THREADS"] = Threads.ToString();
                 // The weights were fetched at provision time; inference never phones home.
@@ -309,6 +310,26 @@ namespace Listenarr.Infrastructure.Library.Repair
             logger.LogInformation("Provisioning the enhancement model: {Step} ({Progress:0}%)", step, progress);
         }
 
+        private const string UvCacheDirectory = ".uv-cache";
+
+        /// <summary>
+        /// Point every tool's home and caches into the enhancer's own directory. The app
+        /// runs as a service user whose home is <c>/nonexistent</c>, and uv, numba,
+        /// matplotlib and torch all write under the home by default — uv refused to start
+        /// at all on the first real install. Measured, not hypothetical.
+        /// </summary>
+        private void GiveAHome(ProcessStartInfo startInfo)
+        {
+            var home = Path.Combine(EnhancerRoot, "home");
+            var cache = Path.Combine(home, ".cache");
+            Directory.CreateDirectory(cache);
+            startInfo.EnvironmentVariables["HOME"] = home;
+            startInfo.EnvironmentVariables["XDG_CACHE_HOME"] = cache;
+            startInfo.EnvironmentVariables["NUMBA_CACHE_DIR"] = Path.Combine(cache, "numba");
+            startInfo.EnvironmentVariables["MPLCONFIGDIR"] = Path.Combine(cache, "matplotlib");
+            startInfo.EnvironmentVariables["TORCH_HOME"] = Path.Combine(cache, "torch");
+        }
+
         private async Task RunToolAsync(
             string fileName,
             string[] arguments,
@@ -330,9 +351,13 @@ namespace Listenarr.Infrastructure.Library.Repair
                 startInfo.ArgumentList.Add(argument);
             }
 
+            GiveAHome(startInfo);
             // uv puts its Python installs beside the venv rather than in the image's
-            // home directory, so the whole install moves as one directory.
+            // home directory, so the whole install moves as one directory. Its download
+            // cache goes in the staging directory too and is deleted before the install
+            // is sized: two gigabytes of wheels nothing will read again.
             startInfo.EnvironmentVariables["UV_PYTHON_INSTALL_DIR"] = Path.Combine(workingDirectory, "python");
+            startInfo.EnvironmentVariables["UV_CACHE_DIR"] = Path.Combine(workingDirectory, UvCacheDirectory);
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             linked.CancelAfter(timeout);
