@@ -86,6 +86,12 @@ namespace Listenarr.Infrastructure.Library.Repair
                 await SmokeTestAsync(staging, cancellationToken);
 
                 Report(97, "Finishing");
+                var uvCache = Path.Combine(staging, UvCacheDirectory);
+                if (Directory.Exists(uvCache))
+                {
+                    Directory.Delete(uvCache, recursive: true);
+                }
+
                 var diskBytes = DirectorySize(staging);
                 var manifest = new InstallManifest(
                     1, PipelineVersion, UvVersion, PythonVersion, ModelRevision, DateTime.UtcNow, diskBytes);
@@ -194,6 +200,7 @@ namespace Listenarr.Infrastructure.Library.Repair
                 startInfo.ArgumentList.Add(argument);
             }
 
+            GiveAHome(startInfo);
             startInfo.EnvironmentVariables["OMP_NUM_THREADS"] = "4";
             startInfo.EnvironmentVariables["HF_HUB_OFFLINE"] = "1";
 
