@@ -22,7 +22,14 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import type { SuggestedBook, SuggestionSnapshot } from '@/types'
 
 function book(asin: string, release?: SuggestedBook['release']): SuggestedBook {
-  return { asin, title: asin, authors: ['Author'], narrators: [], genres: [], release } as SuggestedBook
+  return {
+    asin,
+    title: asin,
+    authors: ['Author'],
+    narrators: [],
+    genres: [],
+    release,
+  } as SuggestedBook
 }
 
 const checkedAt = '2026-10-24T00:00:00Z'
@@ -47,7 +54,12 @@ const snapshot: SuggestionSnapshot = {
     },
   ],
   relatedAuthors: [],
-  coverage: { authorsInLibrary: 0, authorsWithCatalog: 0, seriesInLibrary: 2, seriesWithCatalog: 2 },
+  coverage: {
+    authorsInLibrary: 0,
+    authorsWithCatalog: 0,
+    seriesInLibrary: 2,
+    seriesWithCatalog: 2,
+  },
   ignored: [],
   releases: { total: 4, checked: 3, found: 1 },
 }

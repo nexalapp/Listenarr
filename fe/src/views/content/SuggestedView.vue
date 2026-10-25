@@ -69,8 +69,8 @@
 
     <p v-if="snapshot?.releases && snapshot.releases.total > 0" class="coverage release-coverage">
       <template v-if="snapshot.releases.checked < snapshot.releases.total">
-        Checked {{ snapshot.releases.checked }} of {{ snapshot.releases.total }} suggested books
-        for a release;
+        Checked {{ snapshot.releases.checked }} of {{ snapshot.releases.total }} suggested books for
+        a release;
       </template>
       <strong>{{ snapshot.releases.found }}</strong> can be downloaded.
       <Checkbox v-model="showUnavailable" class="show-unavailable"
@@ -357,16 +357,18 @@ function notKnownUnavailable(book: SuggestedBook): boolean {
   return book.release?.found !== false
 }
 
-const shown = computed<{ authors: AuthorSuggestionGroup[]; series: SeriesSuggestionGroup[] }>(() => {
-  const value = snapshot.value
-  if (!value) return { authors: [], series: [] }
-  if (showUnavailable.value) return { authors: value.authors, series: value.series }
-  const keep = <T extends { missing: SuggestedBook[] }>(groups: T[]): T[] =>
-    groups
-      .map((group) => ({ ...group, missing: group.missing.filter(notKnownUnavailable) }))
-      .filter((group) => group.missing.length > 0)
-  return { authors: keep(value.authors), series: keep(value.series) }
-})
+const shown = computed<{ authors: AuthorSuggestionGroup[]; series: SeriesSuggestionGroup[] }>(
+  () => {
+    const value = snapshot.value
+    if (!value) return { authors: [], series: [] }
+    if (showUnavailable.value) return { authors: value.authors, series: value.series }
+    const keep = <T extends { missing: SuggestedBook[] }>(groups: T[]): T[] =>
+      groups
+        .map((group) => ({ ...group, missing: group.missing.filter(notKnownUnavailable) }))
+        .filter((group) => group.missing.length > 0)
+    return { authors: keep(value.authors), series: keep(value.series) }
+  },
+)
 
 const refreshStatus = ref<SuggestionRefreshStatus | null>(null)
 const refreshing = ref(false)
