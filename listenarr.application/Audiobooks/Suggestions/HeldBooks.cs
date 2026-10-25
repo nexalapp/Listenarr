@@ -27,6 +27,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         private readonly HashSet<string> _titleAuthorKeys = new(StringComparer.Ordinal);
 
         /// <summary>
+        /// The same books under the looser key: aliases applied and a middle initial
+        /// dropped. A catalogue and a library rarely spell a name the same way twice,
+        /// and a book missed here is offered as one the shelf lacks.
+        /// </summary>
+        private readonly HashSet<string> _matchKeys = new(StringComparer.Ordinal);
+
+        /// <summary>
         /// Every story the shelf answers for, by place in a series and by title. A
         /// catalogue entry matching one of these is another publication of a book
         /// already held, not a book missing from it.
@@ -35,6 +42,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
         private readonly IReadOnlySet<string>? _languages;
         private readonly HashSet<string> _ignored;
+        private readonly IReadOnlyList<AuthorAlias> _aliases;
 
         public Dictionary<string, int> AuthorCounts { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, int> SeriesCounts { get; } = new(StringComparer.Ordinal);
@@ -43,10 +51,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             IEnumerable<Audiobook> library,
             IReadOnlyDictionary<int, List<AudiobookSeriesMembership>> memberships,
             IEnumerable<string> ignoredKeys,
-            IReadOnlySet<string>? languages)
+            IReadOnlySet<string>? languages,
+            IReadOnlyList<AuthorAlias>? aliases = null)
         {
             _ignored = new HashSet<string>(ignoredKeys, StringComparer.Ordinal);
             _languages = languages;
+            _aliases = aliases ?? [];
             foreach (var book in library)
             {
                 if (!string.IsNullOrWhiteSpace(book.Asin))
@@ -67,6 +77,11 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 if (key != null)
                 {
                     _titleAuthorKeys.Add(key);
+                }
+
+                if (SuggestionNames.MatchKey(book.Title, book.Authors, _aliases) is { } match)
+                {
+                    _matchKeys.Add(match);
                 }
 
                 foreach (var author in book.Authors ?? [])
@@ -142,7 +157,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// series, or the same title by the same author.
         /// </summary>
         public bool CoversSameStory(string? title, IReadOnlyList<string>? authors, string? series, string? seriesNumber) =>
-            StoryIdentity.KeysFor(title, authors, series, seriesNumber).Any(_stories.Contains);
+            StoryIdentity.KeysFor(title, authors, series, seriesNumber).Any(_stories.Contains)
+            || Matches(title, authors);
 
         /// <summary>Dismissed by either identity: the ASIN, or the title and author.</summary>
         public bool Ignored(string? asin, string? title, IReadOnlyList<string>? authors)
@@ -175,8 +191,15 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             }
 
             var key = SuggestionNames.TitleAuthorKey(title, authors);
-            return key != null && _titleAuthorKeys.Contains(key);
+            return (key != null && _titleAuthorKeys.Contains(key)) || Matches(title, authors);
         }
+
+        /// <summary>
+        /// Whether the shelf holds this title by this author once the two sides' names
+        /// are brought together: the alias list applied, a middle initial forgiven.
+        /// </summary>
+        private bool Matches(string? title, IEnumerable<string>? authors) =>
+            SuggestionNames.MatchKey(title, authors, _aliases) is { } key && _matchKeys.Contains(key);
 
         private static void Count(Dictionary<string, int> counts, string? name)
         {
