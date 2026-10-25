@@ -170,9 +170,13 @@ namespace Listenarr.Api.Features.Library
             audiobookId = job.AudiobookId,
             status = job.Status.ToString(),
             phase = job.Phase.ToString(),
+            // Without it every job read from the list is a conversion: after a reload the
+            // Activity page labelled each repair "Convert to M4B".
+            kind = job.Kind.ToString(),
             progress = job.Progress,
             trigger = job.Trigger.ToString(),
             sourceFileCount = job.SourceFileCount,
+            completedSourceFiles = job.CompletedSourceFiles,
             chapterCount = job.ChapterCount,
             error = job.Error,
             failureKind = job.FailureKind,
