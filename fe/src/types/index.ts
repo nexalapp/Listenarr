@@ -2041,14 +2041,41 @@ export interface RenameResult {
  * NZBKing believes, which is why a reserve is held back and why the figure is
  * presented as an estimate rather than a reading.
  */
+export interface NzbKingKeyStatus {
+  /** Short label for the key -- a prefix of its fingerprint, never the key. */
+  label: string
+  estimatedBalance: number
+  spendable: number
+  /**
+   * When this key next earns a token. Meaningless once the key is at its cap -- the
+   * anchor advances but nothing accrues -- so a reader has to check the balance first.
+   */
+  nextRefillAt: string | null
+  lastSuccessfulUseAt?: string | null
+  keyDeleted: boolean
+}
+
 export interface NzbKingStatus {
   configured: boolean
+  /** Pooled: the sum of every key's balance. */
   estimatedBalance: number
+  /** Per key, not for the pool. The pool's ceiling is this times `keys.length`. */
   maxTokens: number
+  /** Per key: every key holds its own reserve back. */
   reserveFloor: number
+  /** Pooled: what can be spent before any key reaches its reserve. */
   spendable: number
+  keyCount: number
+  deletedKeyCount: number
+  /**
+   * Every key, in the order they would be spent. Refills land per key, so counting
+   * them locally has to be done per key: a pool of five below their caps earns five
+   * tokens an hour, not one.
+   */
+  keys: NzbKingKeyStatus[]
   nextRefillAt?: string | null
   lastSuccessfulUseAt?: string | null
+  /** True only when every key has been deleted; one dead key among several is not this. */
   keyDeleted: boolean
   summary: string
   refusedRecently: number

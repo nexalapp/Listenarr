@@ -285,6 +285,276 @@ public sealed class NzbKingTokenBudgetTests : BaseTests
     }
 
     [Fact]
+    public async Task TryAcquireFromPoolAsync_ChargesTheFullestKey()
+    {
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            // Spend one key down so the keys are not equal, then let the pool choose.
+            await budget.TryAcquireAsync("key-a", NzbKingAccessPurpose.Grab, "warm up");
+
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["key-a", "key-b"], NzbKingAccessPurpose.Grab, "a book");
+
+            Assert.True(pool.Lease.Granted);
+            Assert.Equal("key-b", pool.ApiKey);
+            Assert.Equal(NzbKingKeyFingerprint.Compute("key-b"), pool.Lease.KeyFingerprint);
+        });
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_KeepsThePoolLevelSoEveryKeyGoesOnEarning()
+    {
+        // The point of the pool. A refill is forfeit at the cap, so the pool regenerates
+        // one token an hour per key *below* its cap; draining one key and parking the rest
+        // at 100 would buy a burst and no throughput.
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            for (var spend = 0; spend < 9; spend++)
+            {
+                var pool = await budget.TryAcquireFromPoolAsync(
+                    ["key-a", "key-b", "key-c"], NzbKingAccessPurpose.Grab, $"book {spend}");
+
+                Assert.True(pool.Lease.Granted);
+            }
+
+            var statuses = await budget.GetPoolStatusAsync(["key-a", "key-b", "key-c"]);
+
+            Assert.All(statuses, status => Assert.Equal(NzbKingTokenPolicy.MaxTokens - 3, status.EstimatedBalance));
+        });
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_OneExhaustedKeyDoesNotRefuseWhatAnotherCanPay()
+    {
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            var spendable = NzbKingTokenPolicy.MaxTokens - NzbKingTokenPolicy.ReserveFloor;
+            for (var i = 0; i < spendable; i++)
+            {
+                await budget.TryAcquireAsync("spent", NzbKingAccessPurpose.Grab, $"book {i}");
+            }
+
+            Assert.False((await budget.TryAcquireAsync("spent", NzbKingAccessPurpose.Grab)).Granted);
+
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["spent", "fresh"], NzbKingAccessPurpose.Grab, "a book");
+
+            Assert.True(pool.Lease.Granted);
+            Assert.Equal("fresh", pool.ApiKey);
+        });
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_SkipsADeletedKeyAndSpendsALiveOne()
+    {
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            var lease = await budget.TryAcquireAsync("dead", NzbKingAccessPurpose.Grab, "a book");
+            await budget.ReportOutcomeAsync(lease, 429);
+
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["dead", "live"], NzbKingAccessPurpose.Grab, "another");
+
+            Assert.True(pool.Lease.Granted);
+            Assert.Equal("live", pool.ApiKey);
+        });
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_RefusesOnlyWhenNoKeyCanPay()
+    {
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            var spendable = NzbKingTokenPolicy.MaxTokens - NzbKingTokenPolicy.ReserveFloor;
+            foreach (var key in new[] { "key-a", "key-b" })
+            {
+                for (var i = 0; i < spendable; i++)
+                {
+                    await budget.TryAcquireAsync(key, NzbKingAccessPurpose.Grab, $"book {i}");
+                }
+            }
+
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["key-a", "key-b"], NzbKingAccessPurpose.Grab, "one too many");
+
+            Assert.False(pool.Lease.Granted);
+            Assert.Null(pool.ApiKey);
+            Assert.Contains("exhausted", pool.Lease.Reason, StringComparison.OrdinalIgnoreCase);
+            // The resolver reads this word to tell an exhausted budget from an index that
+            // simply did not answer.
+            Assert.Contains("budget", pool.Lease.Reason, StringComparison.OrdinalIgnoreCase);
+            // A refusal is still a recorded attempt: something was asked for and declined.
+            Assert.NotNull(pool.Lease.AccessId);
+        });
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_SaysTheKeysAreDeletedWhenEveryOneIsGone()
+    {
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            foreach (var key in new[] { "key-a", "key-b" })
+            {
+                var lease = await budget.TryAcquireAsync(key, NzbKingAccessPurpose.Grab, "a book");
+                await budget.ReportOutcomeAsync(lease, 429);
+            }
+
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["key-a", "key-b"], NzbKingAccessPurpose.Grab, "another");
+
+            Assert.False(pool.Lease.Granted);
+            Assert.Contains("deleted", pool.Lease.Reason, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_DoesNotInterruptUntilThePoolItselfCannotPay()
+    {
+        // Trying a spent key before a full one is the pool working. A toast for each of
+        // those would report the pool doing its job as a failure to act on.
+        await WithBudgetAsync(async (createContext, _) =>
+        {
+            var toasts = new Mock<IToastService>();
+            var time = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            var budget = CreateBudget(createContext(), time, toasts.Object);
+
+            var spendable = NzbKingTokenPolicy.MaxTokens - NzbKingTokenPolicy.ReserveFloor;
+            for (var i = 0; i < spendable; i++)
+            {
+                await budget.TryAcquireAsync("spent", NzbKingAccessPurpose.Grab, $"book {i}");
+            }
+
+            toasts.Invocations.Clear();
+
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["spent", "fresh"], NzbKingAccessPurpose.Grab, "a book");
+
+            Assert.True(pool.Lease.Granted);
+            toasts.Verify(t => t.PublishToastAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()),
+                Times.Never);
+        });
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_TreatsOneKeyTwiceAsOneAllowance()
+    {
+        // Two indexers configured with the same key are one allowance. Offering it twice
+        // would have the pool believe it had two.
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["same", "same"], NzbKingAccessPurpose.Grab, "a book");
+
+            Assert.True(pool.Lease.Granted);
+
+            var statuses = await budget.GetPoolStatusAsync(["same", "same"]);
+
+            Assert.Single(statuses);
+            Assert.Equal(NzbKingTokenPolicy.MaxTokens - 1, statuses[0].EstimatedBalance);
+        });
+    }
+
+    /// <summary>
+    /// A ledger that reports a live key when asked, and a deleted one when spending.
+    ///
+    /// Stands in for the gap the pool genuinely has: the spend order reads the ledger a
+    /// moment before the spend does, and nothing stops the key dying in between.
+    /// </summary>
+    private sealed class LedgerDeletedOnlyWhenSpending : INzbKingLedgerRepository
+    {
+        public Task<NzbKingKeyState?> GetByFingerprintAsync(string fingerprint, CancellationToken ct = default)
+            => Task.FromResult<NzbKingKeyState?>(new NzbKingKeyState
+            {
+                KeyFingerprint = fingerprint,
+                EstimatedBalance = NzbKingTokenPolicy.MaxTokens,
+                LastRefillAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            });
+
+        public Task<NzbKingSpendResult> TrySpendAsync(
+            string fingerprint,
+            NzbKingAccessPurpose purpose,
+            string? query,
+            DateTime now,
+            CancellationToken ct = default)
+            => Task.FromResult(new NzbKingSpendResult(false, 0, now, 1, true));
+
+        public Task RecordOutcomeAsync(
+            int accessId,
+            string fingerprint,
+            NzbKingAccessOutcome outcome,
+            int httpStatus,
+            DateTime now,
+            CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<bool> EnsureKeyAsync(string fingerprint, DateTime now, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<List<NzbKingKeyState>> GetKeysDueForKeepaliveAsync(DateTime now, CancellationToken ct = default)
+            => Task.FromResult(new List<NzbKingKeyState>());
+
+        public Task<List<NzbKingApiAccess>> GetRecentAccessAsync(
+            string fingerprint,
+            int limit,
+            CancellationToken ct = default) => Task.FromResult(new List<NzbKingApiAccess>());
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_AKeyFoundDeadWhileSpendingIsReportedAsDeleted()
+    {
+        // Reporting the ranking's view instead would tell the operator to wait for a
+        // refill that is never coming, when what they have to do is replace the key.
+        var toasts = new Mock<IToastService>();
+        var budget = new NzbKingTokenBudget(
+            new LedgerDeletedOnlyWhenSpending(),
+            Mock.Of<IAppMetricsService>(),
+            toasts.Object,
+            new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)),
+            Mock.Of<ILogger<NzbKingTokenBudget>>());
+
+        var pool = await budget.TryAcquireFromPoolAsync(["key"], NzbKingAccessPurpose.Grab, "a book");
+
+        Assert.False(pool.Lease.Granted);
+        Assert.Contains("deleted", pool.Lease.Reason, StringComparison.OrdinalIgnoreCase);
+        toasts.Verify(t => t.PublishToastAsync(
+            "error", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task TryAcquireFromPoolAsync_WithoutAnyKeyIsRefusedAndSpendsNothing()
+    {
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            var pool = await budget.TryAcquireFromPoolAsync(
+                ["", "   "], NzbKingAccessPurpose.Grab, "a book");
+
+            Assert.False(pool.Lease.Granted);
+            Assert.Null(pool.ApiKey);
+            Assert.Null(pool.Lease.AccessId);
+        });
+    }
+
+    [Fact]
+    public async Task GetPoolStatusAsync_ReportsAConfiguredKeyTheLedgerHasNeverSeenAsFull()
+    {
+        // NZBKing issued it with its whole allowance and nothing has spent any of it.
+        // Omitting it would understate the pool by an entire key.
+        await WithBudgetAsync(async (_, budget) =>
+        {
+            await budget.TryAcquireAsync("used", NzbKingAccessPurpose.Grab, "a book");
+
+            var statuses = await budget.GetPoolStatusAsync(["used", "never-used"]);
+
+            Assert.Equal(2, statuses.Count);
+            // Spend order: the untouched key is the fullest, so it comes first.
+            Assert.Equal(NzbKingTokenPolicy.MaxTokens, statuses[0].EstimatedBalance);
+            Assert.Equal(NzbKingTokenPolicy.MaxTokens - 1, statuses[1].EstimatedBalance);
+        });
+    }
+
+    [Fact]
     public async Task TryAcquireAsync_ManyCallersEachReceiveTheirOwnToken()
     {
         // Each caller must come away with a distinct post-spend balance, and the ledger

@@ -20,115 +20,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Features.AbookLink
 {
-    public sealed class AbookCandidateResponse
-    {
-        public int TopicId { get; set; }
-        public string TopicTitle { get; set; } = string.Empty;
-        public string Outcome { get; set; } = string.Empty;
-        public string? Title { get; set; }
-        public string? Author { get; set; }
-        public string? Narrator { get; set; }
-        public string? SeriesName { get; set; }
-        public string? SeriesPosition { get; set; }
-        public int? Year { get; set; }
-        public string? Asin { get; set; }
-        public string? Format { get; set; }
-        public int? FileCount { get; set; }
-        public long? SizeBytes { get; set; }
-        public string? Duration { get; set; }
-        public int? Chapters { get; set; }
-        public string? Genre { get; set; }
-        public bool HasPayload { get; set; }
-        public bool MultiPart { get; set; }
-        public List<string> UnrecognisedLabels { get; set; } = new();
-    }
-
-    public sealed class AbookResolverAttemptResponse
-    {
-        public string Resolver { get; set; } = string.Empty;
-        public bool Succeeded { get; set; }
-        public string? Failure { get; set; }
-        public string? Detail { get; set; }
-        public int CandidateCount { get; set; }
-    }
-
-    public sealed class AbookGrabResponse
-    {
-        public int TopicId { get; set; }
-        public bool Succeeded { get; set; }
-        public string Stage { get; set; } = string.Empty;
-        public string Detail { get; set; } = string.Empty;
-        public bool Thanked { get; set; }
-        public bool WorthRetrying { get; set; }
-        public string? NzbUrl { get; set; }
-        public bool HasPassword { get; set; }
-        public AbookCandidateResponse? Book { get; set; }
-        public List<AbookResolverAttemptResponse> Attempts { get; set; } = new();
-    }
-
-    public sealed class NzbKingStatusResponse
-    {
-        public bool Configured { get; set; }
-        public int EstimatedBalance { get; set; }
-        public int MaxTokens { get; set; }
-        public int ReserveFloor { get; set; }
-        public int Spendable { get; set; }
-        public DateTime? NextRefillAt { get; set; }
-        public DateTime? LastSuccessfulUseAt { get; set; }
-        public bool KeyDeleted { get; set; }
-        public string Summary { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Grabs refused in the last 24 hours. A refusal is an event rather than a level:
-        /// something was asked for and did not happen, which the balance cannot express.
-        /// Spends need no equivalent -- the balance already accounts for them.
-        /// </summary>
-        public int RefusedRecently { get; set; }
-    }
-
-    public sealed class NzbKingAccessResponse
-    {
-        public DateTime AttemptedAt { get; set; }
-        public string Purpose { get; set; } = string.Empty;
-        public string Outcome { get; set; } = string.Empty;
-        public string? Query { get; set; }
-        public int? HttpStatus { get; set; }
-        public int BalanceAfter { get; set; }
-    }
-
-    public sealed class NzbKingLedgerResponse
-    {
-        public bool Configured { get; set; }
-        public List<NzbKingAccessResponse> Entries { get; set; } = new();
-    }
-
-    public sealed class AbookSendResponse
-    {
-        public int TopicId { get; set; }
-        public bool Succeeded { get; set; }
-        public string Stage { get; set; } = string.Empty;
-        public string Detail { get; set; } = string.Empty;
-        public bool Thanked { get; set; }
-        public bool Sent { get; set; }
-        public string? ClientName { get; set; }
-        public string? DownloadId { get; set; }
-        public bool PasswordSent { get; set; }
-        public string? SendDetail { get; set; }
-        public AbookCandidateResponse? Book { get; set; }
-        public List<AbookResolverAttemptResponse> Attempts { get; set; } = new();
-    }
-
-    public sealed class AbookSearchResponse
-    {
-        public string Query { get; set; } = string.Empty;
-        public int HitCount { get; set; }
-        public int Inspected { get; set; }
-        public double SuccessRate { get; set; }
-        public double IdentificationRate { get; set; }
-        public string Report { get; set; } = string.Empty;
-        public List<AbookCandidateResponse> Candidates { get; set; } = new();
-    }
-
     /// <summary>
     /// A read-only window onto abook.link, for exercising the search and parse path end to
     /// end before any of it is wired into grabbing.
@@ -301,20 +192,49 @@ namespace Listenarr.Api.Features.AbookLink
         public async Task<ActionResult<NzbKingStatusResponse>> NzbKingStatus(
             CancellationToken cancellationToken = default)
         {
-            var status = await _browser.GetNzbKingStatusAsync(cancellationToken);
+            var keys = await _browser.GetNzbKingPoolStatusAsync(cancellationToken);
 
-            if (status is null)
+            if (keys.Count == 0)
             {
                 return Ok(new NzbKingStatusResponse
                 {
                     Configured = false,
                     MaxTokens = NzbKingTokenPolicy.MaxTokens,
                     ReserveFloor = NzbKingTokenPolicy.ReserveFloor,
-                    Summary = "No NZBKing key is configured, or it has not been used yet."
+                    Summary = "No NZBKing key is configured."
                 });
             }
 
-            var spendable = Math.Max(0, status.EstimatedBalance - NzbKingTokenPolicy.ReserveFloor);
+            // Per key, because that is how NZBKing meters: a key at its reserve cannot be
+            // helped by another key's balance, so the spendable total is the sum of what
+            // each key can spend rather than the pool's balance less one reserve.
+            var perKey = keys
+                .Select(key => new NzbKingKeyStatusResponse
+                {
+                    Label = Label(key.KeyFingerprint),
+                    EstimatedBalance = key.EstimatedBalance,
+                    Spendable = key.KeyDeleted
+                        ? 0
+                        : Math.Max(0, key.EstimatedBalance - NzbKingTokenPolicy.ReserveFloor),
+                    NextRefillAt = key.NextRefillAt,
+                    LastSuccessfulUseAt = key.LastSuccessfulUseAt,
+                    KeyDeleted = key.KeyDeleted
+                })
+                .ToList();
+
+            var deletedKeys = perKey.Count(key => key.KeyDeleted);
+            var liveKeys = perKey.Where(key => !key.KeyDeleted).ToList();
+            var balance = liveKeys.Sum(key => key.EstimatedBalance);
+            var spendable = liveKeys.Sum(key => key.Spendable);
+            var allDeleted = liveKeys.Count == 0;
+
+            // Only the keys that can still earn a token: a deleted key's anchor keeps
+            // advancing and would otherwise promise a refill that is never coming.
+            var nextRefill = liveKeys
+                .Where(key => key.EstimatedBalance < NzbKingTokenPolicy.MaxTokens)
+                .Select(key => (DateTime?)key.NextRefillAt)
+                .DefaultIfEmpty(null)
+                .Min();
 
             // A day's worth of attempts is the useful window: refills are hourly, so
             // anything older has already been earned back.
@@ -327,18 +247,21 @@ namespace Listenarr.Api.Features.AbookLink
             {
                 Configured = true,
                 RefusedRecently = refusedRecently,
-                EstimatedBalance = status.EstimatedBalance,
+                EstimatedBalance = balance,
                 MaxTokens = NzbKingTokenPolicy.MaxTokens,
                 ReserveFloor = NzbKingTokenPolicy.ReserveFloor,
                 Spendable = spendable,
-                NextRefillAt = status.NextRefillAt,
-                LastSuccessfulUseAt = status.LastSuccessfulUseAt,
-                KeyDeleted = status.KeyDeleted,
-                Summary = status.KeyDeleted
-                    ? "The key has been deleted by NZBKing. Request a new one and save it against the source."
-                    : $"About {status.EstimatedBalance} of {NzbKingTokenPolicy.MaxTokens} tokens left, "
-                      + $"{spendable} of them spendable before the reserve of {NzbKingTokenPolicy.ReserveFloor}. "
-                      + $"One returns every hour; next at {status.NextRefillAt:u}."
+                KeyCount = perKey.Count,
+                DeletedKeyCount = deletedKeys,
+                Keys = perKey,
+                NextRefillAt = nextRefill,
+                LastSuccessfulUseAt = perKey
+                    .Select(key => key.LastSuccessfulUseAt)
+                    .Where(at => at.HasValue)
+                    .DefaultIfEmpty(null)
+                    .Max(),
+                KeyDeleted = allDeleted,
+                Summary = Summarise(perKey.Count, liveKeys.Count, deletedKeys, balance, spendable, nextRefill)
             });
         }
 
@@ -387,6 +310,55 @@ namespace Listenarr.Api.Features.AbookLink
 
             var candidate = result.Candidates.FirstOrDefault();
             return candidate is null ? NotFound() : Ok(Map(candidate));
+        }
+
+        /// <summary>
+        /// Short label for a key. The fingerprint is already a hash rather than the key,
+        /// but there is no reason to publish all of it to name a row in a list.
+        /// </summary>
+        private static string Label(string fingerprint) =>
+            fingerprint.Length <= 8 ? fingerprint : fingerprint[..8];
+
+        /// <summary>
+        /// One sentence an operator can act on, which for a pool means saying how many
+        /// keys there are: "about 300 tokens left" reads as alarming or comfortable
+        /// depending entirely on whether that is one key or five.
+        /// </summary>
+        private static string Summarise(
+            int keyCount,
+            int liveKeys,
+            int deletedKeys,
+            int balance,
+            int spendable,
+            DateTime? nextRefillAt)
+        {
+            if (liveKeys == 0)
+            {
+                return keyCount == 1
+                    ? "The key has been deleted by NZBKing. Request a new one and save it against the source."
+                    : $"All {keyCount} keys have been deleted by NZBKing. Request new ones and save them against the source.";
+            }
+
+            var ceiling = liveKeys * NzbKingTokenPolicy.MaxTokens;
+            var reserve = liveKeys * NzbKingTokenPolicy.ReserveFloor;
+
+            var scope = liveKeys == 1
+                ? string.Empty
+                : $" across {liveKeys} keys";
+            var lost = deletedKeys == 0
+                ? string.Empty
+                : $" {deletedKeys} further {(deletedKeys == 1 ? "key has" : "keys have")} been deleted.";
+
+            // One token an hour per key, but only while that key is below its cap - a full
+            // key earns nothing, so promising liveKeys an hour would overstate it.
+            var refill = nextRefillAt is { } due
+                ? $" One returns every hour per key below its cap; next at {due:u}."
+                : " Every key is at its cap, so there is nothing to wait for.";
+
+            return $"About {balance} of {ceiling} tokens left{scope}, "
+                + $"{spendable} of them spendable before the reserve of {reserve}."
+                + refill
+                + lost;
         }
 
         private static AbookSearchResponse Map(string query, AbookBrowseResult result) => new()

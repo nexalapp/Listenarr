@@ -195,11 +195,13 @@ namespace Listenarr.Application.Audiobooks.Discover
         private async Task<HeldBooks> BuildHeldAsync(ApplicationSettings settings, CancellationToken cancellationToken)
         {
             var languages = LanguageFilter.Parse(LanguageFilter.FromSettings(settings));
+            var aliases = AuthorAliases.Parse(settings.AuthorAliasesJson);
             var library = await repository.GetAllAsync();
             cancellationToken.ThrowIfCancellationRequested();
             var memberships = await repository.GetAllSeriesMembershipsGroupedByAudiobookIdAsync(cancellationToken);
             var dismissals = await repository.GetSuggestionDismissalsAsync(cancellationToken);
-            return new HeldBooks(library, memberships, dismissals.Select(dismissal => dismissal.Key), languages);
+            return new HeldBooks(
+                library, memberships, dismissals.Select(dismissal => dismissal.Key), languages, aliases);
         }
 
         private IDiscoverSourceReader ReaderFor(string source) =>

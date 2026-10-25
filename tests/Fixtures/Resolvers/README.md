@@ -93,6 +93,15 @@ Metered: 100 tokens, one per query, one returned per hour, key deleted at zero. 
 token ledger. Independent of the Binsearch/NZBIndex index, which is its value — it is a
 genuine second opinion rather than the same answer twice.
 
+A key is issued at `https://nzbking.com/rss/`, behind a Google reCAPTCHA v2 form: *"In
+order protect nzbking against massive automated access you will have to prove that you are
+not a robot."* The CAPTCHA **is** the rate limit, so nothing here requests a key — a person
+does, and several keys may be configured. Each one carries its own 100-token allowance, so
+a pool is several allowances rather than a larger one, and a refill is forfeit at the cap:
+the pool earns one token an hour for each key *below* its cap. That is why
+`NzbKingKeyPool.SpendOrder` charges the fullest key, which keeps the pool level and every
+key earning.
+
 | Purpose | Request |
 |---|---|
 | Search feed | `GET https://nzbking.com/rss/search/?q=<term>&key=<apikey>` |

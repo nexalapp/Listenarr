@@ -19,19 +19,46 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 
-const status = (overrides: Record<string, unknown> = {}) => ({
-  configured: true,
+const key = (overrides: Record<string, unknown> = {}) => ({
+  label: 'aaaaaaaa',
   estimatedBalance: 100,
-  maxTokens: 100,
-  reserveFloor: 5,
   spendable: 95,
   nextRefillAt: null,
   lastSuccessfulUseAt: null,
   keyDeleted: false,
-  summary: '',
-  refusedRecently: 0,
   ...overrides,
 })
+
+/** A pool of one unless a test supplies `keys` itself. */
+const status = (overrides: Record<string, unknown> = {}) => {
+  const merged = {
+    configured: true,
+    estimatedBalance: 100,
+    maxTokens: 100,
+    reserveFloor: 5,
+    spendable: 95,
+    keyCount: 1,
+    deletedKeyCount: 0,
+    nextRefillAt: null,
+    lastSuccessfulUseAt: null,
+    keyDeleted: false,
+    summary: '',
+    refusedRecently: 0,
+    ...overrides,
+  } as Record<string, unknown>
+
+  return {
+    ...merged,
+    keys: (merged.keys as unknown[]) ?? [
+      key({
+        estimatedBalance: merged.estimatedBalance,
+        nextRefillAt: merged.nextRefillAt,
+        keyDeleted: merged.keyDeleted,
+      }),
+    ],
+    deletedKeyCount: merged.keyDeleted ? 1 : (merged.deletedKeyCount as number),
+  }
+}
 
 const mountWidget = async (payload: Record<string, unknown>) => {
   vi.doMock('@/services/api', () => ({
@@ -112,6 +139,9 @@ describe('NzbKingTokenWidget', () => {
       reserveFloor: 5,
       estimatedBalance: 0,
       spendable: 0,
+      keyCount: 0,
+      deletedKeyCount: 0,
+      keys: [],
       keyDeleted: false,
       summary: '',
       refusedRecently: 0,
@@ -127,6 +157,71 @@ describe('NzbKingTokenWidget', () => {
 
     expect(wrapper.text()).toContain('key deleted')
     expect(wrapper.text()).toContain('Request a new key')
+    expect(wrapper.text()).not.toContain('available')
+  })
+  it('names the pool when there is more than one key', async () => {
+    // "≈190 available" reads as comfortable or alarming depending entirely on whether
+    // that is one key or several, and nothing else on the widget says which.
+    const wrapper = await mountWidget(
+      status({
+        keyCount: 2,
+        keys: [
+          key({ label: 'aaaaaaaa', estimatedBalance: 100 }),
+          key({ label: 'bbbbbbbb', estimatedBalance: 100 }),
+        ],
+      }),
+    )
+
+    expect(wrapper.text()).toContain('≈190 available')
+    expect(wrapper.text()).toContain('across 2 keys')
+  })
+
+  it('does not mention the count for a single key', async () => {
+    const wrapper = await mountWidget(status())
+
+    expect(wrapper.text()).not.toContain('across')
+  })
+
+  it('surfaces one dead key among live ones, which the balance cannot show', async () => {
+    const wrapper = await mountWidget(
+      status({
+        keyCount: 2,
+        deletedKeyCount: 1,
+        keys: [
+          key({ label: 'aaaaaaaa', estimatedBalance: 100 }),
+          key({ label: 'bbbbbbbb', estimatedBalance: 0, keyDeleted: true }),
+        ],
+      }),
+    )
+
+    expect(wrapper.text()).toContain('≈95 available')
+    expect(wrapper.text()).toContain('1 of them has been deleted')
+    expect(wrapper.text()).toContain('Request a replacement')
+  })
+
+  it('points at the page that issues a key, since only a person can get one', async () => {
+    const wrapper = await mountWidget(
+      status({ keyDeleted: true, estimatedBalance: 0, spendable: 0 }),
+    )
+
+    expect(wrapper.get('a').attributes('href')).toBe('https://nzbking.com/rss/')
+  })
+
+  it('says all the keys are gone rather than "key deleted" for a pool', async () => {
+    const wrapper = await mountWidget(
+      status({
+        keyCount: 3,
+        deletedKeyCount: 3,
+        keyDeleted: true,
+        keys: [
+          key({ label: 'aaaaaaaa', estimatedBalance: 0, keyDeleted: true }),
+          key({ label: 'bbbbbbbb', estimatedBalance: 0, keyDeleted: true }),
+          key({ label: 'cccccccc', estimatedBalance: 0, keyDeleted: true }),
+        ],
+      }),
+    )
+
+    expect(wrapper.text()).toContain('all 3 keys deleted')
     expect(wrapper.text()).not.toContain('available')
   })
 })

@@ -107,6 +107,20 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             string? isbn = null) =>
             new() { Title = title, Authors = [author], Asin = asin, Isbn = isbn };
 
+        private static CachedSeriesCatalogBook SeriesCatalog(
+            string title,
+            string author,
+            string? asin = null) =>
+            new() { Title = title, Authors = [author], Asin = asin };
+
+        private void CachedSeries(string name, params CachedSeriesCatalogBook[] books) =>
+            _series.Add(new SeriesCacheEntry
+            {
+                SeriesName = name,
+                SeriesNameNormalized = SuggestionNames.Normalize(name),
+                CatalogBooks = [.. books]
+            });
+
         private void CachedAuthor(string name, params CachedAuthorCatalogBook[] books) =>
             _authors.Add(new AuthorCacheEntry
             {
@@ -114,6 +128,101 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
                 AuthorNameNormalized = SuggestionNames.Normalize(name),
                 CatalogBooks = [.. books]
             });
+
+        [Fact]
+        public async Task Get_DoesNotOfferABookTheShelfHoldsUnderAnotherSpellingOfTheAuthor()
+        {
+            // The case from the library: Altered Carbon is shelved as "Richard K.
+            // Morgan" and Audible credits that edition to "Richard Morgan", so the
+            // title-and-author key missed it and the book was offered as missing.
+            Held("Altered Carbon", "Richard K. Morgan");
+            CachedAuthor("Richard K. Morgan",
+                Catalog("Altered Carbon", "Richard Morgan", asin: "B1"),
+                Catalog("Broken Angels", "Richard Morgan", asin: "B2"));
+
+            var snapshot = await BuildService().GetAsync();
+
+            var titles = snapshot.Authors.SelectMany(group => group.Missing).Select(book => book.Title);
+            Assert.DoesNotContain("Altered Carbon", titles);
+            Assert.Contains("Broken Angels", titles);
+        }
+
+        [Fact]
+        public async Task Get_OffersOneCardWhenTheCatalogueSpellsTheAuthorTwoWays()
+        {
+            Held("Altered Carbon", "Richard K. Morgan");
+            CachedAuthor("Richard K. Morgan",
+                Catalog("Broken Angels", "Richard Morgan", asin: "B2"),
+                Catalog("Broken Angels", "Richard K. Morgan", asin: "B3"));
+
+            var snapshot = await BuildService().GetAsync();
+
+            // Two ASINs, two spellings, one book: offering both is how five missing
+            // became the count for three.
+            var missing = snapshot.Authors.SelectMany(group => group.Missing).ToList();
+            Assert.Single(missing, book => book.Title == "Broken Angels");
+        }
+
+        [Fact]
+        public async Task Get_HonoursTheOperatorsOwnNameAliases()
+        {
+            _settings.AuthorAliasesJson = """[{"variant":"Nathan Lowel","canonical":"Nathan Lowell"}]""";
+            Held("Quarter Share", "Nathan Lowell");
+            CachedAuthor("Nathan Lowell", Catalog("Quarter Share", "Nathan Lowel", asin: "B1"));
+
+            var snapshot = await BuildService().GetAsync();
+
+            // The alias list is the operator's answer to exactly this; until now the
+            // page did not consult it.
+            Assert.Empty(snapshot.Authors.SelectMany(group => group.Missing));
+        }
+
+        [Fact]
+        public async Task Get_StillOffersTheSameTitleByADifferentAuthor()
+        {
+            Held("Altered Carbon", "Richard K. Morgan", series: "Takeshi Kovacs Trilogy");
+            CachedSeries("Takeshi Kovacs Trilogy",
+                SeriesCatalog("Altered Carbon", "Sarah J. Maas", asin: "B9"));
+
+            var snapshot = await BuildService().GetAsync();
+
+            // Forgiving an initial must not reach as far as forgiving the name.
+            Assert.Contains(
+                "Altered Carbon",
+                snapshot.Series.SelectMany(group => group.Missing).Select(book => book.Title));
+        }
+
+        [Fact]
+        public async Task Get_DoesNotOfferASeriesBookTheShelfHoldsUnderAnotherSpelling()
+        {
+            // The reported case, on the tab it was reported from: one book shelved,
+            // five offered, of which the first was the book already on the shelf.
+            Held("Altered Carbon", "Richard K. Morgan", series: "Takeshi Kovacs Trilogy");
+            CachedSeries("Takeshi Kovacs Trilogy",
+                SeriesCatalog("Altered Carbon", "Richard Morgan", asin: "B1"),
+                SeriesCatalog("Broken Angels", "Richard Morgan", asin: "B2"),
+                SeriesCatalog("Broken Angels", "Richard K. Morgan", asin: "B3"));
+
+            var snapshot = await BuildService().GetAsync();
+
+            var missing = snapshot.Series.SelectMany(group => group.Missing).Select(book => book.Title).ToList();
+            Assert.Equal(["Broken Angels"], missing);
+        }
+
+        [Theory]
+        [InlineData("Richard K. Morgan", "richard morgan")]
+        [InlineData("Richard Morgan", "richard morgan")]
+        [InlineData("James S. A. Corey", "james corey")]
+        [InlineData("B. V. Larson", "bv larson")]
+        [InlineData("B.V. Larson", "bv larson")]
+        // An author who writes under initials keeps them: collapsing to "carey" would
+        // meet every other Carey in the catalogue.
+        [InlineData("M. R. Carey", "mr carey")]
+        [InlineData("Mike Carey", "mike carey")]
+        public void AuthorMatchKey_ForgivesAnInitialOnlyWhenANameRemains(string author, string expected)
+        {
+            Assert.Equal(expected, SuggestionNames.AuthorMatchKey(author));
+        }
 
         [Fact]
         public async Task Get_OffersWhatALibraryAuthorHasThatTheLibraryDoesNot()

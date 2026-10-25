@@ -66,6 +66,19 @@ namespace Listenarr.Application.Search.Contracts.Repositories
             CancellationToken ct = default);
 
         /// <summary>
+        /// Records a configured key, at a full allowance, if the ledger has not seen it.
+        /// Returns true when a row was created.
+        ///
+        /// Without this a key is only recorded when something spends against it, and the
+        /// keepalive can only touch keys it has rows for - so a configured key that is
+        /// never asked is never kept alive, and NZBKing deletes it after a month of
+        /// inactivity. An existing row is left exactly as it is, deleted ones included: a
+        /// key NZBKing has dropped must not come back to life because it is still
+        /// configured.
+        /// </summary>
+        Task<bool> EnsureKeyAsync(string fingerprint, DateTime now, CancellationToken ct = default);
+
+        /// <summary>
         /// Live keys idle long enough to risk deletion for inactivity.
         /// </summary>
         Task<List<NzbKingKeyState>> GetKeysDueForKeepaliveAsync(DateTime now, CancellationToken ct = default);

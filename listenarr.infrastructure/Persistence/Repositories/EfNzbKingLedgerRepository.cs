@@ -152,6 +152,41 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             await _db.SaveChangesAsync(ct);
         }
 
+        public async Task<bool> EnsureKeyAsync(string fingerprint, DateTime now, CancellationToken ct = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(fingerprint);
+
+            // Same transaction as a spend, for the same reason: nothing stops a grab
+            // recording this key at the moment the keepalive registers it, and two rows for
+            // one key would have the pool believe it had two allowances. There is no unique
+            // index to fall back on.
+            await using var transaction = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(ct)
+                : null;
+
+            if (await _db.NzbKingKeyStates.AnyAsync(state => state.KeyFingerprint == fingerprint, ct))
+            {
+                await CommitIfPresentAsync(transaction, ct);
+                return false;
+            }
+
+            // A full allowance is the only defensible estimate, exactly as on a first
+            // spend: NZBKing issues 100 tokens with a key, and a key that was not freshly
+            // issued reads high until a 429 corrects us.
+            _db.NzbKingKeyStates.Add(new NzbKingKeyState
+            {
+                KeyFingerprint = fingerprint,
+                EstimatedBalance = NzbKingTokenPolicy.MaxTokens,
+                LastRefillAt = now,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+
+            await _db.SaveChangesAsync(ct);
+            await CommitIfPresentAsync(transaction, ct);
+            return true;
+        }
+
         public async Task<List<NzbKingKeyState>> GetKeysDueForKeepaliveAsync(DateTime now, CancellationToken ct = default)
         {
             var cutoff = now - NzbKingTokenPolicy.KeepaliveAfter;

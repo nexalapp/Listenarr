@@ -109,9 +109,20 @@ namespace Listenarr.Api.Middleware
             // The vocabulary matches ApiResponseRedactor.IsSensitiveKey so a name that is
             // hidden in responses is also hidden in logs.
             const string sensitive = "password|passwd|apikey|api_key|token|secret|cookie|authorization|mam";
-            var pattern = "(?i)(\\\\?\"[^\"\\\\]*(?:" + sensitive + ")[^\"\\\\]*\\\\?\"\\s*:\\s*)\\\\?\"(?:[^\"\\\\]|\\\\.)*?\\\\?\"";
+            const string name = "(\\\\?\"[^\"\\\\]*(?:" + sensitive + ")[^\"\\\\]*\\\\?\"\\s*:\\s*)";
+            var pattern = "(?i)" + name + "\\\\?\"(?:[^\"\\\\]|\\\\.)*?\\\\?\"";
 
             redacted = Regex.Replace(redacted, pattern, "$1\"<redacted>\"");
+
+            // A sensitive name may hold a list rather than a string - several NZBKing
+            // API keys, say - and the pattern above requires a quote straight after the
+            // colon, so without this every element would be logged in the clear. The
+            // whole array collapses to one marker: a request log has no reason to say
+            // how many there were.
+            redacted = Regex.Replace(
+                redacted,
+                "(?i)" + name + "\\[[^\\[\\]]*\\]",
+                "$1[\"<redacted>\"]");
 
             redacted = Regex.Replace(
                 redacted,
