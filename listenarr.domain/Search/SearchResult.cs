@@ -91,6 +91,10 @@ namespace Listenarr.Domain.Search
         /// title.
         /// </summary>
         public string? Asin { get; set; }
+
+        /// <summary>The series and position the release declares, when its indexer says.</summary>
+        public string? SeriesName { get; set; }
+        public string? SeriesPosition { get; set; }
         [JsonIgnore]
         public IReadOnlyList<DirectDownloadArtifactDescriptor> DirectDownloadArtifacts { get; set; } = [];
     }

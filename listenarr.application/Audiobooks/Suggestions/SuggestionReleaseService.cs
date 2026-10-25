@@ -84,7 +84,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 var matching = results
                     .Where(result => IsAbookLink(indexer)
                         ? SuggestionReleaseMatch.AbookPostMatches(
-                            result.Asin, result.Album, result.Artist, book.Asin, book.Title, book.Authors)
+                            result.Asin, result.Album, result.Artist, book.Asin, book.Title, book.Authors,
+                            result.SeriesName, result.SeriesPosition, book.SeriesNumber)
                         : SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, book.Title, book.Authors))
                     .ToList();
 
