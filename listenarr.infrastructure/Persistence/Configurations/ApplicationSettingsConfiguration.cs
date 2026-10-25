@@ -98,6 +98,11 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.AudioAuditOnImport).HasDefaultValue(false);
             builder.Property(e => e.AudioQualityProbeEnabled).HasDefaultValue(true);
             builder.Property(e => e.GenerativeOfferThresholdDb).HasDefaultValue(25.0);
+            // The code default is on (ApplicationSettings) and the settings row is always
+            // created in code, so this column default is never what a new install gets.
+            // Left false on purpose: changing it is an AlterColumn, which SQLite performs by
+            // rebuilding the whole table from the migration's own snapshot - and a snapshot
+            // taken on one branch drops every settings column another branch added.
             builder.Property(e => e.RepairEnabled).HasDefaultValue(false);
             builder.Property(e => e.RepairMusicProtectionEnabled).HasDefaultValue(true);
 

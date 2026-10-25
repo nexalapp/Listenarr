@@ -125,18 +125,22 @@
             <button
               type="button"
               class="actions-option"
-              :disabled="repairing || repairSelection.length === 0"
+              :disabled="repairing || repairOff || repairSelection.length === 0"
               :title="
-                repairSelection.length === 0
-                  ? 'None of the selected books is a repair candidate'
-                  : `Queue audio repairs for ${repairSelection.length} repair candidate(s)`
+                repairOff
+                  ? 'Audio repair is switched off. Turn it on in Settings → Conversion & Tags.'
+                  : repairSelection.length === 0
+                    ? 'None of the selected books is a repair candidate'
+                    : `Queue audio repairs for ${repairSelection.length} repair candidate(s)`
               "
               @click="pick(confirmBulkRepair)"
             >
               <PhWaveform />
               <span
                 ><strong>Repair Audio</strong
-                ><small
+                ><small v-if="repairOff"
+                  >Switched off; turn it on in Settings → Conversion &amp; Tags</small
+                ><small v-else
                   >{{ repairSelection.length }} repair candidate(s); others are skipped</small
                 ></span
               >
@@ -3018,6 +3022,9 @@ function reportBulkConversion(response: BulkConversionResponse) {
 
 const repairing = ref(false)
 
+/** Every repair would be refused while the setting is off, so the action is not offered. */
+const repairOff = computed(() => configStore.applicationSettings?.repairEnabled !== true)
+
 /** The selected books the probe recommends repairing; the rest of a selection is left alone. */
 const repairSelection = computed(() =>
   libraryStore.audiobooks.filter(
@@ -3030,7 +3037,8 @@ const REPAIR_SKIP_REASONS: Record<string, string> = {
   NothingToConvert: 'no audio files',
   SourceUnreadable: 'files unreadable',
   EncoderUnavailable: 'no encoder installed',
-  EnhancerUnavailable: 'enhancement model not ready',
+  EnhancerUnavailable:
+    'waiting on the enhancement model, which downloads on first use (about 4 GB; progress in Settings → Conversion & Tags). Queue them again once it is ready',
   Disabled: 'audio repair switched off in Settings',
   NotFound: 'no longer in the library',
 }
@@ -3042,7 +3050,7 @@ const REPAIR_SKIP_REASONS: Record<string, string> = {
  */
 async function confirmBulkRepair() {
   const books = repairSelection.value
-  if (books.length === 0 || repairing.value) return
+  if (books.length === 0 || repairing.value || repairOff.value) return
 
   const skipped = libraryStore.selectedIds.size - books.length
   const hours = books.reduce((sum, b) => {
