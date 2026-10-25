@@ -1673,6 +1673,7 @@ describe('AudiobooksView Bulk Conversion', () => {
   }
 
   it('repairs only the selected repair candidates, after confirming the cost', async () => {
+    getApplicationSettingsMock.mockResolvedValue({ repairEnabled: true })
     repairAudiobooksBulkMock.mockResolvedValue({
       requestedCount: 2,
       queuedCount: 2,
@@ -1702,7 +1703,21 @@ describe('AudiobooksView Bulk Conversion', () => {
     expect(button?.attributes('disabled')).toBeDefined()
   })
 
+  it('cannot be chosen while audio repair is switched off, so nothing is checked', async () => {
+    getApplicationSettingsMock.mockResolvedValue({ repairEnabled: false })
+    const wrapper = await mountWithSelection([1], { 1: { audioRepairRecommended: true } })
+
+    const button = await repairButton(wrapper)
+    expect(button?.attributes('disabled')).toBeDefined()
+    expect(button?.text()).toContain('Switched off')
+    await button!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(showConfirmMock).not.toHaveBeenCalled()
+    expect(repairAudiobooksBulkMock).not.toHaveBeenCalled()
+  })
+
   it('names why repairs were refused', async () => {
+    getApplicationSettingsMock.mockResolvedValue({ repairEnabled: true })
     repairAudiobooksBulkMock.mockResolvedValue({
       requestedCount: 1,
       queuedCount: 0,
@@ -1714,7 +1729,7 @@ describe('AudiobooksView Bulk Conversion', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     const [, message] = warningToast.mock.calls[0] as [string, string]
-    expect(message).toContain('1 enhancement model not ready')
+    expect(message).toContain('1 waiting on the enhancement model')
   })
 })
 
