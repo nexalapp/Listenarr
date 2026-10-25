@@ -71,13 +71,14 @@ namespace Listenarr.Application.Search.Contracts
         Task<IReadOnlyDictionary<string, string>> DiagnoseLoginAsync(CancellationToken ct = default);
 
         /// <summary>
-        /// Current state of the configured NZBKing key, or null when none is configured.
+        /// Current state of every configured NZBKing key, in the order they would be
+        /// spent, or empty when none is configured.
         /// </summary>
-        Task<NzbKingKeyStatus?> GetNzbKingStatusAsync(CancellationToken ct = default);
+        Task<IReadOnlyList<NzbKingKeyStatus>> GetNzbKingPoolStatusAsync(CancellationToken ct = default);
 
         /// <summary>
-        /// The most recent NZBKing access attempts for the configured key, newest first.
-        /// Refusals are included: they are what the budget did to protect the key.
+        /// The most recent NZBKing access attempts across every configured key, newest
+        /// first. Refusals are included: they are what the budget did to protect a key.
         /// </summary>
         Task<IReadOnlyList<NzbKingApiAccess>> GetNzbKingLedgerAsync(
             int limit,

@@ -17,7 +17,6 @@
  */
 using System.Text.RegularExpressions;
 using Listenarr.Application.Search.Nzb;
-using Listenarr.Application.Search.NzbKing;
 using Listenarr.Infrastructure.Search.NzbKing;
 
 namespace Listenarr.Infrastructure.Search.Nzb
@@ -28,7 +27,12 @@ namespace Listenarr.Infrastructure.Search.Nzb
     /// that can hold a release the others lack.
     ///
     /// Every request costs a token from a small self-deleting allowance, so it runs behind
-    /// the budget and is asked only when the free indexes have nothing.
+    /// the budget and is asked only when the free indexes have nothing. Several keys may be
+    /// configured, each with an allowance of its own; the budget decides which one pays.
+    ///
+    /// The keys are read here rather than pushed in by a caller: a property somebody has to
+    /// remember to set is a property that goes unset, and the symptom - "no API key is
+    /// configured" for a key that plainly is - gives no hint where to look.
     /// </summary>
     public partial class NzbKingResolver : INzbResolver
     {
@@ -52,22 +56,24 @@ namespace Listenarr.Infrastructure.Search.Nzb
         public int Order => 30;
 
         /// <summary>
-        /// Overrides the configured key. Left unset in normal use — the resolver reads the
-        /// key itself so there is no ordering rule for a caller to get wrong.
+        /// Overrides the configured keys. Left unset in normal use — the resolver reads
+        /// them itself so there is no ordering rule for a caller to get wrong.
         /// </summary>
         public string? ApiKey { get; set; }
 
         public async Task<NzbResolverResult> ResolveAsync(string searchString, CancellationToken ct = default)
         {
-            var apiKey = ApiKey ?? await FindApiKeyAsync(ct);
+            IReadOnlyList<string> apiKeys = ApiKey is { Length: > 0 } overridden
+                ? [overridden]
+                : await NzbKingConfiguredKeys.CollectAsync(_indexers, ct);
 
-            if (string.IsNullOrWhiteSpace(apiKey))
+            if (apiKeys.Count == 0)
             {
                 return NzbResolverResult.Failed(Name, NzbResolutionFailure.Unavailable,
                     "No NZBKing API key is configured, so this index was not asked.");
             }
 
-            var result = await _client.SearchAsync(apiKey, searchString, NzbKingAccessPurpose.Grab, ct);
+            var result = await _client.SearchFromPoolAsync(apiKeys, searchString, NzbKingAccessPurpose.Grab, ct);
 
             if (!result.Succeeded)
             {
@@ -89,27 +95,6 @@ namespace Listenarr.Infrastructure.Search.Nzb
             var id = match.Groups[1].Value;
             return NzbResolverResult.Found(Name, $"https://nzbking.com/{id}/",
                 [new NzbCandidate(id, searchString)]);
-        }
-
-        /// <summary>
-        /// Finds the key on whichever source carries one.
-        ///
-        /// Read here rather than pushed in by a caller: a property somebody has to
-        /// remember to set is a property that goes unset, and the symptom - "no API key is
-        /// configured" for a key that plainly is - gives no hint where to look.
-        /// </summary>
-        private async Task<string?> FindApiKeyAsync(CancellationToken ct)
-        {
-            foreach (var indexer in await _indexers.GetAllAsync(ct))
-            {
-                var key = NzbKingSettings.TryGetApiKey(indexer.AdditionalSettings);
-                if (key is { Length: > 0 })
-                {
-                    return key;
-                }
-            }
-
-            return null;
         }
     }
 }

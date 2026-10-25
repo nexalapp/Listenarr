@@ -113,20 +113,39 @@
                 the session expires. It is encrypted before it is stored and is never sent back to
                 this page.
               </small>
-              <FormRow label="NZBKing API key" labelFor="abook-nzbking-key">
-                <input
-                  id="abook-nzbking-key"
-                  v-model="abookNzbKingApiKey"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="Optional"
-                />
+              <FormRow label="NZBKing API keys" labelFor="abook-nzbking-key-0">
+                <div class="nzbking-keys">
+                  <div v-for="(key, index) in abookNzbKingApiKeys" :key="index" class="nzbking-key">
+                    <input
+                      :id="`abook-nzbking-key-${index}`"
+                      v-model="key.value"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="Optional"
+                    />
+                    <button
+                      type="button"
+                      class="nzbking-key-remove"
+                      title="Remove this key"
+                      @click="removeNzbKingKey(index)"
+                    >
+                      <PhX :size="14" />
+                    </button>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" @click="addNzbKingKey">
+                    <PhPlus :size="14" /> Add another key
+                  </button>
+                </div>
               </FormRow>
               <small class="info-text">
                 <PhInfo />
                 Optional. Releases are looked up on NZBIndex and Binsearch first, which are free.
-                NZBKing is only asked when those have nothing, and it allows about 100 lookups
-                before it needs a new key.
+                NZBKing is only asked when those have nothing. Each key allows about 100 lookups and
+                earns one back an hour, so several keys are several allowances rather than a bigger
+                one — a grab is charged to whichever key has most left.
+                <a href="https://nzbking.com/rss/" target="_blank" rel="noopener noreferrer"
+                  >Request a key</a
+                >; NZBKing issues one per CAPTCHA you solve, so each one here is a solve.
               </small>
             </div>
 
@@ -343,7 +362,7 @@ import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 import FormSection from '@/components/settings/FormSection.vue'
-import { PhGlobe, PhGear, PhToggleRight, PhInfo } from '@phosphor-icons/vue'
+import { PhGlobe, PhGear, PhToggleRight, PhInfo, PhPlus, PhX } from '@phosphor-icons/vue'
 import type { Indexer } from '@/types'
 import {
   createIndexer,
@@ -388,7 +407,24 @@ const iaCollection = ref('librivoxaudio')
 // untouched field must not overwrite what is stored.
 const abookUsername = ref('')
 const abookPassword = ref('')
-const abookNzbKingApiKey = ref('')
+
+// Wrapped in objects rather than held as bare strings so each row keeps its identity
+// while the list is edited; v-model on an index would rebind the input under it when a
+// row above is removed.
+const abookNzbKingApiKeys = ref<{ value: string }[]>([{ value: '' }])
+
+const addNzbKingKey = () => {
+  abookNzbKingApiKeys.value.push({ value: '' })
+}
+
+const removeNzbKingKey = (index: number) => {
+  abookNzbKingApiKeys.value.splice(index, 1)
+  // One empty row always remains: with none there is nowhere to type, and an empty row
+  // saves as no key at all.
+  if (abookNzbKingApiKeys.value.length === 0) {
+    abookNzbKingApiKeys.value.push({ value: '' })
+  }
+}
 
 const defaultFormData = {
   name: '',
@@ -433,10 +469,16 @@ const buildIndexerPayload = (): IndexerPayload => {
   } else if (payload.implementation === 'AbookLink') {
     // Secrets are sent back as-is, including the redacted placeholder, because the
     // server restores the stored value from it. Omitting a field would delete it.
+    // Every property that should survive is sent: the merge keeps what arrives and drops
+    // what does not, so omitting one deletes it. nzbking_api_key is deliberately omitted -
+    // the server folds it into the array before merging, and sending it back would keep a
+    // second copy of a key the list may no longer hold.
     payload.additionalSettings = JSON.stringify({
       abook_username: abookUsername.value,
       abook_password: abookPassword.value,
-      nzbking_api_key: abookNzbKingApiKey.value,
+      nzbking_api_keys: abookNzbKingApiKeys.value
+        .map((key) => key.value.trim())
+        .filter((key) => key.length > 0),
     })
     payload.apiKey = ''
     payload.url = 'https://abook.link'
@@ -528,7 +570,19 @@ watch(
           // value when it sees it, so an untouched field leaves the secret alone - whereas
           // blanking it saves an empty password over a working one.
           abookPassword.value = settings.abook_password || ''
-          abookNzbKingApiKey.value = settings.nzbking_api_key || ''
+          // Both shapes: an install that has not been saved since the pool landed holds
+          // only the single property. Whatever arrives is kept verbatim, redaction
+          // placeholders included - those are what the server resolves back to the
+          // stored keys.
+          const storedKeys: string[] = Array.isArray(settings.nzbking_api_keys)
+            ? settings.nzbking_api_keys.filter(
+                (key: unknown): key is string => typeof key === 'string',
+              )
+            : settings.nzbking_api_key
+              ? [settings.nzbking_api_key]
+              : []
+          abookNzbKingApiKeys.value =
+            storedKeys.length > 0 ? storedKeys.map((value) => ({ value })) : [{ value: '' }]
         } catch (e) {
           console.error('Failed to parse abook.link settings:', e)
           abookUsername.value = ''
@@ -551,7 +605,7 @@ watch(
       iaCollection.value = 'librivoxaudio'
       abookUsername.value = ''
       abookPassword.value = ''
-      abookNzbKingApiKey.value = ''
+      abookNzbKingApiKeys.value = [{ value: '' }]
     }
   },
   { immediate: true },
@@ -784,6 +838,40 @@ const handleSubmit = async () => {
 }
 
 /* modal-footer styles are centralized in src/assets/modals.css */
+
+.nzbking-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.nzbking-key {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.nzbking-key input {
+  flex: 1;
+}
+
+.nzbking-key-remove {
+  background: none;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #adb5bd;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0.35rem;
+}
+
+.nzbking-key-remove:hover {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
 
 /* Button visuals are centralized in `src/assets/buttons.css`; modal-specific color variants remain in `src/assets/modals.css`.
    Use `.btn`, `.btn-primary`, `.btn-info`, etc., instead of duplicating styles locally. */

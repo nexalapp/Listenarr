@@ -55,8 +55,12 @@ namespace Listenarr.Infrastructure.Search.NzbKing
         }
 
         /// <summary>
-        /// Runs one budgeted search against NZBKing's RSS feed.
+        /// Runs one budgeted search charged to one named key.
         /// Returns without contacting NZBKing when the budget refuses.
+        ///
+        /// For the caller that means a particular key - the keepalive, which exists to
+        /// touch one idle key and would do nothing for it by spending another's token.
+        /// Everything else has a pool and wants <see cref="SearchFromPoolAsync"/>.
         /// </summary>
         public async Task<NzbKingApiResult> SearchAsync(
             string apiKey,
@@ -70,6 +74,40 @@ namespace Listenarr.Infrastructure.Search.NzbKing
                 return new NzbKingApiResult(false, null, lease.Reason);
             }
 
+            return await ExecuteAsync(apiKey, lease, query, ct);
+        }
+
+        /// <summary>
+        /// Runs one budgeted search against whichever configured key can best afford it.
+        ///
+        /// A pool is several independent allowances, so one exhausted key is not a reason
+        /// to give up on the search; the budget picks and charges exactly one of them.
+        /// </summary>
+        public async Task<NzbKingApiResult> SearchFromPoolAsync(
+            IReadOnlyList<string> apiKeys,
+            string query,
+            NzbKingAccessPurpose purpose,
+            CancellationToken ct = default)
+        {
+            var pool = await _budget.TryAcquireFromPoolAsync(apiKeys, purpose, query, ct);
+            if (!pool.Lease.Granted || pool.ApiKey is not { Length: > 0 } apiKey)
+            {
+                return new NzbKingApiResult(false, null, pool.Lease.Reason);
+            }
+
+            return await ExecuteAsync(apiKey, pool.Lease, query, ct);
+        }
+
+        /// <summary>
+        /// Issues the request a granted lease has already paid for, and reconciles the
+        /// spend however it ends.
+        /// </summary>
+        private async Task<NzbKingApiResult> ExecuteAsync(
+            string apiKey,
+            NzbKingTokenLease lease,
+            string query,
+            CancellationToken ct)
+        {
             var uri = new Uri(QueryHelpers.AddQueryString(
                 SearchFeedPath,
                 new Dictionary<string, string?> { ["q"] = query, ["key"] = apiKey }));

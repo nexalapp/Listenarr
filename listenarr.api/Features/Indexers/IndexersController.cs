@@ -18,6 +18,7 @@
 
 using Listenarr.Api.Attributes;
 using Listenarr.Application.Search.AbookLink;
+using Listenarr.Application.Search.NzbKing;
 using Listenarr.Api.Dtos;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -300,8 +301,13 @@ namespace Listenarr.Api.Features.Indexers
             existing.MinimumAge = indexer.MinimumAge;
             existing.Retention = indexer.Retention;
             existing.MaximumSize = indexer.MaximumSize;
+            // Normalised first, to the same shape the caller was shown: the incoming blob
+            // resolves its redaction placeholders against this one, and a mismatch between
+            // the two shapes silently discards the secret the placeholder stood for.
             existing.AdditionalSettings = AbookSecretProtection.Protect(
-                ApiResponseRedactor.MergeAdditionalSettings(existing.AdditionalSettings, indexer.AdditionalSettings),
+                ApiResponseRedactor.MergeAdditionalSettings(
+                    NzbKingSettings.Normalise(existing.AdditionalSettings),
+                    indexer.AdditionalSettings),
                 _secretProtector.Protect,
                 _secretProtector.Unprotect);
             existing.UpdatedAt = DateTime.UtcNow;

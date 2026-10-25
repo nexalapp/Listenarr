@@ -17,6 +17,7 @@
  */
 using Listenarr.Application.Search.AbookLink;
 using Listenarr.Application.Search.NzbKing;
+using Listenarr.Infrastructure.Search.NzbKing;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Search.AbookLink
@@ -229,35 +230,36 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             return report;
         }
 
-        public async Task<NzbKingKeyStatus?> GetNzbKingStatusAsync(CancellationToken ct = default)
+        public async Task<IReadOnlyList<NzbKingKeyStatus>> GetNzbKingPoolStatusAsync(
+            CancellationToken ct = default)
         {
-            foreach (var indexer in await _indexers.GetAllAsync(ct))
-            {
-                var key = NzbKingSettings.TryGetApiKey(indexer.AdditionalSettings);
-                if (key is { Length: > 0 })
-                {
-                    return await _budget.GetStatusAsync(key, ct);
-                }
-            }
-
-            return null;
+            var keys = await NzbKingConfiguredKeys.CollectAsync(_indexers, ct);
+            return await _budget.GetPoolStatusAsync(keys, ct);
         }
 
         public async Task<IReadOnlyList<NzbKingApiAccess>> GetNzbKingLedgerAsync(
             int limit,
             CancellationToken ct = default)
         {
-            foreach (var indexer in await _indexers.GetAllAsync(ct))
+            // Merged across the pool rather than read from one key: a refusal is
+            // interesting whichever key declined, and a per-key log would hide the pool's
+            // busiest key behind whichever happened to be found first. Each key is asked
+            // for `limit` so the newest `limit` of the merge cannot be starved by one
+            // chatty key.
+            var entries = new List<NzbKingApiAccess>();
+
+            foreach (var key in await NzbKingConfiguredKeys.CollectAsync(_indexers, ct))
             {
-                var key = NzbKingSettings.TryGetApiKey(indexer.AdditionalSettings);
-                if (key is { Length: > 0 }
-                    && NzbKingKeyFingerprint.Compute(key) is { Length: > 0 } fingerprint)
+                if (NzbKingKeyFingerprint.Compute(key) is { Length: > 0 } fingerprint)
                 {
-                    return await _ledger.GetRecentAccessAsync(fingerprint, limit, ct);
+                    entries.AddRange(await _ledger.GetRecentAccessAsync(fingerprint, limit, ct));
                 }
             }
 
-            return [];
+            return entries
+                .OrderByDescending(entry => entry.AttemptedAt)
+                .Take(limit)
+                .ToList();
         }
 
         private static string? AbookTopicTitleOf(string? body)

@@ -49,6 +49,19 @@ namespace Listenarr.Application.Search.Contracts
         bool KeyDeleted);
 
     /// <summary>
+    /// A lease drawn from a pool of keys, together with the key it was charged to.
+    ///
+    /// The key comes back because only the caller knows how to use it and the pool chose
+    /// it: asking for the status of every key again to work out which one was picked
+    /// would be a guess. It is deliberately not a field on
+    /// <see cref="NzbKingTokenLease"/>, which is logged and reported on - a lease carries
+    /// a fingerprint precisely so it can be written down safely.
+    /// </summary>
+    /// <param name="Lease">The lease, granted or refused.</param>
+    /// <param name="ApiKey">The key to use, or null when nothing was granted.</param>
+    public sealed record NzbKingPoolLease(NzbKingTokenLease Lease, string? ApiKey);
+
+    /// <summary>
     /// Meters access to NZBKing's API so its token allowance is never exhausted.
     ///
     /// NZBKing deletes a key whose balance reaches zero, and only a human solving a
@@ -68,6 +81,21 @@ namespace Listenarr.Application.Search.Contracts
             CancellationToken ct = default);
 
         /// <summary>
+        /// Attempts to reserve one token from whichever of <paramref name="apiKeys"/> can
+        /// best afford it, recording the attempt either way.
+        ///
+        /// Each key NZBKing issues has its own allowance, so a pool is several allowances
+        /// and one of them has to be chosen; see <see cref="NzbKing.NzbKingKeyPool"/> for
+        /// which and why. Refused only when no key in the pool could pay, so a single
+        /// exhausted or deleted key does not refuse a request the others can serve.
+        /// </summary>
+        Task<NzbKingPoolLease> TryAcquireFromPoolAsync(
+            IReadOnlyList<string> apiKeys,
+            NzbKingAccessPurpose purpose,
+            string? query = null,
+            CancellationToken ct = default);
+
+        /// <summary>
         /// Reconciles a granted lease with what NZBKing actually returned. A 429 means the
         /// key has been deleted, which stops all further spending against it.
         /// </summary>
@@ -80,5 +108,16 @@ namespace Listenarr.Application.Search.Contracts
         /// Current estimated state for a key, or null if it has never been used.
         /// </summary>
         Task<NzbKingKeyStatus?> GetStatusAsync(string apiKey, CancellationToken ct = default);
+
+        /// <summary>
+        /// Current estimated state for every key in a pool, in the order they would be
+        /// spent, so a report reads as the pool rather than as one arbitrary key.
+        ///
+        /// A key the ledger has never seen is reported at its full allowance rather than
+        /// omitted: it is configured and spendable, which is the thing being reported.
+        /// </summary>
+        Task<IReadOnlyList<NzbKingKeyStatus>> GetPoolStatusAsync(
+            IReadOnlyList<string> apiKeys,
+            CancellationToken ct = default);
     }
 }

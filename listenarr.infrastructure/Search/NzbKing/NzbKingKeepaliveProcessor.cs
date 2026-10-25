@@ -22,12 +22,12 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.Search.NzbKing
 {
     /// <summary>
-    /// Issues one query against any NZBKing key that has been idle long enough to risk
+    /// Issues one query against every NZBKing key that has been idle long enough to risk
     /// deletion for inactivity.
     ///
     /// The ledger stores only a fingerprint, never the key itself, so the raw key has to
-    /// come back from the indexer that owns it. An indexer whose key is no longer
-    /// configured simply stops being touched.
+    /// come back from the indexer that owns it. A key that is no longer configured simply
+    /// stops being touched.
     /// </summary>
     public class NzbKingKeepaliveProcessor : INzbKingKeepaliveProcessor
     {
@@ -55,13 +55,30 @@ namespace Listenarr.Infrastructure.Search.NzbKing
             var client = scope.ServiceProvider.GetRequiredService<NzbKingApiClient>();
 
             var now = _timeProvider.GetUtcNow().UtcDateTime;
+            var keysByFingerprint = await BuildKeyLookupAsync(indexers, cancellationToken);
+
+            // Register before selecting. NZBKing deletes a key unused for a month, and the
+            // selection below can only see keys the ledger has rows for - which, until
+            // this, meant a configured key that no grab ever charged was never kept alive
+            // and quietly died. A pool makes that the normal case rather than the unlucky
+            // one: every key but the one the spend order picks first starts out unrecorded.
+            foreach (var fingerprint in keysByFingerprint.Keys)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (await ledger.EnsureKeyAsync(fingerprint, now, cancellationToken))
+                {
+                    _logger.LogInformation(
+                        "Recorded NZBKing key {Fingerprint} so it can be kept alive; nothing has spent against it yet",
+                        fingerprint);
+                }
+            }
+
             var due = await ledger.GetKeysDueForKeepaliveAsync(now, cancellationToken);
             if (due.Count == 0)
             {
                 return;
             }
-
-            var keysByFingerprint = await BuildKeyLookupAsync(indexers, cancellationToken);
 
             foreach (var state in due)
             {
@@ -93,17 +110,23 @@ namespace Listenarr.Infrastructure.Search.NzbKing
             }
         }
 
+        /// <summary>
+        /// Every configured key, by the fingerprint the ledger knows it as.
+        ///
+        /// Every key, not the first one found: a key is deleted for a month's inactivity
+        /// whether or not anything else in the pool is busy, and the spend order leaves
+        /// the fullest keys untouched for exactly as long as the others can pay. A lookup
+        /// holding one key would let the rest of the pool lapse.
+        /// </summary>
         private static async Task<Dictionary<string, string>> BuildKeyLookupAsync(
             IIndexerRepository indexers,
             CancellationToken cancellationToken)
         {
             var lookup = new Dictionary<string, string>(StringComparer.Ordinal);
 
-            foreach (var indexer in await indexers.GetAllAsync(cancellationToken))
+            foreach (var apiKey in await NzbKingConfiguredKeys.CollectAsync(indexers, cancellationToken))
             {
-                var apiKey = NzbKingSettings.TryGetApiKey(indexer.AdditionalSettings);
-                var fingerprint = NzbKingKeyFingerprint.Compute(apiKey);
-                if (fingerprint != null && apiKey != null)
+                if (NzbKingKeyFingerprint.Compute(apiKey) is { Length: > 0 } fingerprint)
                 {
                     lookup[fingerprint] = apiKey;
                 }

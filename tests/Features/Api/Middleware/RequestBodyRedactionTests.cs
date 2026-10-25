@@ -52,6 +52,42 @@ public sealed class RequestBodyRedactionTests : BaseTests
     }
 
     [Fact]
+    public void AListOfSecretsIsRedactedToo()
+    {
+        // The pattern for a string value requires a quote straight after the colon, so an
+        // array slipped past it and every key in the pool was logged in the clear.
+        const string body =
+            """{"additionalSettings":"{\"nzbking_api_keys\":[\"KEYONE\",\"KEYTWO\"]}"}""";
+
+        var redacted = RequestBodyLoggingMiddleware.RedactSensitiveJsonFields(body);
+
+        Assert.DoesNotContain("KEYONE", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("KEYTWO", redacted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void APlainTopLevelListOfSecretsIsRedactedToo()
+    {
+        const string body = """{"apiKeys":["KEYONE","KEYTWO"],"username":"nexal"}""";
+
+        var redacted = RequestBodyLoggingMiddleware.RedactSensitiveJsonFields(body);
+
+        Assert.DoesNotContain("KEYONE", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("KEYTWO", redacted, StringComparison.Ordinal);
+        Assert.Contains("nexal", redacted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ANonSecretListIsLeftReadable()
+    {
+        const string body = """{"categories":["3030","3000"],"name":"abook.link"}""";
+
+        var redacted = RequestBodyLoggingMiddleware.RedactSensitiveJsonFields(body);
+
+        Assert.Contains("3030", redacted, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void NonSecretFieldsAreLeftReadable()
     {
         // Redacting everything would make the log useless for diagnosing anything.

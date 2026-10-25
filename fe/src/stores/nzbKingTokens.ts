@@ -18,11 +18,11 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { apiService } from '@/services/api'
-import type { NzbKingStatus } from '@/types'
+import type { NzbKingKeyStatus, NzbKingStatus } from '@/types'
 import { logger } from '@/utils/logger'
 
 /**
- * NZBKing's token allowance.
+ * NZBKing's token allowance, across every configured key.
  *
  * The balance needs no polling and no socket of its own. It is a pure function of
  * two stored values — a balance and the moment the next token is due — and tokens
@@ -33,6 +33,12 @@ import { logger } from '@/utils/logger'
  *
  * So: fetch on demand, count refills locally, and refetch when told something was
  * spent. Nothing here runs on a timer against the server.
+ *
+ * The local counting is per key rather than over the pooled figure, because that is
+ * how NZBKing meters: each key has its own 100-token allowance and earns a token an
+ * hour only while it is below that cap. Adding one an hour to a pooled balance would
+ * undercount five keys earning in parallel, and capping the pooled balance at the
+ * pooled ceiling would let one key appear to lend another its headroom.
  */
 export const useNzbKingTokensStore = defineStore('nzbKingTokens', () => {
   const status = ref<NzbKingStatus | null>(null)
@@ -65,54 +71,87 @@ export const useNzbKingTokensStore = defineStore('nzbKingTokens', () => {
   }
 
   /**
-   * How many tokens have accrued since the server told us the balance. Refills land
-   * one per hour on a known schedule, so this is derived rather than requested.
+   * How many tokens have accrued on one key since the server told us its balance.
+   * Refills land one per hour on a known schedule, so this is derived rather than
+   * requested.
    */
-  const accrued = computed(() => {
-    const s = status.value
-    if (!s?.configured || s.keyDeleted || !s.nextRefillAt) return 0
+  const accruedOn = (key: NzbKingKeyStatus) => {
+    if (key.keyDeleted || !key.nextRefillAt) return 0
 
-    const due = new Date(s.nextRefillAt).getTime()
+    const due = new Date(key.nextRefillAt).getTime()
     if (Number.isNaN(due) || now.value < due) return 0
 
     // The token due at `nextRefillAt`, plus one for each whole interval since.
     return 1 + Math.floor((now.value - due) / REFILL_INTERVAL_MS)
+  }
+
+  /** Live keys, with refills counted in. A deleted key can hold nothing. */
+  const liveKeys = computed(() => {
+    const s = status.value
+    if (!s?.configured) return []
+
+    return s.keys
+      .filter((key) => !key.keyDeleted)
+      .map((key) => {
+        const balance = Math.min(s.maxTokens, key.estimatedBalance + accruedOn(key))
+        return {
+          key,
+          balance,
+          spendable: Math.max(0, balance - s.reserveFloor),
+        }
+      })
   })
 
-  const estimatedBalance = computed(() => {
+  const estimatedBalance = computed(() =>
+    liveKeys.value.reduce((total, entry) => total + entry.balance, 0),
+  )
+
+  const spendable = computed(() =>
+    liveKeys.value.reduce((total, entry) => total + entry.spendable, 0),
+  )
+
+  /** The pool's ceiling: every live key's cap, which is what the bar is drawn against. */
+  const poolMaxTokens = computed(() => {
     const s = status.value
     if (!s?.configured) return 0
-    return Math.min(s.maxTokens, s.estimatedBalance + accrued.value)
-  })
-
-  const spendable = computed(() => {
-    const s = status.value
-    if (!s?.configured || s.keyDeleted) return 0
-    return Math.max(0, estimatedBalance.value - s.reserveFloor)
-  })
-
-  /** Milliseconds until the next token, or null when there is nothing to wait for. */
-  const msUntilNextRefill = computed(() => {
-    const s = status.value
-    if (!s?.configured || s.keyDeleted || !s.nextRefillAt) return null
-    if (estimatedBalance.value >= s.maxTokens) return null
-
-    const due = new Date(s.nextRefillAt).getTime()
-    if (Number.isNaN(due)) return null
-
-    const elapsedIntervals = Math.max(0, Math.ceil((now.value - due) / REFILL_INTERVAL_MS))
-    return due + elapsedIntervals * REFILL_INTERVAL_MS - now.value
+    return liveKeys.value.length * s.maxTokens
   })
 
   /**
-   * Whether this deserves the operator's attention. Reaching zero deletes the key,
-   * and only a person solving a CAPTCHA can replace it, so running low is the one
-   * state worth interrupting for.
+   * Milliseconds until the next token anywhere in the pool, or null when there is
+   * nothing to wait for. A key already at its cap is excluded: its anchor keeps
+   * advancing but it earns nothing, so it would promise a token that never lands.
+   */
+  const msUntilNextRefill = computed(() => {
+    const s = status.value
+    if (!s?.configured) return null
+
+    const waits = liveKeys.value
+      .filter((entry) => entry.balance < s.maxTokens)
+      .map((entry) => {
+        if (!entry.key.nextRefillAt) return null
+
+        const due = new Date(entry.key.nextRefillAt).getTime()
+        if (Number.isNaN(due)) return null
+
+        const elapsedIntervals = Math.max(0, Math.ceil((now.value - due) / REFILL_INTERVAL_MS))
+        return due + elapsedIntervals * REFILL_INTERVAL_MS - now.value
+      })
+      .filter((wait): wait is number => wait !== null)
+
+    return waits.length > 0 ? Math.min(...waits) : null
+  })
+
+  /**
+   * Whether this deserves the operator's attention. Reaching zero deletes a key, and
+   * only a person solving a CAPTCHA can replace it, so running low is the one state
+   * worth interrupting for. A dead key among live ones counts too: it will not come
+   * back on its own and the pool is permanently smaller until someone replaces it.
    */
   const needsAttention = computed(() => {
     const s = status.value
     if (!s?.configured) return false
-    return s.keyDeleted || spendable.value <= 0
+    return s.keyDeleted || s.deletedKeyCount > 0 || spendable.value <= 0
   })
 
   const start = () => {
@@ -136,6 +175,7 @@ export const useNzbKingTokensStore = defineStore('nzbKingTokens', () => {
     load,
     estimatedBalance,
     spendable,
+    poolMaxTokens,
     msUntilNextRefill,
     needsAttention,
     start,

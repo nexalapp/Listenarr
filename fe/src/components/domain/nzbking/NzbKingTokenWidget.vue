@@ -24,7 +24,7 @@
   >
     <div class="token-head">
       <span class="token-title">NZBKing tokens</span>
-      <span v-if="tokens.status.keyDeleted" class="token-count deleted">key deleted</span>
+      <span v-if="tokens.status.keyDeleted" class="token-count deleted">{{ deletedLabel }}</span>
       <!-- The spendable count, not the raw balance. The reserve is never spendable, so
            quoting the total invites reconciling two numbers to reach the one that
            actually governs whether a grab can happen. The bar still shows the reserve.
@@ -36,7 +36,7 @@
       v-if="!tokens.status.keyDeleted"
       class="token-bar"
       role="img"
-      :aria-label="`About ${tokens.estimatedBalance} of ${tokens.status.maxTokens} tokens, ${tokens.spendable} spendable before the reserve of ${tokens.status.reserveFloor}`"
+      :aria-label="`About ${tokens.estimatedBalance} of ${tokens.poolMaxTokens} tokens across ${liveKeyCount} ${liveKeyCount === 1 ? 'key' : 'keys'}, ${tokens.spendable} spendable before the reserve of ${tokens.status.reserveFloor} per key`"
     >
       <div class="token-bar-spendable" :style="{ width: spendablePercent + '%' }"></div>
       <!-- The reserve is drawn rather than merely subtracted, because the number that
@@ -45,11 +45,27 @@
     </div>
 
     <p v-if="tokens.status.keyDeleted" class="token-note deleted">
-      Request a new key and save it against the abook.link source.
+      <a :href="KEY_PAGE" target="_blank" rel="noopener noreferrer">{{
+        keyCount > 1 ? 'Request new keys' : 'Request a new key'
+      }}</a>
+      and save {{ keyCount > 1 ? 'them' : 'it' }} against the abook.link source.
     </p>
-    <!-- Only when a token is actually due. At the maximum there is nothing to wait
-         for, and saying so takes a word that reads as a third competing figure. -->
-    <p v-else-if="refillText" class="token-note">{{ refillText }}</p>
+    <template v-else>
+      <!-- Only when a token is actually due. At the maximum there is nothing to wait
+           for, and saying so takes a word that reads as a third competing figure. -->
+      <p v-if="refillText" class="token-note">{{ refillText }}</p>
+
+      <!-- Only with a pool: with one key the count is already implied, and with none the
+           line above says what to do. -->
+      <p v-if="keyCount > 1" class="token-note">across {{ keyCount }} keys</p>
+
+      <!-- A dead key among live ones is easy to miss, because the pool goes on working
+           without it and nothing in the balance says it is now smaller. -->
+      <p v-if="deadKeyCount > 0" class="token-note deleted">
+        {{ deadKeyCount }} of them {{ deadKeyCount === 1 ? 'has' : 'have' }} been deleted.
+        <a :href="KEY_PAGE" target="_blank" rel="noopener noreferrer">Request a replacement</a>.
+      </p>
+    </template>
 
     <!-- A refusal is an event, not a level: a grab was asked for and did not happen.
          The balance cannot show that, and the toast that announced it is long gone.
@@ -64,17 +80,31 @@ import { useNzbKingTokensStore } from '@/stores/nzbKingTokens'
 
 const tokens = useNzbKingTokensStore()
 
+/**
+ * Where a key comes from. NZBKing issues one behind a CAPTCHA, so replacing a dead
+ * key is a person's job -- the least this can do is be one click away from the form.
+ */
+const KEY_PAGE = 'https://nzbking.com/rss/'
+
+const keyCount = computed(() => tokens.status?.keyCount ?? 0)
+const deadKeyCount = computed(() => tokens.status?.deletedKeyCount ?? 0)
+const liveKeyCount = computed(() => Math.max(0, keyCount.value - deadKeyCount.value))
+
+const deletedLabel = computed(() =>
+  keyCount.value > 1 ? `all ${keyCount.value} keys deleted` : 'key deleted',
+)
+
+// Drawn against the live keys' combined ceiling: a deleted key contributes no tokens
+// and no headroom, so counting its 100 would show a full pool as half empty.
 const spendablePercent = computed(() => {
-  const s = tokens.status
-  if (!s?.configured || s.maxTokens <= 0) return 0
-  return Math.max(0, Math.min(100, (tokens.spendable / s.maxTokens) * 100))
+  if (tokens.poolMaxTokens <= 0) return 0
+  return Math.max(0, Math.min(100, (tokens.spendable / tokens.poolMaxTokens) * 100))
 })
 
 const reservePercent = computed(() => {
-  const s = tokens.status
-  if (!s?.configured || s.maxTokens <= 0) return 0
+  if (tokens.poolMaxTokens <= 0) return 0
   const held = Math.max(0, tokens.estimatedBalance - tokens.spendable)
-  return Math.max(0, Math.min(100, (held / s.maxTokens) * 100))
+  return Math.max(0, Math.min(100, (held / tokens.poolMaxTokens) * 100))
 })
 
 const refillText = computed(() => {
@@ -169,5 +199,10 @@ onBeforeUnmount(() => {
 
 .token-activity {
   color: #868e96;
+}
+
+.token-note a {
+  color: inherit;
+  text-decoration: underline;
 }
 </style>
