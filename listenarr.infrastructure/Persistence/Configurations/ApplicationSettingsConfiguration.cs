@@ -105,6 +105,8 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             // taken on one branch drops every settings column another branch added.
             builder.Property(e => e.RepairEnabled).HasDefaultValue(false);
             builder.Property(e => e.RepairMusicProtectionEnabled).HasDefaultValue(true);
+            builder.Property(e => e.AutoRepairChapters).HasDefaultValue(true);
+            builder.Property(e => e.AutoRepairAudio).HasDefaultValue(true);
 
             builder.Property(e => e.FoundBooksWatchFolders)
                 .HasConversion(
