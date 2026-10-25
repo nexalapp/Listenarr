@@ -27,7 +27,17 @@ namespace Listenarr.Domain.Audiobooks
         Found = 0,
 
         /// <summary>Every indexer was asked and none had a release that is this book.</summary>
-        NotFound = 1
+        NotFound = 1,
+
+        /// <summary>
+        /// Nothing could be learned: every indexer that was asked failed to answer.
+        ///
+        /// This is not the same as nobody having the book, and the difference matters once
+        /// the answer decides whether a book is shown. An indexer having a bad night would
+        /// otherwise read as "nothing holds this" and quietly hide a book that can be had.
+        /// Stored as a number, so this member may be added without touching the rows above.
+        /// </summary>
+        Unknown = 2
     }
 
     /// <summary>

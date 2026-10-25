@@ -112,6 +112,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.FoundBooksAutoAdd).HasDefaultValue(false);
             builder.Property(e => e.SuggestionsBackgroundFetchIntervalMinutes).HasDefaultValue(1);
             builder.Property(e => e.SuggestionReleaseCheckIntervalSeconds).HasDefaultValue(30);
+            builder.Property(e => e.UnobtainableRecheckDays).HasDefaultValue(7);
 
             // An empty JSON object, not an empty string: a row written before the
             // discovery tabs existed is read as "nothing followed yet", and the default

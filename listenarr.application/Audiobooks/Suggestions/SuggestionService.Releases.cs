@@ -20,9 +20,18 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 {
     public sealed partial class SuggestionService
     {
-        /// <summary>The book with what the background release check found for it, if anything yet.</summary>
+        /// <summary>
+        /// The book with what the background release check found for it, if anything yet.
+        ///
+        /// A check that learned nothing - every indexer failed to answer - is deliberately
+        /// not reported as a result. The page hides a book whose release is "not found",
+        /// and an indexer outage is not evidence that nobody has the book; left unreported
+        /// the book reads as still unchecked, which is what it is.
+        /// </summary>
         private static SuggestedBook WithRelease(SuggestedBook book, IReadOnlyDictionary<string, SuggestionRelease> checks) =>
-            book.Asin is { Length: > 0 } asin && checks.TryGetValue(asin.Trim(), out var check)
+            book.Asin is { Length: > 0 } asin
+            && checks.TryGetValue(asin.Trim(), out var check)
+            && check.Status != SuggestionReleaseStatus.Unknown
                 ? book with
                 {
                     Release = new SuggestedRelease(

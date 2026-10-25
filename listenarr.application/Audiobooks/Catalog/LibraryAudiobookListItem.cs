@@ -55,7 +55,25 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public string? Quality { get; set; }
         public int? QualityProfileId { get; set; }
         public string[]? AuthorAsins { get; set; }
+        /// <summary>
+        /// Monitored, without a file, and something could be done about it. A book every
+        /// indexer was asked about and none holds is <see cref="Unobtainable"/> instead,
+        /// so it does not stand in the Wanted list as work waiting to be done.
+        /// </summary>
         public bool Wanted { get; set; }
+
+        /// <summary>
+        /// Monitored and without a file, but every indexer was asked and none holds it.
+        /// The Wanted page keeps these apart and collapsed: nothing can be done about them
+        /// until a release appears, which the background check looks for again on its own.
+        /// </summary>
+        public bool Unobtainable { get; set; }
+
+        /// <summary>Which indexers were asked and came back empty, for the row's tooltip.</summary>
+        public string? UnobtainableReason { get; set; }
+
+        /// <summary>When the indexers were last asked, so the page can say how stale this is.</summary>
+        public DateTime? UnobtainableCheckedAt { get; set; }
         public string Status { get; set; } = string.Empty;
 
         /// <summary>
