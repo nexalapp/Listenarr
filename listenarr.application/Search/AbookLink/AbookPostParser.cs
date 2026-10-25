@@ -121,6 +121,44 @@ namespace Listenarr.Application.Search.AbookLink
             return post;
         }
 
+        /// <summary>
+        /// What a topic's title alone says, as a post.
+        ///
+        /// <para>
+        /// A search result line is already <c>Author - Series NN - Title (Year)</c>, which
+        /// identifies the book without opening anything. That matters because opening it
+        /// costs a request each: a search returning fifty hits was judged on the first
+        /// fifteen, and a book sitting at position sixteen read as "no release exists".
+        /// Judged from the line, every hit is considered and nothing is fetched.
+        /// </para>
+        /// <para>
+        /// The payload is not here and cannot be — it is behind the thanks — so the
+        /// outcome is <see cref="AbookParseOutcome.MissingSearchString"/> at best. A grab
+        /// reads the post itself anyway, so nothing downstream is lost by not having it
+        /// yet.
+        /// </para>
+        /// </summary>
+        public static AbookPost FromTopicTitle(string? topicTitle)
+        {
+            var post = new AbookPost();
+            var fromTitle = AbookTopicTitle.Parse(topicTitle);
+
+            if (fromTitle.IsNotARelease)
+            {
+                post.Outcome = AbookParseOutcome.NotARelease;
+                return post;
+            }
+
+            post.Title = fromTitle.Title;
+            post.Author = fromTitle.Author;
+            post.SeriesName = fromTitle.SeriesName;
+            post.SeriesPosition = fromTitle.SeriesPosition;
+            post.Year = fromTitle.Year;
+            post.Narrator = fromTitle.Narrator;
+            post.Outcome = Decide(post, fromTitle.IsArchiveSpot);
+            return post;
+        }
+
         private static AbookParseOutcome Decide(AbookPost post, bool isArchive)
         {
             if (isArchive)

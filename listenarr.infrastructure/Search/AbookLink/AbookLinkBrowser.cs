@@ -24,6 +24,11 @@ namespace Listenarr.Infrastructure.Search.AbookLink
     /// <summary>
     /// Searches abook.link and parses what it finds.
     ///
+    /// Every hit the search returns is a candidate: the first few are opened for their
+    /// NFO, and the rest are read from their title line, which names the author, the
+    /// series and the book. One question costs one request and a handful, and the
+    /// fiftieth hit is still considered rather than thrown away unseen.
+    ///
     /// Topics are fetched one at a time rather than in parallel: this is somebody's forum,
     /// and a burst of concurrent requests for a single search is the kind of traffic that
     /// gets an account noticed.
@@ -126,9 +131,27 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             var report = new AbookParseReport();
             var candidates = new List<AbookCandidate>();
 
-            foreach (var hit in hits.Take(inspect))
+            var inspected = 0;
+            foreach (var hit in hits)
             {
                 ct.ThrowIfCancellationRequested();
+
+                // The first few are opened, because their NFO carries what the result
+                // list cannot: the size, the format, the file count. The rest are judged
+                // from their title line, which already reads
+                // "Author - Series NN - Title (Year)".
+                //
+                // Every hit past the limit used to be dropped, so a search answering with
+                // fifty topics was judged on fifteen and a book sitting at sixteen read as
+                // "no release exists". Opening all fifty is not the answer either: that is
+                // fifty requests to somebody's forum to settle one question.
+                if (inspected >= inspect)
+                {
+                    var fromTitle = AbookPostParser.FromTopicTitle(hit.Title);
+                    report.Add(hit.TopicId.ToString(), fromTitle);
+                    candidates.Add(new AbookCandidate(hit.TopicId, hit.Title, fromTitle));
+                    continue;
+                }
 
                 var topic = await WithSessionAsync(credentials,
                     cookie => _client.GetTopicAsync(cookie, hit.TopicId, ct), ct);
@@ -138,6 +161,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                     continue;
                 }
 
+                inspected++;
                 var post = AbookPostParser.Parse(AbookPostHtml.ToText(AbookPostHtml.FirstPost(topic.Body)), hit.Title);
                 report.Add(hit.TopicId.ToString(), post);
                 candidates.Add(new AbookCandidate(hit.TopicId, hit.Title, post));
