@@ -122,6 +122,25 @@
                 ><small>MP3 books only; M4B books are skipped</small></span
               >
             </button>
+            <button
+              type="button"
+              class="actions-option"
+              :disabled="repairing || repairSelection.length === 0"
+              :title="
+                repairSelection.length === 0
+                  ? 'None of the selected books is a repair candidate'
+                  : `Queue audio repairs for ${repairSelection.length} repair candidate(s)`
+              "
+              @click="pick(confirmBulkRepair)"
+            >
+              <PhWaveform />
+              <span
+                ><strong>Repair Audio</strong
+                ><small
+                  >{{ repairSelection.length }} repair candidate(s); others are skipped</small
+                ></span
+              >
+            </button>
 
             <div class="actions-group">Chapters</div>
             <button
@@ -1008,6 +1027,7 @@ import {
   PhBooks,
   PhFolderOpen,
   PhFileAudio,
+  PhWaveform,
 } from '@phosphor-icons/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
@@ -2992,6 +3012,104 @@ function reportBulkConversion(response: BulkConversionResponse) {
     `${response.queuedCount} of ${response.requestedCount} queued. Skipped:\n${breakdown}`,
     BULK_CONVERT_TOAST_MS,
   )
+}
+
+/* -- Repairing a selection's audio ------------------------------------------- */
+
+const repairing = ref(false)
+
+/** The selected books the probe recommends repairing; the rest of a selection is left alone. */
+const repairSelection = computed(() =>
+  libraryStore.audiobooks.filter(
+    (b) => libraryStore.selectedIds.has(b.id) && !!b.audioRepairRecommended,
+  ),
+)
+
+const REPAIR_SKIP_REASONS: Record<string, string> = {
+  AlreadyQueued: 'already queued or converting',
+  NothingToConvert: 'no audio files',
+  SourceUnreadable: 'files unreadable',
+  EncoderUnavailable: 'no encoder installed',
+  EnhancerUnavailable: 'enhancement model not ready',
+  Disabled: 'audio repair switched off in Settings',
+  NotFound: 'no longer in the library',
+}
+
+/**
+ * Queue full repairs for the selection's repair candidates, skipping the per-book
+ * preview. Confirmed first with the cost spelled out: the model runs at one to two
+ * times real time, one book at a time, so a large selection occupies the NAS for weeks.
+ */
+async function confirmBulkRepair() {
+  const books = repairSelection.value
+  if (books.length === 0 || repairing.value) return
+
+  const skipped = libraryStore.selectedIds.size - books.length
+  const hours = books.reduce((sum, b) => {
+    const raw = b.runtime ?? 0
+    return sum + (raw >= 20000 ? raw / 3600 : raw / 60)
+  }, 0)
+  const days = (factor: number) => Math.max(1, Math.round((hours * factor) / 24))
+
+  const ok = await showConfirm(
+    `Queue audio repairs for ${books.length} book${books.length !== 1 ? 's' : ''} ` +
+      `without listening to a preview of each?` +
+      (skipped > 0
+        ? ` ${skipped} selected book(s) that are not repair candidates are skipped.`
+        : '') +
+      ` That is about ${Math.round(hours)} hours of audio, roughly ${days(1.2)}–${days(2)} days ` +
+      'of NAS time, one book at a time. Originals are retired per the repair setting ' +
+      '(archived by default). Queued repairs can be cancelled in Activity.',
+    'Repair Audio',
+    { confirmText: 'Queue Repairs', cancelText: 'Cancel' },
+  )
+  if (!ok) return
+
+  repairing.value = true
+  try {
+    const response = await conversionJobsStore.repairMany(books.map((b) => b.id))
+    reportBulkRepair(response)
+    if (response.queuedCount > 0) libraryStore.clearSelection()
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobooksView',
+      operation: 'confirmBulkRepair',
+      metadata: { count: books.length },
+    })
+    toast.error('Repairs not queued', 'The request failed. Nothing was queued.')
+  } finally {
+    repairing.value = false
+  }
+}
+
+function reportBulkRepair(response: BulkConversionResponse) {
+  const skipped = response.results.filter((r) => r.outcome !== 'Queued')
+  const counts = new Map<string, number>()
+  for (const result of skipped) {
+    const label = REPAIR_SKIP_REASONS[String(result.outcome)] ?? String(result.outcome)
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  const breakdown = [...counts.entries()].map(([label, count]) => `${count} ${label}`).join('\n')
+
+  if (response.queuedCount === 0) {
+    toast.warning(
+      'Nothing queued',
+      `None of the ${response.requestedCount} books could be queued:\n${breakdown}`,
+      BULK_CONVERT_TOAST_MS,
+    )
+  } else if (skipped.length > 0) {
+    toast.success(
+      'Repairs queued',
+      `${response.queuedCount} of ${response.requestedCount} queued. Skipped:\n${breakdown}`,
+      BULK_CONVERT_TOAST_MS,
+    )
+  } else {
+    toast.success(
+      'Repairs queued',
+      `${response.queuedCount} book${response.queuedCount !== 1 ? 's' : ''} queued. ` +
+        'Progress shows in Activity.',
+    )
+  }
 }
 
 function resetDeleteOptions() {
