@@ -118,10 +118,15 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// after a write, and rebuilding the whole library for that would probe nothing
         /// yet still plan every row.
         /// </param>
+        /// <param name="planTrigger">
+        /// The trigger planning jobs queued by this build carry. <see cref="TagTrigger.Import"/>
+        /// from the import hook, so the fix it works out may be applied on its own.
+        /// </param>
         Task<LibraryTagIndex> BuildAsync(
             bool refresh = false,
             CancellationToken cancellationToken = default,
-            IReadOnlyCollection<int>? audiobookIds = null);
+            IReadOnlyCollection<int>? audiobookIds = null,
+            TagTrigger planTrigger = TagTrigger.Automatic);
 
         /// <summary>
         /// Probe one file now and cache the result, for the moment a write has just

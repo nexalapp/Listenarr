@@ -124,7 +124,7 @@ public partial class ScanJobProcessor
                 return;
             }
 
-            var result = await prober.EnqueueAsync(audiobook.Id, TagTrigger.Automatic, cancellationToken);
+            var result = await prober.EnqueueAsync(audiobook.Id, TagTrigger.Import, cancellationToken);
             if (result.Queued)
             {
                 _logger.LogInformation("Queued audio-quality probe {JobId} for audiobook {AudiobookId} after scan", result.JobId, audiobook.Id);
@@ -176,7 +176,7 @@ public partial class ScanJobProcessor
             var index = scope.ServiceProvider.GetService<ILibraryTagIndexService>();
             if (index != null)
             {
-                await index.BuildAsync(refresh: false, cancellationToken, audiobookIds: [audiobook.Id]);
+                await index.BuildAsync(refresh: false, cancellationToken, audiobookIds: [audiobook.Id], planTrigger: TagTrigger.Import);
             }
         }
         catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))

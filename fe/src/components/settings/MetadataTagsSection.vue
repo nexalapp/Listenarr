@@ -137,12 +137,12 @@
 
       <FormRow
         label="Audio repair"
-        help="Repair a damaged recording by running it through a generative speech-enhancement model, per book, after an A/B listen. Enabling this downloads the model into the config volume (about 4 GB, once); a repair holds 5–10 GB of memory while it runs and takes one to two times the book's length."
+        help="Repair a damaged recording by running it through a generative speech-enhancement model. The first repair downloads the model into the config volume (about 4 GB, once); a repair holds 5–10 GB of memory while it runs and takes one to two times the book's length."
       >
         <label class="tags-toggle">
           <input
             type="checkbox"
-            :checked="settings.repairEnabled ?? false"
+            :checked="settings.repairEnabled ?? true"
             @change="(e) => toggleRepair((e.target as HTMLInputElement).checked)"
           />
           <span>Offer audio repair, and provision the model on first enable</span>
@@ -167,6 +167,31 @@
             </button>
           </template>
         </div>
+      </FormRow>
+
+      <FormRow
+        label="Auto-repair on import"
+        help="Fix a newly imported book as soon as its checks find a need, without asking. Only imports: books already in the library are repaired from the library's Actions menu."
+      >
+        <label class="tags-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.autoRepairChapters ?? true"
+            @change="
+              (e) => updateField('autoRepairChapters', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span>Auto-repair chapters: apply the chapter fix once it is worked out</span>
+        </label>
+        <label class="tags-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.autoRepairAudio ?? true"
+            :disabled="settings.repairEnabled === false"
+            @change="(e) => updateField('autoRepairAudio', (e.target as HTMLInputElement).checked)"
+          />
+          <span>Auto-repair audio: queue a repair when the probe recommends one</span>
+        </label>
       </FormRow>
 
       <FormRow

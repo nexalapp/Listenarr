@@ -789,6 +789,10 @@ export interface ApplicationSettings {
   repairSourceDisposition?: 'Archive' | 'Keep' | 'Delete'
   /** Splice the original back where the model deleted a loud passage (what it does to music). */
   repairMusicProtectionEnabled?: boolean
+  /** Apply an imported book's chapter fix as soon as it is worked out. */
+  autoRepairChapters?: boolean
+  /** Queue an audio repair for an imported book the probe recommends one for. */
+  autoRepairAudio?: boolean
   foundBooksWatchFolders?: string[]
   foundBooksScanIntervalMinutes?: number
   foundBooksAutoAdd?: boolean

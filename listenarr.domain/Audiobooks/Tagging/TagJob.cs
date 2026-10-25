@@ -69,7 +69,15 @@ namespace Listenarr.Domain.Audiobooks.Tagging
     public enum TagTrigger
     {
         Automatic,
-        Manual
+        Manual,
+
+        /// <summary>
+        /// Automatic, and queued by the import of the book's files. What the auto-repair
+        /// settings key on: a need found while a book is arriving is repaired on its own,
+        /// one found in the existing library by a sweep or a table load is not. Stored by
+        /// name in a 16-character column, so it is appended, never renamed.
+        /// </summary>
+        Import
     }
 
     public static class TagJobStatusExtensions

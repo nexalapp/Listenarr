@@ -46,7 +46,7 @@ namespace Listenarr.Application.Audiobooks.Quality
 
         public async Task<TagEnqueueResult> EnqueueAsync(int audiobookId, TagTrigger trigger, CancellationToken cancellationToken = default)
         {
-            if (trigger == TagTrigger.Automatic)
+            if (trigger != TagTrigger.Manual)
             {
                 var settings = await configurationService.GetApplicationSettingsAsync();
                 if (!settings.AudioQualityProbeEnabled)

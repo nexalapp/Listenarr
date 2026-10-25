@@ -76,7 +76,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
         public async Task<LibraryTagIndex> BuildAsync(
             bool refresh = false,
             CancellationToken cancellationToken = default,
-            IReadOnlyCollection<int>? audiobookIds = null)
+            IReadOnlyCollection<int>? audiobookIds = null,
+            TagTrigger planTrigger = TagTrigger.Automatic)
         {
             if (refresh)
             {
@@ -207,7 +208,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
                     .Select(row => new AudiobookFileChapterHealth(row.FileId, row.ChapterHealth, row.ChapterReason, row.ChapterCount, row.ChapterRepairable))
                     .ToList(),
                 cancellationToken);
-            await QueuePlanningAsync(rows, cancellationToken);
+            await QueuePlanningAsync(rows, planTrigger, cancellationToken);
             await PersistBookHealthAsync(rows, cancellationToken);
             return new LibraryTagIndex(rows, filesRead, DateTime.UtcNow);
         }
