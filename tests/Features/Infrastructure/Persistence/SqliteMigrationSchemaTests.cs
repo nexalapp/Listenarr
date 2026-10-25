@@ -121,6 +121,9 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string SuggestionReleasesMigrationId =
         "20261024025603_AddSuggestionReleases";
 
+    private const string DiscoverFeedsMigrationId =
+        "20261024025626_AddDiscoverFeeds";
+
     private const string UnobtainableRecheckDaysMigrationId =
         "20261024233641_AddUnobtainableRecheckDays";
 
@@ -284,6 +287,7 @@ public class SqliteMigrationSchemaTests : BaseTests
                 AudioQualityAndHealthMigrationId,
                 RepairPipelineMigrationId,
                 SuggestionReleasesMigrationId,
+                DiscoverFeedsMigrationId,
                 UnobtainableRecheckDaysMigrationId
             ],
             postCanary);

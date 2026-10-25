@@ -106,6 +106,8 @@ namespace Listenarr.Infrastructure.Search.Providers.AbookLink
                     Narrator = post.Narrator,
                     Publisher = post.Publisher,
                     Asin = post.Asin,
+                    SeriesName = post.SeriesName,
+                    SeriesPosition = post.SeriesPosition,
                     Description = post.SeriesName is { Length: > 0 }
                         ? $"{post.SeriesName} {post.SeriesPosition}".Trim()
                         : null,

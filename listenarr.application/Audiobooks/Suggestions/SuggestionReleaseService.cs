@@ -36,7 +36,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             string asin,
             string title,
             IReadOnlyList<string> authors,
-            CancellationToken cancellationToken = default);
+            CancellationToken cancellationToken = default,
+            string? seriesNumber = null);
 
         /// <summary>
         /// Sends the release stored for the book's ASIN to a download client. Returns false,
@@ -64,14 +65,15 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 throw new ArgumentException("A suggested book is checked by its ASIN.", nameof(book));
             }
 
-            return CheckAsync(book.Asin, book.Title, book.Authors, cancellationToken);
+            return CheckAsync(book.Asin, book.Title, book.Authors, cancellationToken, book.SeriesNumber);
         }
 
         public async Task<SuggestionRelease> CheckAsync(
             string asin,
             string title,
             IReadOnlyList<string> authors,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string? seriesNumber = null)
         {
             if (string.IsNullOrWhiteSpace(asin))
             {
@@ -113,7 +115,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 var matching = results
                     .Where(result => IsAbookLink(indexer)
                         ? SuggestionReleaseMatch.AbookPostMatches(
-                            result.Asin, result.Album, result.Artist, asin, title, authors)
+                            result.Asin, result.Album, result.Artist, asin, title, authors,
+                            result.SeriesName, result.SeriesPosition, seriesNumber)
                         : SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, title, authors))
                     .ToList();
 
