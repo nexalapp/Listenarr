@@ -40,6 +40,8 @@ vi.mock('@/services/api', () => ({
     getLibrary: vi.fn(async () => []),
     scanAudiobook: vi.fn(),
     buildLibraryFileAudioUrl: vi.fn((fileId: number) => `/api/v1/tagging/files/${fileId}/audio`),
+    updateAudiobook: vi.fn(async () => ({})),
+    auditAudio: vi.fn(async () => ({ queued: true })),
   },
   ensureImageCached: vi.fn(async () => true),
 }))
@@ -683,5 +685,184 @@ describe('AudiobookDetailView audio preview', () => {
 
     expect(wrapper.find('.hero-preview audio').exists()).toBe(false)
     expect(wrapper.find('.file-preview audio').exists()).toBe(true)
+  })
+})
+
+describe('AudiobookDetailView adopting the heard narrator', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  async function mountWithNarratorMismatch() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: "Ender's Shadow",
+        authors: ['Orson Scott Card'],
+        narrators: ['Scott Brick'],
+        audioAudit: 'narrator-mismatch',
+        audioAuditHeardNarrator: 'Michael Gross',
+        // The transcript tab shows an empty state for a book with no files, so the
+        // recommendation never renders without one.
+        files: [{ id: 11, path: "Ender's Shadow.m4b" }],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('Transcript'))
+    await tab!.trigger('click')
+    return wrapper
+  }
+
+  it('puts the heard narrator on the record', async () => {
+    const wrapper = await mountWithNarratorMismatch()
+    const button = wrapper
+      .findAll('.credits-recommend button')
+      .find((b) => b.text().includes('Set narrator to Michael Gross'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(5, { narrators: ['Michael Gross'] })
+  })
+
+  // Saving the record re-judges the audit against the transcript already stored
+  // (AudiobookRepository.RejudgeAudioAuditAsync), so listening again would spend a
+  // minute of the worker's CPU re-deriving the same heard narrator from the same audio
+  // to reach the verdict the save already produced.
+  it('does not queue a transcribe job', async () => {
+    const wrapper = await mountWithNarratorMismatch()
+    const button = wrapper
+      .findAll('.credits-recommend button')
+      .find((b) => b.text().includes('Set narrator to Michael Gross'))
+
+    await button!.trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(apiService.auditAudio).not.toHaveBeenCalled()
+  })
+})
+
+describe('AudiobookDetailView health card', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  async function mountWithHealth() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Eaters of the Dead',
+        authors: ['Michael Crichton'],
+        audioAudit: 'match',
+        files: [{ id: 11, path: 'Eaters of the Dead.m4b' }],
+        health: {
+          score: 80,
+          tags: { state: 'good', reason: null },
+          naming: { state: 'warn', reason: 'The folder name differs from the naming pattern.' },
+          chapters: { state: 'good', reason: null },
+          audio: { state: 'warn', reason: 'A constant -37 dB background.' },
+          checkedAt: '2026-10-15T00:00:00Z',
+        },
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    return wrapper
+  }
+
+  it('shows the score in the hero and the four categories with reasons', async () => {
+    const wrapper = await mountWithHealth()
+
+    expect(wrapper.text()).toContain('Health 80')
+    const card = wrapper.find('.health-card')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('80 / 100')
+    expect(card.text()).toContain('The folder name differs from the naming pattern.')
+    expect(card.text()).toContain('A constant -37 dB background.')
+  })
+
+  it('offers the rename preview for a naming dent', async () => {
+    const wrapper = await mountWithHealth()
+
+    const button = wrapper
+      .findAll('.health-card button')
+      .find((b) => b.text().includes('Preview rename'))
+    expect(button).toBeTruthy()
+  })
+})
+
+describe('AudiobookDetailView adopting the heard narrator', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  async function mountWithNarratorMismatch() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: "Ender's Shadow",
+        authors: ['Orson Scott Card'],
+        narrators: ['Scott Brick'],
+        audioAudit: 'narrator-mismatch',
+        audioAuditHeardNarrator: 'Michael Gross',
+        // The transcript tab shows an empty state for a book with no files, so the
+        // recommendation never renders without one.
+        files: [{ id: 11, path: "Ender's Shadow.m4b" }],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('Transcript'))
+    await tab!.trigger('click')
+    return wrapper
+  }
+
+  it('puts the heard narrator on the record', async () => {
+    const wrapper = await mountWithNarratorMismatch()
+    const button = wrapper
+      .findAll('.credits-recommend button')
+      .find((b) => b.text().includes('Set narrator to Michael Gross'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(5, { narrators: ['Michael Gross'] })
+  })
+
+  // Saving the record re-judges the audit against the transcript already stored
+  // (AudiobookRepository.RejudgeAudioAuditAsync), so listening again would spend a
+  // minute of the worker's CPU re-deriving the same heard narrator from the same audio
+  // to reach the verdict the save already produced.
+  it('does not queue a transcribe job', async () => {
+    const wrapper = await mountWithNarratorMismatch()
+    const button = wrapper
+      .findAll('.credits-recommend button')
+      .find((b) => b.text().includes('Set narrator to Michael Gross'))
+
+    await button!.trigger('click')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(apiService.auditAudio).not.toHaveBeenCalled()
   })
 })

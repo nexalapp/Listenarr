@@ -1,7 +1,10 @@
 using Listenarr.Api.Startup;
+using Listenarr.Application.Audiobooks.Discover;
 using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Infrastructure.DependencyInjection;
+using Listenarr.Infrastructure.Library.Discover.Workers;
 using Listenarr.Infrastructure.Library.Tagging;
+using Listenarr.Domain.Audiobooks.Discover;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 
@@ -82,7 +85,15 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(TagJobProcessor),
                 typeof(ITagJobProcessor),
                 typeof(TagBackgroundService),
-                typeof(UnmatchedScanBackgroundService)
+                typeof(UnmatchedScanBackgroundService),
+                // The discovery refresher keeps the progress the page polls and opens
+                // its own scope per page fetch; its worker holds a scope factory and
+                // the refresher, and nothing scoped.
+                typeof(IDiscoverRefreshService),
+                typeof(DiscoverSectionCatalogCache),
+                typeof(DiscoverFetchProcessor),
+                typeof(IDiscoverFetchProcessor),
+                typeof(DiscoverBackgroundService)
             ];
             foreach (var serviceType in affectedSingletonServiceTypes)
             {
@@ -110,7 +121,12 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(ITagQueueService),
                 typeof(IAudiobookTagWriter),
                 typeof(ITagPreviewService),
-                typeof(AudiobookTagPlanner)
+                typeof(AudiobookTagPlanner),
+                // Everything on the discovery read path holds a DbContext through a
+                // repository or the configuration service.
+                typeof(IDiscoverService),
+                typeof(IDiscoverRepository),
+                typeof(IDiscoverMetadataResolver)
             ];
             foreach (var serviceType in affectedScopedServiceTypes)
             {
@@ -129,7 +145,8 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(DownloadProcessingJobProcessor),
                 typeof(UnmatchedScanBackgroundService),
                 typeof(TagBackgroundService),
-                typeof(StartupDbNormalizer)
+                typeof(StartupDbNormalizer),
+                typeof(DiscoverBackgroundService)
             ];
             Assert.All(
                 builder.Services.Where(descriptor =>
@@ -153,7 +170,19 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 {
                     Assert.NotNull(scope.ServiceProvider.GetRequiredService(serviceType));
                 }
+
+                // One reader per discovery source, resolved as a set rather than by
+                // name, so a missing registration shows up here rather than as an
+                // empty tab.
+                var readers = scope.ServiceProvider.GetServices<IDiscoverSourceReader>().ToList();
+                Assert.Equal(
+                    [DiscoverSources.AbookLink, DiscoverSources.AudibleCharts],
+                    readers.Select(reader => reader.Source).OrderBy(source => source, StringComparer.Ordinal));
             }
+
+            Assert.All(
+                builder.Services.Where(descriptor => descriptor.ServiceType == typeof(IDiscoverSourceReader)),
+                descriptor => Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime));
 
             var hostedServices = provider.GetServices<IHostedService>().ToList();
             foreach (var implementationType in affectedHostedServiceTypes)

@@ -93,6 +93,40 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public bool AudioAuditAccepted { get; set; }
 
         /// <summary>
+        /// What the recording sounds like, as a lowercase word the list filters on:
+        /// <c>clean</c>, <c>hiss</c>, <c>muffled</c>, <c>hiss-and-muffled</c>,
+        /// <c>codec-damaged</c>, <c>production-audio</c>. Null until a probe has run.
+        /// </summary>
+        public string? AudioQuality { get; set; }
+
+        /// <summary>One sentence for the badge's tooltip.</summary>
+        public string? AudioQualityReason { get; set; }
+
+        /// <summary>
+        /// Whether the probe's verdict makes this book worth a generative repair — the
+        /// "Repair candidates" filter. Derived at query time, so changing the offer
+        /// threshold re-sorts the library without re-probing it.
+        /// </summary>
+        public bool AudioRepairRecommended { get; set; }
+
+        /// <summary>
+        /// The book summed up as a number, 0–100 over the checks that have run; null
+        /// while none have. Computed at query time from the four stored category facts,
+        /// never persisted, so reweighing it re-scores the whole library at once.
+        /// </summary>
+        public int? HealthScore { get; set; }
+
+        /// <summary>Each category as <c>good</c>, <c>warn</c>, <c>bad</c> or <c>unknown</c>, with its sentence.</summary>
+        public string? HealthTags { get; set; }
+        public string? HealthTagsReason { get; set; }
+        public string? HealthNaming { get; set; }
+        public string? HealthNamingReason { get; set; }
+        public string? HealthChapters { get; set; }
+        public string? HealthChaptersReason { get; set; }
+        public string? HealthAudio { get; set; }
+        public string? HealthAudioReason { get; set; }
+
+        /// <summary>
         /// The listener rating, so a card can carry it without fetching the book. Audible's
         /// overall score and how many rated it; <see cref="AudnexusRating"/> stands in when
         /// Audnexus answered instead, and has no count of its own.

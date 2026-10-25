@@ -68,6 +68,7 @@
                     <option value="path">Path</option>
                     <option value="files">Files</option>
                     <option value="filesize">Filesize</option>
+                    <option value="healthScore">Health Score</option>
                   </select>
                   <select v-model="r.operator" class="form-select small op-select">
                     <template v-if="r.field === 'monitored'">
@@ -76,7 +77,13 @@
                     </template>
                     <template
                       v-else-if="
-                        ['publishYear', 'publishedYear', 'files', 'filesize'].includes(r.field)
+                        [
+                          'publishYear',
+                          'publishedYear',
+                          'files',
+                          'filesize',
+                          'healthScore',
+                        ].includes(r.field)
                       "
                     >
                       <option value="eq">=</option>

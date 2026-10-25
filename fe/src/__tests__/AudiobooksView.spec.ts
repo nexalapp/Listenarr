@@ -24,6 +24,7 @@ import { useLibraryStore } from '@/stores/library'
 // apiService stubbed in vi.mock below if needed
 
 const convertAudiobooksBulkMock = vi.fn()
+const repairAudiobooksBulkMock = vi.fn()
 const saveLibraryCustomFiltersMock = vi.fn(async () => ({ saved: true }))
 const getApplicationSettingsMock = vi.fn(async () => ({}) as Record<string, unknown>)
 const successToast = vi.fn()
@@ -42,6 +43,7 @@ vi.mock('@/services/api', () => ({
       saveLibraryCustomFiltersMock(...(args as [unknown[]])),
     convertAudiobooksBulk: (...args: unknown[]) =>
       convertAudiobooksBulkMock(...(args as [number[]])),
+    repairAudiobooksBulk: (...args: unknown[]) => repairAudiobooksBulkMock(...(args as [number[]])),
     getConversionJobs: vi.fn(async () => []),
     getTagJobs: vi.fn(async () => []),
   },
@@ -1275,7 +1277,7 @@ describe('AudiobooksView Filter Persistence', () => {
   const SELECTED_FILTER_KEY = 'listenarr.selectedFilter'
   const CUSTOM_FILTERS_KEY = 'listenarr.customFilters'
 
-  const mountView = async () => {
+  const mountView = async (books?: import('@/types').Audiobook[]) => {
     if (
       typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
     ) {
@@ -1308,17 +1310,19 @@ describe('AudiobooksView Filter Persistence', () => {
     await router.isReady().catch(() => {})
 
     const store = useLibraryStore()
-    store.audiobooks = [
-      { id: 1, title: 'Watched Book', authors: ['Author A'], monitored: true, files: [] },
-      {
-        id: 2,
-        title: 'Ignored Book',
-        authors: ['Author B'],
-        monitored: false,
-        files: [],
-        notFoundFiles: 2,
-      },
-    ] as unknown as import('@/types').Audiobook[]
+    store.audiobooks =
+      books ??
+      ([
+        { id: 1, title: 'Watched Book', authors: ['Author A'], monitored: true, files: [] },
+        {
+          id: 2,
+          title: 'Ignored Book',
+          authors: ['Author B'],
+          monitored: false,
+          files: [],
+          notFoundFiles: 2,
+        },
+      ] as unknown as import('@/types').Audiobook[])
     store.fetchLibrary = vi.fn(async () => undefined)
 
     const wrapper = mount(AudiobooksView, {
@@ -1367,6 +1371,82 @@ describe('AudiobooksView Filter Persistence', () => {
     expect(wrapper.text()).toContain('2 files not found')
   })
 
+  it('filters to the books the probe recommends for a generative repair', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'repair-candidates')
+
+    const wrapper = await mountView([
+      {
+        id: 1,
+        title: 'Starved Encode',
+        authors: ['Author A'],
+        monitored: true,
+        files: [],
+        audioQuality: 'codec-damaged',
+        audioRepairRecommended: true,
+      },
+      {
+        id: 2,
+        title: 'Clean Reading',
+        authors: ['Author B'],
+        monitored: true,
+        files: [],
+        audioQuality: 'clean',
+        audioRepairRecommended: false,
+      },
+      { id: 3, title: 'Never Probed', authors: ['Author C'], monitored: true, files: [] },
+    ])
+
+    expect(wrapper.text()).toContain('Starved Encode')
+    expect(wrapper.text()).not.toContain('Clean Reading')
+    expect(wrapper.text()).not.toContain('Never Probed')
+  })
+
+  /**
+   * The library badged and filtered on the verdict alone while the Tags page honoured
+   * acceptance, so a book its owner had already answered was a problem in one place and
+   * settled in the other - and an "Unclear" book, which the Books page's own switch had
+   * never heard of, carried no badge here at all.
+   */
+  it('shows the audit the same books the Tags page does: unanswered ones, Unclear included', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'audio-mismatch')
+
+    const wrapper = await mountView([
+      {
+        id: 1,
+        title: 'Flagged Book',
+        authors: ['Author A'],
+        monitored: true,
+        files: [],
+        audioAudit: 'mismatch',
+        audioAuditAccepted: false,
+      },
+      {
+        id: 2,
+        title: 'Answered Book',
+        authors: ['Author B'],
+        monitored: true,
+        files: [],
+        audioAudit: 'mismatch',
+        audioAuditAccepted: true,
+      },
+      {
+        id: 3,
+        title: 'Quiet Opening',
+        authors: ['Author C'],
+        monitored: true,
+        files: [],
+        audioAudit: 'inconclusive',
+        audioAuditAccepted: false,
+      },
+    ] as unknown as import('@/types').Audiobook[])
+
+    expect(wrapper.text()).toContain('Flagged Book')
+    expect(wrapper.text()).toContain('Different book')
+    expect(wrapper.text()).toContain('Quiet Opening')
+    expect(wrapper.text()).toContain('Unclear')
+    expect(wrapper.text()).not.toContain('Answered Book')
+  })
+
   it('restores a custom filter that still exists', async () => {
     localStorage.setItem(
       CUSTOM_FILTERS_KEY,
@@ -1409,7 +1489,10 @@ describe('AudiobooksView Filter Persistence', () => {
 })
 
 describe('AudiobooksView Bulk Conversion', () => {
-  const mountWithSelection = async (ids: number[]) => {
+  const mountWithSelection = async (
+    ids: number[],
+    overrides: Record<number, Record<string, unknown>> = {},
+  ) => {
     if (
       typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
     ) {
@@ -1447,6 +1530,7 @@ describe('AudiobooksView Bulk Conversion', () => {
       title: `Book ${id}`,
       authors: ['Author'],
       files: [],
+      ...overrides[id],
     })) as unknown as import('@/types').Audiobook[]
     store.fetchLibrary = vi.fn(async () => undefined)
     ids.forEach((id) => store.selectedIds.add(id))
@@ -1579,6 +1663,58 @@ describe('AudiobooksView Bulk Conversion', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(useLibraryStore().selectedIds.size).toBe(2)
+  })
+  const repairButton = async (wrapper: ReturnType<typeof mount>) => {
+    const menu = wrapper.findAll('button.toolbar-btn').find((b) => b.text().includes('Actions'))
+    if (!menu) return undefined
+    await menu.trigger('click')
+    await wrapper.vm.$nextTick()
+    return wrapper.findAll('button.actions-option').find((b) => b.text().includes('Repair Audio'))
+  }
+
+  it('repairs only the selected repair candidates, after confirming the cost', async () => {
+    repairAudiobooksBulkMock.mockResolvedValue({
+      requestedCount: 2,
+      queuedCount: 2,
+      results: [1, 3].map((audiobookId) => ({ audiobookId, outcome: 'Queued' })),
+    })
+    const wrapper = await mountWithSelection([1, 2, 3], {
+      1: { audioRepairRecommended: true, runtime: 600 },
+      3: { audioRepairRecommended: true, runtime: 600 },
+    })
+
+    await (await repairButton(wrapper))!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const [message] = showConfirmMock.mock.calls[0] as [string]
+    expect(message).toContain('2 books')
+    expect(message).toContain('1 selected book(s) that are not repair candidates are skipped')
+    expect(message).toContain('about 20 hours of audio')
+    expect(repairAudiobooksBulkMock).toHaveBeenCalledWith([1, 3])
+    expect(convertAudiobooksBulkMock).not.toHaveBeenCalled()
+    expect((successToast.mock.calls[0] as [string, string])[1]).toContain('2 books queued')
+  })
+
+  it('cannot be chosen when no selected book is a repair candidate', async () => {
+    const wrapper = await mountWithSelection([1, 2])
+
+    const button = await repairButton(wrapper)
+    expect(button?.attributes('disabled')).toBeDefined()
+  })
+
+  it('names why repairs were refused', async () => {
+    repairAudiobooksBulkMock.mockResolvedValue({
+      requestedCount: 1,
+      queuedCount: 0,
+      results: [{ audiobookId: 1, outcome: 'EnhancerUnavailable' }],
+    })
+    const wrapper = await mountWithSelection([1], { 1: { audioRepairRecommended: true } })
+
+    await (await repairButton(wrapper))!.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const [, message] = warningToast.mock.calls[0] as [string, string]
+    expect(message).toContain('1 enhancement model not ready')
   })
 })
 

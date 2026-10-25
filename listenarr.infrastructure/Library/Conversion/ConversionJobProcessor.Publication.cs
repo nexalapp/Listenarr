@@ -208,7 +208,10 @@ namespace Listenarr.Infrastructure.Library.Conversion
             IReadOnlyList<RootFolder> rootFolders,
             IAudiobookFileRepository fileRepository,
             IFileSystem fileSystem,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            // The caller names the disposition because conversion and repair each have
+            // their own setting; the archive location is shared.
+            ConversionSourceDisposition? disposition = null)
         {
             // The library record drops the sources in every case: they are no longer what
             // the book is, whatever happens to the bytes.
@@ -217,7 +220,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 await fileRepository.DeleteAsync(source.FileId, cancellationToken);
             }
 
-            switch (settings.ConversionSourceDisposition)
+            switch (disposition ?? settings.ConversionSourceDisposition)
             {
                 case ConversionSourceDisposition.Keep:
                     logger.LogInformation(

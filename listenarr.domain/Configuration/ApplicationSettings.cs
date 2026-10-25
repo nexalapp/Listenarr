@@ -129,6 +129,39 @@ namespace Listenarr.Domain.Configuration
         // judged against its record. Needs transcription; a minute of CPU per book.
         public bool AudioAuditOnImport { get; set; } = false;
 
+        // Whether books are probed for what their recording sounds like — hiss, muffle,
+        // codec damage. Seconds of CPU per book, nothing written to any file; on by
+        // default because without it the audio column of the health score stays unknown.
+        // Covers both the probe at scan time and the one-time sweep of the existing
+        // library.
+        public bool AudioQualityProbeEnabled { get; set; } = true;
+
+        // How many dB darker than a natural voice (treble at -25 dB relative to speech)
+        // a book must be before the generative repair is suggested. Beyond this line an
+        // exciter deriving harmonics from the real signal cannot honestly reach natural;
+        // measured at 25 dB, 45 of 1,225 books sat past it.
+        public double GenerativeOfferThresholdDb { get; set; } = 25;
+
+        // Whether audio repair exists on this install. Turning it on provisions the
+        // enhancement model into the config volume (about 4 GB, once); while off, every
+        // repair entry point refuses with a sentence saying so. Off by default because
+        // the model holds 5-10 GB of memory while a repair runs, which is the operator's
+        // budget to grant.
+        public bool RepairEnabled { get; set; } = false;
+
+        // What happens to the original files once a repair has been verified and
+        // published. Archive by default: a repair is a lossy, opinionated rewrite, and
+        // the user reviews audio changes by ear - the original is the only way back.
+        // Uses the same archive location as conversion (ConversionArchivePath).
+        public ConversionSourceDisposition RepairSourceDisposition { get; set; } =
+            ConversionSourceDisposition.Archive;
+
+        // Whether a repair splices the original audio back wherever the model removed a
+        // lot of energy from a loud passage. The model is trained on speech and destroys
+        // an orchestral score; removing something loud is the signature of that failure,
+        // because real cleaning only ever removes what was quiet.
+        public bool RepairMusicProtectionEnabled { get; set; } = true;
+
         // Folders scanned for complete books that are not in the library: a pack that
         // arrived with more than was asked for, a manual download, an import that was
         // left behind. Empty means every enabled download client's completed path,
@@ -156,6 +189,19 @@ namespace Listenarr.Domain.Configuration
         // half a minute walks a few thousand suggestions in a day without leaning on any
         // of them. Zero turns it off.
         public int SuggestionReleaseCheckIntervalSeconds { get; set; } = 30;
+
+        // Which sections each discovery tab draws from, keyed by source: the Audible
+        // chart categories to follow, and the abook.link boards to watch. One column
+        // rather than four because the shape is a choice per source and is edited from
+        // the tab itself, not from the settings page. See DiscoverSettings for the
+        // document and for the validation its ids go through before a URL is built
+        // from them.
+        public string DiscoverSettingsJson { get; set; } = "{}";
+
+        // Minutes between background steps of a discovery fetch: one chart page, one
+        // board page, or one metadata lookup for a forum post. Zero turns it off,
+        // leaving the tabs' own Refresh and Load more buttons.
+        public int DiscoverBackgroundFetchIntervalMinutes { get; set; } = 5;
 
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.

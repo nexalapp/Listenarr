@@ -39,6 +39,12 @@ namespace Listenarr.Application.Audiobooks.Conversion
         /// <summary>The encoder reported success but the output does not hold up.</summary>
         OutputRejected,
 
+        /// <summary>Repair only: the enhancement model is not provisioned or failed to provision. Retrying changes nothing until it is.</summary>
+        EnhancerUnavailable,
+
+        /// <summary>Repair only: the enhancement model ran and failed, or timed out, on a chunk.</summary>
+        EnhanceFailed,
+
         /// <summary>Something transient: disk pressure, a share dropping out mid-write.</summary>
         Transient,
 

@@ -84,7 +84,8 @@ namespace Listenarr.Application.Audiobooks.Tagging
         AudioAuditVerdict AudioAudit = AudioAuditVerdict.NotAudited,
         string? AudioAuditReason = null,
         bool AudioAuditAccepted = false,
-        string? AudioAuditHeardNarrator = null);
+        string? AudioAuditHeardNarrator = null,
+        bool AudioRepairRecommended = false);
 
     /// <summary>
     /// The whole library's tag table, plus what it cost to build.

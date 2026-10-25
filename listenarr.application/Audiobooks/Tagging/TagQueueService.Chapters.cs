@@ -142,6 +142,50 @@ namespace Listenarr.Application.Audiobooks.Tagging
             await BroadcastAsync(stored, cancellationToken);
             return new TagEnqueueResult(TagEnqueueOutcome.Queued, stored.Id);
         }
+        public async Task<TagEnqueueResult> EnqueueAudioQualityProbeAsync(
+            int audiobookId,
+            TagTrigger trigger,
+            CancellationToken cancellationToken = default)
+        {
+            var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
+            if (audiobook == null)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.NotFound, Reason: "That audiobook no longer exists.");
+            }
+
+            var audioFiles = (audiobook.Files ?? []).Count(file => FileUtils.IsAudioFile(file.Path ?? string.Empty));
+            if (audioFiles == 0)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.NothingToTag, Reason: "This book has no audio files to probe.");
+            }
+
+            var existing = await repository.GetActiveForAudiobookAsync(audiobookId, TagJobKind.Probe, cancellationToken);
+            if (existing != null)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.AlreadyQueued, existing.Id, "This book is already queued for a probe.");
+            }
+
+            var job = new TagJob
+            {
+                AudiobookId = audiobookId,
+                Trigger = trigger,
+                Kind = TagJobKind.Probe,
+                FileCount = 1,
+                ActiveDeduplicationKey = TagJob.BuildProbeDeduplicationKey(audiobookId),
+                EnqueuedAt = timeProvider.GetUtcNow().UtcDateTime
+            };
+
+            var stored = await repository.AddAsync(job, cancellationToken);
+            if (stored == null)
+            {
+                return new TagEnqueueResult(TagEnqueueOutcome.AlreadyQueued, Reason: "This book is already queued for a probe.");
+            }
+
+            logger.LogInformation("Queued audio-quality probe {JobId} for audiobook {AudiobookId}", stored.Id, audiobookId);
+            await BroadcastAsync(stored, cancellationToken);
+            return new TagEnqueueResult(TagEnqueueOutcome.Queued, stored.Id);
+        }
+
         public async Task<TagEnqueueResult> EnqueueChapterPlanAsync(
             int audiobookId,
             IReadOnlyCollection<int> fileIds,

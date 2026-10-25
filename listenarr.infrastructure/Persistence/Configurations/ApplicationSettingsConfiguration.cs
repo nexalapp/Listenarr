@@ -96,6 +96,10 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.TranscriptionEnabled).HasDefaultValue(false);
             builder.Property(e => e.TranscriptionModel).HasMaxLength(32).HasDefaultValue("base.en");
             builder.Property(e => e.AudioAuditOnImport).HasDefaultValue(false);
+            builder.Property(e => e.AudioQualityProbeEnabled).HasDefaultValue(true);
+            builder.Property(e => e.GenerativeOfferThresholdDb).HasDefaultValue(25.0);
+            builder.Property(e => e.RepairEnabled).HasDefaultValue(false);
+            builder.Property(e => e.RepairMusicProtectionEnabled).HasDefaultValue(true);
 
             builder.Property(e => e.FoundBooksWatchFolders)
                 .HasConversion(
@@ -108,6 +112,13 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.FoundBooksAutoAdd).HasDefaultValue(false);
             builder.Property(e => e.SuggestionsBackgroundFetchIntervalMinutes).HasDefaultValue(1);
             builder.Property(e => e.SuggestionReleaseCheckIntervalSeconds).HasDefaultValue(30);
+
+            // An empty JSON object, not an empty string: a row written before the
+            // discovery tabs existed is read as "nothing followed yet", and the default
+            // interval has to survive the upgrade or the background fetcher arrives
+            // switched off on every existing install.
+            builder.Property(e => e.DiscoverSettingsJson).HasDefaultValue("{}");
+            builder.Property(e => e.DiscoverBackgroundFetchIntervalMinutes).HasDefaultValue(5);
 
             // Tag mappings stored as JSON. Null is meaningful and is preserved: a row
             // written before this feature existed has no mapping, and that has to read

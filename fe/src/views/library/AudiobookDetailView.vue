@@ -212,6 +212,16 @@
               <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
               {{ audiobook.monitored ? 'Monitored' : 'Not Monitored' }}
             </Pill>
+            <Pill
+              v-if="audiobook.health?.score != null"
+              interactive
+              :variant="healthPillVariant"
+              :title="'How healthy this book is across tags, naming, chapters and audio. Click for the breakdown.'"
+              @click="activeTab = 'details'"
+            >
+              <PhHeartbeat />
+              Health {{ audiobook.health.score }}
+            </Pill>
             <AudioPreviewPlayer
               class="hero-preview"
               :preview-id="`book-${audiobook.id}`"
@@ -344,6 +354,39 @@
       <!-- Details Tab -->
       <div id="details" v-if="activeTab === 'details'" class="details-content">
         <div class="details-grid">
+          <div v-if="audiobook.health" class="detail-card health-card">
+            <h3>
+              Health
+              <span v-if="audiobook.health.score != null" class="health-score"
+                >{{ audiobook.health.score }} / 100</span
+              >
+              <button
+                type="button"
+                class="btn btn-sm btn-secondary health-refresh"
+                :disabled="refreshingHealth"
+                title="Re-read the files' tags, re-derive the expected paths, and queue a fresh audio probe."
+                @click="refreshHealth"
+              >
+                {{ refreshingHealth ? 'Checking…' : 'Re-check' }}
+              </button>
+            </h3>
+            <div v-for="row in healthRows" :key="row.label" class="detail-row health-row">
+              <span class="label">{{ row.label }}:</span>
+              <span class="value health-value">
+                <Pill :variant="healthStateVariant(row.state)">{{ row.state }}</Pill>
+                <span v-if="row.reason" class="health-reason">{{ row.reason }}</span>
+                <button
+                  v-if="row.action"
+                  type="button"
+                  class="btn btn-sm btn-secondary"
+                  @click="row.action.run"
+                >
+                  {{ row.action.label }}
+                </button>
+              </span>
+            </div>
+          </div>
+
           <div class="detail-card">
             <h3>Author Information</h3>
             <div class="detail-row" v-if="audiobook.authors?.length">
@@ -854,9 +897,9 @@
             <div class="edition-check">
               <h4>Which edition is this?</h4>
               <p class="edition-explain">
-                Two recordings of one book differ in length far more than a recording
-                differs from its own stated runtime, so the catalogue's runtime per
-                edition can say which one is on disk.
+                Two recordings of one book differ in length far more than a recording differs from
+                its own stated runtime, so the catalogue's runtime per edition can say which one is
+                on disk.
               </p>
               <button
                 type="button"
@@ -875,7 +918,9 @@
                   :disabled="applyingEdition"
                   @click="adoptEdition"
                 >
-                  {{ applyingEdition ? 'Re-matching…' : `Re-match to the ${editionNarrators} edition` }}
+                  {{
+                    applyingEdition ? 'Re-matching…' : `Re-match to the ${editionNarrators} edition`
+                  }}
                 </button>
               </template>
             </div>
@@ -902,8 +947,8 @@
                   :src="closingClip"
                 ></audio>
                 <p class="credits-clip-hint">
-                  Plays the last stretch the audit listened to, so a verdict about how the
-                  book ends can be checked by ear.
+                  Plays the last stretch the audit listened to, so a verdict about how the book ends
+                  can be checked by ear.
                 </p>
               </template>
             </div>
@@ -1091,6 +1136,13 @@
     @done="handleOrganizeDone"
   />
 
+  <RepairPreviewModal
+    :visible="showRepairModal"
+    :audiobook-id="audiobook?.id ?? null"
+    @close="showRepairModal = false"
+    @queued="handleRepairQueued"
+  />
+
   <TagPreviewModal
     :visible="showTagPreviewModal"
     :audiobook-id="audiobook?.id ?? null"
@@ -1150,6 +1202,7 @@ import type { ChapterRepairScope } from '@/components/domain/tagging/ChapterRepa
 import AudiobookTagsPanel from '@/components/domain/tagging/AudiobookTagsPanel.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
+import RepairPreviewModal from '@/components/domain/repair/RepairPreviewModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
 import AudioPreviewPlayer from '@/components/ui/AudioPreviewPlayer.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
@@ -1193,6 +1246,7 @@ import {
   PhFileMinus,
   PhCircle,
   PhDiscordLogo,
+  PhHeartbeat,
 } from '@phosphor-icons/vue'
 
 const route = useRoute()
@@ -1375,6 +1429,110 @@ const displayedScanStatus = computed(() => {
 })
 const showEditModal = ref(false)
 const showOrganizeModal = ref(false)
+
+// ---- Health ------------------------------------------------------------------------
+
+const refreshingHealth = ref(false)
+
+const healthPillVariant = computed(() => {
+  const score = audiobook.value?.health?.score
+  if (score == null) return 'default'
+  return score >= 100 ? 'success' : score >= 60 ? 'warning' : 'error'
+})
+
+function healthStateVariant(state: string): 'success' | 'warning' | 'error' | 'default' {
+  switch (state) {
+    case 'good':
+      return 'success'
+    case 'warn':
+      return 'warning'
+    case 'bad':
+      return 'error'
+    default:
+      return 'default'
+  }
+}
+
+/**
+ * The four categories as rows with the one action that addresses each. The tags row
+ * points at the transcript when the record itself is in doubt — a tag write cannot fix
+ * tags rendered from the wrong record.
+ */
+const healthRows = computed(() => {
+  const health = audiobook.value?.health
+  if (!health) return []
+  const auditInDoubt =
+    !audiobook.value?.audioAuditAccepted &&
+    ['mismatch', 'narrator-mismatch', 'incomplete', 'inconclusive'].includes(
+      audiobook.value?.audioAudit ?? '',
+    )
+  return [
+    {
+      label: 'Tags',
+      state: health.tags.state,
+      reason: health.tags.reason,
+      action:
+        health.tags.state === 'good' || health.tags.state === 'unknown'
+          ? null
+          : auditInDoubt
+            ? { label: 'Review transcript', run: () => (activeTab.value = 'transcript') }
+            : { label: 'Preview tags', run: () => (showTagPreviewModal.value = true) },
+    },
+    {
+      label: 'Naming',
+      state: health.naming.state,
+      reason: health.naming.reason,
+      action:
+        health.naming.state === 'warn' || health.naming.state === 'bad'
+          ? { label: 'Preview rename', run: () => (showOrganizeModal.value = true) }
+          : null,
+    },
+    {
+      label: 'Chapters',
+      state: health.chapters.state,
+      reason: health.chapters.reason,
+      action:
+        health.chapters.state === 'warn' || health.chapters.state === 'bad'
+          ? { label: 'Open chapters', run: () => (activeTab.value = 'chapters') }
+          : null,
+    },
+    {
+      label: 'Audio',
+      state: health.audio.state,
+      reason: health.audio.reason,
+      action:
+        health.audio.state === 'warn' || health.audio.state === 'bad'
+          ? { label: 'Repair audio…', run: () => (showRepairModal.value = true) }
+          : null,
+    },
+  ]
+})
+
+const showRepairModal = ref(false)
+
+function handleRepairQueued() {
+  // The job reports through the conversion store; the page's SignalR watch reloads the
+  // book when it lands.
+  conversionJobsStore.refresh()
+}
+
+async function refreshHealth() {
+  if (!audiobook.value) return
+  refreshingHealth.value = true
+  const toast = useToast()
+  try {
+    await apiService.refreshHealth(audiobook.value.id)
+    await loadAudiobook()
+    toast.success(
+      'Health re-checked',
+      'Tags and naming re-measured; a fresh audio probe is queued.',
+    )
+  } catch (err) {
+    toast.error('Could not re-check health', err instanceof Error ? err.message : String(err))
+  } finally {
+    refreshingHealth.value = false
+  }
+}
 const showMoreActions = ref(false)
 
 // History state
@@ -2338,7 +2496,15 @@ async function removeNotFoundFiles() {
   }
 }
 
-/** Put the narrator the audio names on the record, then transcribe again to confirm. */
+/**
+ * Put the narrator the audio names on the record.
+ *
+ * No re-transcribe follows. Saving the record re-judges the audit against the transcript
+ * already stored (AudiobookRepository.RejudgeAudioAuditAsync), so reloading the book
+ * shows the corrected verdict immediately. Listening again would spend a minute of the
+ * worker's CPU re-deriving the same heard narrator from the same audio with the same
+ * model, to reach the verdict the save already produced.
+ */
 async function adoptHeardNarrator() {
   if (!audiobook.value?.audioAuditHeardNarrator) return
   settingNarrator.value = true
@@ -2354,7 +2520,6 @@ async function adoptHeardNarrator() {
     await apiService.updateAudiobook(audiobook.value.id, { narrators })
     toast.success('Narrator updated', `Set to ${narrators.join(', ')}.`)
     await loadAudiobook()
-    await auditAudio()
   } catch (err) {
     toast.error('Could not update the narrator', err instanceof Error ? err.message : String(err))
   } finally {
@@ -2758,8 +2923,8 @@ const editionCheck = ref<EditionCheck | null>(null)
 const checkingEdition = ref(false)
 const applyingEdition = ref(false)
 
-const editionNarrators = computed(() =>
-  (editionCheck.value?.best?.narrators || []).join(' / ') || 'other',
+const editionNarrators = computed(
+  () => (editionCheck.value?.best?.narrators || []).join(' / ') || 'other',
 )
 
 async function runEditionCheck() {
@@ -4131,6 +4296,33 @@ function formatDate(dateString?: string): string {
   .tab-content {
     padding: 30px 20px;
   }
+}
+
+.health-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.health-score {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+
+.health-refresh {
+  margin-left: auto;
+}
+
+.health-row .health-value {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.health-reason {
+  color: var(--text-secondary);
 }
 
 .details-grid {

@@ -24,11 +24,12 @@
       </h1>
       <div class="header-actions">
         <Checkbox v-model="searchOnAdd" class="search-on-add">Search for downloads on add</Checkbox>
-        <span v-if="refreshStatus?.running" class="refresh-progress">
+        <span v-if="refreshStatus?.running && !isDiscoveryTab" class="refresh-progress">
           Fetching catalogs… {{ refreshStatus.completed }} / {{ refreshStatus.total }}
           <template v-if="refreshStatus.current"> · {{ refreshStatus.current }}</template>
         </span>
         <button
+          v-if="!isDiscoveryTab"
           class="btn btn-secondary"
           :disabled="refreshStatus?.running || refreshing"
           title="Fetch catalogs for library authors and series that have none yet, or whose catalog is over a month old. This is the only thing on this page that goes to Audible."
@@ -40,7 +41,7 @@
       </div>
     </div>
 
-    <p v-if="snapshot" class="coverage">
+    <p v-if="snapshot && !isDiscoveryTab" class="coverage">
       Based on cached catalogs for
       <strong>{{ snapshot.coverage.authorsWithCatalog }}</strong> of
       {{ snapshot.coverage.authorsInLibrary }} authors and
@@ -92,6 +93,18 @@
 
     <!-- Found on disk: its own data, not the catalogue snapshot -->
     <FoundBooksTab v-if="activeTab === 'found'" />
+
+    <!-- The two outward-looking tabs: their own data too, fetched on a cadence -->
+    <DiscoverTab
+      v-else-if="activeTab === 'discover' || activeTab === 'abook'"
+      :key="activeTab"
+      :source="activeTab === 'discover' ? 'charts' : 'abook'"
+      :added-keys="addedKeys"
+      :adding-keys="addingKeys"
+      @add="quickAdd"
+      @search="searchFor"
+      @open="openAdd"
+    />
 
     <LoadingState v-else-if="loading" message="Working out what you're missing..." />
 
@@ -253,6 +266,7 @@ import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.vue'
 import FoundBooksTab from '@/components/domain/audiobook/FoundBooksTab.vue'
+import DiscoverTab from '@/components/domain/audiobook/DiscoverTab.vue'
 import { useFoundBooksStore } from '@/stores/foundBooks'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
@@ -269,7 +283,7 @@ import type {
   SuggestionSnapshot,
 } from '@/types'
 
-type TabId = 'authors' | 'series' | 'related' | 'found'
+type TabId = 'authors' | 'series' | 'related' | 'found' | 'discover' | 'abook'
 
 const toast = useToast()
 const foundBooks = useFoundBooksStore()
@@ -280,7 +294,7 @@ const error = ref<string | null>(null)
 const route = useRoute()
 const router = useRouter()
 
-const TAB_IDS: readonly TabId[] = ['authors', 'series', 'related', 'found']
+const TAB_IDS: readonly TabId[] = ['authors', 'series', 'related', 'found', 'discover', 'abook']
 const isTabId = (value: unknown): value is TabId => TAB_IDS.includes(value as TabId)
 
 // The open tab lives in the path, so Back returns to the tab that was open and a
@@ -379,7 +393,22 @@ const tabs = computed(() => [
     label: 'Found on disk',
     count: foundBooks.readyItems.length,
   },
+  // The two outward-looking tabs carry no count: what they hold is whatever the
+  // last fetch left, and a number here would mean "unread", which it is not.
+  {
+    id: 'discover' as TabId,
+    label: 'Discover',
+    count: 0,
+  },
+  {
+    id: 'abook' as TabId,
+    label: 'Newly posted',
+    count: 0,
+  },
 ])
+
+/** The two tabs that fetch from a source rather than from the cached catalogues. */
+const isDiscoveryTab = computed(() => activeTab.value === 'discover' || activeTab.value === 'abook')
 
 const uncovered = computed(() => {
   const c = snapshot.value?.coverage
