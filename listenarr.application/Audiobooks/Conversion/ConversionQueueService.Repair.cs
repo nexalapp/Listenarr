@@ -79,15 +79,23 @@ namespace Listenarr.Application.Audiobooks.Conversion
             if (enhancer == null || !await enhancer.IsAvailableAsync(cancellationToken))
             {
                 var status = enhancer == null ? null : await enhancer.GetStatusAsync(cancellationToken);
+                // Repair is on by default, so the first request is what fetches the model:
+                // nobody should have to find a settings toggle to start a download the
+                // request already implies. Idempotent while one is running.
+                if (enhancer != null && status?.State == EnhancerState.NotProvisioned)
+                {
+                    status = await enhancer.ProvisionAsync(cancellationToken);
+                }
+
                 return new ConversionEnqueueResult(
                     ConversionEnqueueOutcome.EnhancerUnavailable,
                     Reason: status?.State switch
                     {
                         EnhancerState.Provisioning =>
-                            $"The enhancement model is still downloading ({status.ProvisionProgress:0}%). Repair becomes available when it lands.",
+                            $"The enhancement model is downloading (about 4 GB, once; {status.ProvisionProgress:0}% so far). Queue the repair again once it is ready.",
                         EnhancerState.Failed =>
                             $"The enhancement model could not be provisioned: {status.Error}",
-                        _ => "The enhancement model is not provisioned. Enabling repair in Settings downloads it (about 4 GB, once)."
+                        _ => "The enhancement model is not provisioned."
                     });
             }
 

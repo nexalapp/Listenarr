@@ -2542,7 +2542,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<bool>("RepairEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("RepairMusicProtectionEnabled")
                         .ValueGeneratedOnAdd()

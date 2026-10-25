@@ -142,12 +142,12 @@ namespace Listenarr.Domain.Configuration
         // measured at 25 dB, 45 of 1,225 books sat past it.
         public double GenerativeOfferThresholdDb { get; set; } = 25;
 
-        // Whether audio repair exists on this install. Turning it on provisions the
-        // enhancement model into the config volume (about 4 GB, once); while off, every
-        // repair entry point refuses with a sentence saying so. Off by default because
-        // the model holds 5-10 GB of memory while a repair runs, which is the operator's
-        // budget to grant.
-        public bool RepairEnabled { get; set; } = false;
+        // Whether audio repair exists on this install; while off, every repair entry
+        // point refuses with a sentence saying so. On by default: nothing runs until a
+        // repair is asked for, and the first request downloads the enhancement model
+        // into the config volume (about 4 GB, once). A repair holds 5-10 GB of memory
+        // while it runs, so an install without that to spare turns it off.
+        public bool RepairEnabled { get; set; } = true;
 
         // What happens to the original files once a repair has been verified and
         // published. Archive by default: a repair is a lossy, opinionated rewrite, and

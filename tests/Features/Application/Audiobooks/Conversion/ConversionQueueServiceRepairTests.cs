@@ -110,15 +110,34 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Conversion
         }
 
         [Fact]
-        public async Task Repair_RefusesWithTheProvisioningStoryWhenTheEnhancerIsNotReady()
+        public async Task Repair_StartsTheModelDownloadWhenNothingIsProvisioned_AndSaysSo()
         {
+            // Repair is on by default, so the first request is what fetches the model;
+            // nobody has to find a settings toggle to start it.
             GivenRepair(enhancerReady: false);
             GivenAudiobook("Book.m4b");
+            _enhancer.Setup(enhancer => enhancer.ProvisionAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new EnhancerStatus(EnhancerState.Provisioning, 0, "Starting", null, null, null));
 
             var result = await BuildService().EnqueueRepairAsync(7);
 
             Assert.Equal(ConversionEnqueueOutcome.EnhancerUnavailable, result.Outcome);
-            Assert.Contains("not provisioned", result.Reason, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("downloading", result.Reason, StringComparison.OrdinalIgnoreCase);
+            _enhancer.Verify(enhancer => enhancer.ProvisionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task Repair_DoesNotRestartAFailedDownloadOnItsOwn()
+        {
+            GivenRepair(enhancerReady: false);
+            GivenAudiobook("Book.m4b");
+            _enhancer.Setup(enhancer => enhancer.GetStatusAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new EnhancerStatus(EnhancerState.Failed, 0, null, null, null, "disk full"));
+
+            var result = await BuildService().EnqueueRepairAsync(7);
+
+            Assert.Contains("disk full", result.Reason);
+            _enhancer.Verify(enhancer => enhancer.ProvisionAsync(It.IsAny<CancellationToken>()), Times.Never);
         }
 
         /// <summary>The cross-kind guarantee: a converting book cannot also start repairing.</summary>

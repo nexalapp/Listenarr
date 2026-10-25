@@ -98,7 +98,7 @@ namespace Listenarr.Infrastructure.Persistence.Configurations
             builder.Property(e => e.AudioAuditOnImport).HasDefaultValue(false);
             builder.Property(e => e.AudioQualityProbeEnabled).HasDefaultValue(true);
             builder.Property(e => e.GenerativeOfferThresholdDb).HasDefaultValue(25.0);
-            builder.Property(e => e.RepairEnabled).HasDefaultValue(false);
+            builder.Property(e => e.RepairEnabled).HasDefaultValue(true);
             builder.Property(e => e.RepairMusicProtectionEnabled).HasDefaultValue(true);
 
             builder.Property(e => e.FoundBooksWatchFolders)
