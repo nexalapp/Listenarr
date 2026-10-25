@@ -162,6 +162,17 @@ namespace Listenarr.Domain.Configuration
         // because real cleaning only ever removes what was quiet.
         public bool RepairMusicProtectionEnabled { get; set; } = true;
 
+        // Whether a book arriving with broken chapters has them fixed without anyone
+        // asking: once the fix is worked out after import, it is applied. Only imports;
+        // books already in the library are repaired from the Actions menu.
+        public bool AutoRepairChapters { get; set; } = true;
+
+        // Whether a book arriving with damaged audio is repaired without anyone asking,
+        // once the probe after import recommends it. Hours of CPU per book, and the
+        // original goes wherever RepairSourceDisposition says (the archive by default).
+        // Only imports, for the same reason as chapters.
+        public bool AutoRepairAudio { get; set; } = true;
+
         // Folders scanned for complete books that are not in the library: a pack that
         // arrived with more than was asked for, a manual download, an import that was
         // left behind. Empty means every enabled download client's completed path,

@@ -682,8 +682,10 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Scanning
             await _provider.GetRequiredService<IScanJobProcessor>()
                 .ProcessJobAsync(job, CancellationToken.None);
 
-            var queued = await _provider.GetRequiredService<ITagQueueService>()
-                .GetActiveJobForAudiobookAsync(audiobook.Id, CancellationToken.None);
+            // The tag write specifically: the import also queues an audio probe, which
+            // carries the Import trigger so auto-repair can tell it from the sweep's.
+            var queued = await _provider.GetRequiredService<ITagJobRepository>()
+                .GetActiveForAudiobookAsync(audiobook.Id, TagJobKind.Tags, CancellationToken.None);
             Assert.NotNull(queued);
             Assert.Equal(TagTrigger.Automatic, queued!.Trigger);
         }

@@ -123,6 +123,8 @@ public class SqliteMigrationSchemaTests : BaseTests
 
     private const string DiscoverFeedsMigrationId =
         "20261024025626_AddDiscoverFeeds";
+    private const string AutoRepairSettingsMigrationId =
+        "20261025012440_AddAutoRepairSettings";
 
     private const string UnobtainableRecheckDaysMigrationId =
         "20261024233641_AddUnobtainableRecheckDays";
@@ -288,7 +290,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 RepairPipelineMigrationId,
                 SuggestionReleasesMigrationId,
                 DiscoverFeedsMigrationId,
-                UnobtainableRecheckDaysMigrationId
+                UnobtainableRecheckDaysMigrationId,
+                AutoRepairSettingsMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

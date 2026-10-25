@@ -46,6 +46,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     job.Id,
                     report.Verdict,
                     report.Reason);
+                await OfferAutoAudioRepairAsync(job, audiobook, report, services, cancellationToken);
                 return ExecutionOutcome.Succeeded(0, job.FileCount, audiobook.Title);
             }
             catch (InvalidOperationException ex)

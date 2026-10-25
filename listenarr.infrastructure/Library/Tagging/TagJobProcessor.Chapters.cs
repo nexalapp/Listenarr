@@ -200,6 +200,7 @@ namespace Listenarr.Infrastructure.Library.Tagging
                 var planned = await repair.PlanAsync(audiobook.Id, scope, BuildProgress(job.Id, 0, 100), cancellationToken);
                 var withFix = planned?.Files.Count(file => file.Repairable) ?? 0;
                 logger.LogInformation("Chapter planning {JobId}: {Planned} of {Files} file(s) have a fix", job.Id, withFix, job.FileCount);
+                await OfferAutoChapterRepairAsync(job, audiobook, scope, withFix, services, cancellationToken);
                 return ExecutionOutcome.Succeeded(0, withFix, audiobook.Title);
             }
             catch (ChapterSourceUnavailableException ex)

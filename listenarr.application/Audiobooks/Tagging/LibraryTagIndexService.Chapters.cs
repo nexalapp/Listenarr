@@ -43,7 +43,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
         /// book. The queue runs them one at a time, which is what keeps a first pass over
         /// a whole library from hammering Audnexus or the CPU.
         /// </summary>
-        private async Task QueuePlanningAsync(IReadOnlyList<LibraryTagRow> rows, CancellationToken cancellationToken)
+        private async Task QueuePlanningAsync(IReadOnlyList<LibraryTagRow> rows, TagTrigger trigger, CancellationToken cancellationToken)
         {
             if (tagQueue == null)
             {
@@ -54,7 +54,7 @@ namespace Listenarr.Application.Audiobooks.Tagging
             {
                 try
                 {
-                    await tagQueue.EnqueueChapterPlanAsync(book.Key, book.Select(row => row.FileId).ToList(), TagTrigger.Automatic, cancellationToken);
+                    await tagQueue.EnqueueChapterPlanAsync(book.Key, book.Select(row => row.FileId).ToList(), trigger, cancellationToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
