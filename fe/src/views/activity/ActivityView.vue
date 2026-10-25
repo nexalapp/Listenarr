@@ -353,7 +353,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, unref } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, unref, watch } from 'vue'
 import {
   PhActivity,
   PhSpinner,
@@ -701,7 +701,17 @@ const estimateRemainingSeconds = (
 
 const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem => {
   const failed = job.status === 'Failed'
-  const phaseLabel = CONVERSION_PHASE_LABELS[job.phase] ?? 'Converting'
+  const repair = job.kind === 'Repair'
+  const phaseLabel = CONVERSION_PHASE_LABELS[job.phase] ?? (repair ? 'Repairing' : 'Converting')
+  // A repair runs for hours per file; "file 3 of 12" is the number worth watching.
+  const fileDetail = repair
+    ? job.sourceFileCount
+      ? ` · file ${Math.min(job.completedSourceFiles + 1, job.sourceFileCount)} of ${job.sourceFileCount}`
+      : ''
+    : job.sourceFileCount
+      ? ` · ${job.sourceFileCount} files`
+      : ''
+  const client = repair ? 'Audio repair' : 'MP3 to M4B'
 
   return {
     id: `conversion:${job.jobId}`,
@@ -714,13 +724,9 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
     downloadSpeed: 0,
     eta: estimateRemainingSeconds(job.startedAt, job.progress, job.status === 'Running'),
     quality: '',
-    actionLabel: 'Convert to M4B',
-    actionDetail: failed
-      ? undefined
-      : `${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
-    downloadClient: failed
-      ? 'MP3 to M4B'
-      : `MP3 to M4B · ${phaseLabel}${job.sourceFileCount ? ` · ${job.sourceFileCount} files` : ''}`,
+    actionLabel: repair ? 'Repair audio' : 'Convert to M4B',
+    actionDetail: failed ? undefined : `${phaseLabel}${fileDetail}`,
+    downloadClient: failed ? client : `${client} · ${phaseLabel}${fileDetail}`,
     downloadClientId: 'LISTENARR_CONVERSION',
     downloadClientType: 'conversion',
     addedAt: job.enqueuedAt ?? '',
@@ -737,6 +743,7 @@ const convertConversionJobToQueueItem = (job: TrackedConversionJob): QueueItem =
 const CONVERSION_PHASE_LABELS: Record<string, string> = {
   None: 'Waiting',
   Probing: 'Reading source files',
+  Enhancing: 'Enhancing through the model',
   Encoding: 'Encoding',
   Verifying: 'Verifying',
   Publishing: 'Publishing',
@@ -821,6 +828,16 @@ const TAG_KIND_LABELS: Record<
     action: 'Transcribe',
     client: 'Transcript',
     phases: { None: 'Waiting', Reading: 'Listening to the opening and closing' },
+  },
+  AuditFurther: {
+    action: 'Transcribe further',
+    client: 'Transcript',
+    phases: { None: 'Waiting', Reading: 'Hunting for the credits, out to five minutes' },
+  },
+  Probe: {
+    action: 'Probe audio quality',
+    client: 'Audio quality',
+    phases: { None: 'Waiting', Reading: 'Listening for hiss, muffle and codec damage' },
   },
 }
 
@@ -970,6 +987,32 @@ const audiobookTitleMap = computed(() => {
   }
   return map
 })
+
+/**
+ * Re-read the library when a row names a book it does not hold. The list is fetched once
+ * on mount, so a fetch that failed - the server restarting under an open tab - or a book
+ * imported since left every such row reading "Audiobook #152" until a reload. Throttled:
+ * a book removed while its job was queued is never going to appear.
+ */
+const LIBRARY_REFETCH_INTERVAL_MS = 60_000
+let lastLibraryRefetch = 0
+const hasUnnamedRows = computed(() =>
+  allActivityItems.value.some(
+    (item) => item.audiobookId && !audiobookTitleMap.value.has(item.audiobookId),
+  ),
+)
+const refetchLibraryIfRowsUnnamed = async () => {
+  const now = Date.now()
+  if (!hasUnnamedRows.value || now - lastLibraryRefetch < LIBRARY_REFETCH_INTERVAL_MS) return
+  lastLibraryRefetch = now
+  try {
+    await libraryStore.fetchLibrary()
+  } catch {
+    // The row keeps its numbered label; the next refresh tries again.
+  }
+}
+// A new row arrives over SignalR between refreshes, so react to it as well.
+watch(hasUnnamedRows, refetchLibraryIfRowsUnnamed)
 
 const getDisplayTitle = (item: QueueItem): string => {
   if (item.audiobookId) {
@@ -1228,6 +1271,7 @@ const refreshQueue = async () => {
       downloadsStore.loadDownloads(),
     ])
     applyQueueSnapshot(queueSnapshot)
+    await refetchLibraryIfRowsUnnamed()
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'ActivityView',

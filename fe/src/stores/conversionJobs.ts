@@ -27,8 +27,11 @@ export interface TrackedConversionJob {
   audiobookId: number
   status: ConversionJobStatus
   phase: string
+  /** 'Convert' or 'Repair'. */
+  kind: string
   progress: number
   sourceFileCount: number
+  completedSourceFiles: number
   chapterCount: number
   error?: string | null
   failureKind?: string | null
@@ -90,10 +93,12 @@ function toTracked(
     audiobookId: update.audiobookId ?? existing?.audiobookId ?? 0,
     status,
     phase: update.phase ?? existing?.phase ?? 'None',
+    kind: update.kind ?? existing?.kind ?? 'Convert',
     // A completed job is complete regardless of the last progress frame it
     // happened to report, which may have been sent before the final flush.
     progress: status === 'Completed' ? 100 : progress,
     sourceFileCount: update.sourceFileCount ?? existing?.sourceFileCount ?? 0,
+    completedSourceFiles: update.completedSourceFiles ?? existing?.completedSourceFiles ?? 0,
     chapterCount: update.chapterCount ?? existing?.chapterCount ?? 0,
     error: update.error ?? null,
     failureKind: update.failureKind ?? null,
@@ -192,6 +197,16 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     return response
   }
 
+  /** Queue repairs for a selection; they report through this store like conversions. */
+  async function repairMany(audiobookIds: number[]) {
+    const response = await apiService.repairAudiobooksBulk(audiobookIds)
+    if (response.queuedCount > 0) {
+      await refresh()
+    }
+
+    return response
+  }
+
   async function retry(jobId: string) {
     const response = await apiService.retryConversion(jobId)
     if (response.queued) {
@@ -224,6 +239,7 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
     refresh,
     convert,
     convertMany,
+    repairMany,
     retry,
     start,
     stop,

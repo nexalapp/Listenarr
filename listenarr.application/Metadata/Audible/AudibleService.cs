@@ -102,6 +102,24 @@ namespace Listenarr.Application.Metadata.Audible
             return await _metadataWorkflow.GetBookMetadataAsync(asin, region, language);
         }
 
+        /// <summary>
+        /// Metadata for a set of ASINs in one request per fifty, which is what a chart
+        /// page needs: twenty ids and nothing else. Results come back in no particular
+        /// order and may be short — Audible drops an ASIN it no longer sells — so the
+        /// caller matches them up by ASIN rather than by position.
+        /// </summary>
+        public virtual async Task<List<AudibleSearchResult>> GetBooksByAsinsAsync(
+            IEnumerable<string> asins,
+            string region = "us")
+        {
+            var books = await _metadataWorkflow.GetBooksMetadataByAsinsAsync(asins, region);
+            return books
+                .Select(AudibleProductMapper.MapBookResponseToSearchResult)
+                .Where(result => result != null)
+                .Cast<AudibleSearchResult>()
+                .ToList();
+        }
+
         public virtual async Task<AudibleSearchResponse?> SearchByTitleAsync(string title, int page = 1, int limit = 50, string region = "us", string? language = null)
         {
             return await _productSearchWorkflow.SearchByTitleAsync(title, page, limit, region, language);

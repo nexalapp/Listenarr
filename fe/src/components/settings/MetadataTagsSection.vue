@@ -120,6 +120,78 @@
       </FormRow>
 
       <FormRow
+        label="Audio quality probe"
+        help="Decode a couple of minutes of each book and judge what the recording sounds like — hiss, muffle, codec damage. Seconds of CPU per book, nothing written to any file. Feeds the audio part of the health score; while off, it stays unknown."
+      >
+        <label class="tags-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.audioQualityProbeEnabled ?? true"
+            @change="
+              (e) => updateField('audioQualityProbeEnabled', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span>Probe new imports, and sweep the existing library once</span>
+        </label>
+      </FormRow>
+
+      <FormRow
+        label="Audio repair"
+        help="Repair a damaged recording by running it through a generative speech-enhancement model, per book, after an A/B listen. Enabling this downloads the model into the config volume (about 4 GB, once); a repair holds 5–10 GB of memory while it runs and takes one to two times the book's length."
+      >
+        <label class="tags-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.repairEnabled ?? false"
+            @change="(e) => toggleRepair((e.target as HTMLInputElement).checked)"
+          />
+          <span>Offer audio repair, and provision the model on first enable</span>
+        </label>
+        <div v-if="enhancerStatus" class="enhancer-status">
+          <template v-if="enhancerStatus.state === 'Provisioning'">
+            Downloading the model: {{ enhancerStatus.provisionStep }} ({{
+              Math.round(enhancerStatus.provisionProgress)
+            }}%)
+          </template>
+          <template v-else-if="enhancerStatus.state === 'Ready'">
+            Model ready{{
+              enhancerStatus.diskBytes
+                ? ` · ${(enhancerStatus.diskBytes / 1_000_000_000).toFixed(1)} GB on disk`
+                : ''
+            }}
+          </template>
+          <template v-else-if="enhancerStatus.state === 'Failed'">
+            Provisioning failed: {{ enhancerStatus.error }}
+            <button type="button" class="btn btn-sm btn-secondary" @click="provision">
+              Try again
+            </button>
+          </template>
+        </div>
+      </FormRow>
+
+      <FormRow
+        v-if="settings.repairEnabled"
+        label="Repaired originals"
+        help="A repair is a lossy, opinionated rewrite; the original is the only way back. Archive uses the same location as conversion."
+      >
+        <select
+          class="form-select"
+          :value="settings.repairSourceDisposition ?? 'Archive'"
+          @change="
+            (e) =>
+              updateField(
+                'repairSourceDisposition',
+                (e.target as HTMLSelectElement).value as 'Archive' | 'Keep' | 'Delete',
+              )
+          "
+        >
+          <option value="Archive">Archive them</option>
+          <option value="Keep">Leave them on disk</option>
+          <option value="Delete">Delete them</option>
+        </select>
+      </FormRow>
+
+      <FormRow
         label="Tag Mapping"
         help="What goes into each tag, written with the same pattern language as the naming patterns. An empty token takes its brackets and separators with it, so one pattern serves a series book and a standalone alike."
       >
@@ -185,6 +257,7 @@ import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type {
   ApplicationSettings,
+  EnhancerStatusView,
   TagDefinition,
   TagMapping,
   TagWriteMode,
@@ -195,6 +268,54 @@ const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{
   'update:settings': [value: Partial<ApplicationSettings>]
 }>()
+
+const enhancerStatus = ref<EnhancerStatusView | null>(null)
+let enhancerPoll: ReturnType<typeof setTimeout> | null = null
+
+function toggleRepair(enabled: boolean) {
+  updateField('repairEnabled', enabled)
+  if (enabled) {
+    void provision()
+  }
+}
+
+async function provision() {
+  try {
+    enhancerStatus.value = await apiService.provisionEnhancer()
+    pollEnhancer()
+  } catch (err) {
+    logger.error('Could not start provisioning the enhancer', err)
+  }
+}
+
+function pollEnhancer() {
+  if (enhancerPoll != null) clearTimeout(enhancerPoll)
+  enhancerPoll = setTimeout(async () => {
+    try {
+      enhancerStatus.value = await apiService.getEnhancerStatus()
+      if (enhancerStatus.value?.state === 'Provisioning') pollEnhancer()
+    } catch (err) {
+      logger.error('Could not read the enhancer status', err)
+    }
+  }, 4000)
+}
+
+onMounted(async () => {
+  // Show where the model stands if repair is already on; a fresh page should not
+  // claim NotProvisioned while a download is half way.
+  if (props.settings.repairEnabled) {
+    try {
+      enhancerStatus.value = await apiService.getEnhancerStatus()
+      if (enhancerStatus.value?.state === 'Provisioning') pollEnhancer()
+    } catch (err) {
+      logger.error('Could not read the enhancer status', err)
+    }
+  }
+})
+
+onBeforeUnmount(() => {
+  if (enhancerPoll != null) clearTimeout(enhancerPoll)
+})
 
 const definitions = ref<TagDefinition[]>([])
 const loading = ref(true)
@@ -359,6 +480,15 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.enhancer-status {
+  margin-top: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .tags-toggle {
   display: flex;
   align-items: center;

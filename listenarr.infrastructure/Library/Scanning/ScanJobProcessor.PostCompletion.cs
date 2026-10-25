@@ -104,6 +104,35 @@ public partial class ScanJobProcessor
             await QueueTagWriteIfWantedAsync(audiobook, cancellationToken);
             await JudgeChaptersAsync(audiobook, cancellationToken);
             await QueueAudioAuditIfWantedAsync(audiobook, cancellationToken);
+            await QueueAudioQualityProbeIfWantedAsync(audiobook, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Offer the book to the audio-quality probe. The service refuses on its own when
+    /// the setting is off. A scan is also how changed files get re-probed: the stored
+    /// verdict's identity no longer matches, and this is where fresh files arrive.
+    /// </summary>
+    private async Task QueueAudioQualityProbeIfWantedAsync(Audiobook audiobook, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var prober = scope.ServiceProvider.GetService<IAudioQualityService>();
+            if (prober == null)
+            {
+                return;
+            }
+
+            var result = await prober.EnqueueAsync(audiobook.Id, TagTrigger.Automatic, cancellationToken);
+            if (result.Queued)
+            {
+                _logger.LogInformation("Queued audio-quality probe {JobId} for audiobook {AudiobookId} after scan", result.JobId, audiobook.Id);
+            }
+        }
+        catch (Exception exception) when (WorkerExceptionClassifier.IsNonFatal(exception))
+        {
+            _logger.LogDebug(exception, "Could not offer audiobook {AudiobookId} to the audio-quality probe after its scan", audiobook.Id);
         }
     }
 

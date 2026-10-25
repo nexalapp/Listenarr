@@ -18,6 +18,8 @@
 import type {
   SearchResult,
   ConversionJobUpdate,
+  EnhancerStatusView,
+  RepairPreviewView,
   BulkConversionResponse,
   LibraryTagTable,
   ChapterRepairPreview,
@@ -56,6 +58,12 @@ import type {
   AuthorCatalogResponse,
   SuggestionSnapshot,
   SuggestionRefreshStatus,
+  DiscoverFeed,
+  DiscoverRefreshStatus,
+  DiscoverSectionCatalog,
+  DiscoverSelectedSection,
+  DiscoverSelection,
+  DiscoverSource,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
   MonitorAuthorResponse,
@@ -486,6 +494,42 @@ class ApiService {
   /** Starts fetching missing/stale catalogs in the background; 409 when already running. */
   async refreshSuggestions(): Promise<SuggestionRefreshStatus> {
     return this.request<SuggestionRefreshStatus>('/suggestions/refresh', { method: 'POST' })
+  }
+
+  // ---- Discover --------------------------------------------------------------
+
+  /** Cached rows only; a refresh is what goes to Audible or the forum. */
+  async getDiscover(source: DiscoverSource): Promise<DiscoverFeed> {
+    return this.request<DiscoverFeed>(`/discover/${source}`)
+  }
+
+  /** Reads the source's own index of sections, cached server-side for a few minutes. */
+  async getDiscoverSections(source: DiscoverSource): Promise<DiscoverSectionCatalog> {
+    return this.request<DiscoverSectionCatalog>(`/discover/${source}/sections`)
+  }
+
+  async saveDiscoverSections(
+    source: DiscoverSource,
+    selection: { sections?: DiscoverSelectedSection[]; pagesPerSection?: number },
+  ): Promise<DiscoverSelection> {
+    return this.request<DiscoverSelection>(`/discover/${source}/sections`, {
+      method: 'PUT',
+      body: JSON.stringify(selection),
+    })
+  }
+
+  async getDiscoverRefreshStatus(source: DiscoverSource): Promise<DiscoverRefreshStatus> {
+    return this.request<DiscoverRefreshStatus>(`/discover/${source}/refresh`)
+  }
+
+  /** Re-reads the head of every followed section; 409 when a fetch is already running. */
+  async refreshDiscover(source: DiscoverSource): Promise<DiscoverRefreshStatus> {
+    return this.request<DiscoverRefreshStatus>(`/discover/${source}/refresh`, { method: 'POST' })
+  }
+
+  /** Reads one more page of every followed section. */
+  async loadMoreDiscover(source: DiscoverSource): Promise<DiscoverRefreshStatus> {
+    return this.request<DiscoverRefreshStatus>(`/discover/${source}/more`, { method: 'POST' })
   }
 
   async getAuthorCatalog(
@@ -1924,6 +1968,70 @@ class ApiService {
   ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
     const query = listenFurther ? '?listenFurther=true' : ''
     return this.request(`/tagging/audiobooks/${audiobookId}/audit${query}`, { method: 'POST' })
+  }
+
+  /** Queue an audio-quality probe: a couple of minutes decoded, the verdict lands on the book. */
+  async probeAudioQuality(
+    audiobookId: number,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/tagging/audiobooks/${audiobookId}/probe`, { method: 'POST' })
+  }
+
+  /**
+   * Re-measure a book's health facts now: tags and naming re-read inline, a fresh
+   * audio-quality probe queued.
+   */
+  async refreshHealth(audiobookId: number): Promise<{ refreshed: boolean; probeQueued: boolean }> {
+    return this.request(`/library/${audiobookId}/health/refresh`, { method: 'POST' })
+  }
+
+  // ---- Audio repair -------------------------------------------------------------------
+
+  /** Where the enhancement model stands: provisioned, downloading, failed. */
+  async getEnhancerStatus(): Promise<EnhancerStatusView> {
+    return this.request('/repair/enhancer')
+  }
+
+  /** Download and install the enhancement model (~4 GB, once). Poll the status after. */
+  async provisionEnhancer(): Promise<EnhancerStatusView> {
+    return this.request('/repair/enhancer/provision', { method: 'POST' })
+  }
+
+  /** Enhance ninety seconds of the book for an A/B listen. Poll the preview until ready. */
+  async startRepairPreview(
+    audiobookId: number,
+    fileId?: number,
+    startSeconds?: number,
+  ): Promise<RepairPreviewView> {
+    return this.request(`/repair/audiobooks/${audiobookId}/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ fileId, startSeconds }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  async getRepairPreview(previewId: string): Promise<RepairPreviewView> {
+    return this.request(`/repair/previews/${previewId}`)
+  }
+
+  /** A ready preview's clip, as a URL the audio element range-requests itself. */
+  buildRepairPreviewClipUrl(previewId: string, variant: 'before' | 'after'): string {
+    return `${API_BASE_URL}/repair/previews/${previewId}/clip?variant=${variant}`
+  }
+
+  /** Queue the full repair: hours to days of model time, tracked in Activity. */
+  async repairAudio(
+    audiobookId: number,
+  ): Promise<{ queued: boolean; jobId?: string; reason?: string }> {
+    return this.request(`/repair/audiobooks/${audiobookId}`, { method: 'POST' })
+  }
+
+  /** Queue full repairs for a selection, without previews. Reported per book, like bulk conversion. */
+  async repairAudiobooksBulk(audiobookIds: number[]): Promise<BulkConversionResponse> {
+    return this.request<BulkConversionResponse>('/repair/audiobooks/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ audiobookIds }),
+    })
   }
 
   /**

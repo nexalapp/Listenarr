@@ -296,6 +296,28 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("AudioAuditedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AudioQuality")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Unknown");
+
+                    b.Property<string>("AudioQualityIdentity")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AudioQualityMetricsJson")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AudioQualityProbedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AudioQualityReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
                     b.Property<double?>("AudnexusRating")
                         .HasColumnType("REAL");
 
@@ -324,6 +346,23 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Genres")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("HealthCheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("HealthNamingClean")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("HealthNamingReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("HealthTagsClean")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("HealthTagsReason")
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ImageUrl")
@@ -775,6 +814,15 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("CompletedSourceFiles")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("EnhancerVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("EnqueuedAt")
                         .HasColumnType("TEXT");
 
@@ -784,6 +832,13 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<string>("FailureKind")
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Convert");
 
                     b.Property<DateTime?>("LeaseExpiresAt")
                         .HasColumnType("TEXT");
@@ -856,7 +911,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("AudiobookId");
 
-                    b.HasIndex("Status", "NextAttemptAt", "LeaseExpiresAt");
+                    b.HasIndex("Kind", "Status", "NextAttemptAt", "LeaseExpiresAt");
 
                     b.ToTable("ConversionJobs", (string)null);
                 });
@@ -1585,6 +1640,55 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("QualityProfiles");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.Repair.RepairFileCheckpoint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AudiobookFileId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CompletedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("EnhancedLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EnhancedPath")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EnhancerVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("SourceLastWriteUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SourceLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourcePath")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("JobId", "AudiobookFileId")
+                        .IsUnique();
+
+                    b.ToTable("RepairFileCheckpoints", (string)null);
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.RootFolder", b =>
                 {
                     b.Property<int>("Id")
@@ -2180,6 +2284,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(false);
 
+                    b.Property<bool>("AudioQualityProbeEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("AudnexusApiUrl")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -2300,6 +2409,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<double>("GenerativeOfferThresholdDb")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("REAL")
+                        .HasDefaultValue(25.0);
+
                     b.Property<int>("HistoryRetentionDays")
                         .HasColumnType("INTEGER");
 
@@ -2353,6 +2467,19 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("ProwlarrUrl")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("RepairEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("RepairMusicProtectionEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<int>("RepairSourceDisposition")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("SeriesAuthorOverridesJson")
                         .IsRequired()

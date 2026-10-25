@@ -431,7 +431,11 @@ export interface ConversionJobUpdate {
   phase?: string
   progress?: number
   trigger?: string
+  /** 'Convert' or 'Repair': same queue, different work and labels. */
+  kind?: string
   sourceFileCount?: number
+  /** Repair only: how many source files have finished enhancement. */
+  completedSourceFiles?: number
   chapterCount?: number
   error?: string | null
   failureKind?: string | null
@@ -618,6 +622,8 @@ export interface LibraryTagRow {
   /** Someone listened and overruled the verdict for these files. */
   audioAuditAccepted?: boolean
   audioAuditHeardNarrator?: string | null
+  /** The book is worth a generative audio repair (the probe's verdict, at the offer threshold). */
+  audioRepairRecommended?: boolean
 }
 
 /** One chapter as a repair would write it. */
@@ -773,6 +779,16 @@ export interface ApplicationSettings {
   transcriptionModel?: string
   /** Whether every newly scanned book is listened to and judged against its record. */
   audioAuditOnImport?: boolean
+  /** Probe what each recording sounds like (hiss, muffle, codec damage); feeds the health score. */
+  audioQualityProbeEnabled?: boolean
+  /** How many dB darker than natural before the generative repair is suggested. */
+  generativeOfferThresholdDb?: number
+  /** Whether audio repair exists on this install; enabling it downloads the model (~4 GB, once). */
+  repairEnabled?: boolean
+  /** What happens to the originals once a repair is verified and published. */
+  repairSourceDisposition?: 'Archive' | 'Keep' | 'Delete'
+  /** Splice the original back where the model deleted a loud passage (what it does to music). */
+  repairMusicProtectionEnabled?: boolean
   foundBooksWatchFolders?: string[]
   foundBooksScanIntervalMinutes?: number
   foundBooksAutoAdd?: boolean
@@ -1030,6 +1046,73 @@ export interface SuggestionRefreshStatus {
   finishedAt?: string
   failed: number
 }
+
+/** One of the discovery tabs' sources, as the API addresses it. */
+export type DiscoverSource = 'charts' | 'abook'
+
+/** A chart category or a forum board the user can follow. */
+export interface DiscoverSectionOption {
+  id: string
+  name: string
+  slug?: string
+  group?: string
+  count?: number
+}
+
+/** What a source offers to follow, and what is followed now. */
+export interface DiscoverSectionCatalog {
+  source: string
+  options: DiscoverSectionOption[]
+  selected: string[]
+  pagesPerSection: number
+  available: boolean
+  unavailable?: string
+}
+
+export interface DiscoverSelectedSection {
+  id: string
+  name: string
+  slug?: string
+}
+
+export interface DiscoverSelection {
+  sections: DiscoverSelectedSection[]
+  pagesPerSection: number
+}
+
+/** A book a source offered, with what the source said that a catalogue cannot know. */
+export interface DiscoverEntry {
+  rank: number
+  postedAt?: string
+  sourceUrl?: string
+  sourceNote?: string
+  /** False while a forum post is still only the words of its title. */
+  resolved: boolean
+  book: SuggestedBook
+}
+
+export interface DiscoverSectionFeed {
+  sectionId: string
+  sectionName: string
+  pagesFetched: number
+  totalItems?: number
+  lastFetchedAt?: string
+  lastError?: string
+  /** How many of the section's books are already in the library. */
+  held: number
+  books: DiscoverEntry[]
+}
+
+export interface DiscoverFeed {
+  source: string
+  sections: DiscoverSectionFeed[]
+  pagesPerSection: number
+  available: boolean
+  unavailable?: string
+  status: DiscoverRefreshStatus
+}
+
+export type DiscoverRefreshStatus = SuggestionRefreshStatus
 
 export interface RelatedAuthorItem {
   asin?: string
@@ -1296,6 +1379,69 @@ export interface Audiobook {
   audioAuditHeardAuthor?: string | null
   audioAuditHeardNarrator?: string | null
   audioAuditedAt?: string | null
+  /** What the recording sounds like; absent until a probe has run. */
+  audioQuality?: AudioQualityVerdict | null
+  audioQualityReason?: string | null
+  audioQualityProbedAt?: string | null
+  /** The book summed up as a number, 0–100 over the checks that have run; null while none have. */
+  /** The book is worth a generative audio repair (the probe's verdict, at the offer threshold). */
+  audioRepairRecommended?: boolean
+  healthScore?: number | null
+  /** Each category's state, list responses only; the detail response carries `health` instead. */
+  healthTags?: HealthState | null
+  healthTagsReason?: string | null
+  healthNaming?: HealthState | null
+  healthNamingReason?: string | null
+  healthChapters?: HealthState | null
+  healthChaptersReason?: string | null
+  healthAudio?: HealthState | null
+  healthAudioReason?: string | null
+  /** The four categories and the score, detail responses only. */
+  health?: AudiobookHealth | null
+}
+
+/** What the recording sounds like, as the API spells it. */
+export type AudioQualityVerdict =
+  | 'clean'
+  | 'hiss'
+  | 'muffled'
+  | 'hiss-and-muffled'
+  | 'codec-damaged'
+  | 'production-audio'
+
+export type HealthState = 'unknown' | 'good' | 'warn' | 'bad'
+
+export interface HealthCategoryView {
+  state: HealthState
+  reason: string | null
+}
+
+export interface AudiobookHealth {
+  score: number | null
+  tags: HealthCategoryView
+  naming: HealthCategoryView
+  chapters: HealthCategoryView
+  audio: HealthCategoryView
+  checkedAt: string | null
+}
+
+/** Where the audio-repair enhancement model stands on this install. */
+export interface EnhancerStatusView {
+  state: 'NotProvisioned' | 'Provisioning' | 'Ready' | 'Failed' | string
+  provisionProgress: number
+  provisionStep?: string | null
+  pipelineVersion?: string | null
+  diskBytes?: number | null
+  error?: string | null
+}
+
+/** One repair preview's standing; its clips are fetched by URL once ready. */
+export interface RepairPreviewView {
+  previewId: string
+  audiobookId: number
+  state: 'Pending' | 'Enhancing' | 'Ready' | 'Failed' | string
+  detail?: string | null
+  ready: boolean
 }
 
 /** The audio audit's verdict as the API spells it. */

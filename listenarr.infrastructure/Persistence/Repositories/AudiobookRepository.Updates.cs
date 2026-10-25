@@ -157,6 +157,65 @@ public partial class AudiobookRepository
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task SetAudioQualityAsync(int audiobookId, AudioQualityRecord quality, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(quality);
+
+        var existing = await _db.Audiobooks.FirstOrDefaultAsync(candidate => candidate.Id == audiobookId, ct);
+        if (existing == null)
+        {
+            return;
+        }
+
+        existing.AudioQuality = quality.Verdict;
+        existing.AudioQualityReason = Truncate(quality.Reason, 512);
+        existing.AudioQualityMetricsJson = Truncate(quality.MetricsJson, 1024);
+        existing.AudioQualityIdentity = Truncate(quality.FileIdentity, 256);
+        existing.AudioQualityProbedAt = quality.ProbedAtUtc;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task SetTagNamingHealthAsync(int audiobookId, TagNamingHealthRecord health, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(health);
+
+        var existing = await _db.Audiobooks.FirstOrDefaultAsync(candidate => candidate.Id == audiobookId, ct);
+        if (existing == null)
+        {
+            return;
+        }
+
+        var tagsReason = Truncate(health.TagsReason, 512);
+        var namingReason = Truncate(health.NamingReason, 512);
+        if (existing.HealthTagsClean == health.TagsClean
+            && existing.HealthTagsReason == tagsReason
+            && existing.HealthNamingClean == health.NamingClean
+            && existing.HealthNamingReason == namingReason)
+        {
+            // The scan hook rebuilds the tag index on every import; a row dirtied for an
+            // unchanged answer would make that a thousand writes a day for nothing.
+            return;
+        }
+
+        existing.HealthTagsClean = health.TagsClean;
+        existing.HealthTagsReason = tagsReason;
+        existing.HealthNamingClean = health.NamingClean;
+        existing.HealthNamingReason = namingReason;
+        existing.HealthCheckedAt = health.CheckedAtUtc;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<int>> GetIdsNeedingAudioQualityProbeAsync(string currentVersionSuffix, int limit, CancellationToken ct = default)
+    {
+        return await _db.Audiobooks
+            .Where(book => book.Files != null && book.Files.Any())
+            .Where(book => book.AudioQualityIdentity == null || !book.AudioQualityIdentity.EndsWith(currentVersionSuffix))
+            .OrderBy(book => book.Id)
+            .Take(limit)
+            .Select(book => book.Id)
+            .ToListAsync(ct);
+    }
+
     private static string? Truncate(string? value, int max) =>
         value == null || value.Length <= max ? value : value[..max];
 

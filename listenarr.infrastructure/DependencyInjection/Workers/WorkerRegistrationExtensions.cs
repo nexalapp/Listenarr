@@ -10,6 +10,8 @@
 using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Infrastructure.FoundBooks.Workers;
 using Listenarr.Infrastructure.Library.Suggestions.Workers;
+using Listenarr.Infrastructure.Library.Discover.Workers;
+using Listenarr.Infrastructure.Library.Quality;
 using Listenarr.Infrastructure.Library.Series;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Infrastructure.Search.NzbKing;
@@ -79,6 +81,14 @@ internal static class WorkerRegistrationExtensions
             ITagJobProcessor,
             TagBackgroundService>(services);
 
+        // The one-time walk of the existing library through the audio-quality probe.
+        // Its jobs run on the tag worker above; this only keeps a trickle of them queued.
+        services.AddHostedService<AudioQualitySweepService>();
+
+        // The repair lane: same queue as conversion, own serial worker, so a days-long
+        // repair cannot park ordinary conversions behind it.
+        services.AddHostedService<Listenarr.Infrastructure.Library.Repair.RepairBackgroundService>();
+
         AddHostedProcessor<UnmatchedScanProcessor, IUnmatchedScanProcessor, UnmatchedScanBackgroundService>(services);
 
         // Found books: a periodic read-only look at the download folders for complete
@@ -103,6 +113,13 @@ internal static class WorkerRegistrationExtensions
             SuggestionReleaseCheckProcessor,
             ISuggestionReleaseCheckProcessor,
             SuggestionReleaseCheckBackgroundService>(services);
+
+        // Discovery: one chart page, board page or metadata lookup per interval, so a
+        // followed chart fills out over an hour instead of in one burst at startup.
+        AddHostedProcessor<
+            DiscoverFetchProcessor,
+            IDiscoverFetchProcessor,
+            DiscoverBackgroundService>(services);
         return services;
     }
 

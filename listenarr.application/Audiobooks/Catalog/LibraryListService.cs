@@ -19,6 +19,8 @@
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Domain.Audiobooks.Audit;
 using Listenarr.Domain.Audiobooks.Chapters;
+using Listenarr.Domain.Audiobooks.Health;
+using Listenarr.Domain.Audiobooks.Quality;
 
 namespace Listenarr.Application.Audiobooks.Catalog
 {
@@ -37,6 +39,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
         private readonly IAudiobookFileRepository _audiobookFileRepository;
         private readonly IQualityProfileRepository _qualityProfileRepository;
         private readonly IDownloadRepository _downloadRepository;
+        private readonly IConfigurationService? _configurationService;
         private readonly ISuggestionReleaseRepository _releaseChecks;
 
         public LibraryListService(
@@ -44,8 +47,10 @@ namespace Listenarr.Application.Audiobooks.Catalog
             IAudiobookFileRepository audiobookFileRepository,
             IQualityProfileRepository qualityProfileRepository,
             IDownloadRepository downloadRepository,
-            ISuggestionReleaseRepository releaseChecks)
+            ISuggestionReleaseRepository releaseChecks,
+            IConfigurationService? configurationService = null)
         {
+            _configurationService = configurationService;
             _audiobookRepository = audiobookRepository;
             _audiobookFileRepository = audiobookFileRepository;
             _qualityProfileRepository = qualityProfileRepository;
@@ -56,6 +61,9 @@ namespace Listenarr.Application.Audiobooks.Catalog
         public async Task<IReadOnlyList<LibraryAudiobookListItem>> GetAllAsync()
         {
             var allAudiobooks = await _audiobookRepository.GetAllAsync();
+            var repairOfferThresholdDb = _configurationService == null
+                ? AudioQualityThresholds.Default.GenerativeDeficitDb
+                : (await _configurationService.GetApplicationSettingsAsync()).GenerativeOfferThresholdDb;
             var audiobooks = allAudiobooks
                 .OrderBy(a => a.Title)
                 .ToList();
@@ -129,6 +137,18 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     qualityProfilesById.TryGetValue(a.QualityProfileId.Value, out qualityProfile);
                 }
 
+                chapterHealthById.TryGetValue(a.Id, out var chapterSummary);
+                var health = AudiobookHealth.Judge(new AudiobookHealthFacts(
+                    a.AudioAuditVerdict,
+                    AudioAuditAcceptance.IsAccepted(a),
+                    a.HealthTagsClean,
+                    a.HealthTagsReason,
+                    a.HealthNamingClean,
+                    a.HealthNamingReason,
+                    chapterSummary?.Health ?? ChapterHealth.Unknown,
+                    a.AudioQuality,
+                    a.AudioQualityReason));
+
                 return new LibraryAudiobookListItem
                 {
                     Id = a.Id,
@@ -170,18 +190,31 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     QualityProfileId = a.QualityProfileId,
                     AuthorAsins = a.AuthorAsins?.ToArray(),
                     Wanted = wanted,
+                    ChapterHealth = chapterSummary == null ? null : ChapterHealthNames.Of(chapterSummary.Health),
                     Unobtainable = unobtainable,
                     UnobtainableReason = unobtainable ? availabilityCheck?.Detail : null,
                     UnobtainableCheckedAt = unobtainable ? availabilityCheck?.CheckedAt : null,
-                    ChapterHealth = chapterHealthById.TryGetValue(a.Id, out var chapterSummary)
-                        ? ChapterHealthNames.Of(chapterSummary.Health)
-                        : null,
                     ChapterRepairable = chapterSummary?.Repairable ?? false,
                     NotFoundFiles = notFoundById.TryGetValue(a.Id, out var notFound) ? notFound : 0,
                     AudioAudit = AudioAuditVerdictNames.Of(a.AudioAuditVerdict),
                     AudioAuditReason = a.AudioAuditReason,
                     AudioAuditHeardNarrator = a.AudioAuditHeardNarrator,
                     AudioAuditAccepted = AudioAuditAcceptance.IsAccepted(a),
+                    AudioQuality = a.AudioQuality == Domain.Audiobooks.Quality.AudioQuality.Unknown
+                        ? null
+                        : AudioQualityNames.Of(a.AudioQuality),
+                    AudioQualityReason = a.AudioQualityReason,
+                    AudioRepairRecommended = AudioRepairRecommendation.Of(
+                        a.AudioQuality, a.AudioQualityMetricsJson, repairOfferThresholdDb),
+                    HealthScore = health.Score,
+                    HealthTags = AudiobookHealth.NameOf(health.Tags.State),
+                    HealthTagsReason = health.Tags.Reason,
+                    HealthNaming = AudiobookHealth.NameOf(health.Naming.State),
+                    HealthNamingReason = health.Naming.Reason,
+                    HealthChapters = AudiobookHealth.NameOf(health.Chapters.State),
+                    HealthChaptersReason = health.Chapters.Reason,
+                    HealthAudio = AudiobookHealth.NameOf(health.Audio.State),
+                    HealthAudioReason = health.Audio.Reason,
                     // Cheap to carry and the cards show it: without these a book's rating
                     // is known only to its own page, and the badge on the cover never appears.
                     AudibleRatingOverall = a.AudibleRatingOverall,

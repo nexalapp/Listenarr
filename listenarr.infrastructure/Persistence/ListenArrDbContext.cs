@@ -17,6 +17,7 @@
  */
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Infrastructure.Persistence.Configurations;
+using Listenarr.Domain.Audiobooks.Repair;
 
 namespace Listenarr.Infrastructure.Persistence
 {
@@ -34,6 +35,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<LibraryDirectoryOwnershipPathMigration> LibraryDirectoryOwnershipPathMigrations { get; set; } = null!;
         public DbSet<MoveScanHandoff> MoveScanHandoffs { get; set; } = null!;
         public DbSet<ConversionJob> ConversionJobs { get; set; } = null!;
+        public DbSet<RepairFileCheckpoint> RepairFileCheckpoints { get; set; } = null!;
         public DbSet<TagJob> TagJobs { get; set; } = null!;
         public DbSet<Listenarr.Domain.FoundBooks.FoundBook> FoundBooks { get; set; } = null!;
         public DbSet<ApplicationSettings> ApplicationSettings { get; set; } = null!;
@@ -64,6 +66,8 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; } = null!;
         public DbSet<SeriesCacheEntry> SeriesCacheEntries { get; set; } = null!;
         public DbSet<UserSession> UserSessions { get; set; } = null!;
+        public DbSet<Listenarr.Domain.Audiobooks.Discover.DiscoverSection> DiscoverSections { get; set; } = null!;
+        public DbSet<Listenarr.Domain.Audiobooks.Discover.DiscoverItem> DiscoverItems { get; set; } = null!;
 
         public ListenArrDbContext(DbContextOptions<ListenArrDbContext> options)
             : base(options)

@@ -122,6 +122,25 @@
                 ><small>MP3 books only; M4B books are skipped</small></span
               >
             </button>
+            <button
+              type="button"
+              class="actions-option"
+              :disabled="repairing || repairSelection.length === 0"
+              :title="
+                repairSelection.length === 0
+                  ? 'None of the selected books is a repair candidate'
+                  : `Queue audio repairs for ${repairSelection.length} repair candidate(s)`
+              "
+              @click="pick(confirmBulkRepair)"
+            >
+              <PhWaveform />
+              <span
+                ><strong>Repair Audio</strong
+                ><small
+                  >{{ repairSelection.length }} repair candidate(s); others are skipped</small
+                ></span
+              >
+            </button>
 
             <div class="actions-group">Chapters</div>
             <button
@@ -645,7 +664,7 @@
                 :selected="libraryStore.isSelected(audiobook.id)"
                 :selection-active="selectedCount > 0"
                 :show-details="showItemDetails"
-                :image-src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                :image-src="getProtectedImageSrc(getBookCoverUrl(audiobook), getPlaceholderUrl())"
                 :image-loaded="isImageLoaded(getBookImageKey(audiobook))"
                 :quality-profile-name="getQualityProfileName(audiobook.qualityProfileId)"
                 :monitor-busy="monitorBusy.has(audiobook.id)"
@@ -677,6 +696,14 @@
                   >
                     <PhEar />
                     {{ audioIssueLabel(audiobook) }}
+                  </div>
+                  <div
+                    v-if="healthLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="healthTitle(audiobook)"
+                  >
+                    <PhHeartbeat />
+                    {{ healthLabel(audiobook) }}
                   </div>
                   <div
                     v-if="notFoundLabel(audiobook)"
@@ -753,7 +780,7 @@
                 :status-label="statusText(getAudiobookStatus(audiobook))"
                 :selected="libraryStore.isSelected(audiobook.id)"
                 :show-details="showItemDetails"
-                :image-src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
+                :image-src="getProtectedImageSrc(getBookCoverUrl(audiobook), getPlaceholderUrl())"
                 :image-loaded="isImageLoaded(getBookImageKey(audiobook))"
                 :quality-profile-name="getQualityProfileName(audiobook.qualityProfileId)"
                 :monitor-busy="monitorBusy.has(audiobook.id)"
@@ -812,6 +839,14 @@
                   >
                     <PhEar />
                     {{ audioIssueLabel(audiobook) }}
+                  </div>
+                  <div
+                    v-if="healthLabel(audiobook)"
+                    class="chapter-badge"
+                    :title="healthTitle(audiobook)"
+                  >
+                    <PhHeartbeat />
+                    {{ healthLabel(audiobook) }}
                   </div>
                   <div
                     v-if="notFoundLabel(audiobook)"
@@ -978,6 +1013,7 @@ import {
   PhListNumbers,
   PhCheckCircle,
   PhEar,
+  PhHeartbeat,
   PhFileX,
   PhLightning,
   PhCaretDown,
@@ -991,6 +1027,7 @@ import {
   PhBooks,
   PhFolderOpen,
   PhFileAudio,
+  PhWaveform,
 } from '@phosphor-icons/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
@@ -1001,6 +1038,7 @@ import { useFilesystemReadinessStore } from '@/stores/filesystemReadiness'
 import { useConversionJobsStore } from '@/stores/conversionJobs'
 import { apiService } from '@/services/api'
 import { buildApiPath } from '@/services/apiBase'
+import { getBookCoverUrl, isPlaceholderCoverUrl } from '@/utils/libraryCovers'
 import { logger } from '@/utils/logger'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
@@ -1025,6 +1063,7 @@ import type { BulkConversionResponse } from '@/types'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText } from '@/utils/textUtils'
 import { formatSeriesMemberships, getSeriesNames, matchesSeries } from '@/utils/seriesUtils'
+import { audioAuditIssueLabel } from '@/utils/audioAudit'
 import { buildCollectionSections, buildLibrarySections } from '@/utils/libraryGrouping'
 import { buildVirtualRows, findVisibleRowRange } from '@/utils/libraryVirtualRows'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -1297,6 +1336,8 @@ const BUILT_IN_FILTER_IDS = [
   'recent',
   'chapter-issues',
   'audio-mismatch',
+  'health-issues',
+  'repair-candidates',
 ]
 
 function loadSelectedFilter() {
@@ -1341,18 +1382,30 @@ const chapterIssueLabel = (book: Audiobook): string | null => {
   }
 }
 
-/** The badge for a book whose audio does not introduce itself as this book, or null. */
-const audioIssueLabel = (book: Audiobook): string | null => {
-  switch (book.audioAudit) {
-    case 'mismatch':
-      return 'Different book'
-    case 'narrator-mismatch':
-      return 'Narrator differs'
-    case 'incomplete':
-      return 'Cuts off'
-    default:
-      return null
-  }
+/**
+ * The badge for a book the audit is flagging, or null. Decided by the same rule and the
+ * same words as the Tags page's audit column and its "Metadata mismatch" filter, so one
+ * book is never a problem on one page and fine on the other.
+ */
+const audioIssueLabel = (book: Audiobook): string | null =>
+  audioAuditIssueLabel(book.audioAudit, book.audioAuditAccepted)
+
+/**
+ * The health badge for a book whose score is dented, or null when it is 100 or unknown.
+ * A full score earns silence: the badge exists to be worth clicking, not as a grade on
+ * every cover.
+ */
+const healthLabel = (book: Audiobook): string | null =>
+  book.healthScore != null && book.healthScore < 100 ? `Health ${book.healthScore}` : null
+
+const healthTitle = (book: Audiobook): string => {
+  const parts = [
+    book.healthTagsReason,
+    book.healthNamingReason,
+    book.healthChaptersReason,
+    book.healthAudioReason,
+  ].filter(Boolean)
+  return parts.length ? parts.join(' ') : 'Open the book to see what is dented.'
 }
 
 /** The badge for a book with files a scan could not find, or null. */
@@ -1399,6 +1452,10 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => !!chapterIssueLabel(b))
     } else if (sid === 'audio-mismatch') {
       filtered = filtered.filter((b) => !!audioIssueLabel(b))
+    } else if (sid === 'health-issues') {
+      filtered = filtered.filter((b) => (b.healthScore ?? 100) < 100)
+    } else if (sid === 'repair-candidates') {
+      filtered = filtered.filter((b) => !!b.audioRepairRecommended)
     } else if (sid === 'recent') {
       // For now: approximate by publishYear being this year or last year
       const thisYear = new Date().getFullYear()
@@ -1517,6 +1574,13 @@ const filteredAndSortedAudiobooks = computed(() => {
         av = getAudiobookStatus(a)
         bv = getAudiobookStatus(b)
         break
+      case 'health': {
+        // Unknown health sorts with the healthy books: ascending surfaces the measured
+        // problems first rather than a wall of books nothing has probed yet.
+        const ah = a.healthScore ?? 100
+        const bh = b.healthScore ?? 100
+        return (ah - bh) * (sortOrder.value === 'asc' ? 1 : -1)
+      }
     }
 
     if (typeof av === 'boolean' && typeof bv === 'boolean') {
@@ -1541,30 +1605,8 @@ const authorCoverNotFound = new Set<string>()
 const authorImageLoaded = reactive<Record<string, boolean>>({})
 const loadedImageKeys = reactive(new Set<string>())
 
-function isPlaceholderCoverUrl(url: string | undefined): boolean {
-  const v = (url || '').trim()
-  if (!v) return true
-  return (
-    v === '/placeholder.svg' ||
-    v === 'placeholder.svg' ||
-    v.endsWith('/placeholder.svg') ||
-    v.includes('/placeholder.svg?')
-  )
-}
-
-function getBookImageUrl(
-  book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | undefined,
-): string | undefined {
-  if (!book) return undefined
-  const raw = (book.imageUrl || '').trim()
-  if (raw && !isPlaceholderCoverUrl(raw)) return raw
-  const asin = (book.asin || '').trim()
-  if (asin) return buildApiPath(`/images/${encodeURIComponent(asin)}`)
-  return raw || undefined
-}
-
 function getBookImageKey(book: Pick<Audiobook, 'id' | 'imageUrl' | 'asin'>): string {
-  return `book:${book.id}:${getBookImageUrl(book) || ''}`
+  return `book:${book.id}:${getBookCoverUrl(book) || ''}`
 }
 
 function getSeriesImageKey(
@@ -1789,7 +1831,7 @@ const groupedCollections = computed(() => {
       }
       const group = groups.get(key)!
       group.count++
-      const bookCover = getBookImageUrl(book)
+      const bookCover = getBookCoverUrl(book)
       if (groupBy.value === 'authors') {
         try {
           const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
@@ -1939,6 +1981,7 @@ const sortOptions = computed(() => {
       { value: 'year', label: 'Release Year' },
       { value: 'monitored', label: 'Monitored' },
       { value: 'status', label: 'Status' },
+      { value: 'health', label: 'Health' },
     ]
   }
 
@@ -2969,6 +3012,104 @@ function reportBulkConversion(response: BulkConversionResponse) {
     `${response.queuedCount} of ${response.requestedCount} queued. Skipped:\n${breakdown}`,
     BULK_CONVERT_TOAST_MS,
   )
+}
+
+/* -- Repairing a selection's audio ------------------------------------------- */
+
+const repairing = ref(false)
+
+/** The selected books the probe recommends repairing; the rest of a selection is left alone. */
+const repairSelection = computed(() =>
+  libraryStore.audiobooks.filter(
+    (b) => libraryStore.selectedIds.has(b.id) && !!b.audioRepairRecommended,
+  ),
+)
+
+const REPAIR_SKIP_REASONS: Record<string, string> = {
+  AlreadyQueued: 'already queued or converting',
+  NothingToConvert: 'no audio files',
+  SourceUnreadable: 'files unreadable',
+  EncoderUnavailable: 'no encoder installed',
+  EnhancerUnavailable: 'enhancement model not ready',
+  Disabled: 'audio repair switched off in Settings',
+  NotFound: 'no longer in the library',
+}
+
+/**
+ * Queue full repairs for the selection's repair candidates, skipping the per-book
+ * preview. Confirmed first with the cost spelled out: the model runs at one to two
+ * times real time, one book at a time, so a large selection occupies the NAS for weeks.
+ */
+async function confirmBulkRepair() {
+  const books = repairSelection.value
+  if (books.length === 0 || repairing.value) return
+
+  const skipped = libraryStore.selectedIds.size - books.length
+  const hours = books.reduce((sum, b) => {
+    const raw = b.runtime ?? 0
+    return sum + (raw >= 20000 ? raw / 3600 : raw / 60)
+  }, 0)
+  const days = (factor: number) => Math.max(1, Math.round((hours * factor) / 24))
+
+  const ok = await showConfirm(
+    `Queue audio repairs for ${books.length} book${books.length !== 1 ? 's' : ''} ` +
+      `without listening to a preview of each?` +
+      (skipped > 0
+        ? ` ${skipped} selected book(s) that are not repair candidates are skipped.`
+        : '') +
+      ` That is about ${Math.round(hours)} hours of audio, roughly ${days(1.2)}–${days(2)} days ` +
+      'of NAS time, one book at a time. Originals are retired per the repair setting ' +
+      '(archived by default). Queued repairs can be cancelled in Activity.',
+    'Repair Audio',
+    { confirmText: 'Queue Repairs', cancelText: 'Cancel' },
+  )
+  if (!ok) return
+
+  repairing.value = true
+  try {
+    const response = await conversionJobsStore.repairMany(books.map((b) => b.id))
+    reportBulkRepair(response)
+    if (response.queuedCount > 0) libraryStore.clearSelection()
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobooksView',
+      operation: 'confirmBulkRepair',
+      metadata: { count: books.length },
+    })
+    toast.error('Repairs not queued', 'The request failed. Nothing was queued.')
+  } finally {
+    repairing.value = false
+  }
+}
+
+function reportBulkRepair(response: BulkConversionResponse) {
+  const skipped = response.results.filter((r) => r.outcome !== 'Queued')
+  const counts = new Map<string, number>()
+  for (const result of skipped) {
+    const label = REPAIR_SKIP_REASONS[String(result.outcome)] ?? String(result.outcome)
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  const breakdown = [...counts.entries()].map(([label, count]) => `${count} ${label}`).join('\n')
+
+  if (response.queuedCount === 0) {
+    toast.warning(
+      'Nothing queued',
+      `None of the ${response.requestedCount} books could be queued:\n${breakdown}`,
+      BULK_CONVERT_TOAST_MS,
+    )
+  } else if (skipped.length > 0) {
+    toast.success(
+      'Repairs queued',
+      `${response.queuedCount} of ${response.requestedCount} queued. Skipped:\n${breakdown}`,
+      BULK_CONVERT_TOAST_MS,
+    )
+  } else {
+    toast.success(
+      'Repairs queued',
+      `${response.queuedCount} book${response.queuedCount !== 1 ? 's' : ''} queued. ` +
+        'Progress shows in Activity.',
+    )
+  }
 }
 
 function resetDeleteOptions() {
