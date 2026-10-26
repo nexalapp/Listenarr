@@ -181,22 +181,33 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 planning.Plan.TargetChannels);
 
             var scratchPath = Path.Combine(scratchDirectory, $"conversion-{job.Id:N}.m4b");
-            var request = new ConversionRequest(plan, scratchPath, planning.Tags!);
+            // The cover comes from the ORIGINALS: the intermediates are bare audio.
+            var cover = await ResolveCoverForEncodeAsync(
+                audiobook, planning.Plan!.OrderedSources, scratchDirectory, job.Id, settings, services, cancellationToken);
+            var request = new ConversionRequest(plan, scratchPath, planning.Tags!, cover?.Path);
             var converter = services.GetRequiredService<IAudiobookConverter>();
 
-            var result = await TryReuseVerifiedOutputAsync(job, request, queue, converter, cancellationToken);
-            if (result == null)
+            ConversionResult? result;
+            try
             {
-                await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 91, cancellationToken);
-                try
+                result = await TryReuseVerifiedOutputAsync(job, request, queue, converter, cancellationToken);
+                if (result == null)
                 {
-                    result = await converter.ConvertAsync(request, progress: null, cancellationToken);
+                    await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 91, cancellationToken);
+                    try
+                    {
+                        result = await converter.ConvertAsync(request, progress: null, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        TryDeleteScratch(scratchPath);
+                        throw;
+                    }
                 }
-                catch (OperationCanceledException)
-                {
-                    TryDeleteScratch(scratchPath);
-                    throw;
-                }
+            }
+            finally
+            {
+                DeleteScratchCover(cover);
             }
 
             if (!result.Success)

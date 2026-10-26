@@ -203,6 +203,10 @@ namespace Listenarr.Infrastructure.Library.Conversion
             Directory.CreateDirectory(workDirectory);
             var manifest = await LoadOrStartChunkManifestAsync(workDirectory, source, pipelineVersion, chunks.Count);
 
+            // Say so now: a chunk takes the best part of half an hour, and until the first
+            // one finishes the job would otherwise still read "Probing".
+            await ReportEnhancementProgressAsync(queue, job.Id, enhancedDurationSoFar, totalDuration);
+
             foreach (var chunk in chunks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
