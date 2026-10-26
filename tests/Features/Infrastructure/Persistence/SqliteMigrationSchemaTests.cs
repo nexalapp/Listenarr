@@ -117,6 +117,10 @@ public class SqliteMigrationSchemaTests : BaseTests
 
     private const string RepairPipelineMigrationId =
         "20261015225743_AddRepairPipeline";
+    private const string DiscoverFeedsMigrationId =
+        "20261024025626_AddDiscoverFeeds";
+    private const string AutoRepairSettingsMigrationId =
+        "20261025012440_AddAutoRepairSettings";
 
     private const string SuggestionReleasesMigrationId =
         "20261024025603_AddSuggestionReleases";
