@@ -121,19 +121,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 // Only an indexer that answered can be evidence of absence.
                 answered.Add(indexer.Name);
 
-                var matching = results
-                    .Where(result => IsAbookLink(indexer)
-                        ? SuggestionReleaseMatch.AbookPostMatches(
-                            result.Asin, result.Album, result.Artist, asin, title, authors,
-                            result.SeriesName, result.SeriesPosition, seriesNumber)
-                        : SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, title, authors))
-                    .ToList();
-
-                if (IsAbookLink(indexer))
-                {
-                    matching = await ConfirmAbookMatchesAsync(
-                        matching, asin, title, authors, seriesNumber, cancellationToken);
-                }
+                var matching = IsAbookLink(indexer)
+                    ? await ConfirmAbookMatchesAsync(
+                        AbookShortlist(results, asin, title, authors, seriesNumber),
+                        asin, title, authors, seriesNumber, cancellationToken)
+                    : [.. results.Where(result =>
+                        SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, title, authors))];
 
                 var best = await BestAsync(matching, profile);
                 if (best != null)
@@ -218,6 +211,42 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         };
 
         /// <summary>
+        /// The posts worth reading, best first. A post is a candidate on its parsed fields
+        /// or, failing that, on its title line carrying the book's title and its author's
+        /// surname - which is the looser rule, and is allowed here because a shortlist is
+        /// not a verdict: every one of these is read and judged again before it counts.
+        /// A post that already declares an ASIN is exempt: it has said which edition it
+        /// is, and its title line cannot argue with that.
+        ///
+        /// It is needed because the title line is not always the "Author - Series NN -
+        /// Title (Year)" the parser is built for. "SERRAted Edge 10 - Breaking Silence by
+        /// Mercedes Lackey, Cody Martin" parses to an author of "SERRAted Edge 10", so the
+        /// book is not recognised in any field - but both its title and its author are
+        /// plainly there in the line. Such a post used to be rescued by being opened, back
+        /// when the first fifteen hits always were.
+        /// </summary>
+        private static List<IndexerSearchResult> AbookShortlist(
+            List<IndexerSearchResult> results,
+            string asin,
+            string title,
+            IReadOnlyList<string> authors,
+            string? seriesNumber)
+        {
+            bool ParsedFieldsMatch(IndexerSearchResult result) =>
+                SuggestionReleaseMatch.AbookPostMatches(
+                    result.Asin, result.Album, result.Artist, asin, title, authors,
+                    result.SeriesName, result.SeriesPosition, seriesNumber);
+
+            return
+            [
+                .. results.Where(ParsedFieldsMatch),
+                .. results.Where(result => !ParsedFieldsMatch(result)
+                    && string.IsNullOrWhiteSpace(result.Asin)
+                    && SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, title, authors))
+            ];
+        }
+
+        /// <summary>
         /// Reads the posts behind the shortlist and judges them again on what the post
         /// says. The titles can only narrow: an ASIN lives in the post, and a post that
         /// declares one is held to it, so a title that looks right is a candidate and
@@ -225,7 +254,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// the search means two or three topics opened per check instead of fifteen, and
         /// none at all for a book nothing on the forum is even titled after.
         ///
-        /// A post that could not be read keeps its place on the strength of its title,
+        /// A post that could not be read falls back to the fields the search itself gave,
         /// which is the same answer a hit past the old inspection limit always got.
         /// </summary>
         private async Task<List<IndexerSearchResult>> ConfirmAbookMatchesAsync(
@@ -237,11 +266,25 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             CancellationToken cancellationToken)
         {
             var confirmed = new List<IndexerSearchResult>();
+
+            // A post nobody could read is judged on the fields the search gave, which is
+            // the answer a hit past the old inspection limit always got. A hit that was
+            // only shortlisted because its title line reads right does not survive that.
+            void KeepIfAlreadyAMatch(IndexerSearchResult result)
+            {
+                if (SuggestionReleaseMatch.AbookPostMatches(
+                    result.Asin, result.Album, result.Artist, asin, title, authors,
+                    result.SeriesName, result.SeriesPosition, seriesNumber))
+                {
+                    confirmed.Add(result);
+                }
+            }
+
             foreach (var result in shortlist.Take(MaxPostsReadPerCheck))
             {
                 if (!int.TryParse(result.DownloadReference, out var topicId))
                 {
-                    confirmed.Add(result);
+                    KeepIfAlreadyAMatch(result);
                     continue;
                 }
 
@@ -253,13 +296,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     logger.LogWarning(ex, "Suggestion release check: could not read abook.link topic {TopicId}", topicId);
-                    confirmed.Add(result);
+                    KeepIfAlreadyAMatch(result);
                     continue;
                 }
 
                 if (!topic.Succeeded || topic.Candidates.Count == 0)
                 {
-                    confirmed.Add(result);
+                    KeepIfAlreadyAMatch(result);
                     continue;
                 }
 

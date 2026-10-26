@@ -321,5 +321,36 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
             Assert.Equal(300_000_000, release.SizeBytes);
         }
+    
+        [Fact]
+        public async Task ATitleLineTheParserMissplitsIsStillWorthReading()
+        {
+            // "SERRAted Edge 10 - Breaking Silence by Mercedes Lackey, Cody Martin" gives
+            // the parser an author of "SERRAted Edge 10", so no parsed field says which
+            // book it is - but the line does, and the post behind it settles the matter.
+            Returns(Abook, new IndexerSearchResult
+            {
+                Id = "abook:4210",
+                Title = "SERRAted Edge 10 - Breaking Silence by Mercedes Lackey, Cody Martin",
+                Album = "Breaking Silence by Mercedes Lackey, Cody Martin",
+                Artist = "SERRAted Edge 10",
+                DownloadReference = "4210"
+            });
+            var service = Build(Abook);
+            Topic(4210, new AbookPost
+            {
+                Title = "Breaking Silence",
+                Author = "Mercedes Lackey, Cody Martin",
+                Asin = "B07MFJLBQR",
+                Format = "M4B",
+                SizeBytes = 250_000_000
+            });
+
+            var release = await service.CheckAsync(
+                Book("B07MFJLBQR", "Breaking Silence", "Mercedes Lackey"));
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+            _abook.Verify(a => a.GetTopicAsync(4210, It.IsAny<CancellationToken>()), Times.Once);
+        }
     }
 }
