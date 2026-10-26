@@ -139,31 +139,41 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 _ = ReportProgressSafelyAsync(job.Id, percent);
             });
 
-            var request = new ConversionRequest(plan, scratchPath, planning.Tags!);
+            var cover = await ResolveCoverForEncodeAsync(
+                audiobook, plan.OrderedSources, scratchDirectory, job.Id, settings, services, cancellationToken);
+            var request = new ConversionRequest(plan, scratchPath, planning.Tags!, cover?.Path);
 
-            // A previous attempt may have encoded this book already and failed only when
-            // publishing it. Re-encoding a twenty-hour book to repeat a step that takes
-            // seconds is the wrong trade, so reuse that output when it still holds up.
-            //
-            // Only a *finished* encode can be reused. ffmpeg cannot resume a partial one,
-            // so an attempt interrupted mid-encode always starts over.
-            var result = await TryReuseVerifiedOutputAsync(job, request, queue, converter, cancellationToken);
-
-            if (result == null)
+            ConversionResult? result;
+            try
             {
-                await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 0, cancellationToken);
+                // A previous attempt may have encoded this book already and failed only when
+                // publishing it. Re-encoding a twenty-hour book to repeat a step that takes
+                // seconds is the wrong trade, so reuse that output when it still holds up.
+                //
+                // Only a *finished* encode can be reused. ffmpeg cannot resume a partial one,
+                // so an attempt interrupted mid-encode always starts over.
+                result = await TryReuseVerifiedOutputAsync(job, request, queue, converter, cancellationToken);
 
-                try
+                if (result == null)
                 {
-                    result = await converter.ConvertAsync(request, progress, cancellationToken);
+                    await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Encoding, 0, cancellationToken);
+
+                    try
+                    {
+                        result = await converter.ConvertAsync(request, progress, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // A cancelled encode leaves a partial file behind; nothing has been
+                        // published, so removing it is safe and keeps the folder clean.
+                        TryDeleteScratch(scratchPath);
+                        throw;
+                    }
                 }
-                catch (OperationCanceledException)
-                {
-                    // A cancelled encode leaves a partial file behind; nothing has been
-                    // published, so removing it is safe and keeps the folder clean.
-                    TryDeleteScratch(scratchPath);
-                    throw;
-                }
+            }
+            finally
+            {
+                DeleteScratchCover(cover);
             }
 
             if (!result.Success)
