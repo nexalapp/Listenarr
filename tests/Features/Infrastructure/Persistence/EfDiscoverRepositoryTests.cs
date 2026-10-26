@@ -26,10 +26,10 @@ namespace Listenarr.Tests.Features.Infrastructure.Persistence;
 /// How the discovery cache holds what it has been told.
 ///
 /// <para>
-/// The rule worth pinning is that the two sources are kept differently. A chart page
-/// is a set of positions, so re-reading it must drop what has fallen off; a board page
-/// is a window onto a list that grows from the top, and re-reading it must not drop
-/// the topics that have been pushed onto the next page.
+/// The rule worth pinning is that re-reading a page only ever adds. A chart reorders
+/// between reads and a board grows from the top, so in both cases a row missing from
+/// the page it was last seen on has usually moved rather than gone - and dropping it
+/// threw away when it was first seen and the Audible lookup already spent on it.
 /// </para>
 /// </summary>
 [Trait("Name", "EfDiscoverRepositoryTests")]

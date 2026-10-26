@@ -2403,6 +2403,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("AbookThanksPerHour")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(60);
+
                     b.Property<string>("AllowedFileExtensions")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -3409,6 +3414,32 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.HasIndex("Username");
 
                     b.ToTable("UserSessions");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Search.AbookThank", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Succeeded")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ThankedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TopicId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ThankedAt");
+
+                    b.ToTable("AbookThanks");
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Search.Indexer", b =>

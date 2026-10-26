@@ -63,6 +63,8 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<LibraryTagCacheEntry> LibraryTagCacheEntries { get; set; } = null!;
         public DbSet<NzbKingKeyState> NzbKingKeyStates { get; set; } = null!;
         public DbSet<NzbKingApiAccess> NzbKingApiAccesses { get; set; } = null!;
+
+        public DbSet<AbookThank> AbookThanks { get; set; } = null!;
         public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; } = null!;
         public DbSet<SeriesCacheEntry> SeriesCacheEntries { get; set; } = null!;
         public DbSet<UserSession> UserSessions { get; set; } = null!;
@@ -158,6 +160,7 @@ namespace Listenarr.Infrastructure.Persistence
             // One ledger row per key; the fingerprint is the budget's identity.
             modelBuilder.Entity<NzbKingKeyState>().HasIndex(k => k.KeyFingerprint).IsUnique();
             modelBuilder.Entity<NzbKingApiAccess>().HasIndex(a => new { a.KeyFingerprint, a.AttemptedAt });
+            modelBuilder.Entity<AbookThank>().HasIndex(t => t.ThankedAt);
             modelBuilder.Entity<AuthorCacheEntry>().HasIndex(a => new { a.AuthorNameNormalized, a.Region }).IsUnique();
             modelBuilder.Entity<AuthorCacheEntry>().HasIndex(a => new { a.AuthorAsin, a.Region });
             modelBuilder.Entity<SeriesCacheEntry>().HasIndex(s => new { s.SeriesNameNormalized, s.Region }).IsUnique();

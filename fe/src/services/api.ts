@@ -66,6 +66,7 @@ import type {
   DiscoverSource,
   AutoGrabSettings,
   AutoGrabPlan,
+  AbookThankBudget,
   AutoGrabReport,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
@@ -515,6 +516,10 @@ class ApiService {
   /** What a run would add right now. Adds nothing. */
   async getAutoGrabPreview(): Promise<AutoGrabPlan> {
     return this.request<AutoGrabPlan>('/autograb/preview')
+  }
+
+  async getAbookThankBudget(): Promise<AbookThankBudget> {
+    return this.request<AbookThankBudget>('/autograb/thanks')
   }
 
   async runAutoGrab(): Promise<AutoGrabReport> {

@@ -1058,6 +1058,15 @@ export interface SuggestionRefreshStatus {
 }
 
 /** A Suggested list auto-grab can draw from. */
+export interface AbookThankBudget {
+  thisHour: number
+  today: number
+  perHour: number
+  allowed: boolean
+  reason: string | null
+  nextAllowedAt: string | null
+}
+
 export type AutoGrabKind = 'authors' | 'series' | 'discover' | 'abook'
 
 export interface AutoGrabSource {

@@ -35,6 +35,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
         private readonly IIndexerRepository _indexers;
         private readonly ISecretProtector _secrets;
         private readonly INzbResolverChain _resolvers;
+        private readonly IAbookThankBudget _thanks;
         private readonly ILogger<AbookGrabResolver> _logger;
 
         public AbookGrabResolver(
@@ -43,6 +44,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             IIndexerRepository indexers,
             ISecretProtector secrets,
             INzbResolverChain resolvers,
+            IAbookThankBudget thanks,
             ILogger<AbookGrabResolver> logger)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
@@ -50,6 +52,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             _indexers = indexers ?? throw new ArgumentNullException(nameof(indexers));
             _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
             _resolvers = resolvers ?? throw new ArgumentNullException(nameof(resolvers));
+            _thanks = thanks ?? throw new ArgumentNullException(nameof(thanks));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -84,12 +87,24 @@ namespace Listenarr.Infrastructure.Search.AbookLink
 
             if (!post.CanGrab)
             {
+                // Everything above this line is free. Pressing thank is not: it is public,
+                // it cannot be taken back, and several unrelated paths arrive here, so the
+                // budget is asked at the press rather than by any one caller.
+                var budget = await _thanks.CheckAsync(ct);
+                if (!budget.Allowed)
+                {
+                    return Failed(topicId, "Say thanks", budget.Reason
+                        ?? "The abook.link thank budget is spent for now.", post, thanked);
+                }
+
                 _logger.LogInformation(
-                    "Thanking abook.link topic {TopicId} to reveal its payload; this is publicly visible",
-                    topicId);
+                    "Thanking abook.link topic {TopicId} to reveal its payload; this is publicly "
+                    + "visible ({Count} in the last hour)",
+                    topicId, budget.ThanksThisHour);
 
                 var revealed = await _client.ThankAsync(signIn.Cookie, topicId, ct);
                 thanked = true;
+                await _thanks.RecordAsync(topicId, revealed.Succeeded, revealed.Reason, ct);
 
                 if (!revealed.Succeeded)
                 {

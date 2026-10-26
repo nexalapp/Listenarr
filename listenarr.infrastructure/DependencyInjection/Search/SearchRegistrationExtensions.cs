@@ -59,6 +59,7 @@ internal static class SearchRegistrationExtensions
                 UseProxy = false
             });
         services.AddScoped<IAbookLinkBrowser, AbookLinkBrowser>();
+        services.AddScoped<IAbookThankBudget, AbookThankBudget>();
         services.AddScoped<IAbookGrabResolver, AbookGrabResolver>();
         services.AddScoped<AbookDownloadDispatcher>();
         services.AddScoped<IAbookGrabDispatcher, AbookGrabDispatcher>();

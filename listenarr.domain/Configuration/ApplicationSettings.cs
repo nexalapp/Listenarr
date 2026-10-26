@@ -237,6 +237,15 @@ namespace Listenarr.Domain.Configuration
         // Thanking and the free indexes are unaffected either way.
         public bool PrepareReleasesMayUseMeteredIndexes { get; set; } = false;
 
+        /// <summary>
+        /// How many times an hour Listenarr may press abook.link's thank button. The
+        /// button is how a post gives up its payload, so this is in effect the ceiling on
+        /// grabs from that source. It is a safety rail against a loop, not a disguise:
+        /// the forum ranks thanks received and never thanks given, and runs a posting bot
+        /// of its own.
+        /// </summary>
+        public int AbookThanksPerHour { get; set; } = 60;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

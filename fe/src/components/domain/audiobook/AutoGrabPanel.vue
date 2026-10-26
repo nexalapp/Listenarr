@@ -44,6 +44,13 @@
           </span>
         </label>
 
+        <p v-if="thanks" class="autograb-thanks">
+          <strong>{{ thanks.thisHour }}</strong> of {{ thanks.perHour }} abook.link thanks this
+          hour, {{ thanks.today }} today.
+          <span v-if="!thanks.allowed" class="autograb-thanks-blocked">{{ thanks.reason }}</span>
+          <span v-else>A grab from abook.link has to press thank, so this is the ceiling on it.</span>
+        </p>
+
         <div class="autograb-numbers">
           <label>
             <span>Books per run</span>
@@ -178,7 +185,12 @@ import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import { describeApiError } from '@/utils/apiError'
 import { useAutoGrabStore } from '@/stores/autoGrab'
-import type { ApplicationSettings, AutoGrabKind, AutoGrabSettings } from '@/types'
+import type {
+  AbookThankBudget,
+  ApplicationSettings,
+  AutoGrabKind,
+  AutoGrabSettings,
+} from '@/types'
 
 const props = defineProps<{
   /**
@@ -198,6 +210,7 @@ const ran = ref<string | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 
 const appSettings = ref<ApplicationSettings | null>(null)
+const thanks = ref<AbookThankBudget | null>(null)
 const prepareEnabled = computed(() => appSettings.value?.prepareReleasesEnabled ?? true)
 const prepareMetered = computed(
   () => appSettings.value?.prepareReleasesMayUseMeteredIndexes ?? false,
@@ -238,7 +251,7 @@ async function toggleOpen() {
   await loadAppSettings()
   // The preview names every followed list and says how many are waiting in each, so
   // opening the panel is also how the rows get their names.
-  await store.preview()
+  await Promise.all([store.preview(), loadThanks()])
 }
 
 async function loadAppSettings() {
@@ -246,6 +259,14 @@ async function loadAppSettings() {
     appSettings.value = await apiService.getApplicationSettings()
   } catch {
     // The two preparation ticks stay at their defaults; the rest of the panel works.
+  }
+}
+
+async function loadThanks() {
+  try {
+    thanks.value = await apiService.getAbookThankBudget()
+  } catch {
+    // The count is worth having and worth nothing if fetching it breaks the panel.
   }
 }
 

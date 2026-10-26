@@ -35,6 +35,7 @@ namespace Listenarr.Api.Features.Library
     [Tags("Library")]
     public sealed class AutoGrabController(
         IAutoGrabService autoGrab,
+        IAbookThankBudget thanks,
         IConfigurationService configuration) : ControllerBase
     {
         [HttpGet("settings")]
@@ -61,6 +62,30 @@ namespace Listenarr.Api.Features.Library
         [HttpGet("preview")]
         public async Task<ActionResult<AutoGrabPlan>> Preview(CancellationToken cancellationToken = default) =>
             Ok(await autoGrab.PreviewAsync(cancellationToken));
+
+        /// <summary>
+        /// What the abook.link thank budget has left. A grab from that source has to
+        /// press thank, so this is the ceiling on grabs from it - and the page saying so
+        /// is the difference between "waiting" and "broken", which has not always been
+        /// obvious from the outside.
+        /// </summary>
+        [HttpGet("thanks")]
+        public async Task<ActionResult<object>> Thanks(CancellationToken cancellationToken = default)
+        {
+            var (hour, day) = await thanks.CountsAsync(cancellationToken);
+            var decision = await thanks.CheckAsync(cancellationToken);
+            var settings = await configuration.GetApplicationSettingsAsync();
+
+            return Ok(new
+            {
+                thisHour = hour,
+                today = day,
+                perHour = settings.AbookThanksPerHour,
+                allowed = decision.Allowed,
+                reason = decision.Reason,
+                nextAllowedAt = decision.NextAllowedAt
+            });
+        }
 
         /// <summary>
         /// Runs now, whatever the interval says. Honours the cap, and the switch: a run
