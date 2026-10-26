@@ -2165,11 +2165,36 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PayloadFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Preparation")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("NotPrepared");
+
+                    b.Property<string>("PreparationDetail")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PreparedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProtectedNzbUrl")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ProtectedResult")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ReleaseTitle")
                         .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResolvedVia")
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("SizeBytes")
@@ -2410,6 +2435,12 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(true);
 
+                    b.Property<string>("AutoGrabSettingsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("{}");
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
@@ -2579,6 +2610,16 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("PollingIntervalSeconds")
                         .HasColumnType("INTEGER");
+
+                    b.Property<bool>("PrepareReleasesEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("PrepareReleasesMayUseMeteredIndexes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("ProwlarrApiKeyEncrypted")
                         .HasColumnType("TEXT");

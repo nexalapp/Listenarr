@@ -109,6 +109,14 @@
           <span v-if="section.lastError" class="group-error" :title="section.lastError">
             Last fetch failed
           </span>
+          <label v-if="grouped && section.key !== 'all'" class="group-autograb">
+            <input
+              type="checkbox"
+              :checked="autoGrab.includes(source === 'charts' ? 'discover' : 'abook', section.key)"
+              @change="autoGrab.toggle(source === 'charts' ? 'discover' : 'abook', section.key)"
+            />
+            Auto-grab
+          </label>
         </header>
 
         <p v-if="section.entries.length === 0 && section.pagesFetched === 0" class="group-empty">
@@ -146,6 +154,7 @@ import { EmptyState, LoadingState } from '@/components/base'
 import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.vue'
 import DiscoverSectionPicker from '@/components/domain/audiobook/DiscoverSectionPicker.vue'
 import { apiService } from '@/services/api'
+import { useAutoGrabStore } from '@/stores/autoGrab'
 import { useToast } from '@/services/toastService'
 import { describeApiError } from '@/utils/apiError'
 import type {
@@ -170,6 +179,7 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+const autoGrab = useAutoGrabStore()
 
 const feed = ref<DiscoverFeed | null>(null)
 const status = ref<DiscoverRefreshStatus | null>(null)
@@ -535,7 +545,10 @@ async function onSelectionSaved() {
   await run(() => apiService.refreshDiscover(props.source), 'A fetch is already running.')
 }
 
-onMounted(load)
+onMounted(async () => {
+  void autoGrab.load()
+  await load()
+})
 onBeforeUnmount(stopPolling)
 </script>
 
@@ -626,6 +639,15 @@ onBeforeUnmount(stopPolling)
 .group-meta {
   color: #888;
   font-size: 0.8rem;
+}
+
+.group-autograb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #999;
+  font-size: 0.78rem;
+  cursor: pointer;
 }
 
 .group-error {

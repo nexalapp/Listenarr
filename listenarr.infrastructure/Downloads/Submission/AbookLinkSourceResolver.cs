@@ -85,7 +85,7 @@ namespace Listenarr.Infrastructure.Downloads.Submission
 
             _logger.LogInformation("Resolving abook.link topic {TopicId} for '{Title}'", topicId, candidate.Title);
 
-            var grab = await _grabs.ResolveAsync(topicId, cancellationToken);
+            var grab = await _grabs.ResolveAsync(topicId, meteredAllowed: true, cancellationToken);
 
             if (!grab.Succeeded || grab.NzbUrl is not { Length: > 0 })
             {

@@ -53,7 +53,10 @@ namespace Listenarr.Infrastructure.Search.AbookLink
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<AbookGrabResult> ResolveAsync(int topicId, CancellationToken ct = default)
+        public async Task<AbookGrabResult> ResolveAsync(
+            int topicId,
+            bool meteredAllowed = true,
+            CancellationToken ct = default)
         {
             var credentials = await ResolveCredentialsAsync(ct);
             if (credentials is null || !credentials.HasAnything)
@@ -113,7 +116,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
                     post, thanked);
             }
 
-            var resolution = await _resolvers.ResolveAsync(post.SearchString, ct);
+            var resolution = await _resolvers.ResolveAsync(post.SearchString, meteredAllowed, ct);
             if (!resolution.Succeeded)
             {
                 var detail = resolution.WorthRetrying

@@ -41,7 +41,10 @@ namespace Listenarr.Infrastructure.Search.Nzb
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<NzbResolution> ResolveAsync(string? searchString, CancellationToken ct = default)
+        public async Task<NzbResolution> ResolveAsync(
+            string? searchString,
+            bool meteredAllowed = true,
+            CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(searchString))
             {
@@ -57,6 +60,16 @@ namespace Listenarr.Infrastructure.Search.Nzb
             foreach (var resolver in _resolvers)
             {
                 ct.ThrowIfCancellationRequested();
+
+                if (resolver.IsMetered && !meteredAllowed)
+                {
+                    // Recorded rather than skipped silently: "the free indexes had
+                    // nothing and we chose not to ask the metered one" is a different
+                    // answer from "nothing holds this", and the page says which.
+                    attempts.Add(NzbResolverResult.Failed(resolver.Name, NzbResolutionFailure.NotAsked,
+                        "Not asked: this index is metered and automatic work is not allowed to spend it."));
+                    continue;
+                }
 
                 var result = await resolver.ResolveAsync(searchString, ct);
                 attempts.Add(result);

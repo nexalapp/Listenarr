@@ -24,6 +24,7 @@
       </h1>
       <div class="header-actions">
         <Checkbox v-model="searchOnAdd" class="search-on-add">Search for downloads on add</Checkbox>
+        <AutoGrabPanel :labels="{ authors: 'From your authors', series: 'From your series' }" />
         <span v-if="refreshStatus?.running && !isDiscoveryTab" class="refresh-progress">
           Fetching catalogs… {{ refreshStatus.completed }} / {{ refreshStatus.total }}
           <template v-if="refreshStatus.current"> · {{ refreshStatus.current }}</template>
@@ -69,8 +70,8 @@
 
     <p v-if="snapshot?.releases && snapshot.releases.total > 0" class="coverage release-coverage">
       <template v-if="snapshot.releases.checked < snapshot.releases.total">
-        Checked {{ snapshot.releases.checked }} of {{ snapshot.releases.total }} suggested books
-        for a release;
+        Checked {{ snapshot.releases.checked }} of {{ snapshot.releases.total }} suggested books for
+        a release;
       </template>
       <strong>{{ snapshot.releases.found }}</strong> can be downloaded.
       <Checkbox v-model="showUnavailable" class="show-unavailable"
@@ -113,6 +114,14 @@
     <template v-else-if="snapshot">
       <!-- Missing from your authors -->
       <template v-if="activeTab === 'authors'">
+        <label v-if="snapshot.authors.length > 0" class="autograb-tick">
+          <input
+            type="checkbox"
+            :checked="autoGrab.includes('authors')"
+            @change="autoGrab.toggle('authors')"
+          />
+          Auto-grab from this list
+        </label>
         <EmptyState
           v-if="shown.authors.length === 0"
           title="Nothing missing from your authors"
@@ -162,6 +171,14 @@
 
       <!-- Missing from your series -->
       <template v-else-if="activeTab === 'series'">
+        <label v-if="snapshot.series.length > 0" class="autograb-tick">
+          <input
+            type="checkbox"
+            :checked="autoGrab.includes('series')"
+            @change="autoGrab.toggle('series')"
+          />
+          Auto-grab from this list
+        </label>
         <EmptyState
           v-if="shown.series.length === 0"
           title="No gaps in your series"
@@ -267,6 +284,8 @@ import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.vue'
 import FoundBooksTab from '@/components/domain/audiobook/FoundBooksTab.vue'
 import DiscoverTab from '@/components/domain/audiobook/DiscoverTab.vue'
+import AutoGrabPanel from '@/components/domain/audiobook/AutoGrabPanel.vue'
+import { useAutoGrabStore } from '@/stores/autoGrab'
 import { useFoundBooksStore } from '@/stores/foundBooks'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
@@ -287,6 +306,7 @@ type TabId = 'authors' | 'series' | 'related' | 'found' | 'discover' | 'abook'
 
 const toast = useToast()
 const foundBooks = useFoundBooksStore()
+const autoGrab = useAutoGrabStore()
 
 const snapshot = ref<SuggestionSnapshot | null>(null)
 const loading = ref(true)
@@ -357,16 +377,18 @@ function notKnownUnavailable(book: SuggestedBook): boolean {
   return book.release?.found !== false
 }
 
-const shown = computed<{ authors: AuthorSuggestionGroup[]; series: SeriesSuggestionGroup[] }>(() => {
-  const value = snapshot.value
-  if (!value) return { authors: [], series: [] }
-  if (showUnavailable.value) return { authors: value.authors, series: value.series }
-  const keep = <T extends { missing: SuggestedBook[] }>(groups: T[]): T[] =>
-    groups
-      .map((group) => ({ ...group, missing: group.missing.filter(notKnownUnavailable) }))
-      .filter((group) => group.missing.length > 0)
-  return { authors: keep(value.authors), series: keep(value.series) }
-})
+const shown = computed<{ authors: AuthorSuggestionGroup[]; series: SeriesSuggestionGroup[] }>(
+  () => {
+    const value = snapshot.value
+    if (!value) return { authors: [], series: [] }
+    if (showUnavailable.value) return { authors: value.authors, series: value.series }
+    const keep = <T extends { missing: SuggestedBook[] }>(groups: T[]): T[] =>
+      groups
+        .map((group) => ({ ...group, missing: group.missing.filter(notKnownUnavailable) }))
+        .filter((group) => group.missing.length > 0)
+    return { authors: keep(value.authors), series: keep(value.series) }
+  },
+)
 
 const refreshStatus = ref<SuggestionRefreshStatus | null>(null)
 const refreshing = ref(false)
@@ -648,6 +670,7 @@ function handleAdded(audiobook: Audiobook) {
 }
 
 onMounted(async () => {
+  void autoGrab.load()
   // The Found pill counts what is offered on disk; loading it here means the count
   // is right before the tab is opened, and the tab's own mount reuses the store.
   await Promise.all([load(), pollRefresh(), foundBooks.load()])
@@ -790,6 +813,16 @@ onBeforeUnmount(stopPolling)
   .cards {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.autograb-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #bbb;
+  font-size: 0.82rem;
+  margin-bottom: 0.6rem;
+  cursor: pointer;
 }
 
 .coverage .link-btn {

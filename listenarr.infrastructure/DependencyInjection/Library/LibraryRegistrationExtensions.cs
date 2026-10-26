@@ -15,6 +15,7 @@ using Listenarr.Application.Audiobooks.Chapters;
 using Listenarr.Application.Audiobooks.Transcription;
 using Listenarr.Infrastructure.Ffmpeg.Analysis;
 using Listenarr.Infrastructure.Library.Transcription;
+using Listenarr.Application.Audiobooks.AutoGrab;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Infrastructure.Library.Suggestions;
 using Listenarr.Application.Audiobooks.Discover;
@@ -79,6 +80,8 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<ISuggestionService, SuggestionService>();
         services.AddScoped<ISuggestionReleaseRepository, EfSuggestionReleaseRepository>();
         services.AddScoped<ISuggestionReleaseService, SuggestionReleaseService>();
+        services.AddScoped<IAutoGrabService, AutoGrabService>();
+        services.AddScoped<IReleasePreparationService, ReleasePreparationService>();
         services.AddScoped<AuthorAliasApplyService>();
         services.AddSingleton<ISuggestionRefreshService, SuggestionRefreshService>();
 

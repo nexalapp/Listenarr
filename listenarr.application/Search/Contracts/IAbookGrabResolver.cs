@@ -55,7 +55,14 @@ namespace Listenarr.Application.Search.Contracts
     /// </summary>
     public interface IAbookGrabResolver
     {
-        Task<AbookGrabResult> ResolveAsync(int topicId, CancellationToken ct = default);
+        /// <param name="meteredAllowed">
+        /// False leaves a metered index unasked, for work done on a schedule rather than
+        /// at somebody's request. Thanking and the free indexes happen either way.
+        /// </param>
+        Task<AbookGrabResult> ResolveAsync(
+            int topicId,
+            bool meteredAllowed = true,
+            CancellationToken ct = default);
     }
 
     /// <summary>What happened when a resolved release was handed to a download client.</summary>

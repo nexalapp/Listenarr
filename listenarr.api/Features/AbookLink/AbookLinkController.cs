@@ -106,7 +106,7 @@ namespace Listenarr.Api.Features.AbookLink
             int topicId,
             CancellationToken cancellationToken = default)
         {
-            var result = await _grabs.ResolveAsync(topicId, cancellationToken);
+            var result = await _grabs.ResolveAsync(topicId, meteredAllowed: true, cancellationToken);
 
             _logger.LogInformation(
                 "abook.link grab for topic {TopicId} finished at stage {Stage} (succeeded: {Succeeded})",

@@ -9,6 +9,7 @@
  */
 using Listenarr.Application.FoundBooks.Contracts;
 using Listenarr.Infrastructure.FoundBooks.Workers;
+using Listenarr.Infrastructure.Library.AutoGrab;
 using Listenarr.Infrastructure.Library.Suggestions.Workers;
 using Listenarr.Infrastructure.Library.Discover.Workers;
 using Listenarr.Infrastructure.Library.Quality;
@@ -113,6 +114,19 @@ internal static class WorkerRegistrationExtensions
             SuggestionReleaseCheckProcessor,
             ISuggestionReleaseCheckProcessor,
             SuggestionReleaseCheckBackgroundService>(services);
+
+        // Auto-grab: adds the books the followed lists offer, a capped handful per run.
+        AddHostedProcessor<
+            AutoGrabProcessor,
+            IAutoGrabProcessor,
+            AutoGrabBackgroundService>(services);
+
+        // Everything a download needs except the sending, done when the book is found
+        // rather than when somebody is waiting for it.
+        AddHostedProcessor<
+            ReleasePreparationProcessor,
+            IReleasePreparationProcessor,
+            ReleasePreparationBackgroundService>(services);
 
         // Discovery: one chart page, board page or metadata lookup per interval, so a
         // followed chart fills out over an hour instead of in one burst at startup.

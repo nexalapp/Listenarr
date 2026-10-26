@@ -17,6 +17,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import type { DiscoverFeed, SuggestedBook } from '@/types'
 
 const idle = { running: false, completed: 0, total: 0, failed: 0 }
@@ -97,6 +98,9 @@ const api = vi.hoisted(() => ({
   saveDiscoverSections: vi.fn(),
   ignoreSuggestion: vi.fn(),
   getProtectedImageUrl: vi.fn(),
+  getAutoGrabSettings: vi.fn(),
+  saveAutoGrabSettings: vi.fn(),
+  getAutoGrabPreview: vi.fn(),
 }))
 
 vi.mock('@/services/api', () => ({ apiService: api }))
@@ -130,6 +134,7 @@ describe('DiscoverTab', () => {
     // Sort and grouping are remembered per browser, so one test's choice would
     // otherwise be the next test's starting point.
     localStorage.clear()
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     api.getDiscover.mockImplementation(async () => feed())
     api.getDiscoverRefreshStatus.mockImplementation(async () => idle)
@@ -143,6 +148,19 @@ describe('DiscoverTab', () => {
       available: true,
     }))
     api.ignoreSuggestion.mockImplementation(async () => ({ key: 'asin:B1' }))
+    api.getAutoGrabSettings.mockImplementation(async () => ({
+      enabled: false,
+      perRun: 10,
+      intervalMinutes: 60,
+      sources: [],
+    }))
+    api.getAutoGrabPreview.mockImplementation(async () => ({
+      enabled: false,
+      perRun: 10,
+      available: 0,
+      candidates: [],
+      bySource: [],
+    }))
   })
 
   it('shows each followed section with what it is still missing', async () => {

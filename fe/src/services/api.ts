@@ -64,6 +64,9 @@ import type {
   DiscoverSelectedSection,
   DiscoverSelection,
   DiscoverSource,
+  AutoGrabSettings,
+  AutoGrabPlan,
+  AutoGrabReport,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
   MonitorAuthorResponse,
@@ -494,6 +497,28 @@ class ApiService {
   /** Starts fetching missing/stale catalogs in the background; 409 when already running. */
   async refreshSuggestions(): Promise<SuggestionRefreshStatus> {
     return this.request<SuggestionRefreshStatus>('/suggestions/refresh', { method: 'POST' })
+  }
+
+  // ---- Auto-grab ---------------------------------------------------------------
+
+  async getAutoGrabSettings(): Promise<AutoGrabSettings> {
+    return this.request<AutoGrabSettings>('/autograb/settings')
+  }
+
+  async saveAutoGrabSettings(settings: AutoGrabSettings): Promise<AutoGrabSettings> {
+    return this.request<AutoGrabSettings>('/autograb/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    })
+  }
+
+  /** What a run would add right now. Adds nothing. */
+  async getAutoGrabPreview(): Promise<AutoGrabPlan> {
+    return this.request<AutoGrabPlan>('/autograb/preview')
+  }
+
+  async runAutoGrab(): Promise<AutoGrabReport> {
+    return this.request<AutoGrabReport>('/autograb/run', { method: 'POST' })
   }
 
   // ---- Discover --------------------------------------------------------------

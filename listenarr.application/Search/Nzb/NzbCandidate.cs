@@ -62,7 +62,13 @@ namespace Listenarr.Application.Search.Nzb
         Unavailable,
 
         /// <summary>No search string to resolve.</summary>
-        NothingToResolve
+        NothingToResolve,
+
+        /// <summary>
+        /// Not asked at all: a metered index, left out of work nobody requested. It may
+        /// still hold the release, and a grab the user asks for will ask it.
+        /// </summary>
+        NotAsked
     }
 
     /// <summary>

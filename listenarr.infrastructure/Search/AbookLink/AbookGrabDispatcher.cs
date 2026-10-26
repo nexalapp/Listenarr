@@ -37,7 +37,7 @@ namespace Listenarr.Infrastructure.Search.AbookLink
 
         public async Task<AbookSendResult> GrabAsync(int topicId, CancellationToken ct = default)
         {
-            var grab = await _resolver.ResolveAsync(topicId, ct);
+            var grab = await _resolver.ResolveAsync(topicId, meteredAllowed: true, ct);
 
             if (!grab.Succeeded || grab.NzbUrl is not { Length: > 0 } || grab.Post is null)
             {

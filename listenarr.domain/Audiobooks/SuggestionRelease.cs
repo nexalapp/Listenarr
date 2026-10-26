@@ -20,6 +20,32 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Listenarr.Domain.Audiobooks
 {
+    /// <summary>
+    /// How much of the work before a download has been done for a release.
+    ///
+    /// Stored by name, so renaming a member orphans every row holding the old one.
+    /// </summary>
+    public enum ReleasePreparationState
+    {
+        /// <summary>Found, but nothing has been resolved yet.</summary>
+        NotPrepared = 0,
+
+        /// <summary>An NZB is in hand; a grab is a send and nothing more.</summary>
+        Ready = 1,
+
+        /// <summary>
+        /// The free indexes do not hold it and the metered one was not allowed to be
+        /// asked. A grab the user asks for may still ask it.
+        /// </summary>
+        NeedsMeteredIndex = 2,
+
+        /// <summary>
+        /// No index holds the post's search string, or the post never yielded one.
+        /// Grabbing it needs an NZB supplied by hand.
+        /// </summary>
+        Unresolvable = 3
+    }
+
     /// <summary>What a background check found for one suggested book.</summary>
     public enum SuggestionReleaseStatus
     {
@@ -78,5 +104,37 @@ namespace Listenarr.Domain.Audiobooks
         public string? Detail { get; set; }
 
         public DateTime CheckedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// How far the work of turning this release into a download has got.
+        ///
+        /// Everything short of sending it is done ahead of time, so pressing the button
+        /// is a send rather than a search, a thanks and a resolve.
+        /// </summary>
+        public ReleasePreparationState Preparation { get; set; } = ReleasePreparationState.NotPrepared;
+
+        /// <summary>
+        /// The NZB this release resolved to, protected: the link carries an indexer's
+        /// API key, which must not sit in the database in the clear.
+        /// </summary>
+        public string? ProtectedNzbUrl { get; set; }
+
+        /// <summary>Which index produced the NZB — NZBIndex, Binsearch, NZBKing.</summary>
+        public string? ResolvedVia { get; set; }
+
+        /// <summary>
+        /// A fingerprint of the post's payload at the moment it was resolved.
+        ///
+        /// Posters edit the payload in place when a release is replaced, and a stored
+        /// NZB then points at the superseded upload. The grab re-reads the post — one
+        /// free request — and only trusts what is stored when this still matches, so
+        /// the saved work is used where it is valid and quietly redone where it is not.
+        /// </summary>
+        public string? PayloadFingerprint { get; set; }
+
+        /// <summary>Why preparation stopped where it did, for the page to show.</summary>
+        public string? PreparationDetail { get; set; }
+
+        public DateTime? PreparedAt { get; set; }
     }
 }

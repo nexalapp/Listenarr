@@ -33,6 +33,13 @@ namespace Listenarr.Application.Search.Contracts
         /// </summary>
         int Order { get; }
 
+        /// <summary>
+        /// Whether asking this index costs the operator something countable. A metered
+        /// index can be left out of work nobody asked for, while staying available to a
+        /// grab somebody did.
+        /// </summary>
+        bool IsMetered => false;
+
         Task<NzbResolverResult> ResolveAsync(string searchString, CancellationToken ct = default);
     }
 
@@ -41,6 +48,13 @@ namespace Listenarr.Application.Search.Contracts
     /// </summary>
     public interface INzbResolverChain
     {
-        Task<NzbResolution> ResolveAsync(string? searchString, CancellationToken ct = default);
+        /// <param name="meteredAllowed">
+        /// False leaves the metered indexes unasked and says so in the attempts, for
+        /// work done on a schedule rather than at somebody's request.
+        /// </param>
+        Task<NzbResolution> ResolveAsync(
+            string? searchString,
+            bool meteredAllowed = true,
+            CancellationToken ct = default);
     }
 }
