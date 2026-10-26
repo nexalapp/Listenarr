@@ -53,9 +53,17 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         ISecretProtector secrets,
         ISuggestionReleaseRepository store,
         IDownloadService downloads,
+        IAbookLinkBrowser abook,
         ILogger<SuggestionReleaseService> logger) : ISuggestionReleaseService
     {
         private const string AbookLinkImplementation = "AbookLink";
+
+        /// <summary>
+        /// How many of a check's matches are read in full. A search narrowed to the one
+        /// book being asked about rarely answers with more than two or three posts of it,
+        /// and a library of a thousand books is worth one request each, not sixteen.
+        /// </summary>
+        private const int MaxPostsReadPerCheck = 3;
 
         public Task<SuggestionRelease> CheckAsync(SuggestedBook book, CancellationToken cancellationToken = default)
         {
@@ -101,7 +109,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 List<IndexerSearchResult> results;
                 try
                 {
-                    results = await search.SearchIndexerResultsAsync(indexer.Id.ToString(), query);
+                    results = await search.SearchIndexerResultsAsync(
+                        indexer.Id.ToString(), query, null, AvailabilityRequest(query));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
@@ -119,6 +128,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                             result.SeriesName, result.SeriesPosition, seriesNumber)
                         : SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, title, authors))
                     .ToList();
+
+                if (IsAbookLink(indexer))
+                {
+                    matching = await ConfirmAbookMatchesAsync(
+                        matching, asin, title, authors, seriesNumber, cancellationToken);
+                }
 
                 var best = await BestAsync(matching, profile);
                 if (best != null)
@@ -189,6 +204,87 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 "Grabbed the release found for suggested book '{Title}' ({Asin}) from {Indexer}: {Release} -> download {DownloadId}",
                 audiobook.Title, audiobook.Asin, stored.IndexerName, stored.ReleaseTitle, downloadId);
             return !string.IsNullOrEmpty(downloadId);
+        }
+
+        /// <summary>
+        /// What the check asks a source for: the posts, not what is inside them. abook.link
+        /// reads this as permission to judge every hit from its topic title and open none,
+        /// which turns a check from sixteen requests to its forum into one.
+        /// </summary>
+        private static SearchRequest AvailabilityRequest(string query) => new()
+        {
+            Query = query,
+            IncludeEnrichment = false
+        };
+
+        /// <summary>
+        /// Reads the posts behind the shortlist and judges them again on what the post
+        /// says. The titles can only narrow: an ASIN lives in the post, and a post that
+        /// declares one is held to it, so a title that looks right is a candidate and
+        /// nothing more until the post has been read. Reading the shortlist rather than
+        /// the search means two or three topics opened per check instead of fifteen, and
+        /// none at all for a book nothing on the forum is even titled after.
+        ///
+        /// A post that could not be read keeps its place on the strength of its title,
+        /// which is the same answer a hit past the old inspection limit always got.
+        /// </summary>
+        private async Task<List<IndexerSearchResult>> ConfirmAbookMatchesAsync(
+            List<IndexerSearchResult> shortlist,
+            string asin,
+            string title,
+            IReadOnlyList<string> authors,
+            string? seriesNumber,
+            CancellationToken cancellationToken)
+        {
+            var confirmed = new List<IndexerSearchResult>();
+            foreach (var result in shortlist.Take(MaxPostsReadPerCheck))
+            {
+                if (!int.TryParse(result.DownloadReference, out var topicId))
+                {
+                    confirmed.Add(result);
+                    continue;
+                }
+
+                AbookBrowseResult topic;
+                try
+                {
+                    topic = await abook.GetTopicAsync(topicId, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    logger.LogWarning(ex, "Suggestion release check: could not read abook.link topic {TopicId}", topicId);
+                    confirmed.Add(result);
+                    continue;
+                }
+
+                if (!topic.Succeeded || topic.Candidates.Count == 0)
+                {
+                    confirmed.Add(result);
+                    continue;
+                }
+
+                var post = topic.Candidates[0].Post;
+                result.Size = post.SizeBytes ?? result.Size;
+                result.Files = post.FileCount ?? result.Files;
+                result.Format = post.Format ?? result.Format;
+                result.Quality = post.Format ?? result.Quality;
+                result.Narrator = post.Narrator ?? result.Narrator;
+                result.Publisher = post.Publisher ?? result.Publisher;
+                result.Asin = post.Asin ?? result.Asin;
+                result.SeriesName = post.SeriesName ?? result.SeriesName;
+                result.SeriesPosition = post.SeriesPosition ?? result.SeriesPosition;
+                result.Album = post.Title ?? result.Album;
+                result.Artist = post.Author ?? result.Artist;
+
+                if (SuggestionReleaseMatch.AbookPostMatches(
+                    result.Asin, result.Album, result.Artist, asin, title, authors,
+                    result.SeriesName, result.SeriesPosition, seriesNumber))
+                {
+                    confirmed.Add(result);
+                }
+            }
+
+            return confirmed;
         }
 
         /// <summary>

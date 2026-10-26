@@ -55,7 +55,13 @@ namespace Listenarr.Infrastructure.Search.Providers.AbookLink
         {
             ArgumentNullException.ThrowIfNull(indexer);
 
-            var browse = await _browser.SearchAsync(query, MaxTopicsInspected);
+            // Opening a topic is what reads its NFO: the size, the format and the file
+            // count the result list shows and a quality profile scores on. A caller that
+            // only wants to know whether a post for a book exists does not need any of
+            // that - the topic titles already say which book each post is - and asking
+            // for it costs fifteen requests to somebody's forum per book checked.
+            var inspect = request?.IncludeEnrichment == false ? 0 : MaxTopicsInspected;
+            var browse = await _browser.SearchAsync(query, inspect);
             if (!browse.Succeeded)
             {
                 _logger.LogWarning("abook.link search failed: {Reason}", browse.Reason);

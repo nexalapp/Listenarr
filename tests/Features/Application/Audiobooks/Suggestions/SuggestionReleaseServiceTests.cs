@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Audiobooks.Suggestions;
+using Listenarr.Application.Search.AbookLink;
 using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -37,6 +38,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         private readonly Mock<IIndexerRepository> _indexers = new();
         private readonly Mock<IQualityProfileService> _profiles = new();
         private readonly Mock<IDownloadService> _downloads = new();
+        private readonly Mock<IAbookLinkBrowser> _abook = new();
         private readonly Dictionary<string, SuggestionRelease> _stored = new(StringComparer.OrdinalIgnoreCase);
 
         private sealed class MarkingProtector : ISecretProtector
@@ -55,14 +57,25 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
                 .Returns(Task.CompletedTask);
             store.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string asin, CancellationToken _) => _stored.GetValueOrDefault(asin));
+            _abook.Setup(a => a.GetTopicAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AbookBrowseResult(false, 0, [], new AbookParseReport(), "not stubbed"));
             return new SuggestionReleaseService(
                 _search.Object, _indexers.Object, _profiles.Object, new MarkingProtector(),
-                store.Object, _downloads.Object, NullLogger<SuggestionReleaseService>.Instance);
+                store.Object, _downloads.Object, _abook.Object,
+                NullLogger<SuggestionReleaseService>.Instance);
         }
 
         private void Returns(Indexer indexer, params IndexerSearchResult[] results) =>
-            _search.Setup(s => s.SearchIndexerResultsAsync(indexer.Id.ToString(), It.IsAny<string>(), null, null))
+            _search.Setup(s => s.SearchIndexerResultsAsync(
+                    indexer.Id.ToString(), It.IsAny<string>(), null, It.IsAny<SearchRequest?>()))
                 .ReturnsAsync(results.ToList());
+
+        /// <summary>The post abook.link gives up when the topic behind a hit is opened.</summary>
+        private void Topic(int topicId, AbookPost post) =>
+            _abook.Setup(a => a.GetTopicAsync(topicId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AbookBrowseResult(
+                    true, 1, [new AbookCandidate(topicId, post.Title ?? string.Empty, post)],
+                    new AbookParseReport(), null));
 
         private static SuggestedBook Book(string asin, string title, string author) => new(
             asin, title, null, [author], [], null, null, "english", null, [], null, null, null, null, null, null,
@@ -138,7 +151,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
 
-            _search.Verify(s => s.SearchIndexerResultsAsync("2", It.IsAny<string>(), null, null), Times.Never);
+            _search.Verify(s => s.SearchIndexerResultsAsync(
+                "2", It.IsAny<string>(), null, It.IsAny<SearchRequest?>()), Times.Never);
         }
 
         [Fact]
@@ -175,7 +189,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         [Fact]
         public async Task EveryIndexerFailingIsNotTheSameAsNobodyHavingTheBook()
         {
-            _search.Setup(s => s.SearchIndexerResultsAsync(It.IsAny<string>(), It.IsAny<string>(), null, null))
+            _search.Setup(s => s.SearchIndexerResultsAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), null, It.IsAny<SearchRequest?>()))
                 .ThrowsAsync(new HttpRequestException("indexer is down"));
             var service = Build(Abook, Geek);
 
@@ -189,7 +204,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
         public async Task AnIndexerThatAnsweredCanStillReportNobodyHasIt()
         {
             Returns(Abook);
-            _search.Setup(s => s.SearchIndexerResultsAsync(Geek.Id.ToString(), It.IsAny<string>(), null, null))
+            _search.Setup(s => s.SearchIndexerResultsAsync(
+                    Geek.Id.ToString(), It.IsAny<string>(), null, It.IsAny<SearchRequest?>()))
                 .ThrowsAsync(new HttpRequestException("indexer is down"));
             var service = Build(Abook, Geek);
 
@@ -210,6 +226,100 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             Assert.False(await service.GrabStoredAsync(new Audiobook { Id = 1273, Asin = "B0053ZT602" }));
             _downloads.VerifyNoOtherCalls();
+        }
+    
+        [Fact]
+        public async Task TheCheckDoesNotPayToOpenEveryHitAbookLinkAnswersWith()
+        {
+            SearchRequest? asked = null;
+            _search.Setup(s => s.SearchIndexerResultsAsync(
+                    Abook.Id.ToString(), It.IsAny<string>(), null, It.IsAny<SearchRequest?>()))
+                .Callback<string, string, string?, SearchRequest?>((_, _, _, request) => asked = request)
+                .ReturnsAsync([]);
+            var service = Build(Abook);
+
+            await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
+
+            // The hits' titles say which posts could be the book. Reading fifteen of them
+            // to find that out is fifteen requests to the forum for every book checked.
+            Assert.NotNull(asked);
+            Assert.False(asked!.IncludeEnrichment);
+        }
+
+        [Fact]
+        public async Task NoHitWorthReadingMeansNoTopicIsOpened()
+        {
+            Returns(Abook, new IndexerSearchResult
+            {
+                Id = "abook:1",
+                Title = "Iain M. Banks - Culture 01 - Consider Phlebas (1987)",
+                Album = "Consider Phlebas",
+                Artist = "Iain M. Banks",
+                DownloadReference = "1"
+            });
+            var service = Build(Abook);
+
+            var release = await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
+
+            Assert.Equal(SuggestionReleaseStatus.NotFound, release.Status);
+            _abook.Verify(a => a.GetTopicAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task APostThatNamesAnotherAsinIsRejectedOnceItsOwnPostIsRead()
+        {
+            // The title alone cannot tell these apart - the ASIN is only in the post, and a
+            // post that declares one is held to it. Shortlisting by title and confirming by
+            // post keeps that rule without opening every hit.
+            Returns(Abook, new IndexerSearchResult
+            {
+                Id = "abook:71604",
+                Title = "Stanislaw Lem - Solaris (2011)",
+                Album = "Solaris",
+                Artist = "Stanislaw Lem",
+                DownloadReference = "71604"
+            });
+            var service = Build(Abook);
+            Topic(71604, new AbookPost
+            {
+                Title = "Solaris",
+                Author = "Stanislaw Lem",
+                Asin = "B000OTHER0",
+                Format = "M4B",
+                SizeBytes = 300_000_000
+            });
+
+            var release = await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
+
+            Assert.Equal(SuggestionReleaseStatus.NotFound, release.Status);
+            _abook.Verify(a => a.GetTopicAsync(71604, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ReadingTheShortlistedPostGivesTheReleaseItsSizeAndFormat()
+        {
+            Returns(Abook, new IndexerSearchResult
+            {
+                Id = "abook:71604",
+                Title = "Stanislaw Lem - Solaris (2011)",
+                Album = "Solaris",
+                Artist = "Stanislaw Lem",
+                DownloadReference = "71604"
+            });
+            var service = Build(Abook);
+            Topic(71604, new AbookPost
+            {
+                Title = "Solaris",
+                Author = "Stanislaw Lem",
+                Asin = "B0053ZT602",
+                Format = "M4B",
+                SizeBytes = 300_000_000
+            });
+
+            var release = await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+            Assert.Equal(300_000_000, release.SizeBytes);
         }
     }
 }
