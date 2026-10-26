@@ -156,6 +156,35 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Conversion
         }
 
         [EncoderFact]
+        public async Task ConvertAsync_EmbedsTheCoverItIsGiven_AsACovrAtom()
+        {
+            var source = await WriteSourceMp3Async("Chapter 1.mp3", 1);
+            var cover = Path.Combine(_workingDirectory, "cover.jpg");
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = FindOnPath("ffmpeg")!,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[] { "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=red:s=64x64", "-frames:v", "1", cover })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            Assert.Equal(0, (await new SystemProcessRunner(NullLogger<SystemProcessRunner>.Instance).RunAsync(startInfo, 30_000)).ExitCode);
+            var plan = ConversionPlanner.BuildPlan([Source(source, 1)], StringComparer.Ordinal);
+
+            var result = await BuildConverter().ConvertAsync(
+                new ConversionRequest(plan, OutputPath, Tags(("title", "Test Book")), cover));
+
+            Assert.True(result.Success, result.Message);
+            // The atom players read, not ffprobe's view of a video stream.
+            Assert.True(IndexOf(await File.ReadAllBytesAsync(OutputPath), "covr"u8) >= 0, "The output carries no covr atom.");
+        }
+
+        [EncoderFact]
         public async Task ConvertAsync_WritesTheDescriptionIntoTheDescAtom()
         {
             var source = await WriteSourceMp3Async("Chapter 1.mp3", 1);

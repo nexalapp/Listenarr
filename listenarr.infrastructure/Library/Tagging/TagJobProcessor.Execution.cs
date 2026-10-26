@@ -414,34 +414,9 @@ namespace Listenarr.Infrastructure.Library.Tagging
         /// </summary>
         private async Task<string?> ResolveCoverArtAsync(Audiobook audiobook, IServiceProvider services)
         {
-            var identifier = audiobook.Asin;
-            if (string.IsNullOrWhiteSpace(identifier))
-            {
-                return null;
-            }
-
             try
             {
-                var relative = await services.GetRequiredService<IImageCacheService>()
-                    .GetCachedImagePathAsync(identifier);
-                if (string.IsNullOrWhiteSpace(relative))
-                {
-                    return null;
-                }
-
-                var contentRoot = services.GetRequiredService<IApplicationPathService>().ContentRootPath;
-                var absolute = Path.GetFullPath(Path.Combine(contentRoot, relative));
-
-                // An SVG placeholder is not cover art, and the mov muxer cannot carry it.
-                var extension = Path.GetExtension(absolute);
-                if (!string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
-                {
-                    return null;
-                }
-
-                return File.Exists(absolute) ? absolute : null;
+                return await CachedCoverArt.ResolveAsync(audiobook, services);
             }
             catch (Exception ex) when (IsNonFatal(ex))
             {
