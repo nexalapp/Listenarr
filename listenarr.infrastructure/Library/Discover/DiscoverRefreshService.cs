@@ -367,12 +367,16 @@ namespace Listenarr.Infrastructure.Library.Discover
                 })
                 .ToList();
 
-            // A chart page is a set of positions, so re-reading it replaces what was
-            // there. A board page is a window onto a list that grows from the top, so
-            // re-reading it must add rather than replace.
-            var replacePage = source == DiscoverSources.AudibleCharts ? page : (int?)null;
+            // Re-reading a page only ever adds. A chart page used to be treated as a set
+            // of positions and replaced wholesale, but a row's identity is its ASIN and
+            // a chart reorders between reads: a book that moved from page two to page
+            // three was deleted when page two was re-read and added back as a new row
+            // when page three was, losing when it was first seen and the Audible lookup
+            // that had already been spent on it. The rank and page of a book still in
+            // the chart are updated in place; one that has left keeps its last known
+            // place, and its UpdatedAt stops advancing, which is what says so.
             var added = await context.Discover.UpsertItemsAsync(
-                source, section.Id, rows, replacePage, cancellationToken);
+                source, section.Id, rows, cancellationToken);
 
             if (source == DiscoverSources.AbookLink)
             {

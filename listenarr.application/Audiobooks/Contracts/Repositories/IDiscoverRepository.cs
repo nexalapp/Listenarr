@@ -69,7 +69,6 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             string source,
             string sectionId,
             IReadOnlyList<DiscoverItem> items,
-            int? replacePage = null,
             CancellationToken cancellationToken = default);
 
         /// <summary>

@@ -90,7 +90,6 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             string source,
             string sectionId,
             IReadOnlyList<DiscoverItem> items,
-            int? replacePage = null,
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(items);
@@ -131,15 +130,6 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 incoming.SectionId = sectionId;
                 db.DiscoverItems.Add(incoming);
                 added++;
-            }
-
-            if (replacePage is { } page)
-            {
-                var kept = items.Select(item => item.ExternalId).ToHashSet(StringComparer.Ordinal);
-                var gone = existing
-                    .Where(item => item.Page == page && !kept.Contains(item.ExternalId))
-                    .ToList();
-                db.DiscoverItems.RemoveRange(gone);
             }
 
             await db.SaveChangesAsync(cancellationToken);

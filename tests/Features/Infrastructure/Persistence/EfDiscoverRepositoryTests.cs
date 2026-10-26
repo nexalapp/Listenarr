@@ -51,12 +51,11 @@ public sealed class EfDiscoverRepositoryTests : BaseTests
         var repository = new EfDiscoverRepository(db);
 
         await repository.UpsertItemsAsync(
-            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1, firstSeen: Now)], replacePage: 1);
+            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1, firstSeen: Now)]);
         await repository.UpsertItemsAsync(
             DiscoverSources.AudibleCharts,
             "1",
-            [Item("B1", 4, 1, firstSeen: Now.AddDays(1)), Item("B2", 5, 1)],
-            replacePage: 1);
+            [Item("B1", 4, 1, firstSeen: Now.AddDays(1)), Item("B2", 5, 1)]);
 
         var items = await repository.GetItemsAsync(DiscoverSources.AudibleCharts, ["1"]);
         var first = items.Single(item => item.ExternalId == "B1");
@@ -66,19 +65,50 @@ public sealed class EfDiscoverRepositoryTests : BaseTests
     }
 
     [Fact]
-    public async Task UpsertItems_ForAChart_DropsABookThatHasLeftThePage()
+    public async Task UpsertItems_ForAChart_KeepsABookThatHasLeftThePage()
+    {
+        // A chart reorders between reads, so a book missing from a page has usually
+        // moved to another one rather than left the chart. Dropping it here lost when
+        // it was first seen and the Audible lookup already spent on it, and the next
+        // page put it straight back as a new row.
+        var options = Options();
+        await using var db = new ListenArrDbContext(options);
+        var repository = new EfDiscoverRepository(db);
+
+        await repository.UpsertItemsAsync(
+            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1), Item("B2", 2, 1)]);
+        await repository.UpsertItemsAsync(
+            DiscoverSources.AudibleCharts, "1", [Item("B2", 1, 1)]);
+
+        var items = await repository.GetItemsAsync(DiscoverSources.AudibleCharts, ["1"]);
+        Assert.Equal(2, items.Count);
+    }
+
+    [Fact]
+    public async Task UpsertItems_KeepsTheLookupAlreadySpentOnARowThatMovedPages()
     {
         var options = Options();
         await using var db = new ListenArrDbContext(options);
         var repository = new EfDiscoverRepository(db);
 
         await repository.UpsertItemsAsync(
-            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1), Item("B2", 2, 1)], replacePage: 1);
+            DiscoverSources.AudibleCharts,
+            "1",
+            [Item("B1", 1, 1, title: "The looked-up title", firstSeen: Now)]);
+
+        // Page one is read again without it, then it turns up on page two, where the
+        // chart's own listing knows nothing but a rank.
+        await repository.UpsertItemsAsync(DiscoverSources.AudibleCharts, "1", [Item("B9", 2, 1)]);
         await repository.UpsertItemsAsync(
-            DiscoverSources.AudibleCharts, "1", [Item("B2", 1, 1)], replacePage: 1);
+            DiscoverSources.AudibleCharts, "1", [Item("B1", 21, 2, enriched: false, title: "B1")]);
 
         var items = await repository.GetItemsAsync(DiscoverSources.AudibleCharts, ["1"]);
-        Assert.Equal("B2", Assert.Single(items).ExternalId);
+        var moved = items.Single(item => item.ExternalId == "B1");
+        Assert.True(moved.Enriched);
+        Assert.Equal("The looked-up title", moved.Book?.Title);
+        Assert.Equal(Now, moved.FirstSeenAt);
+        Assert.Equal(2, moved.Page);
+        Assert.Equal(21, moved.Rank);
     }
 
     [Fact]
@@ -89,11 +119,11 @@ public sealed class EfDiscoverRepositoryTests : BaseTests
         var repository = new EfDiscoverRepository(db);
 
         await repository.UpsertItemsAsync(
-            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1)], replacePage: 1);
+            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1)]);
         await repository.UpsertItemsAsync(
-            DiscoverSources.AudibleCharts, "1", [Item("B21", 21, 2)], replacePage: 2);
+            DiscoverSources.AudibleCharts, "1", [Item("B21", 21, 2)]);
         await repository.UpsertItemsAsync(
-            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1)], replacePage: 1);
+            DiscoverSources.AudibleCharts, "1", [Item("B1", 1, 1)]);
 
         var items = await repository.GetItemsAsync(DiscoverSources.AudibleCharts, ["1"]);
         Assert.Equal(2, items.Count);

@@ -160,10 +160,15 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// Only a number may follow; in "Sten, Bk 2 - The Wolf Worlds" the title of book
         /// two is followed by nothing, and in "Sten Bk 7 - Vortex" by a word, so neither
         /// is turned away.
+        ///
+        /// At most three digits, because the commonest thing after a title is the year
+        /// and normalising has taken its brackets off: "Islands in the Sky (1952)" reads
+        /// as "islands in the sky 1952", which is not book one thousand nine hundred and
+        /// fifty-two of anything. No series counts that high.
         /// </summary>
         private static Regex TitleThenNumber(string normalizedTitle) =>
             new(
-                $@"(?<= ){Regex.Escape(normalizedTitle)}(?: (?:bk|bks|book|vol|vols|volume|part|pt|no|num|number))? (\d+(?:\.\d+)?)(?= )",
+                $@"(?<= ){Regex.Escape(normalizedTitle)}(?: (?:bk|bks|book|vol|vols|volume|part|pt|no|num|number))? (\d{{1,3}}(?:\.\d+)?)(?= )",
                 RegexOptions.None);
 
         /// <summary>

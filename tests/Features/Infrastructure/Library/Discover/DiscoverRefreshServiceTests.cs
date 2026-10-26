@@ -66,7 +66,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Discover
                     It.IsAny<string>(),
                     It.IsAny<string>(),
                     It.IsAny<IReadOnlyList<DiscoverItem>>(),
-                    It.IsAny<int?>(),
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync(0);
             _discover
@@ -198,13 +197,12 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Discover
                     DiscoverSources.AudibleCharts,
                     "1",
                     It.Is<IReadOnlyList<DiscoverItem>>(items => items[0].Rank == 3 && items[1].Rank == 4),
-                    2,
                     It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 
         [Fact]
-        public async Task FetchPage_ForABoard_AddsRatherThanReplacingThePage()
+        public async Task FetchPage_AddsRatherThanReplacingThePage()
         {
             Follow(DiscoverSources.AbookLink, ("7", "Science Fiction"));
             _abook.Items = [PageItem("123")];
@@ -217,7 +215,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Discover
                     DiscoverSources.AbookLink,
                     "7",
                     It.IsAny<IReadOnlyList<DiscoverItem>>(),
-                    null,
                     It.IsAny<CancellationToken>()),
                 Times.Once);
             _discover.Verify(

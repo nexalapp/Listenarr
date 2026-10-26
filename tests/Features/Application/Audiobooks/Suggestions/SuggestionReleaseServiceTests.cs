@@ -509,5 +509,29 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
         }
+    
+        [Theory]
+        [InlineData("Arthur C. Clarke - Islands in the Sky (1952) [mp3]", "Islands in the Sky", "1", "Arthur C. Clarke")]
+        [InlineData("Mark Tufo - After the Pulse 1 - Reset (2025) [M4B]", "Reset", "1", "Mark Tufo")]
+        [InlineData("Craig Alanson - Convergence 4 - Recon (2024) [M4B]", "Recon", "4", "Craig Alanson")]
+        public async Task TheYearAfterATitleIsNotAPlaceInTheSeries(
+            string releaseTitle, string title, string seriesNumber, string author)
+        {
+            // Normalising takes the brackets off, so "Reset (2025)" reads as "reset 2025"
+            // and the series rule read the year as book two thousand and twenty-five.
+            // Screening the library's stored matches turned up 490 of these.
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = releaseTitle,
+                Size = 300_000_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B00TEST", title, [author], CancellationToken.None, seriesNumber, 500);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+        }
     }
 }
