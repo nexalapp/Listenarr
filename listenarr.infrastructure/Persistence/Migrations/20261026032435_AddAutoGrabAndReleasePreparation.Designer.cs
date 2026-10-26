@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20261026025429_AddReleasePreparation")]
-    partial class AddReleasePreparation
+    [Migration("20261026032435_AddAutoGrabAndReleasePreparation")]
+    partial class AddAutoGrabAndReleasePreparation
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -2434,6 +2434,16 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("{}");
 
+                    b.Property<bool>("AutoRepairAudio")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("AutoRepairChapters")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
                     b.Property<int>("CompletedFileAction")
                         .HasColumnType("INTEGER");
 
@@ -2649,6 +2659,12 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("[\"Series\",\"Trilogy\",\"Saga\",\"Cycle\",\"Sequence\",\"Duology\",\"Quartet\",\"Quintet\",\"Tetralogy\"]");
 
+                    b.Property<string>("SeriesNamesKeptWholeJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]");
+
                     b.Property<bool>("ShowCompletedExternalDownloads")
                         .HasColumnType("INTEGER");
 
@@ -2679,6 +2695,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("UnmatchedScanConcurrency")
                         .HasColumnType("INTEGER");
+
+                    b.Property<int>("UnobtainableRecheckDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(7);
 
                     b.Property<int>("Version")
                         .IsConcurrencyToken()

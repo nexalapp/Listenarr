@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
-    public partial class AddReleasePreparation : Migration
+    public partial class AddAutoGrabAndReleasePreparation : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -52,6 +52,13 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 maxLength: 64,
                 nullable: true);
 
+            migrationBuilder.AddColumn<string>(
+                name: "AutoGrabSettingsJson",
+                table: "ApplicationSettings",
+                type: "TEXT",
+                nullable: false,
+                defaultValue: "{}");
+
             migrationBuilder.AddColumn<bool>(
                 name: "PrepareReleasesEnabled",
                 table: "ApplicationSettings",
@@ -93,6 +100,10 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
             migrationBuilder.DropColumn(
                 name: "ResolvedVia",
                 table: "SuggestionReleases");
+
+            migrationBuilder.DropColumn(
+                name: "AutoGrabSettingsJson",
+                table: "ApplicationSettings");
 
             migrationBuilder.DropColumn(
                 name: "PrepareReleasesEnabled",

@@ -2146,6 +2146,50 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("SuggestionDismissals");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Audiobooks.SuggestionRelease", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Asin")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IndexerName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProtectedResult")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleaseTitle")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Asin")
+                        .IsUnique();
+
+                    b.ToTable("SuggestionReleases");
+                });
+
+
             modelBuilder.Entity("Listenarr.Domain.Audiobooks.Tagging.TagJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2575,8 +2619,19 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("[\"Series\",\"Trilogy\",\"Saga\",\"Cycle\",\"Sequence\",\"Duology\",\"Quartet\",\"Quintet\",\"Tetralogy\"]");
 
+                    b.Property<string>("SeriesNamesKeptWholeJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]");
+
                     b.Property<bool>("ShowCompletedExternalDownloads")
                         .HasColumnType("INTEGER");
+
+                    b.Property<int>("SuggestionReleaseCheckIntervalSeconds")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(30);
 
                     b.Property<int>("SuggestionsBackgroundFetchIntervalMinutes")
                         .ValueGeneratedOnAdd()
@@ -2600,6 +2655,11 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("UnmatchedScanConcurrency")
                         .HasColumnType("INTEGER");
+
+                    b.Property<int>("UnobtainableRecheckDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(7);
 
                     b.Property<int>("Version")
                         .IsConcurrencyToken()

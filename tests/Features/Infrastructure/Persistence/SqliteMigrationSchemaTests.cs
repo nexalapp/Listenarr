@@ -125,13 +125,11 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string SuggestionReleasesMigrationId =
         "20261024025603_AddSuggestionReleases";
 
-    private const string DiscoverFeedsMigrationId =
-        "20261024025626_AddDiscoverFeeds";
-    private const string AutoRepairSettingsMigrationId =
-        "20261025012440_AddAutoRepairSettings";
-
     private const string UnobtainableRecheckDaysMigrationId =
         "20261024233641_AddUnobtainableRecheckDays";
+
+    private const string AutoGrabAndReleasePreparationMigrationId =
+        "20261026032435_AddAutoGrabAndReleasePreparation";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -295,7 +293,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 SuggestionReleasesMigrationId,
                 DiscoverFeedsMigrationId,
                 UnobtainableRecheckDaysMigrationId,
-                AutoRepairSettingsMigrationId
+                AutoRepairSettingsMigrationId,
+                AutoGrabAndReleasePreparationMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);
