@@ -461,5 +461,53 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
         }
+    
+        [Theory]
+        [InlineData("Allan Cole and Chris Bunch - Sten 08 - Empires End (Unabr) - 574.11 MB")]
+        [InlineData("Allan.Cole.&.Chris.Bunch-Sten.Bk.8-Empires.End-AudioBook")]
+        [InlineData("Allan Cole & Chris Bunch - Sten, Book 8 - Empires End")]
+        public async Task HoweverThePosterWroteItBookEightIsNotBookOne(string releaseTitle)
+        {
+            // The first spelling was caught; the second got through and was grabbed, which
+            // is how the connector words came to be in the rule at all.
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = releaseTitle,
+                Size = 604_117_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B003BF67TE", "Sten", ["Chris Bunch", "Allan Cole"],
+                CancellationToken.None, "1", 488);
+
+            Assert.Equal(SuggestionReleaseStatus.NotFound, release.Status);
+        }
+
+        [Theory]
+        [InlineData("The Wolf Worlds", "2", "Allan Cole & Chris Bunch - Sten, Bk 2 - The Wolf Worlds")]
+        [InlineData("Vortex", "7", "Allan.Cole.&.Chris.Bunch-Sten.Bk.7-Vortex-AudioBook")]
+        [InlineData("Fleet of the Damned", "4", "Allan.Cole.&.Chris.Bunch-Sten.Bk.4-The.Fleet.of.the.Damned")]
+        public async Task TheOtherBooksOfThatSeriesAreStillTheirOwnReleases(
+            string title, string seriesNumber, string releaseTitle)
+        {
+            // All three were grabbed correctly in the same run. The series number in these
+            // titles belongs to the series, not to the book's own title, so the rule must
+            // not see it.
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = releaseTitle,
+                Size = 300_000_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B00TEST", title, ["Chris Bunch", "Allan Cole"],
+                CancellationToken.None, seriesNumber, 500);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+        }
     }
 }

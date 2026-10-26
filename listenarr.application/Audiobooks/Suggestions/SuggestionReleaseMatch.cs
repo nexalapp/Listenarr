@@ -129,9 +129,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// whose distinctive title is also "Sten". The abook.link side has this rule
         /// already, on parsed fields; this is the same rule read out of the free text.
         ///
-        /// Only a number directly after the title counts, so "The Wolf Worlds" matching
-        /// "Sten, Bk 2 - The Wolf Worlds" is untouched, and a book with no position of its
-        /// own is never turned away - there is nothing to disagree with.
+        /// Only a number after the title counts, so "The Wolf Worlds" matching "Sten, Bk
+        /// 2 - The Wolf Worlds" is untouched, and a book with no position of its own is
+        /// never turned away - there is nothing to disagree with.
         /// </summary>
         private static bool NamesAnotherBookInTheSeries(
             string normalizedRelease, string normalizedTitle, string? bookSeriesNumber)
@@ -153,8 +153,18 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             return false;
         }
 
+        /// <summary>
+        /// The book's title, then its place in the series - with or without the word a
+        /// poster put between them. Both of these are the same release of Sten book 8:
+        /// "Sten 08 - Empires End" and "Allan.Cole.&amp;.Chris.Bunch-Sten.Bk.8-Empires.End".
+        /// Only a number may follow; in "Sten, Bk 2 - The Wolf Worlds" the title of book
+        /// two is followed by nothing, and in "Sten Bk 7 - Vortex" by a word, so neither
+        /// is turned away.
+        /// </summary>
         private static Regex TitleThenNumber(string normalizedTitle) =>
-            new($@"(?<= ){Regex.Escape(normalizedTitle)} (\d+(?:\.\d+)?)(?= )", RegexOptions.None);
+            new(
+                $@"(?<= ){Regex.Escape(normalizedTitle)}(?: (?:bk|bks|book|vol|vols|volume|part|pt|no|num|number))? (\d+(?:\.\d+)?)(?= )",
+                RegexOptions.None);
 
         /// <summary>
         /// Whether a release of this size could be the recording at all. An audiobook is
