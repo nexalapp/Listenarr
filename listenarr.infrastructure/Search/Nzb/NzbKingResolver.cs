@@ -51,6 +51,9 @@ namespace Listenarr.Infrastructure.Search.Nzb
 
         public int Order => 30;
 
+        /// <summary>The only index here with an allowance to spend.</summary>
+        public bool IsMetered => true;
+
         /// <summary>
         /// Overrides the configured key. Left unset in normal use — the resolver reads the
         /// key itself so there is no ordering rule for a caller to get wrong.

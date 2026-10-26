@@ -1,10 +1,12 @@
 using Listenarr.Api.Startup;
 using Listenarr.Application.Audiobooks.Discover;
 using Listenarr.Application.Audiobooks.AutoGrab;
+using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Application.Audiobooks.Tagging;
 using Listenarr.Infrastructure.DependencyInjection;
 using Listenarr.Infrastructure.Library.Discover.Workers;
 using Listenarr.Infrastructure.Library.AutoGrab;
+using Listenarr.Infrastructure.Library.Suggestions.Workers;
 using Listenarr.Infrastructure.Library.Tagging;
 using Listenarr.Domain.Audiobooks.Discover;
 using Microsoft.AspNetCore.Builder;
@@ -94,6 +96,9 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(AutoGrabProcessor),
                 typeof(IAutoGrabProcessor),
                 typeof(AutoGrabBackgroundService),
+                typeof(ReleasePreparationProcessor),
+                typeof(IReleasePreparationProcessor),
+                typeof(ReleasePreparationBackgroundService),
                 // The discovery refresher keeps the progress the page polls and opens
                 // its own scope per page fetch; its worker holds a scope factory and
                 // the refresher, and nothing scoped.
@@ -131,6 +136,7 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(ITagPreviewService),
                 typeof(AudiobookTagPlanner),
                 typeof(IAutoGrabService),
+                typeof(IReleasePreparationService),
                 // Everything on the discovery read path holds a DbContext through a
                 // repository or the configuration service.
                 typeof(IDiscoverService),

@@ -209,6 +209,17 @@ namespace Listenarr.Domain.Configuration
         // See AutoGrabSettingsJson for the document.
         public string AutoGrabSettingsJson { get; set; } = "{}";
 
+        // Whether the background check carries on past "a release exists" and does the
+        // rest of the work a download needs — thank the post, read its payload, resolve
+        // an NZB — so that adding the book is a send and nothing more.
+        public bool PrepareReleasesEnabled { get; set; } = true;
+
+        // Whether that automatic preparation may spend an NZBKing token when the free
+        // indexes have nothing. Off: such a release is marked as needing the metered
+        // index and left for a grab the user asks for, which may still spend one.
+        // Thanking and the free indexes are unaffected either way.
+        public bool PrepareReleasesMayUseMeteredIndexes { get; set; } = false;
+
         // What goes into each tag and whether it may be overwritten. Null means the
         // shipped defaults, which mirror the library's own bracket convention.
         // See TagCatalog for the tags, their defaults and why each one is what it is.

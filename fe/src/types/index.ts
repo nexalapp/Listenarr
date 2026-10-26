@@ -793,6 +793,10 @@ export interface ApplicationSettings {
   foundBooksScanIntervalMinutes?: number
   foundBooksAutoAdd?: boolean
   suggestionsBackgroundFetchIntervalMinutes?: number
+  /** Do everything a download needs except the sending, when a release is found. */
+  prepareReleasesEnabled?: boolean
+  /** Whether that automatic preparation may spend an NZBKing token. */
+  prepareReleasesMayUseMeteredIndexes?: boolean
   historyRetentionDays?: number
   // Embed the book's cover into a file that carries none
   embedCoverArtInTags?: boolean

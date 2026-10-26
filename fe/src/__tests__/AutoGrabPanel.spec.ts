@@ -25,6 +25,8 @@ const api = vi.hoisted(() => ({
   saveAutoGrabSettings: vi.fn(),
   getAutoGrabPreview: vi.fn(),
   runAutoGrab: vi.fn(),
+  getApplicationSettings: vi.fn(),
+  saveApplicationSettings: vi.fn(),
 }))
 
 vi.mock('@/services/api', () => ({ apiService: api }))
@@ -86,6 +88,11 @@ describe('AutoGrabPanel', () => {
         },
       ],
     }))
+    api.getApplicationSettings.mockImplementation(async () => ({
+      prepareReleasesEnabled: true,
+      prepareReleasesMayUseMeteredIndexes: false,
+    }))
+    api.saveApplicationSettings.mockImplementation(async (next: unknown) => next)
     api.runAutoGrab.mockImplementation(async () => ({
       startedAt: '2026-10-25T12:00:00Z',
       finishedAt: '2026-10-25T12:00:30Z',
@@ -138,6 +145,34 @@ describe('AutoGrabPanel', () => {
     const saved = api.saveAutoGrabSettings.mock.calls.at(-1)![0] as AutoGrabSettings
     expect(saved.sources[0]!.enabled).toBe(false)
     expect(saved.sources[1]!.enabled).toBe(true)
+  })
+
+  it('lets the metered index be allowed for the automatic preparation', async () => {
+    const wrapper = await openPanel()
+
+    const metered = wrapper.findAll('.autograb-prepare input')[1]!
+    expect((metered.element as HTMLInputElement).checked).toBe(false)
+
+    await metered.setValue(true)
+    await flushPromises()
+
+    const saved = api.saveApplicationSettings.mock.calls.at(-1)![0] as {
+      prepareReleasesMayUseMeteredIndexes: boolean
+      prepareReleasesEnabled: boolean
+    }
+    expect(saved.prepareReleasesMayUseMeteredIndexes).toBe(true)
+    // Turning the spending on must not turn anything else on or off.
+    expect(saved.prepareReleasesEnabled).toBe(true)
+  })
+
+  it('greys out the token question while preparation itself is off', async () => {
+    api.getApplicationSettings.mockImplementation(async () => ({
+      prepareReleasesEnabled: false,
+      prepareReleasesMayUseMeteredIndexes: false,
+    }))
+    const wrapper = await openPanel()
+
+    expect(wrapper.findAll('.autograb-prepare input')[1]!.attributes('disabled')).toBeDefined()
   })
 
   it('reports what a run did', async () => {

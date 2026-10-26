@@ -135,6 +135,16 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
             var result = JsonSerializer.Deserialize<IndexerSearchResult>(secrets.Unprotect(protectedResult))
                 ?? throw new InvalidOperationException("The stored release could not be read.");
+
+            // Prepared ahead of time: the NZB is already in hand, so this is a send and
+            // nothing more. The download path still resolves the forum reference itself
+            // when nothing was prepared, which is what used to happen every time.
+            if (stored.Preparation == ReleasePreparationState.Ready
+                && stored.ProtectedNzbUrl is { Length: > 0 } preparedUrl)
+            {
+                result.NzbUrl = secrets.Unprotect(preparedUrl);
+            }
+
             var candidate = TrustedDownloadCandidateFactory.Create(SearchResultConverters.ToSearchResult(result));
 
             var downloadId = await downloads.SendToDownloadClientAsync(candidate, null, audiobook.Id);

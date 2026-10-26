@@ -81,6 +81,7 @@ internal static class LibraryRegistrationExtensions
         services.AddScoped<ISuggestionReleaseRepository, EfSuggestionReleaseRepository>();
         services.AddScoped<ISuggestionReleaseService, SuggestionReleaseService>();
         services.AddScoped<IAutoGrabService, AutoGrabService>();
+        services.AddScoped<IReleasePreparationService, ReleasePreparationService>();
         services.AddScoped<AuthorAliasApplyService>();
         services.AddSingleton<ISuggestionRefreshService, SuggestionRefreshService>();
 

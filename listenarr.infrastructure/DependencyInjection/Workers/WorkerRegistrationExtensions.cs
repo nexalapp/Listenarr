@@ -121,6 +121,13 @@ internal static class WorkerRegistrationExtensions
             IAutoGrabProcessor,
             AutoGrabBackgroundService>(services);
 
+        // Everything a download needs except the sending, done when the book is found
+        // rather than when somebody is waiting for it.
+        AddHostedProcessor<
+            ReleasePreparationProcessor,
+            IReleasePreparationProcessor,
+            ReleasePreparationBackgroundService>(services);
+
         // Discovery: one chart page, board page or metadata lookup per interval, so a
         // followed chart fills out over an hour instead of in one burst at startup.
         AddHostedProcessor<

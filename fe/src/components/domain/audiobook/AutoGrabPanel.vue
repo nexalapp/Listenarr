@@ -67,6 +67,35 @@
           rows, so use the arrows.
         </p>
 
+        <div class="autograb-prepare">
+          <label>
+            <input type="checkbox" :checked="prepareEnabled" @change="setPrepare" />
+            <span>
+              Get downloads ready in the background
+              <small>
+                Thanks the post, reads its payload and finds the NZB when the book is found, so
+                adding it is a send and nothing more.
+              </small>
+            </span>
+          </label>
+          <label :class="{ disabled: !prepareEnabled }">
+            <input
+              type="checkbox"
+              :checked="prepareMetered"
+              :disabled="!prepareEnabled"
+              @change="setPrepareMetered"
+            />
+            <span>
+              …and may spend NZBKing tokens doing it
+              <small>
+                Off, a release the free indexes do not hold is marked as needing NZBKing and left
+                for a grab you ask for, which may still spend one. Thanking and the free indexes are
+                unaffected either way.
+              </small>
+            </span>
+          </label>
+        </div>
+
         <ul class="autograb-list">
           <li v-for="(source, index) in rows" :key="source.key">
             <input
@@ -149,7 +178,7 @@ import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import { describeApiError } from '@/utils/apiError'
 import { useAutoGrabStore } from '@/stores/autoGrab'
-import type { AutoGrabKind, AutoGrabSettings } from '@/types'
+import type { ApplicationSettings, AutoGrabKind, AutoGrabSettings } from '@/types'
 
 const props = defineProps<{
   /**
@@ -167,6 +196,12 @@ const open = ref(false)
 const running = ref(false)
 const ran = ref<string | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
+
+const appSettings = ref<ApplicationSettings | null>(null)
+const prepareEnabled = computed(() => appSettings.value?.prepareReleasesEnabled ?? true)
+const prepareMetered = computed(
+  () => appSettings.value?.prepareReleasesMayUseMeteredIndexes ?? false,
+)
 
 const perRun = computed(() => store.settings?.perRun ?? 10)
 const intervalMinutes = computed(() => store.settings?.intervalMinutes ?? 60)
@@ -200,9 +235,40 @@ async function toggleOpen() {
   open.value = !open.value
   if (!open.value) return
   await store.load()
+  await loadAppSettings()
   // The preview names every followed list and says how many are waiting in each, so
   // opening the panel is also how the rows get their names.
   await store.preview()
+}
+
+async function loadAppSettings() {
+  try {
+    appSettings.value = await apiService.getApplicationSettings()
+  } catch {
+    // The two preparation ticks stay at their defaults; the rest of the panel works.
+  }
+}
+
+async function savePrepare(change: Partial<ApplicationSettings>) {
+  if (!appSettings.value) return
+  const next = { ...appSettings.value, ...change }
+  appSettings.value = next
+  try {
+    appSettings.value = await apiService.saveApplicationSettings(next)
+  } catch (e) {
+    toast.error('Not saved', describeApiError(e, 'The setting was not changed.'))
+    await loadAppSettings()
+  }
+}
+
+function setPrepare(event: Event) {
+  return savePrepare({ prepareReleasesEnabled: (event.target as HTMLInputElement).checked })
+}
+
+function setPrepareMetered(event: Event) {
+  return savePrepare({
+    prepareReleasesMayUseMeteredIndexes: (event.target as HTMLInputElement).checked,
+  })
 }
 
 function close() {
@@ -354,6 +420,38 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 .autograb-hint {
   margin: 0.4rem 0 0.6rem;
+}
+
+.autograb-prepare {
+  border-top: 1px solid #333;
+  border-bottom: 1px solid #333;
+  padding: 0.6rem 0;
+  margin-bottom: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.autograb-prepare label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.autograb-prepare label.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.autograb-prepare span {
+  display: flex;
+  flex-direction: column;
+}
+
+.autograb-prepare small {
+  color: #888;
+  font-size: 0.72rem;
 }
 
 .autograb-list {
