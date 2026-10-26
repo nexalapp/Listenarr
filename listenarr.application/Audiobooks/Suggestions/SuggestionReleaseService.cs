@@ -37,7 +37,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             string title,
             IReadOnlyList<string> authors,
             CancellationToken cancellationToken = default,
-            string? seriesNumber = null);
+            string? seriesNumber = null,
+            int? runtimeMinutes = null);
 
         /// <summary>
         /// Sends the release stored for the book's ASIN to a download client. Returns false,
@@ -73,7 +74,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 throw new ArgumentException("A suggested book is checked by its ASIN.", nameof(book));
             }
 
-            return CheckAsync(book.Asin, book.Title, book.Authors, cancellationToken, book.SeriesNumber);
+            return CheckAsync(
+                book.Asin, book.Title, book.Authors, cancellationToken, book.SeriesNumber, book.Runtime);
         }
 
         public async Task<SuggestionRelease> CheckAsync(
@@ -81,7 +83,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             string title,
             IReadOnlyList<string> authors,
             CancellationToken cancellationToken = default,
-            string? seriesNumber = null)
+            string? seriesNumber = null,
+            int? runtimeMinutes = null)
         {
             if (string.IsNullOrWhiteSpace(asin))
             {
@@ -121,12 +124,17 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 // Only an indexer that answered can be evidence of absence.
                 answered.Add(indexer.Name);
 
+                var plausible = results
+                    .Where(result => SuggestionReleaseMatch.CouldBeTheRecording(result.Size, runtimeMinutes))
+                    .ToList();
+
                 var matching = IsAbookLink(indexer)
                     ? await ConfirmAbookMatchesAsync(
-                        AbookShortlist(results, asin, title, authors, seriesNumber),
-                        asin, title, authors, seriesNumber, cancellationToken)
-                    : [.. results.Where(result =>
-                        SuggestionReleaseMatch.TitleAndAuthorMatch(result.Title, title, authors))];
+                        AbookShortlist(plausible, asin, title, authors, seriesNumber),
+                        asin, title, authors, seriesNumber, runtimeMinutes, cancellationToken)
+                    : [.. plausible.Where(result =>
+                        SuggestionReleaseMatch.TitleAndAuthorMatch(
+                            result.Title, title, authors, seriesNumber))];
 
                 var best = await BestAsync(matching, profile);
                 if (best != null)
@@ -263,6 +271,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             string title,
             IReadOnlyList<string> authors,
             string? seriesNumber,
+            int? runtimeMinutes,
             CancellationToken cancellationToken)
         {
             var confirmed = new List<IndexerSearchResult>();
@@ -319,9 +328,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                 result.Album = post.Title ?? result.Album;
                 result.Artist = post.Author ?? result.Artist;
 
+                // The size is one of the things the post was read for, so a release too
+                // small to be the recording is only visible now.
                 if (SuggestionReleaseMatch.AbookPostMatches(
-                    result.Asin, result.Album, result.Artist, asin, title, authors,
-                    result.SeriesName, result.SeriesPosition, seriesNumber))
+                        result.Asin, result.Album, result.Artist, asin, title, authors,
+                        result.SeriesName, result.SeriesPosition, seriesNumber)
+                    && SuggestionReleaseMatch.CouldBeTheRecording(result.Size, runtimeMinutes))
                 {
                     confirmed.Add(result);
                 }

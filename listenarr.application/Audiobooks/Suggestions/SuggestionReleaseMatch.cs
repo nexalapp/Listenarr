@@ -104,7 +104,11 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         [GeneratedRegex(@"\d+(?:\.\d+)?")]
         private static partial Regex PositionNumber();
 
-        public static bool TitleAndAuthorMatch(string? releaseTitle, string? bookTitle, IReadOnlyList<string>? authors)
+        public static bool TitleAndAuthorMatch(
+            string? releaseTitle,
+            string? bookTitle,
+            IReadOnlyList<string>? authors,
+            string? bookSeriesNumber = null)
         {
             var release = " " + Normalize(releaseTitle) + " ";
             var title = Normalize(DistinctiveTitle(bookTitle));
@@ -113,8 +117,63 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             return title.Length > 0
                 && surname.Length > 0
                 && release.Contains(" " + title + " ", StringComparison.Ordinal)
-                && release.Contains(" " + surname + " ", StringComparison.Ordinal);
+                && release.Contains(" " + surname + " ", StringComparison.Ordinal)
+                && !NamesAnotherBookInTheSeries(release, title, bookSeriesNumber);
         }
+
+        /// <summary>
+        /// True when the book's title is being used as the series' name and the number
+        /// after it is some other book's. A free-text release title is all a Newznab
+        /// indexer gives, so "Allan Cole and Chris Bunch - Sten 08 - Empires End" carries
+        /// the title "Sten" and the surname "Bunch" and matched Sten book 1 - and book 3,
+        /// whose distinctive title is also "Sten". The abook.link side has this rule
+        /// already, on parsed fields; this is the same rule read out of the free text.
+        ///
+        /// Only a number directly after the title counts, so "The Wolf Worlds" matching
+        /// "Sten, Bk 2 - The Wolf Worlds" is untouched, and a book with no position of its
+        /// own is never turned away - there is nothing to disagree with.
+        /// </summary>
+        private static bool NamesAnotherBookInTheSeries(
+            string normalizedRelease, string normalizedTitle, string? bookSeriesNumber)
+        {
+            var book = Position(bookSeriesNumber);
+            if (book is null)
+            {
+                return false;
+            }
+
+            foreach (Match match in TitleThenNumber(normalizedTitle).Matches(normalizedRelease))
+            {
+                if (Position(match.Groups[1].Value) is { } inRelease && inRelease != book)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static Regex TitleThenNumber(string normalizedTitle) =>
+            new($@"(?<= ){Regex.Escape(normalizedTitle)} (\d+(?:\.\d+)?)(?= )", RegexOptions.None);
+
+        /// <summary>
+        /// Whether a release of this size could be the recording at all. An audiobook is
+        /// speech, and the thinnest encodings in this library still run well above 8 kbps;
+        /// 34.8 MB against a stated ten and a half hours is under one, which is an ebook
+        /// posted under the book's name, not a reading of it.
+        ///
+        /// The floor is set that low on purpose. A record's runtime and a release's
+        /// edition disagree often and for honest reasons - abridgements, a different
+        /// reading - so this may only reject what no amount of such disagreement could
+        /// explain. A book with no runtime, or a release with no size, is not judged.
+        /// </summary>
+        public static bool CouldBeTheRecording(long sizeBytes, int? runtimeMinutes) =>
+            sizeBytes <= 0
+            || runtimeMinutes is not > 0
+            || sizeBytes / (double)runtimeMinutes.Value >= MinimumBytesPerMinute;
+
+        /// <summary>8 kbps, in bytes per minute of runtime.</summary>
+        private const double MinimumBytesPerMinute = 8000 / 8.0 * 60;
 
         /// <summary>What to search for: the book's distinctive title and its first author.</summary>
         public static string QueryFor(string title, IReadOnlyList<string>? authors) =>

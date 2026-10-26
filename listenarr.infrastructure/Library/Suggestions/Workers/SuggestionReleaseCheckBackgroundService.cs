@@ -55,7 +55,11 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
 
     /// <summary>One book to ask the indexers about, wherever it came from.</summary>
     internal sealed record AvailabilityCheckTarget(
-        string Asin, string Title, IReadOnlyList<string> Authors, string? SeriesNumber = null);
+        string Asin,
+        string Title,
+        IReadOnlyList<string> Authors,
+        string? SeriesNumber = null,
+        int? RuntimeMinutes = null);
 
     public interface ISuggestionReleaseCheckProcessor
     {
@@ -155,7 +159,9 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
             {
                 var release = await scope.ServiceProvider
                     .GetRequiredService<ISuggestionReleaseService>()
-                    .CheckAsync(next.Asin, next.Title, next.Authors, cancellationToken, next.SeriesNumber);
+                    .CheckAsync(
+                        next.Asin, next.Title, next.Authors, cancellationToken,
+                        next.SeriesNumber, next.RuntimeMinutes);
                 logger.LogDebug(
                     "Release availability check for '{Title}' ({Asin}): {Status} {Detail}",
                     next.Title, next.Asin, release.Status, release.Detail);
@@ -187,7 +193,8 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
                 .Concat(snapshot.Authors.SelectMany(group => group.Missing))
                 .Where(book => !string.IsNullOrWhiteSpace(book.Asin) && seen.Add(book.Asin.Trim()))
                 .Where(book => IsDue(book.Asin!.Trim(), checks, now, notFoundRecheck))
-                .Select(book => new AvailabilityCheckTarget(book.Asin!.Trim(), book.Title, book.Authors, book.SeriesNumber));
+                .Select(book => new AvailabilityCheckTarget(
+                    book.Asin!.Trim(), book.Title, book.Authors, book.SeriesNumber, book.Runtime));
         }
 
         /// <summary>
@@ -211,7 +218,8 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
                     item.Asin!.Trim(),
                     item.Title ?? string.Empty,
                     item.Authors ?? [],
-                    item.SeriesNumber));
+                    item.SeriesNumber,
+                    item.Runtime));
         }
 
         /// <summary>The recheck window for a book nothing held, as the settings ask for it.</summary>

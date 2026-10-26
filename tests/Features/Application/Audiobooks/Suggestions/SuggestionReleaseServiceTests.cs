@@ -352,5 +352,114 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
             _abook.Verify(a => a.GetTopicAsync(4210, It.IsAny<CancellationToken>()), Times.Once);
         }
+    
+        [Fact]
+        public async Task AOneWordTitleDoesNotMatchEveryBookInItsOwnSeries()
+        {
+            // Measured on the live library: both Sten book 1 and Sten book 3 - whose
+            // distinctive title is also "Sten" - queued "Sten 08 - Empires End".
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = "Allan Cole and Chris Bunch - Sten 08 - Empires End (Unabr) - 574.11 MB",
+                Size = 624_052_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B003BF67TE", "Sten", ["Chris Bunch", "Allan Cole"],
+                CancellationToken.None, "1", 488);
+
+            Assert.Equal(SuggestionReleaseStatus.NotFound, release.Status);
+        }
+
+        [Fact]
+        public async Task TheRightBookInTheSeriesStillMatches()
+        {
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = "Allan Cole and Chris Bunch - Sten 08 - Empires End (Unabr) - 574.11 MB",
+                Size = 624_052_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B003XYZ", "Sten", ["Chris Bunch"], CancellationToken.None, "8", 500);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+        }
+
+        [Fact]
+        public async Task ABookWithNoPlaceInASeriesIsNeverTurnedAwayForOne()
+        {
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = "Allan Cole and Chris Bunch - Sten 08 - Empires End (Unabr)",
+                Size = 624_052_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B003XYZ", "Sten", ["Chris Bunch"], CancellationToken.None, null, 500);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+        }
+
+        [Fact]
+        public async Task AReleaseTooSmallToBeTheRecordingIsNotIt()
+        {
+            // 34.8 MB against ten and a half hours is under 1 kbps: an ebook posted under
+            // the book's name. Measured on the live library.
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = "JA Jance - Second Watch",
+                Size = 34_830_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B00ENJ2B5Q", "Second Watch", ["J. A. Jance"],
+                CancellationToken.None, null, 644);
+
+            Assert.Equal(SuggestionReleaseStatus.NotFound, release.Status);
+        }
+
+        [Fact]
+        public async Task ARealRecordingOfTheSameLengthIsKept()
+        {
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = "J.A.Jance-Joanna.Brady.18-Field.of.Bones.Unabr-64k.[2018]",
+                Size = 352_082_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B07DVNMYFC", "Field of Bones", ["J. A. Jance"],
+                CancellationToken.None, null, 648);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+        }
+
+        [Fact]
+        public async Task ABookWithNoRuntimeOnRecordIsNotJudgedOnSize()
+        {
+            Returns(Geek, new IndexerSearchResult
+            {
+                Id = "geek:1",
+                Title = "JA Jance - Second Watch",
+                Size = 34_830_000
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B00ENJ2B5Q", "Second Watch", ["J. A. Jance"], CancellationToken.None);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+        }
     }
 }

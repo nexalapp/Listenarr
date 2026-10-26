@@ -103,7 +103,11 @@ export const useAutoGrabStore = defineStore('autoGrab', () => {
           sources: [...current.sources, { kind, sectionId: sectionId ?? null, enabled: true }],
         }
 
-    await save(next)
+    // Ticking a list is how someone turns auto-grab on: the master switch lives in the
+    // panel, and a tick that leaves it off does nothing at all, with nothing on the page
+    // to say why. Unticking the last list turns it back off, which is the same sentence
+    // read backwards. The panel's switch still pauses it without disturbing the ticks.
+    await save({ ...next, enabled: next.sources.some((source) => source.enabled) })
   }
 
   async function preview(): Promise<void> {
