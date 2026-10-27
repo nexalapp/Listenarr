@@ -183,6 +183,17 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var stored = await store.GetAsync(audiobook.Asin.Trim(), cancellationToken);
             if (stored is not { Status: SuggestionReleaseStatus.Found, ProtectedResult: { Length: > 0 } protectedResult })
             {
+                // Returning a bare false here is how a book came to be added, monitored
+                // and silently never downloaded: the caller discarded the answer and the
+                // run reported itself clean.
+                logger.LogInformation(
+                    "No stored release to grab for '{Title}' ({Asin}): {Reason}",
+                    audiobook.Title,
+                    audiobook.Asin,
+                    stored is null ? "it has never been checked"
+                        : stored.Status != SuggestionReleaseStatus.Found
+                            ? $"its last check said {stored.Status}"
+                            : "the check found one but kept no payload");
                 return false;
             }
 
@@ -201,10 +212,18 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var candidate = TrustedDownloadCandidateFactory.Create(SearchResultConverters.ToSearchResult(result));
 
             var downloadId = await downloads.SendToDownloadClientAsync(candidate, null, audiobook.Id);
+            if (string.IsNullOrEmpty(downloadId))
+            {
+                logger.LogWarning(
+                    "The download client accepted nothing for '{Title}' ({Asin}) from {Indexer}: {Release}",
+                    audiobook.Title, audiobook.Asin, stored.IndexerName, stored.ReleaseTitle);
+                return false;
+            }
+
             logger.LogInformation(
                 "Grabbed the release found for suggested book '{Title}' ({Asin}) from {Indexer}: {Release} -> download {DownloadId}",
                 audiobook.Title, audiobook.Asin, stored.IndexerName, stored.ReleaseTitle, downloadId);
-            return !string.IsNullOrEmpty(downloadId);
+            return true;
         }
 
         /// <summary>

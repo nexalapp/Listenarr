@@ -7,6 +7,7 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Application.Audiobooks.AutoGrab;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Search.AbookLink;
 using Listenarr.Infrastructure.Search.Providers.AbookLink;
@@ -60,6 +61,7 @@ internal static class SearchRegistrationExtensions
             });
         services.AddScoped<IAbookLinkBrowser, AbookLinkBrowser>();
         services.AddScoped<IAbookThankBudget, AbookThankBudget>();
+        services.AddScoped<IAutoGrabBackfillService, AutoGrabBackfillService>();
         services.AddScoped<IAbookGrabResolver, AbookGrabResolver>();
         services.AddScoped<AbookDownloadDispatcher>();
         services.AddScoped<IAbookGrabDispatcher, AbookGrabDispatcher>();

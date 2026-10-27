@@ -35,6 +35,7 @@ namespace Listenarr.Api.Features.Library
     [Tags("Library")]
     public sealed class AutoGrabController(
         IAutoGrabService autoGrab,
+        IAutoGrabBackfillService backfill,
         IAbookThankBudget thanks,
         IConfigurationService configuration) : ControllerBase
     {
@@ -62,6 +63,21 @@ namespace Listenarr.Api.Features.Library
         [HttpGet("preview")]
         public async Task<ActionResult<AutoGrabPlan>> Preview(CancellationToken cancellationToken = default) =>
             Ok(await autoGrab.PreviewAsync(cancellationToken));
+
+        /// <summary>
+        /// Sends the release already found for books that were added but never
+        /// downloaded - the backlog left by an add whose grab failed quietly.
+        ///
+        /// Costs the forum nothing it has not already paid: those posts have been
+        /// thanked, so their payload is visible and the resolver does not press the
+        /// button again. Capped per call, and the thank budget still applies to any
+        /// post that turns out never to have been thanked.
+        /// </summary>
+        [HttpPost("backfill")]
+        public async Task<ActionResult<AutoGrabBackfillReport>> Backfill(
+            [FromQuery] int limit = 25,
+            CancellationToken cancellationToken = default) =>
+            Ok(await backfill.RunAsync(limit, cancellationToken));
 
         /// <summary>
         /// What the abook.link thank budget has left. A grab from that source has to
