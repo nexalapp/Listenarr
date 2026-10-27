@@ -118,6 +118,8 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
             var plan = await PreviewAsync(cancellationToken);
             var outcomes = new List<AutoGrabOutcome>();
             string? stopped = null;
+            var deferred = 0;
+            var abookIsFull = false;
 
             foreach (var candidate in plan.Candidates)
             {
@@ -129,14 +131,24 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                 // added is simply still waiting, and the next run finds it.
                 if (NeedsAThank(candidate))
                 {
-                    var budget = await thanks.CheckAsync(cancellationToken);
-                    if (!budget.Allowed)
+                    if (!abookIsFull)
                     {
-                        stopped = budget.Reason;
-                        logger.LogInformation(
-                            "Auto-grab stopping with {Remaining} still waiting: {Reason}",
-                            plan.Candidates.Count - outcomes.Count, budget.Reason);
-                        break;
+                        var budget = await thanks.CheckAsync(cancellationToken);
+                        if (!budget.Allowed)
+                        {
+                            abookIsFull = true;
+                            stopped = budget.Reason;
+                        }
+                    }
+
+                    if (abookIsFull)
+                    {
+                        // Defer this one and carry on down the list. Ending the run here
+                        // would strand every release further down that needs no thank at
+                        // all, and the order being stable, it would strand the same ones
+                        // next run and the run after.
+                        deferred++;
+                        continue;
                     }
                 }
 
@@ -184,14 +196,16 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                 outcomes.Count(outcome => outcome.Downloaded),
                 outcomes.Count(outcome => !outcome.Added),
                 outcomes,
+                deferred,
                 stopped);
 
-            if (outcomes.Count > 0 || stopped is not null)
+            if (outcomes.Count > 0 || deferred > 0)
             {
                 logger.LogInformation(
-                    "Auto-grab added {Added} and sent {Downloaded} download(s) of {Planned} planned; {Failed} failed{Stopped}",
-                    report.Added, report.Downloaded, plan.Candidates.Count, report.Failed,
-                    stopped is null ? string.Empty : $"; stopped because {stopped}");
+                    "Auto-grab added {Added} and sent {Downloaded} download(s) of {Planned} planned; "
+                    + "{Failed} failed, {Deferred} left for next time{Stopped}",
+                    report.Added, report.Downloaded, plan.Candidates.Count, report.Failed, deferred,
+                    stopped is null ? string.Empty : $" because {stopped}");
             }
 
             return report;

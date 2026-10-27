@@ -266,7 +266,37 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
 
             Assert.Equal(2, _added.Count);
             Assert.Equal(2, report.Added);
+            Assert.Equal(3, report.Deferred);
             Assert.Equal("the hourly thank limit", report.StoppedBecause);
+        }
+
+        [Fact]
+        public async Task Run_WithTheThankBudgetSpentStillTakesTheReleasesThatNeedNoThank()
+        {
+            // The order is stable, so ending the run at the first refused thank would
+            // strand every Newznab release behind it - this run, and every run after.
+            Configure(enabled: true, new AutoGrabSource(AutoGrabSources.Series));
+            Offer(_seriesBooks, "B1", "Needs a thank");
+            Found("B1");
+            Offer(_seriesBooks, "B2", "Needs no thank");
+            _found["B2"] = new SuggestionRelease
+            {
+                Asin = "B2",
+                Status = SuggestionReleaseStatus.Found,
+                IndexerName = "NZBgeek (Prowlarr)",
+                ReleaseTitle = "Some release"
+            };
+
+            var service = BuildService();
+            _thanks
+                .Setup(t => t.CheckAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AbookThankDecision(false, "spent", 120, null));
+
+            var report = await service.RunAsync();
+
+            Assert.Equal(1, report.Added);
+            Assert.Equal(1, report.Deferred);
+            Assert.Equal("Needs no thank", Assert.Single(_added).Metadata!.Title);
         }
 
         [Fact]

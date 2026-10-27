@@ -134,7 +134,9 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
     /// <param name="Added">Books added to the library.</param>
     /// <param name="Downloaded">Of those, how many had a release sent. This is the
     /// number that matters, and the one a run used not to report.</param>
-    /// <param name="StoppedBecause">Why the run ended, when a lane ran out of room.</param>
+    /// <param name="Deferred">Books left for the next run because their lane was full.
+    /// They are not failures and nothing was done to them.</param>
+    /// <param name="StoppedBecause">Why those were left, when a lane ran out of room.</param>
     public sealed record AutoGrabReport(
         DateTime StartedAt,
         DateTime FinishedAt,
@@ -142,6 +144,7 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
         int Downloaded,
         int Failed,
         IReadOnlyList<AutoGrabOutcome> Outcomes,
+        int Deferred = 0,
         string? StoppedBecause = null);
 
     /// <param name="Added">The book was added to the library.</param>
