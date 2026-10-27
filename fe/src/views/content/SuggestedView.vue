@@ -121,10 +121,13 @@
             @change="autoGrab.toggle('authors')"
           />
           Auto-grab from this list
-          <button type="button" class="autograb-tick-order" @click.prevent="autoGrab.openPanel()">
-            order and limits
-          </button>
         </label>
+        <AutoGrabOrder
+          v-if="snapshot.authors.length > 0 || snapshot.series.length > 0"
+          class="autograb-tick-order"
+          :labels="{ authors: 'From your authors', series: 'From your series' }"
+          hint
+        />
         <EmptyState
           v-if="shown.authors.length === 0"
           title="Nothing missing from your authors"
@@ -181,10 +184,13 @@
             @change="autoGrab.toggle('series')"
           />
           Auto-grab from this list
-          <button type="button" class="autograb-tick-order" @click.prevent="autoGrab.openPanel()">
-            order and limits
-          </button>
         </label>
+        <AutoGrabOrder
+          v-if="snapshot.authors.length > 0 || snapshot.series.length > 0"
+          class="autograb-tick-order"
+          :labels="{ authors: 'From your authors', series: 'From your series' }"
+          hint
+        />
         <EmptyState
           v-if="shown.series.length === 0"
           title="No gaps in your series"
@@ -291,6 +297,7 @@ import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.v
 import FoundBooksTab from '@/components/domain/audiobook/FoundBooksTab.vue'
 import DiscoverTab from '@/components/domain/audiobook/DiscoverTab.vue'
 import AutoGrabPanel from '@/components/domain/audiobook/AutoGrabPanel.vue'
+import AutoGrabOrder from '@/components/domain/audiobook/AutoGrabOrder.vue'
 import { useAutoGrabStore } from '@/stores/autoGrab'
 import { useFoundBooksStore } from '@/stores/foundBooks'
 import { apiService } from '@/services/api'

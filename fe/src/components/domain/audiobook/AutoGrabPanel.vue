@@ -69,11 +69,6 @@
           </label>
         </div>
 
-        <p class="autograb-hint">
-          The order decides whose books a run's allowance is spent on. Drag is overkill for five
-          rows, so use the arrows.
-        </p>
-
         <div class="autograb-prepare">
           <label>
             <input type="checkbox" :checked="prepareEnabled" @change="setPrepare" />
@@ -103,39 +98,7 @@
           </label>
         </div>
 
-        <ul class="autograb-list">
-          <li v-for="(source, index) in rows" :key="source.key">
-            <input
-              type="checkbox"
-              :checked="source.enabled"
-              :aria-label="`Include ${source.label}`"
-              @change="store.toggle(source.kind, source.sectionId)"
-            />
-            <span class="autograb-label">{{ source.label }}</span>
-            <span v-if="source.count != null" class="autograb-count">{{ source.count }} ready</span>
-            <button
-              type="button"
-              class="autograb-move"
-              :disabled="index === 0"
-              aria-label="Move up"
-              @click="move(index, -1)"
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              class="autograb-move"
-              :disabled="index === rows.length - 1"
-              aria-label="Move down"
-              @click="move(index, 1)"
-            >
-              ↓
-            </button>
-          </li>
-          <li v-if="rows.length === 0" class="autograb-empty">
-            No list is ticked. Tick one here, or on the list itself.
-          </li>
-        </ul>
+        <AutoGrabOrder :labels="props.labels" hint />
 
         <div class="autograb-preview">
           <button type="button" class="link-btn" :disabled="store.loading" @click="store.preview()">
@@ -166,7 +129,7 @@
           <button
             type="button"
             class="btn btn-primary btn-sm"
-            :disabled="running || rows.length === 0"
+            :disabled="running || store.sources.length === 0"
             @click="runNow"
           >
             {{ running ? 'Running…' : 'Run now' }}
@@ -185,6 +148,7 @@ import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import { describeApiError } from '@/utils/apiError'
 import { useAutoGrabStore } from '@/stores/autoGrab'
+import AutoGrabOrder from './AutoGrabOrder.vue'
 import type {
   AbookThankBudget,
   ApplicationSettings,
@@ -223,27 +187,7 @@ const withBooks = computed(() =>
   (store.plan?.bySource ?? []).filter((count) => count.available > 0),
 )
 
-function planned(key: string) {
-  return store.plan?.bySource.find(
-    (count) => (count.sectionId ? `${count.kind}:${count.sectionId}` : count.kind) === key,
-  )
-}
-
 /** The followed lists in their stored order, named for a person. */
-const rows = computed(() =>
-  store.sources.map((source) => {
-    const key = source.sectionId ? `${source.kind}:${source.sectionId}` : source.kind
-    return {
-      key,
-      kind: source.kind as AutoGrabKind,
-      sectionId: source.sectionId ?? null,
-      enabled: source.enabled,
-      label: planned(key)?.label ?? props.labels?.[key] ?? key,
-      count: planned(key)?.available,
-    }
-  }),
-)
-
 watch(
   () => store.panelRequested,
   async (asked) => {
@@ -321,15 +265,6 @@ async function setPerRun(event: Event) {
 async function setInterval(event: Event) {
   const value = Math.max(5, Number((event.target as HTMLInputElement).value || 60))
   await store.save({ ...current(), intervalMinutes: value })
-}
-
-async function move(index: number, by: number) {
-  const sources = [...current().sources]
-  const target = index + by
-  if (target < 0 || target >= sources.length) return
-  const [moved] = sources.splice(index, 1)
-  sources.splice(target, 0, moved!)
-  await store.save({ ...current(), sources })
 }
 
 async function runNow() {
