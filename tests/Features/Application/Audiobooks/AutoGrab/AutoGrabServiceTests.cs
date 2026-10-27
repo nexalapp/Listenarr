@@ -410,5 +410,35 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         {
             public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
         }
+    
+        [Fact]
+        public async Task Preview_PutsTheReleasesThatCostNothingFirst()
+        {
+            // Measured on the live library: the queue was 91% abook.link, so a Newznab
+            // release was reached at about one in eleven - stuck behind books that are
+            // rationed, when it is free and could be fetched at once.
+            Configure(enabled: true, new AutoGrabSource(AutoGrabSources.Series));
+            foreach (var asin in new[] { "A1", "A2", "A3" })
+            {
+                Offer(_seriesBooks, asin, $"Abook {asin}");
+                Found(asin);
+            }
+
+            Offer(_seriesBooks, "N1", "Newznab one");
+            _found["N1"] = new SuggestionRelease
+            {
+                Asin = "N1",
+                Status = SuggestionReleaseStatus.Found,
+                IndexerName = "NZBgeek (Prowlarr)",
+                ReleaseTitle = "Free to grab"
+            };
+
+            var plan = await BuildService().PreviewAsync();
+
+            Assert.Equal("N1", plan.Candidates[0].Asin);
+            Assert.Equal(4, plan.Candidates.Count);
+            // The rationed ones keep the order their lists gave them.
+            Assert.Equal(["A1", "A2", "A3"], plan.Candidates.Skip(1).Select(c => c.Asin));
+        }
     }
 }

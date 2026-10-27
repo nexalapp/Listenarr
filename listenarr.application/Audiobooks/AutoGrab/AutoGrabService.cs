@@ -107,7 +107,12 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
             return new AutoGrabPlan(
                 settings.Enabled,
                 candidates.Count,
-                candidates,
+                // Free first. A Newznab release costs nothing to grab, an abook.link post
+                // costs a public thank and is rationed; leaving them in one queue put
+                // eighty books that could all be done in a minute behind eight hundred
+                // that cannot. The sort is stable, so the followed lists keep their order
+                // within each lane.
+                [.. candidates.OrderBy(candidate => NeedsAThank(candidate) ? 1 : 0)],
                 counts,
                 candidates.Count == 0 ? "Nothing to grab: every followed list is empty or already in the library." : null);
         }
