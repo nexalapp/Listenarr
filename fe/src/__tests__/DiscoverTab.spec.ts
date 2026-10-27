@@ -150,13 +150,11 @@ describe('DiscoverTab', () => {
     api.ignoreSuggestion.mockImplementation(async () => ({ key: 'asin:B1' }))
     api.getAutoGrabSettings.mockImplementation(async () => ({
       enabled: false,
-      perRun: 10,
       intervalMinutes: 60,
       sources: [],
     }))
     api.getAutoGrabPreview.mockImplementation(async () => ({
       enabled: false,
-      perRun: 10,
       available: 0,
       candidates: [],
       bySource: [],

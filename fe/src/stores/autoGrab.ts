@@ -82,7 +82,6 @@ export const useAutoGrabStore = defineStore('autoGrab', () => {
     await load()
     const current = settings.value ?? {
       enabled: false,
-      perRun: 10,
       intervalMinutes: 60,
       sources: [],
     }

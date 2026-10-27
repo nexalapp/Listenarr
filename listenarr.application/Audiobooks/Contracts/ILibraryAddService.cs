@@ -72,6 +72,13 @@ namespace Listenarr.Application.Audiobooks.Contracts
 
         public string? ResolvedDestination { get; set; }
 
+        /// <summary>
+        /// Whether a release was actually sent to the download client. Adding and
+        /// downloading are two steps, and a caller that reports the first as though it
+        /// were the second cannot see a book that was added and then never fetched.
+        /// </summary>
+        public bool DownloadSent { get; set; }
+
         public Audiobook? Audiobook { get; set; }
     }
 }

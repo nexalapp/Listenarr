@@ -38,7 +38,6 @@ import AutoGrabPanel from '@/components/domain/audiobook/AutoGrabPanel.vue'
 
 const settings: AutoGrabSettings = {
   enabled: true,
-  perRun: 10,
   intervalMinutes: 60,
   sources: [
     { kind: 'series', sectionId: null, enabled: true },
@@ -65,7 +64,6 @@ describe('AutoGrabPanel', () => {
     api.saveAutoGrabSettings.mockImplementation(async (next: AutoGrabSettings) => next)
     api.getAutoGrabPreview.mockImplementation(async () => ({
       enabled: true,
-      perRun: 10,
       available: 38,
       candidates: [
         {

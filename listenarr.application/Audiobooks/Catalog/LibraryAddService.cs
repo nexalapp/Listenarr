@@ -201,7 +201,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             if (request.AutoSearch && request.Monitored)
             {
-                await TryGrabStoredReleaseAsync(audiobook, cancellationToken);
+                result.DownloadSent = await TryGrabStoredReleaseAsync(audiobook, cancellationToken);
             }
 
             _logger.LogInformation(
@@ -221,11 +221,11 @@ namespace Listenarr.Application.Audiobooks.Catalog
         /// effect like the notification: a failure here leaves the book added and says why
         /// in the log, rather than turning the add into an error.
         /// </summary>
-        private async Task TryGrabStoredReleaseAsync(Audiobook audiobook, CancellationToken cancellationToken)
+        private async Task<bool> TryGrabStoredReleaseAsync(Audiobook audiobook, CancellationToken cancellationToken)
         {
             if (_suggestionReleases == null)
             {
-                return;
+                return false;
             }
 
             try
@@ -233,13 +233,15 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 // The answer matters: a false here is a book added and monitored that
                 // nothing will ever download, and discarding it is how eighty-two of
                 // them accumulated without a single line in the log.
-                if (!await _suggestionReleases.GrabStoredAsync(audiobook, cancellationToken))
+                if (await _suggestionReleases.GrabStoredAsync(audiobook, cancellationToken))
                 {
-                    _logger.LogInformation(
-                        "'{Title}' ({Asin}) was added but no download was sent; it waits for the next search",
-                        audiobook.Title,
-                        audiobook.Asin);
+                    return true;
                 }
+
+                _logger.LogInformation(
+                    "'{Title}' ({Asin}) was added but no download was sent; it waits for the next search",
+                    audiobook.Title,
+                    audiobook.Asin);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -249,6 +251,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
                     audiobook.Title,
                     audiobook.Asin);
             }
+
+            return false;
         }
 
         private async Task<LibraryAddOperationResult> CommitAsync(

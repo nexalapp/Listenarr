@@ -49,10 +49,10 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
     /// One list auto-grab draws from, in the order it is drawn from.
     ///
     /// <para>
-    /// The order is the list's position in <see cref="AutoGrabSettings.Sources"/>, and it
-    /// matters because a run stops at a cap: order is what decides whose books the run's
-    /// allowance is spent on. Without the cap it would decide nothing, since everything
-    /// would be grabbed eventually.
+    /// The order is the list's position in <see cref="AutoGrabSettings.Sources"/>. It
+    /// decides who is served first when a lane runs out of room - abook.link's thank
+    /// budget is the usual one - and therefore whose books arrive today rather than
+    /// tomorrow.
     /// </para>
     /// <para>
     /// <c>SectionId</c> names the chart category or board for the two tabs that have
@@ -68,23 +68,19 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
     /// What auto-grab has been told to do. Stored in settings, read by the worker.
     ///
     /// <para>
-    /// <c>PerRun</c> is how many books one run may add. The point of a limit is not
-    /// politeness to an indexer — it is that a tick of this feature spends disk and
-    /// somebody's usenet allowance, and a mistake in what is followed should cost ten
-    /// books rather than nine hundred.
+    /// There is no count of books per run, and that is deliberate. A fixed cap stood in
+    /// for limits it could not express: it throttled releases from a Newznab indexer,
+    /// which cost nothing, at the same rate as abook.link posts, which cost a public
+    /// thank - and at ten an hour it left nine hundred books waiting on a number nobody
+    /// had reasoned about. A run now draws until the lanes themselves say stop.
     /// </para>
     /// </summary>
     public sealed record AutoGrabSettings(
         bool Enabled,
-        int PerRun,
         int IntervalMinutes,
         IReadOnlyList<AutoGrabSource> Sources)
     {
-        public static AutoGrabSettings Off => new(false, DefaultPerRun, DefaultIntervalMinutes, []);
-
-        public const int DefaultPerRun = 10;
-
-        public const int MaxPerRun = 200;
+        public static AutoGrabSettings Off => new(false, DefaultIntervalMinutes, []);
 
         public const int DefaultIntervalMinutes = 60;
 
@@ -121,13 +117,12 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
     /// anyone should have to take on trust.
     /// <para>
     /// <c>Available</c> is how many books could be grabbed in total, before the cap;
-    /// the plan itself holds the first <c>PerRun</c> of them.
+    /// the plan itself holds every one it would try.
     /// </para>
     /// </summary>
 
     public sealed record AutoGrabPlan(
         bool Enabled,
-        int PerRun,
         int Available,
         IReadOnlyList<AutoGrabCandidate> Candidates,
         IReadOnlyList<AutoGrabSourceCount> BySource,
@@ -136,12 +131,21 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
     public sealed record AutoGrabSourceCount(string Kind, string? SectionId, string Label, int Available);
 
     /// <summary>What a run did.</summary>
+    /// <param name="Added">Books added to the library.</param>
+    /// <param name="Downloaded">Of those, how many had a release sent. This is the
+    /// number that matters, and the one a run used not to report.</param>
+    /// <param name="StoppedBecause">Why the run ended, when a lane ran out of room.</param>
     public sealed record AutoGrabReport(
         DateTime StartedAt,
         DateTime FinishedAt,
         int Added,
+        int Downloaded,
         int Failed,
-        IReadOnlyList<AutoGrabOutcome> Outcomes);
+        IReadOnlyList<AutoGrabOutcome> Outcomes,
+        string? StoppedBecause = null);
 
-    public sealed record AutoGrabOutcome(string Asin, string Title, string SourceLabel, bool Added, string? Error);
+    /// <param name="Added">The book was added to the library.</param>
+    /// <param name="Downloaded">A release was actually sent to the download client.</param>
+    public sealed record AutoGrabOutcome(
+        string Asin, string Title, string SourceLabel, bool Added, bool Downloaded, string? Error);
 }

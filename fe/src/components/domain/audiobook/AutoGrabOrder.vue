@@ -96,7 +96,7 @@ const rows = computed(() =>
 )
 
 async function move(index: number, by: number) {
-  const current = store.settings ?? { enabled: false, perRun: 10, intervalMinutes: 60, sources: [] }
+  const current = store.settings ?? { enabled: false, intervalMinutes: 60, sources: [] }
   const sources = [...current.sources]
   const target = index + by
   if (target < 0 || target >= sources.length) return

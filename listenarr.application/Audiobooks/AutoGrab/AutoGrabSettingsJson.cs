@@ -57,7 +57,6 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                 var stored = JsonSerializer.Deserialize<Stored>(json, SerializerOptions);
                 return stored is null ? AutoGrabSettings.Off : Sanitize(new AutoGrabSettings(
                     stored.Enabled ?? false,
-                    stored.PerRun ?? AutoGrabSettings.DefaultPerRun,
                     stored.IntervalMinutes ?? AutoGrabSettings.DefaultIntervalMinutes,
                     (stored.Sources ?? [])
                         .Select(source => new AutoGrabSource(
@@ -79,7 +78,6 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                 new Stored
                 {
                     Enabled = clean.Enabled,
-                    PerRun = clean.PerRun,
                     IntervalMinutes = clean.IntervalMinutes,
                     Sources = clean.Sources
                         .Select(source => new StoredSource
@@ -134,9 +132,6 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
 
             return new AutoGrabSettings(
                 settings.Enabled,
-                settings.PerRun <= 0
-                    ? AutoGrabSettings.DefaultPerRun
-                    : Math.Min(settings.PerRun, AutoGrabSettings.MaxPerRun),
                 settings.IntervalMinutes <= 0
                     ? AutoGrabSettings.DefaultIntervalMinutes
                     : Math.Min(settings.IntervalMinutes, 24 * 60),
@@ -147,7 +142,6 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
         {
             public bool? Enabled { get; set; }
 
-            public int? PerRun { get; set; }
 
             public int? IntervalMinutes { get; set; }
 

@@ -44,6 +44,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         private readonly Mock<IDiscoverService> _discover = new();
         private readonly Mock<ISuggestionReleaseRepository> _releases = new();
         private readonly Mock<ILibraryAddService> _library = new();
+        private readonly Mock<IAbookThankBudget> _thanks = new();
         private readonly ApplicationSettings _settings = new();
         private readonly Dictionary<string, SuggestionRelease> _found = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<LibraryAddOperationRequest> _added = [];
@@ -73,8 +74,17 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
                 .ReturnsAsync((LibraryAddOperationRequest request, CancellationToken _) =>
                 {
                     _added.Add(request);
-                    return new LibraryAddOperationResult { Added = true, Message = "Added" };
+                    return new LibraryAddOperationResult
+                    {
+                        Added = true,
+                        DownloadSent = true,
+                        Message = "Added"
+                    };
                 });
+
+            _thanks
+                .Setup(t => t.CheckAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AbookThankDecision(true, null, 0, null));
 
             return new AutoGrabService(
                 _configuration.Object,
@@ -82,6 +92,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
                 _discover.Object,
                 _releases.Object,
                 _library.Object,
+                _thanks.Object,
                 new FixedClock(Now),
                 NullLogger<AutoGrabService>.Instance);
         }
@@ -155,9 +166,11 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         }
 
         [Fact]
-        public async Task Preview_SaysHowManyAreWaitingBeyondTheCap()
+        public async Task Preview_PlansEveryWaitingBook()
         {
-            Configure(enabled: true, perRun: 2, sources: new AutoGrabSource(AutoGrabSources.Series));
+            // There is no count per run any more: what a run does is bounded by the
+            // lanes it draws through, not by a number chosen in advance.
+            Configure(enabled: true, new AutoGrabSource(AutoGrabSources.Series));
             for (var index = 1; index <= 5; index++)
             {
                 Offer(_seriesBooks, $"B{index}", $"Book {index}");
@@ -166,7 +179,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
 
             var plan = await BuildService().PreviewAsync();
 
-            Assert.Equal(2, plan.Candidates.Count);
+            Assert.Equal(5, plan.Candidates.Count);
             Assert.Equal(5, plan.Available);
         }
 
@@ -211,9 +224,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         }
 
         [Fact]
-        public async Task Run_NeverAddsMoreThanOneRunAllows()
+        public async Task Run_TakesEverythingWaitingWhenTheLanesHaveRoom()
         {
-            Configure(enabled: true, perRun: 3, sources: new AutoGrabSource(AutoGrabSources.Series));
+            Configure(enabled: true, new AutoGrabSource(AutoGrabSources.Series));
             for (var index = 1; index <= 10; index++)
             {
                 Offer(_seriesBooks, $"B{index}", $"Book {index}");
@@ -222,8 +235,64 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
 
             var report = await BuildService().RunAsync();
 
-            Assert.Equal(3, _added.Count);
-            Assert.Equal(3, report.Added);
+            Assert.Equal(10, _added.Count);
+            Assert.Equal(10, report.Added);
+            Assert.Equal(10, report.Downloaded);
+            Assert.Null(report.StoppedBecause);
+        }
+
+        [Fact]
+        public async Task Run_StopsWhenTheThankBudgetIsSpentRatherThanAddingBooksItCannotFetch()
+        {
+            // The books here all come from abook.link, so each costs a thank. Once the
+            // budget refuses, adding the rest would leave books in the library that
+            // nothing will download - which is exactly the backlog this replaced.
+            Configure(enabled: true, new AutoGrabSource(AutoGrabSources.Series));
+            for (var index = 1; index <= 5; index++)
+            {
+                Offer(_seriesBooks, $"B{index}", $"Book {index}");
+                Found($"B{index}");
+            }
+
+            var service = BuildService();
+            var asked = 0;
+            _thanks
+                .Setup(t => t.CheckAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => ++asked <= 2
+                    ? new AbookThankDecision(true, null, asked, null)
+                    : new AbookThankDecision(false, "the hourly thank limit", 120, null));
+
+            var report = await service.RunAsync();
+
+            Assert.Equal(2, _added.Count);
+            Assert.Equal(2, report.Added);
+            Assert.Equal("the hourly thank limit", report.StoppedBecause);
+        }
+
+        [Fact]
+        public async Task Run_DoesNotSpendTheThankBudgetOnAReleaseThatNeedsNoThank()
+        {
+            Configure(enabled: true, new AutoGrabSource(AutoGrabSources.Series));
+            Offer(_seriesBooks, "B1", "From a Newznab indexer");
+            _found["B1"] = new SuggestionRelease
+            {
+                Asin = "B1",
+                Status = SuggestionReleaseStatus.Found,
+                IndexerName = "NZBgeek (Prowlarr)",
+                ReleaseTitle = "Some release"
+            };
+
+            var service = BuildService();
+            _thanks
+                .Setup(t => t.CheckAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AbookThankDecision(false, "spent", 120, null));
+
+            var report = await service.RunAsync();
+
+            // A Newznab release posts nothing to anybody's forum, so a spent thank
+            // budget is none of its business.
+            Assert.Equal(1, report.Added);
+            Assert.Null(report.StoppedBecause);
         }
 
         [Fact]
@@ -270,11 +339,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         }
 
         private void Configure(bool enabled, params AutoGrabSource[] sources) =>
-            Configure(enabled, AutoGrabSettings.DefaultPerRun, sources);
-
-        private void Configure(bool enabled, int perRun, params AutoGrabSource[] sources) =>
             _settings.AutoGrabSettingsJson = AutoGrabSettingsJson.Write(
-                new AutoGrabSettings(enabled, perRun, 60, sources));
+                new AutoGrabSettings(enabled, 60, sources));
 
         private static void Offer(
             List<SuggestedBook> into,

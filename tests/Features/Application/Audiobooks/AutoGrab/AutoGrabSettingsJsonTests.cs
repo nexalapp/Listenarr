@@ -36,7 +36,6 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
 
             Assert.False(settings.Enabled);
             Assert.Empty(settings.Sources);
-            Assert.Equal(AutoGrabSettings.DefaultPerRun, settings.PerRun);
         }
 
         [Fact]
@@ -48,7 +47,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         [Fact]
         public void WriteThenRead_KeepsTheListsAndTheirOrder()
         {
-            var settings = new AutoGrabSettings(true, 25, 30,
+            var settings = new AutoGrabSettings(true, 30,
             [
                 new AutoGrabSource(AutoGrabSources.Series),
                 new AutoGrabSource(AutoGrabSources.Discover, "18580606011"),
@@ -58,7 +57,6 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
             var read = AutoGrabSettingsJson.Read(AutoGrabSettingsJson.Write(settings));
 
             Assert.True(read.Enabled);
-            Assert.Equal(25, read.PerRun);
             Assert.Equal(30, read.IntervalMinutes);
             Assert.Equal(
                 ["series", "discover:18580606011", "abook:7"],
@@ -74,7 +72,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         public void Sanitize_DropsAListNobodyOffers()
         {
             var settings = AutoGrabSettingsJson.Sanitize(
-                new AutoGrabSettings(true, 10, 60, [new AutoGrabSource("goodreads")]));
+                new AutoGrabSettings(true, 60, [new AutoGrabSource("goodreads")]));
 
             Assert.Empty(settings.Sources);
         }
@@ -86,7 +84,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         public void Sanitize_DropsASectionThatIsNotAnId(string sectionId)
         {
             var settings = AutoGrabSettingsJson.Sanitize(new AutoGrabSettings(
-                true, 10, 60, [new AutoGrabSource(AutoGrabSources.Discover, sectionId)]));
+                true, 60, [new AutoGrabSource(AutoGrabSources.Discover, sectionId)]));
 
             Assert.Empty(settings.Sources);
         }
@@ -95,7 +93,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         public void Sanitize_IgnoresASectionOnAListThatHasNone()
         {
             var settings = AutoGrabSettingsJson.Sanitize(new AutoGrabSettings(
-                true, 10, 60, [new AutoGrabSource(AutoGrabSources.Authors, "7")]));
+                true, 60, [new AutoGrabSource(AutoGrabSources.Authors, "7")]));
 
             Assert.Null(Assert.Single(settings.Sources).SectionId);
         }
@@ -103,7 +101,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         [Fact]
         public void Sanitize_KeepsOneEntryPerList()
         {
-            var settings = AutoGrabSettingsJson.Sanitize(new AutoGrabSettings(true, 10, 60,
+            var settings = AutoGrabSettingsJson.Sanitize(new AutoGrabSettings(true, 60,
             [
                 new AutoGrabSource(AutoGrabSources.Discover, "1"),
                 new AutoGrabSource(AutoGrabSources.Discover, "1", Enabled: false),
@@ -113,23 +111,22 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
             Assert.Equal(["discover:1", "discover:2"], settings.Sources.Select(source => source.Key));
         }
 
-        [Theory]
-        [InlineData(0, AutoGrabSettings.DefaultPerRun)]
-        [InlineData(-5, AutoGrabSettings.DefaultPerRun)]
-        [InlineData(5, 5)]
-        [InlineData(10_000, AutoGrabSettings.MaxPerRun)]
-        public void Sanitize_HoldsTheRunSizeInRange(int requested, int expected)
+        [Fact]
+        public void Read_OfSettingsSavedWithTheOldRunSize_IgnoresIt()
         {
-            var settings = AutoGrabSettingsJson.Sanitize(new AutoGrabSettings(true, requested, 60, []));
+            // The count was dropped: it throttled a Newznab release, which costs nothing,
+            // at the same rate as an abook.link post, which costs a public thank.
+            var settings = AutoGrabSettingsJson.Read(
+                "{\"enabled\":true,\"perRun\":10,\"intervalMinutes\":30,\"sources\":[]}");
 
-            // A mistake in what is followed should cost ten books, not nine hundred.
-            Assert.Equal(expected, settings.PerRun);
+            Assert.True(settings.Enabled);
+            Assert.Equal(30, settings.IntervalMinutes);
         }
 
         [Fact]
         public void Active_IsTheTickedListsOnly()
         {
-            var settings = new AutoGrabSettings(true, 10, 60,
+            var settings = new AutoGrabSettings(true, 60,
             [
                 new AutoGrabSource(AutoGrabSources.Series),
                 new AutoGrabSource(AutoGrabSources.Authors, Enabled: false)

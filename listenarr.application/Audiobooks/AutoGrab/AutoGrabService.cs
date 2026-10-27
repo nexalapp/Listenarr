@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Search.Contracts;
 using Listenarr.Application.Audiobooks.Discover;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Domain.Audiobooks.Discover;
@@ -51,6 +52,7 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
         IDiscoverService discover,
         ISuggestionReleaseRepository releases,
         ILibraryAddService library,
+        IAbookThankBudget thanks,
         TimeProvider timeProvider,
         ILogger<AutoGrabService> logger) : IAutoGrabService
     {
@@ -61,7 +63,7 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
 
             if (settings.Sources.All(source => !source.Enabled))
             {
-                return new AutoGrabPlan(settings.Enabled, settings.PerRun, 0, [], [], "No list is ticked.");
+                return new AutoGrabPlan(settings.Enabled, 0, [], [], "No list is ticked.");
             }
 
             var found = await releases.GetAllAsync(cancellationToken);
@@ -104,9 +106,8 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
 
             return new AutoGrabPlan(
                 settings.Enabled,
-                settings.PerRun,
                 candidates.Count,
-                candidates.Take(settings.PerRun).ToList(),
+                candidates,
                 counts,
                 candidates.Count == 0 ? "Nothing to grab: every followed list is empty or already in the library." : null);
         }
@@ -116,10 +117,29 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
             var startedAt = timeProvider.GetUtcNow().UtcDateTime;
             var plan = await PreviewAsync(cancellationToken);
             var outcomes = new List<AutoGrabOutcome>();
+            string? stopped = null;
 
             foreach (var candidate in plan.Candidates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // Ask before adding, not during the grab. A thank refused halfway through
+                // an add leaves a book in the library that nothing will download, which is
+                // how a backlog of eighty-two of them accumulated unnoticed. A book not
+                // added is simply still waiting, and the next run finds it.
+                if (NeedsAThank(candidate))
+                {
+                    var budget = await thanks.CheckAsync(cancellationToken);
+                    if (!budget.Allowed)
+                    {
+                        stopped = budget.Reason;
+                        logger.LogInformation(
+                            "Auto-grab stopping with {Remaining} still waiting: {Reason}",
+                            plan.Candidates.Count - outcomes.Count, budget.Reason);
+                        break;
+                    }
+                }
+
                 var metadata = MetadataFor(candidate);
 
                 try
@@ -138,11 +158,13 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                     // Already in the library counts as nothing to do rather than a
                     // failure: two lists offering one book is ordinary.
                     var added = result.Added;
+                    var downloaded = result.DownloadSent;
                     outcomes.Add(new AutoGrabOutcome(
                         candidate.Asin,
                         candidate.Title,
                         candidate.SourceLabel,
                         added,
+                        downloaded,
                         added || result.AlreadyExists ? null : Reason(result)));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -151,7 +173,7 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                     // next one is unrelated to it.
                     logger.LogWarning(ex, "Auto-grab could not add {Title} ({Asin})", candidate.Title, candidate.Asin);
                     outcomes.Add(new AutoGrabOutcome(
-                        candidate.Asin, candidate.Title, candidate.SourceLabel, false, ex.Message));
+                        candidate.Asin, candidate.Title, candidate.SourceLabel, false, false, ex.Message));
                 }
             }
 
@@ -159,20 +181,33 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                 startedAt,
                 timeProvider.GetUtcNow().UtcDateTime,
                 outcomes.Count(outcome => outcome.Added),
+                outcomes.Count(outcome => outcome.Downloaded),
                 outcomes.Count(outcome => !outcome.Added),
-                outcomes);
+                outcomes,
+                stopped);
 
-            if (outcomes.Count > 0)
+            if (outcomes.Count > 0 || stopped is not null)
             {
                 logger.LogInformation(
-                    "Auto-grab added {Added} of {Planned} book(s); {Failed} failed",
-                    report.Added, outcomes.Count, report.Failed);
+                    "Auto-grab added {Added} and sent {Downloaded} download(s) of {Planned} planned; {Failed} failed{Stopped}",
+                    report.Added, report.Downloaded, plan.Candidates.Count, report.Failed,
+                    stopped is null ? string.Empty : $"; stopped because {stopped}");
             }
 
             return report;
         }
 
-        /// <summary>The books one followed list is offering, and what to call it.</summary>
+        /// <summary>
+        /// Whether grabbing this book means pressing abook.link's thank button. Posts
+        /// already thanked do not, but that is only knowable by reading the post, so a
+        /// book from that source is assumed to cost one. Erring this way spends the
+        /// budget slightly early; erring the other way spends somebody's goodwill.
+        /// </summary>
+        private static bool NeedsAThank(AutoGrabCandidate candidate) =>
+            string.Equals(candidate.IndexerName, AbookLinkName, StringComparison.OrdinalIgnoreCase);
+
+        private const string AbookLinkName = "Abook.link";
+
         private async Task<(string Label, IReadOnlyList<SuggestedBook> Books)> BooksForAsync(
             AutoGrabSource source,
             CancellationToken cancellationToken)

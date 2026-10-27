@@ -1090,7 +1090,6 @@ export interface AutoGrabSource {
 
 export interface AutoGrabSettings {
   enabled: boolean
-  perRun: number
   intervalMinutes: number
   /** In the order a run draws from them. */
   sources: AutoGrabSource[]
@@ -1117,7 +1116,6 @@ export interface AutoGrabSourceCount {
 
 export interface AutoGrabPlan {
   enabled: boolean
-  perRun: number
   /** How many could be grabbed in total, before the cap. */
   available: number
   candidates: AutoGrabCandidate[]

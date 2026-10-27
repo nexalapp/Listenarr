@@ -53,10 +53,6 @@
 
         <div class="autograb-numbers">
           <label>
-            <span>Books per run</span>
-            <input :value="perRun" type="number" min="1" :max="200" @change="setPerRun" />
-          </label>
-          <label>
             <span>Every</span>
             <input
               :value="intervalMinutes"
@@ -180,7 +176,6 @@ const prepareMetered = computed(
   () => appSettings.value?.prepareReleasesMayUseMeteredIndexes ?? false,
 )
 
-const perRun = computed(() => store.settings?.perRun ?? 10)
 const intervalMinutes = computed(() => store.settings?.intervalMinutes ?? 60)
 
 const withBooks = computed(() =>
@@ -250,16 +245,11 @@ function close() {
 }
 
 function current(): AutoGrabSettings {
-  return store.settings ?? { enabled: false, perRun: 10, intervalMinutes: 60, sources: [] }
+  return store.settings ?? { enabled: false, intervalMinutes: 60, sources: [] }
 }
 
 async function setEnabled(event: Event) {
   await store.save({ ...current(), enabled: (event.target as HTMLInputElement).checked })
-}
-
-async function setPerRun(event: Event) {
-  const value = Math.max(1, Number((event.target as HTMLInputElement).value || 1))
-  await store.save({ ...current(), perRun: value })
 }
 
 async function setInterval(event: Event) {
