@@ -148,5 +148,47 @@ namespace Listenarr.Tests.Features.Api.Services
 
             Assert.Equal(2, cycles);
         }
+    
+        [Fact]
+        public async Task AWorkerStillSittingOutItsStartupDelayIsOnTheList()
+        {
+            // The one everybody goes looking for. It used to be absent until its first
+            // cycle began, which is after the wait they are asking about.
+            var registry = new WorkerScheduleRegistry(TimeProvider.System);
+            var runner = new WorkerCycleRunner(
+                TimeProvider.System,
+                Mock.Of<IAppMetricsService>(),
+                registry,
+                Mock.Of<ILogger<WorkerCycleRunner>>());
+
+            using var cts = new CancellationTokenSource();
+            var started = new TaskCompletionSource();
+            var loop = runner.RunPeriodicAsync(
+                "SlowToStartWorker",
+                initialDelay: TimeSpan.FromHours(1),
+                intervalProvider: () => TimeSpan.FromHours(1),
+                runCycle: _ =>
+                {
+                    started.TrySetResult();
+                    cts.Cancel();
+                    return Task.CompletedTask;
+                },
+                cts.Token);
+
+            while (registry.Snapshot().Count == 0)
+            {
+                await Task.Delay(10);
+            }
+
+            var waiting = Assert.Single(registry.Snapshot());
+            Assert.Equal("SlowToStartWorker", waiting.Name);
+            Assert.Equal(WorkerCycleOutcome.NotYetRun, waiting.LastOutcome);
+            Assert.NotNull(waiting.NextDueAt);
+
+            // And waking during that delay starts it, rather than waiting the hour out.
+            Assert.True(registry.Wake("SlowToStartWorker"));
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await loop.WaitAsync(TimeSpan.FromSeconds(5));
+        }
     }
 }

@@ -33,11 +33,28 @@ namespace Listenarr.Infrastructure.HostedServices
             Func<CancellationToken, Task> runCycle,
             CancellationToken cancellationToken)
         {
+            // Register before the delay, not after the first cycle. A worker sitting out
+            // a staggered startup delay is exactly the one someone is looking for when
+            // they ask why nothing has happened, and it used to be absent from the list
+            // entirely until its first cycle began.
+            schedules.Waiting(
+                workerName,
+                intervalProvider(),
+                (timeProvider.GetUtcNow() + (initialDelay ?? TimeSpan.Zero)).UtcDateTime);
+
             if (initialDelay is { } delay && delay > TimeSpan.Zero)
             {
+                // Waking works during the startup delay too; that is the wait people hit.
+                using var wokenEarly = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken, schedules.WakeToken(workerName));
                 try
                 {
-                    await Task.Delay(delay, timeProvider, cancellationToken);
+                    await Task.Delay(delay, timeProvider, wokenEarly.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    logger.LogInformation(
+                        "{WorkerName} woken early by request, before its first cycle", workerName);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
