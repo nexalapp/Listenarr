@@ -356,7 +356,7 @@
         "type": "Project",
         "dependencies": {
           "AsyncKeyedLock": "[8.0.2, )",
-          "Listenarr.Domain": "[1.0.0, )"
+          "Listenarr.Domain": "[1.43.70, )"
         }
       },
       "listenarr.domain": {
@@ -380,6 +380,13 @@
           "SQLitePCLRaw.config.e_sqlite3": "3.0.3",
           "SourceGear.sqlite3": "3.50.4.5"
         }
+      }
+    },
+    "net10.0/linux-x64": {
+      "SourceGear.sqlite3": {
+        "type": "Transitive",
+        "resolved": "3.50.4.5",
+        "contentHash": "UtnipXhJYZKQOQIfpws/msLK7IRhMplE1CZCaZLIQXRnGD474QVpO/J9nMlQQY8NZueGz1aidjoxDRnrC1NT3Q=="
       }
     }
   }

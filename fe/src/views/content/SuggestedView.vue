@@ -122,12 +122,7 @@
           />
           Auto-grab from this list
         </label>
-        <AutoGrabOrder
-          v-if="snapshot.authors.length > 0 || snapshot.series.length > 0"
-          class="autograb-tick-order"
-          :labels="{ authors: 'From your authors', series: 'From your series' }"
-          hint
-        />
+
         <EmptyState
           v-if="shown.authors.length === 0"
           title="Nothing missing from your authors"
@@ -185,12 +180,7 @@
           />
           Auto-grab from this list
         </label>
-        <AutoGrabOrder
-          v-if="snapshot.authors.length > 0 || snapshot.series.length > 0"
-          class="autograb-tick-order"
-          :labels="{ authors: 'From your authors', series: 'From your series' }"
-          hint
-        />
+
         <EmptyState
           v-if="shown.series.length === 0"
           title="No gaps in your series"
@@ -297,7 +287,6 @@ import SuggestedBookCard from '@/components/domain/audiobook/SuggestedBookCard.v
 import FoundBooksTab from '@/components/domain/audiobook/FoundBooksTab.vue'
 import DiscoverTab from '@/components/domain/audiobook/DiscoverTab.vue'
 import AutoGrabPanel from '@/components/domain/audiobook/AutoGrabPanel.vue'
-import AutoGrabOrder from '@/components/domain/audiobook/AutoGrabOrder.vue'
 import { useAutoGrabStore } from '@/stores/autoGrab'
 import { useFoundBooksStore } from '@/stores/foundBooks'
 import { apiService } from '@/services/api'
@@ -826,22 +815,6 @@ onBeforeUnmount(stopPolling)
   .cards {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-
-.autograb-tick-order {
-  margin-left: 0.6rem;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  font-size: 0.82rem;
-  color: var(--color-primary, #4a9eff);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.autograb-tick-order:hover {
-  opacity: 0.8;
 }
 
 .autograb-tick {
