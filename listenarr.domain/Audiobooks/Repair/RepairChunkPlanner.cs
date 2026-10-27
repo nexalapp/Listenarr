@@ -40,10 +40,20 @@ namespace Listenarr.Domain.Audiobooks.Repair
     public static class RepairChunkPlanner
     {
         /// <summary>
-        /// Twenty minutes: far inside the model's memory ceiling, small enough that a
-        /// crash costs little, big enough that per-process model loading stays noise.
+        /// Five minutes. It was twenty, sized for a crash now and then; what happens
+        /// instead is a deploy every hour or two, and on a busy NAS a twenty-minute
+        /// chunk took seventy-seven minutes to enhance, so most restarts landed inside
+        /// one and threw it away. Five keeps that loss to about twenty minutes while
+        /// model loading, a few seconds a process, stays noise.
         /// </summary>
-        public static readonly TimeSpan ChunkLength = TimeSpan.FromMinutes(20);
+        public static readonly TimeSpan ChunkLength = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// The length every chunk manifest written before <see cref="ChunkLength"/>
+        /// changed was cut with. A repair resumes on the grid it started with, so the
+        /// chunks it has already finished stay valid.
+        /// </summary>
+        public static readonly TimeSpan LegacyChunkLength = TimeSpan.FromMinutes(20);
 
         /// <summary>
         /// A remainder shorter than this is absorbed into the previous chunk instead of
@@ -52,24 +62,26 @@ namespace Listenarr.Domain.Audiobooks.Repair
         /// </summary>
         public static readonly TimeSpan ShortestTail = TimeSpan.FromSeconds(30);
 
-        public static IReadOnlyList<RepairChunk> Plan(TimeSpan fileDuration)
+        public static IReadOnlyList<RepairChunk> Plan(TimeSpan fileDuration) => Plan(fileDuration, ChunkLength);
+
+        public static IReadOnlyList<RepairChunk> Plan(TimeSpan fileDuration, TimeSpan chunkLength)
         {
             if (fileDuration <= TimeSpan.Zero)
             {
                 return [];
             }
 
-            if (fileDuration <= ChunkLength + ShortestTail)
+            if (fileDuration <= chunkLength + ShortestTail)
             {
                 return [new RepairChunk(0, TimeSpan.Zero, fileDuration)];
             }
 
             var chunks = new List<RepairChunk>();
             var cursor = TimeSpan.Zero;
-            while (fileDuration - cursor > ChunkLength + ShortestTail)
+            while (fileDuration - cursor > chunkLength + ShortestTail)
             {
-                chunks.Add(new RepairChunk(chunks.Count, cursor, ChunkLength));
-                cursor += ChunkLength;
+                chunks.Add(new RepairChunk(chunks.Count, cursor, chunkLength));
+                cursor += chunkLength;
             }
 
             chunks.Add(new RepairChunk(chunks.Count, cursor, fileDuration - cursor));

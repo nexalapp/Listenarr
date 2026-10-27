@@ -80,7 +80,7 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Repair
         public void ChunkGrid_ButtsExactly_AndAbsorbsAShortTail()
         {
             // 50 minutes: two 20-minute chunks and a 10-minute remainder.
-            var chunks = RepairChunkPlanner.Plan(TimeSpan.FromMinutes(50));
+            var chunks = RepairChunkPlanner.Plan(TimeSpan.FromMinutes(50), TimeSpan.FromMinutes(20));
             Assert.Equal(3, chunks.Count);
             Assert.Equal(TimeSpan.Zero, chunks[0].Start);
             for (var i = 1; i < chunks.Count; i++)
@@ -92,9 +92,19 @@ namespace Listenarr.Tests.Features.Domain.Audiobooks.Repair
 
             // 40 minutes and 10 seconds: the 10-second tail would be all seam and no
             // audio, so the second chunk absorbs it.
-            var absorbed = RepairChunkPlanner.Plan(TimeSpan.FromMinutes(40) + TimeSpan.FromSeconds(10));
+            var absorbed = RepairChunkPlanner.Plan(TimeSpan.FromMinutes(40) + TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(20));
             Assert.Equal(2, absorbed.Count);
             Assert.Equal(TimeSpan.FromMinutes(20) + TimeSpan.FromSeconds(10), absorbed[^1].Length);
+        }
+
+        [Fact]
+        public void ChunkGrid_IsFiveMinutes_SoARestartCostsLittle()
+        {
+            var chunks = RepairChunkPlanner.Plan(TimeSpan.FromMinutes(12.5));
+
+            Assert.Equal([TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(2.5)], chunks.Select(c => c.Length));
+            // Manifests from before the change were all cut at twenty.
+            Assert.Equal(TimeSpan.FromMinutes(20), RepairChunkPlanner.LegacyChunkLength);
         }
 
         [Fact]

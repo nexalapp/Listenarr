@@ -111,10 +111,16 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // Shutdown. Leave the job Running: its lease will expire and another
-                // process will reclaim it, which is what makes a restart resumable.
+                // Shutdown. Hand the job straight back rather than leaving its lease to
+                // run out: for those ten minutes the next process would see it still
+                // running and start another job, and a repair restarted every couple of
+                // hours then never finishes any book. A crash skips this and the lease
+                // expiry still recovers the job.
+                var released = await ReleaseAtShutdownAsync(job.Id);
                 logger.LogInformation(
-                    "Conversion {JobId} interrupted by shutdown; its lease will be reclaimed",
+                    released
+                        ? "Conversion {JobId} interrupted by shutdown; returned to the queue"
+                        : "Conversion {JobId} interrupted by shutdown; its lease will be reclaimed",
                     job.Id);
                 throw;
             }
@@ -173,6 +179,25 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     ex,
                     "Could not record the failure of conversion {JobId}; its lease will expire and requeue it",
                     jobId);
+            }
+        }
+
+        private async Task<bool> ReleaseAtShutdownAsync(Guid jobId)
+        {
+            // Not the stopping token, which is already cancelled; a short budget of its
+            // own instead, because the host gives shutdown only seconds. Its own scope
+            // too: the job's context may have been cut off mid-operation.
+            using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                return await scope.ServiceProvider.GetRequiredService<IConversionQueueService>()
+                    .ReleaseAsync(jobId, _leaseOwner, budget.Token);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogWarning(ex, "Could not return conversion {JobId} to the queue at shutdown", jobId);
+                return false;
             }
         }
 
