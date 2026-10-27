@@ -40,7 +40,20 @@
       <tbody>
         <tr v-for="task in tasks" :key="task.name" :class="{ running: task.running }">
           <td class="tasks-name">
-            {{ task.name }}
+            <span class="tasks-label">
+              {{ task.label }}
+              <button
+                v-if="task.description"
+                type="button"
+                class="tasks-info"
+                :aria-label="`What ${task.label} does`"
+                :title="task.description"
+                @click="explain(task)"
+              >
+                i
+              </button>
+            </span>
+            <span class="tasks-key">{{ task.name }}</span>
             <span v-if="task.lastOutcome === 'Failed'" class="tasks-failed">last run failed</span>
           </td>
           <td>{{ duration(task.intervalSeconds) }}</td>
@@ -99,6 +112,11 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+/** The tooltip is enough with a mouse; tapping needs somewhere for the words to go. */
+function explain(task: BackgroundTask) {
+  toast.info(task.label, task.description)
 }
 
 async function run(name: string) {
@@ -204,6 +222,39 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+}
+
+.tasks-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+.tasks-info {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: none;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 0.7rem;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+  padding: 0;
+}
+
+.tasks-info:hover,
+.tasks-info:focus-visible {
+  opacity: 1;
+}
+
+.tasks-key {
+  font-size: 0.74rem;
+  opacity: 0.45;
+  font-family: var(--font-mono, monospace);
 }
 
 .tasks-failed {

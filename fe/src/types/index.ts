@@ -1060,6 +1060,8 @@ export interface SuggestionRefreshStatus {
 /** A Suggested list auto-grab can draw from. */
 export interface BackgroundTask {
   name: string
+  label: string
+  description: string
   intervalSeconds: number
   lastStartedAt: string | null
   lastDurationSeconds: number | null

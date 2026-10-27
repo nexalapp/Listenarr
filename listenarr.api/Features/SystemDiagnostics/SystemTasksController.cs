@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Common;
 using Listenarr.Application.Common.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
@@ -41,6 +42,8 @@ namespace Listenarr.Api.Features.SystemDiagnostics
             Ok(schedules.Snapshot().Select(task => new
             {
                 name = task.Name,
+                label = WorkerTaskCatalogue.Describe(task.Name).Label,
+                description = WorkerTaskCatalogue.Describe(task.Name).Description,
                 intervalSeconds = (int)task.Interval.TotalSeconds,
                 lastStartedAt = task.LastStartedAt,
                 lastDurationSeconds = task.LastDuration?.TotalSeconds,
