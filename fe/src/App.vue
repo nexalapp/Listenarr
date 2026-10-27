@@ -489,6 +489,37 @@
               <span>System</span>
               <Pill variant="error" v-if="systemIssues > 0">{{ systemIssues }}</Pill>
             </RouterLink>
+            <!-- Sub-navigation for System pages -->
+            <div
+              class="nav-sub"
+              @mouseenter="onNavMouseEnter('system')"
+              @mouseleave="onNavMouseLeave('system')"
+              @focusin="onNavFocus('system')"
+              @focusout="onNavBlur('system')"
+              :class="{
+                open:
+                  hoverNav === 'system' ||
+                  persistentNav === 'system' ||
+                  route.path.startsWith('/system'),
+              }"
+            >
+              <RouterLink
+                to="/system"
+                class="nav-subitem"
+                :class="{ active: route.name === 'system' }"
+                @click="closeMobileMenu"
+              >
+                <span>Status</span>
+              </RouterLink>
+              <RouterLink
+                to="/system/tasks"
+                class="nav-subitem"
+                :class="{ active: route.name === 'system-tasks' }"
+                @click="closeMobileMenu"
+              >
+                <span>Tasks</span>
+              </RouterLink>
+            </div>
           </div>
         </nav>
         <div v-if="version && version.length > 0" class="sidebar-footer">
