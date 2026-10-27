@@ -177,10 +177,11 @@ namespace Listenarr.Infrastructure.Library.Repair
                     File.Copy(inputWavPath, linkedInput, overwrite: true);
                 }
 
-                // Four times realtime plus slack: the model runs one to two times
-                // realtime on these threads, so anything past this is a stuck process,
-                // not a slow one.
-                var timeout = chunkDuration * 4 + TimeSpan.FromMinutes(10);
+                // Eight times realtime plus slack. Alone the model runs one to two times
+                // realtime on these threads, but beside whisper and the encodes it was
+                // measured at nearly four, which the old limit of four left no room
+                // for. Past eight it is a stuck process, not a slow one.
+                var timeout = chunkDuration * 8 + TimeSpan.FromMinutes(10);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 linked.CancelAfter(timeout);
 

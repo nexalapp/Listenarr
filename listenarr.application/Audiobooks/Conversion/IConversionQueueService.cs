@@ -144,6 +144,15 @@ namespace Listenarr.Application.Audiobooks.Conversion
             string leaseOwner,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Give a job back to the queue at shutdown, so the next process resumes it at
+        /// once instead of waiting out the lease and starting a different one meanwhile.
+        /// </summary>
+        Task<bool> ReleaseAsync(
+            Guid jobId,
+            string leaseOwner,
+            CancellationToken cancellationToken = default);
+
         Task ReportProgressAsync(
             Guid jobId,
             ConversionJobPhase phase,
