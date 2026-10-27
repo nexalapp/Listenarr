@@ -121,7 +121,25 @@ export const useAutoGrabStore = defineStore('autoGrab', () => {
     }
   }
 
+  /**
+   * Set when something elsewhere on the page asks for the panel. The order of the
+   * lists is set in the panel, and the tick that arms a list is on the tab, so without
+   * this the two halves of one decision sit in places that cannot reach each other.
+   */
+  const panelRequested = ref(false)
+
+  function openPanel(): void {
+    panelRequested.value = true
+  }
+
+  function panelOpened(): void {
+    panelRequested.value = false
+  }
+
   return {
+    panelRequested,
+    openPanel,
+    panelOpened,
     settings,
     plan,
     loading,

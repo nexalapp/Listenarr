@@ -121,6 +121,9 @@
             @change="autoGrab.toggle('authors')"
           />
           Auto-grab from this list
+          <button type="button" class="autograb-tick-order" @click.prevent="autoGrab.openPanel()">
+            order and limits
+          </button>
         </label>
         <EmptyState
           v-if="shown.authors.length === 0"
@@ -178,6 +181,9 @@
             @change="autoGrab.toggle('series')"
           />
           Auto-grab from this list
+          <button type="button" class="autograb-tick-order" @click.prevent="autoGrab.openPanel()">
+            order and limits
+          </button>
         </label>
         <EmptyState
           v-if="shown.series.length === 0"
@@ -813,6 +819,22 @@ onBeforeUnmount(stopPolling)
   .cards {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.autograb-tick-order {
+  margin-left: 0.6rem;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--color-primary, #4a9eff);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.autograb-tick-order:hover {
+  opacity: 0.8;
 }
 
 .autograb-tick {

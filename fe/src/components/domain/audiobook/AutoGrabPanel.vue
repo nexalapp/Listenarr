@@ -244,6 +244,15 @@ const rows = computed(() =>
   }),
 )
 
+watch(
+  () => store.panelRequested,
+  async (asked) => {
+    if (!asked) return
+    store.panelOpened()
+    if (!open.value) await toggleOpen()
+  },
+)
+
 async function toggleOpen() {
   open.value = !open.value
   if (!open.value) return
