@@ -94,7 +94,13 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                          || job.Status == ConversionJobStatus.RetryScheduled)
                         && (job.NextAttemptAt == null || job.NextAttemptAt <= now)
                         && (job.LeaseExpiresAt == null || job.LeaseExpiresAt <= now))
-                    .OrderBy(job => job.EnqueuedAt)
+                    // Work already begun goes first. A repair keeps its finished chunks
+                    // across a restart, so taking a fresh job instead strands hours of
+                    // them: three days of restarts left five books part-repaired and
+                    // none finished.
+                    .OrderBy(job => job.StartedAt == null)
+                    .ThenBy(job => job.StartedAt)
+                    .ThenBy(job => job.EnqueuedAt)
                     .FirstOrDefaultAsync(cancellationToken);
 
                 if (candidate == null)
@@ -149,6 +155,30 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     && job.Status == ConversionJobStatus.Running)
                 .ExecuteUpdateAsync(
                     setters => setters.SetProperty(job => job.LeaseExpiresAt, expiresAt),
+                    cancellationToken);
+
+            return rows > 0;
+        }
+
+        public async Task<bool> ReleaseLeaseAsync(
+            Guid id,
+            string leaseOwner,
+            DateTime now,
+            CancellationToken cancellationToken = default)
+        {
+            var rows = await db.ConversionJobs
+                .Where(job =>
+                    job.Id == id
+                    && job.LeaseOwner == leaseOwner
+                    && job.Status == ConversionJobStatus.Running)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(job => job.Status, ConversionJobStatus.Queued)
+                        .SetProperty(job => job.Phase, ConversionJobPhase.None)
+                        .SetProperty(job => job.LeaseOwner, (string?)null)
+                        .SetProperty(job => job.LeaseExpiresAt, (DateTime?)null)
+                        .SetProperty(job => job.Progress, 0d)
+                        .SetProperty(job => job.UpdatedAt, now),
                     cancellationToken);
 
             return rows > 0;

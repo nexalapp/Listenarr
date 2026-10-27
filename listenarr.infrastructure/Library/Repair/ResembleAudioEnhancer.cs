@@ -155,6 +155,14 @@ namespace Listenarr.Infrastructure.Library.Repair
             var workRoot = outputWavPath + ".work";
             var inDir = Path.Combine(workRoot, "in");
             var outDir = Path.Combine(workRoot, "out");
+            // A restart mid-chunk leaves the last attempt's pair behind, link included.
+            // Linking over it fails, and the copy fallback then copies the chunk onto the
+            // link to itself — which failed a 20-hour repair on resume. Start clean.
+            if (Directory.Exists(workRoot))
+            {
+                Directory.Delete(workRoot, recursive: true);
+            }
+
             Directory.CreateDirectory(inDir);
             Directory.CreateDirectory(outDir);
             var linkedInput = Path.Combine(inDir, "chunk.wav");
@@ -169,10 +177,11 @@ namespace Listenarr.Infrastructure.Library.Repair
                     File.Copy(inputWavPath, linkedInput, overwrite: true);
                 }
 
-                // Four times realtime plus slack: the model runs one to two times
-                // realtime on these threads, so anything past this is a stuck process,
-                // not a slow one.
-                var timeout = chunkDuration * 4 + TimeSpan.FromMinutes(10);
+                // Eight times realtime plus slack. Alone the model runs one to two times
+                // realtime on these threads, but beside whisper and the encodes it was
+                // measured at nearly four, which the old limit of four left no room
+                // for. Past eight it is a stuck process, not a slow one.
+                var timeout = chunkDuration * 8 + TimeSpan.FromMinutes(10);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 linked.CancelAfter(timeout);
 

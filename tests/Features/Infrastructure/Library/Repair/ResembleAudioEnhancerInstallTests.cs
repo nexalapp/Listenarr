@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Diagnostics;
 using System.Text.Json;
 using Listenarr.Application.Audiobooks.Repair;
 using Listenarr.Infrastructure.Library.Repair;
@@ -114,6 +115,48 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Repair
             enhancer.PointCurrentAt(GivenInstall("install-b"));
 
             Assert.Equal("install-b", new DirectoryInfo(Path.Combine(EnhancerRoot, "current")).LinkTarget);
+        }
+
+        [Fact]
+        public async Task AChunkInterruptedByARestart_IsEnhancedAgainOnResume()
+        {
+            // A restart mid-chunk left its work pair behind, the input link included.
+            var input = Path.Combine(_config, "enh-0020.wav.src");
+            var output = Path.Combine(_config, "enh-0020.wav");
+            Directory.CreateDirectory(_config);
+            await File.WriteAllTextAsync(input, "chunk audio");
+            var staleIn = Path.Combine(output + ".work", "in");
+            Directory.CreateDirectory(staleIn);
+            Directory.CreateDirectory(Path.Combine(output + ".work", "out"));
+            File.CreateSymbolicLink(Path.Combine(staleIn, "chunk.wav"), input);
+
+            // The model's stand-in copies the chunk straight through.
+            var runner = new Mock<IProcessRunner>();
+            runner.Setup(r => r.StartProcess(It.IsAny<ProcessStartInfo>()))
+                .Returns((ProcessStartInfo model) =>
+                {
+                    var startInfo = new ProcessStartInfo("/bin/sh")
+                    {
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false
+                    };
+                    foreach (var argument in new[] { "-c", "cp \"$0/chunk.wav\" \"$1/chunk.wav\"", model.ArgumentList[0], model.ArgumentList[1] })
+                    {
+                        startInfo.ArgumentList.Add(argument);
+                    }
+
+                    return Process.Start(startInfo)!;
+                });
+            var paths = new Mock<IApplicationPathService>();
+            paths.Setup(p => p.ResolveFromConfig("enhancer")).Returns(EnhancerRoot);
+            var enhancer = new ResembleAudioEnhancer(paths.Object, runner.Object, NullLogger<ResembleAudioEnhancer>.Instance);
+            enhancer.PointCurrentAt(GivenInstall("install-a"));
+
+            await enhancer.EnhanceChunkAsync(input, output, TimeSpan.FromSeconds(1));
+
+            Assert.Equal("chunk audio", await File.ReadAllTextAsync(output));
+            Assert.Equal("chunk audio", await File.ReadAllTextAsync(input));
         }
 
         public override async Task DisposeAsync()

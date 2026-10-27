@@ -32,34 +32,75 @@ namespace Listenarr.Infrastructure.Library.Conversion
             public DateTime SourceLastWriteUtc { get; set; }
             public string EnhancerVersion { get; set; } = string.Empty;
             public int ChunkCount { get; set; }
+
+            /// <summary>The grid's chunk length; 0 in a manifest written before it was recorded.</summary>
+            public int ChunkSeconds { get; set; }
+
             public HashSet<int> Done { get; set; } = [];
+
+            public TimeSpan ChunkLength => ChunkSeconds > 0
+                ? TimeSpan.FromSeconds(ChunkSeconds)
+                : RepairChunkPlanner.LegacyChunkLength;
+
+            public bool Describes(ConversionSource source, FileInfo info, string pipelineVersion) =>
+                SourcePath == source.FullPath
+                && SourceLength == info.Length
+                && SourceLastWriteUtc == info.LastWriteTimeUtc
+                && EnhancerVersion == pipelineVersion;
+        }
+
+        /// <summary>
+        /// The chunk length to cut this file with: the one its manifest was started on,
+        /// when that manifest still describes the file, so finished chunks are kept;
+        /// otherwise the current one.
+        /// </summary>
+        internal static async Task<TimeSpan> ResumableChunkLengthAsync(
+            string workDirectory,
+            ConversionSource source,
+            string pipelineVersion)
+        {
+            var manifest = await ReadChunkManifestAsync(workDirectory);
+            return manifest != null && manifest.Describes(source, new FileInfo(source.FullPath), pipelineVersion)
+                ? manifest.ChunkLength
+                : RepairChunkPlanner.ChunkLength;
+        }
+
+        private static async Task<ChunkManifest?> ReadChunkManifestAsync(string workDirectory)
+        {
+            var manifestPath = Path.Combine(workDirectory, "manifest.json");
+            if (!File.Exists(manifestPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<ChunkManifest>(await File.ReadAllTextAsync(manifestPath));
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         private static async Task<ChunkManifest> LoadOrStartChunkManifestAsync(
             string workDirectory,
             ConversionSource source,
             string pipelineVersion,
+            TimeSpan chunkLength,
             int chunkCount)
         {
             var manifestPath = Path.Combine(workDirectory, "manifest.json");
             var info = new FileInfo(source.FullPath);
             if (File.Exists(manifestPath))
             {
-                try
+                var loaded = await ReadChunkManifestAsync(workDirectory);
+                if (loaded != null
+                    && loaded.Describes(source, info, pipelineVersion)
+                    && loaded.ChunkLength == chunkLength
+                    && loaded.ChunkCount == chunkCount)
                 {
-                    var loaded = JsonSerializer.Deserialize<ChunkManifest>(await File.ReadAllTextAsync(manifestPath));
-                    if (loaded != null
-                        && loaded.SourcePath == source.FullPath
-                        && loaded.SourceLength == info.Length
-                        && loaded.SourceLastWriteUtc == info.LastWriteTimeUtc
-                        && loaded.EnhancerVersion == pipelineVersion
-                        && loaded.ChunkCount == chunkCount)
-                    {
-                        return loaded;
-                    }
-                }
-                catch (JsonException)
-                {
+                    return loaded;
                 }
 
                 // The chunks on disk are chunks of something else now. Start over.
@@ -75,7 +116,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 SourceLength = info.Length,
                 SourceLastWriteUtc = info.LastWriteTimeUtc,
                 EnhancerVersion = pipelineVersion,
-                ChunkCount = chunkCount
+                ChunkCount = chunkCount,
+                ChunkSeconds = (int)chunkLength.TotalSeconds
             };
             await SaveChunkManifestAsync(workDirectory, fresh);
             return fresh;
