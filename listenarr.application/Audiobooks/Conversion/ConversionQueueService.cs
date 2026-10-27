@@ -255,6 +255,16 @@ namespace Listenarr.Application.Audiobooks.Conversion
                 timeProvider.GetUtcNow().UtcDateTime + LeaseDuration,
                 cancellationToken);
 
+        public Task<bool> ReleaseAsync(
+            Guid jobId,
+            string leaseOwner,
+            CancellationToken cancellationToken = default) =>
+            repository.ReleaseLeaseAsync(
+                jobId,
+                leaseOwner,
+                timeProvider.GetUtcNow().UtcDateTime,
+                cancellationToken);
+
         public async Task ReportProgressAsync(
             Guid jobId,
             ConversionJobPhase phase,

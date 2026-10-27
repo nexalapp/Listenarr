@@ -188,7 +188,13 @@ namespace Listenarr.Infrastructure.Library.Conversion
             double totalDuration,
             CancellationToken cancellationToken)
         {
-            var chunks = RepairChunkPlanner.Plan(source.Duration);
+            // The in-flight file's chunks live beside a manifest naming exactly what they
+            // are chunks OF. A crash loses the chunk being worked, nothing more; a source
+            // or model change invalidates the lot.
+            var workDirectory = intermediatePath + ".wip";
+            Directory.CreateDirectory(workDirectory);
+            var chunkLength = await ResumableChunkLengthAsync(workDirectory, source, pipelineVersion);
+            var chunks = RepairChunkPlanner.Plan(source.Duration, chunkLength);
             if (chunks.Count == 0)
             {
                 return EnhanceOutcome.Failed(
@@ -196,12 +202,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     $"A source decodes to nothing: {LogRedaction.SanitizeFilePath(source.FullPath)}");
             }
 
-            // The in-flight file's chunks live beside a manifest naming exactly what they
-            // are chunks OF. A crash loses the chunk being worked, nothing more; a source
-            // or model change invalidates the lot.
-            var workDirectory = intermediatePath + ".wip";
-            Directory.CreateDirectory(workDirectory);
-            var manifest = await LoadOrStartChunkManifestAsync(workDirectory, source, pipelineVersion, chunks.Count);
+            var manifest = await LoadOrStartChunkManifestAsync(
+                workDirectory, source, pipelineVersion, chunkLength, chunks.Count);
 
             // Say so now: a chunk takes the best part of half an hour, and until the first
             // one finishes the job would otherwise still read "Probing".

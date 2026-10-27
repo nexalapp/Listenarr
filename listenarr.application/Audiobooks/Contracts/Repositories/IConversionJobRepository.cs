@@ -68,6 +68,16 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
             CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Hand a job this worker still owns back to the queue now, rather than leaving
+        /// its lease to run out. False when the worker no longer owns it.
+        /// </summary>
+        Task<bool> ReleaseLeaseAsync(
+            Guid id,
+            string leaseOwner,
+            DateTime now,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Remove a job row outright. Used when an operator dismisses a finished job:
         /// the row is what makes it visible in Activity, and with it gone the scratch
         /// sweeper treats any file the job was keeping as orphaned and collects it.
