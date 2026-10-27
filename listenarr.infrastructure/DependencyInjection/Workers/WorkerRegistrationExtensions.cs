@@ -27,6 +27,7 @@ internal static class WorkerRegistrationExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddSingleton<IWorkerScheduleRegistry, WorkerScheduleRegistry>();
         services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
 
         services.AddSingleton<IScanQueueService, ScanQueueService>();

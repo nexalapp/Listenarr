@@ -26,6 +26,7 @@
         <p>Monitor system health, resources, and service status</p>
       </div>
       <div class="page-actions">
+        <button class="add-button btn btn-secondary" @click="viewTasks">Tasks</button>
         <button class="add-button btn btn-primary" @click="refreshStatus" :disabled="loading">
           <component :is="loading ? PhSpinner : PhArrowClockwise" />
           {{ loading ? 'Refreshing...' : 'Refresh' }}
@@ -364,6 +365,10 @@ const refreshStatus = async () => {
 
 const viewFullLogs = () => {
   router.push('/logs')
+}
+
+const viewTasks = () => {
+  router.push('/system/tasks')
 }
 
 const downloadLogs = () => {

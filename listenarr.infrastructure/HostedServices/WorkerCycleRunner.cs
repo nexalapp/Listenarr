@@ -23,6 +23,7 @@ namespace Listenarr.Infrastructure.HostedServices
     public sealed class WorkerCycleRunner(
         TimeProvider timeProvider,
         IAppMetricsService metrics,
+        IWorkerScheduleRegistry schedules,
         ILogger<WorkerCycleRunner> logger) : IWorkerCycleRunner
     {
         public async Task RunPeriodicAsync(
@@ -53,6 +54,11 @@ namespace Listenarr.Infrastructure.HostedServices
                     ["WorkerName"] = workerName,
                     ["WorkerCycleId"] = Guid.NewGuid().ToString("N")
                 });
+
+                var startedAt = timeProvider.GetUtcNow();
+                var outcome = WorkerCycleOutcome.Completed;
+                var stopping = false;
+                schedules.CycleStarting(workerName, intervalProvider());
                 try
                 {
                     metrics.Increment(BuildMetricName(workerName, "cycle.started"));
@@ -62,26 +68,50 @@ namespace Listenarr.Infrastructure.HostedServices
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     metrics.Increment(BuildMetricName(workerName, "cycle.skipped"));
-                    break;
+                    outcome = WorkerCycleOutcome.Stopped;
+                    stopping = true;
                 }
                 catch (OperationCanceledException ex)
                 {
                     metrics.Increment(BuildMetricName(workerName, "cycle.failed"));
+                    outcome = WorkerCycleOutcome.Failed;
                     logger.LogWarning(ex, "{WorkerName} cycle canceled/timed out; continuing", workerName);
                 }
                 catch (Exception ex) when (Listenarr.Application.Common.WorkerExceptionClassifier.IsNonFatal(ex))
                 {
                     metrics.Increment(BuildMetricName(workerName, "cycle.failed"));
+                    outcome = WorkerCycleOutcome.Failed;
                     logger.LogError(ex, "Error in {WorkerName} cycle", workerName);
                 }
 
+                schedules.CycleFinished(
+                    workerName, timeProvider.GetUtcNow() - startedAt, outcome);
+
+                if (stopping)
+                {
+                    break;
+                }
+
+                var interval = intervalProvider();
+                schedules.Waiting(
+                    workerName, interval, (timeProvider.GetUtcNow() + interval).UtcDateTime);
+
+                // The wait is interruptible so the tasks page can say "run now" and mean
+                // it. Waking is not the same as overruling: a worker that keeps an
+                // interval of its own will wake, consult it and go back to sleep.
+                using var woken = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken, schedules.WakeToken(workerName));
                 try
                 {
-                    await Task.Delay(intervalProvider(), timeProvider, cancellationToken);
+                    await Task.Delay(interval, timeProvider, woken.Token);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
                 }
                 catch (OperationCanceledException)
                 {
-                    break;
+                    logger.LogInformation("{WorkerName} woken early by request", workerName);
                 }
             }
         }

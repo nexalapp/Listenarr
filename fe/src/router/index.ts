@@ -221,6 +221,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/system/tasks',
+    name: 'system-tasks',
+    component: () => import('../views/system/TasksView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/logs',
     name: 'logs',
     component: () => import('../views/activity/LogsView.vue'),

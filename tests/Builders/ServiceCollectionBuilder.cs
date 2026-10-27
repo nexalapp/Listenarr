@@ -140,6 +140,7 @@ namespace Listenarr.Tests.Builders
             services.AddLogging();
             services.AddMemoryCache();
             services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<IWorkerScheduleRegistry, WorkerScheduleRegistry>();
             services.AddSingleton<IWorkerCycleRunner, WorkerCycleRunner>();
             services.AddListenarrAppServices(configuration);
             services.AddListenarrAdapters(configuration);

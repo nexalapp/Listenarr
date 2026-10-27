@@ -91,7 +91,12 @@ namespace Listenarr.Tests.Features.Api.Services
             metrics.Verify(m => m.Increment("worker.exampleworker.cycle.failed", It.IsAny<double>()), Times.Never);
         }
 
-        private static WorkerCycleRunner CreateRunner(Mock<IAppMetricsService> metrics) =>
-            new(TimeProvider.System, metrics.Object, Mock.Of<ILogger<WorkerCycleRunner>>());
+        private static WorkerCycleRunner CreateRunner(
+            Mock<IAppMetricsService> metrics, IWorkerScheduleRegistry? schedules = null) =>
+            new(
+                TimeProvider.System,
+                metrics.Object,
+                schedules ?? new WorkerScheduleRegistry(TimeProvider.System),
+                Mock.Of<ILogger<WorkerCycleRunner>>());
     }
 }

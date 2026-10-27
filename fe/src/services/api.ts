@@ -67,6 +67,7 @@ import type {
   AutoGrabSettings,
   AutoGrabPlan,
   AbookThankBudget,
+  BackgroundTask,
   AutoGrabReport,
   AuthorLookupResponse,
   AuthorMonitoringStatusResponse,
@@ -520,6 +521,17 @@ class ApiService {
 
   async getAbookThankBudget(): Promise<AbookThankBudget> {
     return this.request<AbookThankBudget>('/autograb/thanks')
+  }
+
+  async getBackgroundTasks(): Promise<BackgroundTask[]> {
+    return this.request<BackgroundTask[]>('/system/tasks')
+  }
+
+  async runBackgroundTask(name: string): Promise<{ woken: boolean; name: string }> {
+    return this.request<{ woken: boolean; name: string }>(
+      `/system/tasks/${encodeURIComponent(name)}/run`,
+      { method: 'POST' },
+    )
   }
 
   async runAutoGrab(): Promise<AutoGrabReport> {

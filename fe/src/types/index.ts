@@ -1058,6 +1058,16 @@ export interface SuggestionRefreshStatus {
 }
 
 /** A Suggested list auto-grab can draw from. */
+export interface BackgroundTask {
+  name: string
+  intervalSeconds: number
+  lastStartedAt: string | null
+  lastDurationSeconds: number | null
+  lastOutcome: 'NotYetRun' | 'Completed' | 'Failed' | 'Stopped'
+  nextDueAt: string | null
+  running: boolean
+}
+
 export interface AbookThankBudget {
   thisHour: number
   today: number
