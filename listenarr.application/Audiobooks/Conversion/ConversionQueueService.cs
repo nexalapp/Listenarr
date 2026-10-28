@@ -190,9 +190,15 @@ namespace Listenarr.Application.Audiobooks.Conversion
                 target.LeaseOwner = null;
                 target.LeaseExpiresAt = null;
                 target.CompletedAt = null;
-                target.StartedAt = null;
                 target.ActiveDeduplicationKey = ConversionJob.BuildDeduplicationKey(target.AudiobookId);
-                target.EnqueuedAt = now;
+                // A repair keeps its enhanced chunks across a failure, and claims take work
+                // already begun first. Forgetting when it began sent a book with hours of
+                // chunks on disk to the back of a hundred-book queue.
+                if (target.Kind != ConversionJobKind.Repair)
+                {
+                    target.StartedAt = null;
+                    target.EnqueuedAt = now;
+                }
             }, cancellationToken);
 
             if (!updated)

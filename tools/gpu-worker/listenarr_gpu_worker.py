@@ -130,7 +130,9 @@ class Model:
                 dwav=dwav, sr=sr, device="cuda", nfe=NFE, solver=SOLVER,
                 lambd=LAMBD, tau=TAU, run_dir=self.run_dir,
             )
-            torchaudio.save(str(dst), hwav[None].cpu(), sr)
+            # 32-bit float, as Listenarr's own CPU model writes: the chunks of one book
+            # are joined by a demuxer that reads them all in the first one's format.
+            torchaudio.save(str(dst), hwav[None].cpu(), sr, encoding="PCM_F", bits_per_sample=32)
         self.loaded = True
         # Hand the activations back so the card's other tenant can load between chunks.
         torch.cuda.empty_cache()

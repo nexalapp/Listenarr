@@ -480,6 +480,28 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Conversion
         }
 
         [Fact]
+        public async Task RetryAsync_ARepairKeepsItsPlaceInTheQueue()
+        {
+            var started = new DateTime(2026, 10, 26, 2, 4, 3, DateTimeKind.Utc);
+            var enqueued = new DateTime(2026, 10, 25, 12, 0, 0, DateTimeKind.Utc);
+            var job = new ConversionJob
+            {
+                AudiobookId = 7,
+                Kind = ConversionJobKind.Repair,
+                Status = ConversionJobStatus.Failed,
+                StartedAt = started,
+                EnqueuedAt = enqueued
+            };
+            GivenJob(job);
+
+            await BuildService().RetryAsync(job.Id);
+
+            Assert.Equal(ConversionJobStatus.Queued, job.Status);
+            Assert.Equal(started, job.StartedAt);
+            Assert.Equal(enqueued, job.EnqueuedAt);
+        }
+
+        [Fact]
         public async Task RetryAsync_KeepsTheEncodeSoItNeedNotBeRepeated()
         {
             var job = new ConversionJob

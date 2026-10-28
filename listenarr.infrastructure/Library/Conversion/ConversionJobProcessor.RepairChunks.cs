@@ -20,6 +20,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Audiobooks.Repair;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Library.Conversion
 {
@@ -169,6 +170,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
             string outputPath,
             CancellationToken cancellationToken)
         {
+            await NormalizeChunkFormatsAsync(ffmpeg, chunkPaths, cancellationToken);
+
             var listPath = outputPath + ".list";
             await File.WriteAllLinesAsync(
                 listPath,
@@ -177,8 +180,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
             try
             {
                 // The concat DEMUXER is refused for conversion because it adopts the first
-                // input's format for mixed sources; these chunks are all the same format
-                // by construction, which is the one case it is exact and cheap for.
+                // input's format for mixed sources; the chunks were normalized to one
+                // format above, which is the one case it is exact and cheap for.
                 var exitCode = await RunFfmpegAsync(
                     ffmpeg,
                     [
@@ -197,6 +200,126 @@ namespace Listenarr.Infrastructure.Library.Conversion
             finally
             {
                 TryDeleteScratch(listPath);
+            }
+        }
+
+        /// <summary>A WAV's sample format, read from its header.</summary>
+        internal readonly record struct WaveFormat(int Format, int Channels, int SampleRate, int BitsPerSample)
+        {
+            /// <summary>What the local model writes, and so what every chunk is reassembled as: 32-bit float, mono, 44.1 kHz.</summary>
+            public static readonly WaveFormat Canonical = new(3, 1, 44_100, 32);
+        }
+
+        /// <summary>
+        /// Bring every chunk to <see cref="WaveFormat.Canonical"/> before they are joined.
+        /// "Same format by construction" stopped being true twice: the music guard splices
+        /// back an ORIGINAL chunk, which ffmpeg extracts as 16-bit, and the GPU worker's
+        /// torch writes 16-bit too. The concat demuxer reads every file with the first
+        /// one's format, so each 16-bit chunk counted as half its length — Xenocide,
+        /// enhanced half on the CPU and half on the GPU, reassembled 5.4 hours short.
+        /// </summary>
+        private async Task NormalizeChunkFormatsAsync(
+            string ffmpeg,
+            IReadOnlyList<string> chunkPaths,
+            CancellationToken cancellationToken)
+        {
+            var normalized = 0;
+            foreach (var path in chunkPaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (ReadWaveFormat(path) == WaveFormat.Canonical)
+                {
+                    continue;
+                }
+
+                var converted = path + ".f32.wav";
+                var exitCode = await RunFfmpegAsync(
+                    ffmpeg,
+                    [
+                        "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+                        "-i", path,
+                        "-c:a", "pcm_f32le", "-ar", "44100", "-ac", "1",
+                        converted
+                    ],
+                    TimeSpan.FromMinutes(10),
+                    cancellationToken);
+                if (exitCode != 0 || ReadWaveFormat(converted) != WaveFormat.Canonical)
+                {
+                    TryDeleteScratch(converted);
+                    throw new InvalidOperationException(
+                        $"A chunk could not be brought to the common format (ffmpeg exit {exitCode}): {Path.GetFileName(path)}");
+                }
+
+                File.Move(converted, path, overwrite: true);
+                normalized++;
+            }
+
+            if (normalized > 0)
+            {
+                logger.LogInformation(
+                    "Brought {Count} of {Total} chunk(s) to 32-bit float before reassembly", normalized, chunkPaths.Count);
+            }
+        }
+
+        /// <summary>The header's format, or null when the file is not a readable WAV.</summary>
+        internal static WaveFormat? ReadWaveFormat(string path)
+        {
+            const uint Riff = 0x46464952, Wave = 0x45564157, Fmt = 0x20746D66;
+            const int Extensible = 0xFFFE;
+            try
+            {
+                using var stream = File.OpenRead(path);
+                using var reader = new BinaryReader(stream);
+                if (stream.Length < 12 || reader.ReadUInt32() != Riff)
+                {
+                    return null;
+                }
+
+                reader.ReadUInt32();
+                if (reader.ReadUInt32() != Wave)
+                {
+                    return null;
+                }
+
+                while (stream.Position + 8 <= stream.Length)
+                {
+                    var id = reader.ReadUInt32();
+                    var size = reader.ReadUInt32();
+                    if (id != Fmt)
+                    {
+                        stream.Seek(size + (size & 1), SeekOrigin.Current);
+                        continue;
+                    }
+
+                    if (size < 16)
+                    {
+                        return null;
+                    }
+
+                    int format = reader.ReadUInt16();
+                    int channels = reader.ReadUInt16();
+                    var sampleRate = (int)reader.ReadUInt32();
+                    reader.ReadUInt32();
+                    reader.ReadUInt16();
+                    int bits = reader.ReadUInt16();
+                    if (format == Extensible && size >= 40)
+                    {
+                        // cbSize, valid bits, channel mask, then the sub-format GUID whose
+                        // first two bytes are the real format tag.
+                        reader.ReadUInt16();
+                        reader.ReadUInt16();
+                        reader.ReadUInt32();
+                        format = reader.ReadUInt16();
+                    }
+
+                    return new WaveFormat(format, channels, sampleRate, bits);
+                }
+
+                return null;
+            }
+            catch (IOException)
+            {
+                return null;
             }
         }
 
