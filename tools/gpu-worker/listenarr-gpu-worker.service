@@ -1,0 +1,15 @@
+[Unit]
+Description=Listenarr audio-repair enhancer on the GPU
+After=network-online.target
+
+[Service]
+EnvironmentFile=@DIR@/worker.env
+ExecStart=@DIR@/venv/bin/python @DIR@/listenarr_gpu_worker.py
+Restart=always
+RestartSec=10
+# The card's day job comes first: never let this worker starve the box of memory.
+MemoryMax=16G
+Nice=10
+
+[Install]
+WantedBy=default.target

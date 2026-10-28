@@ -154,7 +154,9 @@ internal static class LibraryRegistrationExtensions
         // The enhancer is a singleton for the same reason the transcriber is: its state
         // (the provisioning task, the install's standing) is per process, and the gate
         // exists precisely to be the only one.
-        services.AddSingleton<IAudioEnhancer, ResembleAudioEnhancer>();
+        services.AddSingleton<ResembleAudioEnhancer>();
+        services.AddSingleton<IEnhancerWorkerBroker, EnhancerWorkerBroker>();
+        services.AddSingleton<IAudioEnhancer, GpuFirstAudioEnhancer>();
         services.AddSingleton<EnhancerGate>();
         services.AddSingleton<IRepairPreviewService, RepairPreviewService>();
         services.AddScoped<IRepairCheckpointRepository, EfRepairCheckpointRepository>();
