@@ -293,7 +293,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
             // for the rest of the book.
             await ConcatChunksAsync(
                 ffmpeg,
-                chunks.Select(chunk => Path.Combine(workDirectory, $"chunk-{chunk.Index:D4}.wav")).ToList(),
+                chunks.Select(chunk => (Path.Combine(workDirectory, $"chunk-{chunk.Index:D4}.wav"), chunk.Length)).ToList(),
                 intermediatePath,
                 cancellationToken);
 

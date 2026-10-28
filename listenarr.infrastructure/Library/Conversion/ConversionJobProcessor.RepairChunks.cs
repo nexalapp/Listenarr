@@ -166,11 +166,12 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
         private async Task ConcatChunksAsync(
             string ffmpeg,
-            IReadOnlyList<string> chunkPaths,
+            IReadOnlyList<(string Path, TimeSpan Length)> chunks,
             string outputPath,
             CancellationToken cancellationToken)
         {
-            await NormalizeChunkFormatsAsync(ffmpeg, chunkPaths, cancellationToken);
+            await NormalizeChunksAsync(ffmpeg, chunks, cancellationToken);
+            var chunkPaths = chunks.Select(chunk => chunk.Path).ToList();
 
             var listPath = outputPath + ".list";
             await File.WriteAllLinesAsync(
@@ -210,24 +211,37 @@ namespace Listenarr.Infrastructure.Library.Conversion
             public static readonly WaveFormat Canonical = new(3, 1, 44_100, 32);
         }
 
+        /// <summary>A WAV's format and how long its samples run.</summary>
+        internal readonly record struct WaveHeader(WaveFormat Format, TimeSpan Duration);
+
+        /// <summary>A chunk may differ from its planned length by this much and still be joined as it is.</summary>
+        private static readonly TimeSpan ChunkLengthTolerance = TimeSpan.FromMilliseconds(1);
+
         /// <summary>
-        /// Bring every chunk to <see cref="WaveFormat.Canonical"/> before they are joined.
-        /// "Same format by construction" stopped being true twice: the music guard splices
-        /// back an ORIGINAL chunk, which ffmpeg extracts as 16-bit, and the GPU worker's
-        /// torch writes 16-bit too. The concat demuxer reads every file with the first
-        /// one's format, so each 16-bit chunk counted as half its length — Xenocide,
-        /// enhanced half on the CPU and half on the GPU, reassembled 5.4 hours short.
+        /// Bring every chunk to <see cref="WaveFormat.Canonical"/> and to its planned length
+        /// before they are joined. Two assumptions behind a plain join failed on Xenocide.
+        /// "Same format by construction": the music guard splices back an ORIGINAL chunk,
+        /// which ffmpeg extracts as 16-bit, and the GPU worker's torch wrote 16-bit too; the
+        /// concat demuxer reads every file in the first one's format, so each 16-bit chunk
+        /// counted as half its length and the book came out 5.4 hours short. And "the
+        /// model returns what it was given": the CPU model now and then returns 70–90 ms
+        /// more than it was handed, which over sixty chunks ran 1.2 s long — past the
+        /// half-second the chapter marks allow. Each chunk is cut or padded to the length
+        /// the grid gave it, so the whole matches the source to the sample.
         /// </summary>
-        private async Task NormalizeChunkFormatsAsync(
+        private async Task NormalizeChunksAsync(
             string ffmpeg,
-            IReadOnlyList<string> chunkPaths,
+            IReadOnlyList<(string Path, TimeSpan Length)> chunks,
             CancellationToken cancellationToken)
         {
             var normalized = 0;
-            foreach (var path in chunkPaths)
+            foreach (var (path, length) in chunks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (ReadWaveFormat(path) == WaveFormat.Canonical)
+                var header = ReadWaveHeader(path);
+                if (header is { } read
+                    && read.Format == WaveFormat.Canonical
+                    && (read.Duration - length).Duration() <= ChunkLengthTolerance)
                 {
                     continue;
                 }
@@ -238,12 +252,15 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     [
                         "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
                         "-i", path,
+                        // Padded with silence if short, then cut at exactly the planned length.
+                        "-af", "apad",
+                        "-t", length.TotalSeconds.ToString("0.######", CultureInfo.InvariantCulture),
                         "-c:a", "pcm_f32le", "-ar", "44100", "-ac", "1",
                         converted
                     ],
                     TimeSpan.FromMinutes(10),
                     cancellationToken);
-                if (exitCode != 0 || ReadWaveFormat(converted) != WaveFormat.Canonical)
+                if (exitCode != 0 || ReadWaveHeader(converted) is not { } result || result.Format != WaveFormat.Canonical)
                 {
                     TryDeleteScratch(converted);
                     throw new InvalidOperationException(
@@ -257,14 +274,16 @@ namespace Listenarr.Infrastructure.Library.Conversion
             if (normalized > 0)
             {
                 logger.LogInformation(
-                    "Brought {Count} of {Total} chunk(s) to 32-bit float before reassembly", normalized, chunkPaths.Count);
+                    "Brought {Count} of {Total} chunk(s) to 32-bit float at their planned length before reassembly",
+                    normalized,
+                    chunks.Count);
             }
         }
 
-        /// <summary>The header's format, or null when the file is not a readable WAV.</summary>
-        internal static WaveFormat? ReadWaveFormat(string path)
+        /// <summary>The header's format and the length of its samples, or null when the file is not a readable WAV.</summary>
+        internal static WaveHeader? ReadWaveHeader(string path)
         {
-            const uint Riff = 0x46464952, Wave = 0x45564157, Fmt = 0x20746D66;
+            const uint Riff = 0x46464952, Wave = 0x45564157, Fmt = 0x20746D66, Data = 0x61746164;
             const int Extensible = 0xFFFE;
             try
             {
@@ -281,10 +300,25 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     return null;
                 }
 
+                WaveFormat? format = null;
+                var blockAlign = 0;
                 while (stream.Position + 8 <= stream.Length)
                 {
                     var id = reader.ReadUInt32();
                     var size = reader.ReadUInt32();
+                    if (id == Data)
+                    {
+                        if (format is not { } known || blockAlign <= 0 || known.SampleRate <= 0)
+                        {
+                            return null;
+                        }
+
+                        // A streamed writer may leave the size unset; the rest of the file is the data then.
+                        var available = stream.Length - stream.Position;
+                        var bytes = size == 0 || size == uint.MaxValue || size > available ? available : size;
+                        return new WaveHeader(known, TimeSpan.FromSeconds((double)(bytes / blockAlign) / known.SampleRate));
+                    }
+
                     if (id != Fmt)
                     {
                         stream.Seek(size + (size & 1), SeekOrigin.Current);
@@ -296,23 +330,25 @@ namespace Listenarr.Infrastructure.Library.Conversion
                         return null;
                     }
 
-                    int format = reader.ReadUInt16();
+                    var chunkEnd = stream.Position + size + (size & 1);
+                    int tag = reader.ReadUInt16();
                     int channels = reader.ReadUInt16();
                     var sampleRate = (int)reader.ReadUInt32();
                     reader.ReadUInt32();
-                    reader.ReadUInt16();
+                    blockAlign = reader.ReadUInt16();
                     int bits = reader.ReadUInt16();
-                    if (format == Extensible && size >= 40)
+                    if (tag == Extensible && size >= 40)
                     {
                         // cbSize, valid bits, channel mask, then the sub-format GUID whose
                         // first two bytes are the real format tag.
                         reader.ReadUInt16();
                         reader.ReadUInt16();
                         reader.ReadUInt32();
-                        format = reader.ReadUInt16();
+                        tag = reader.ReadUInt16();
                     }
 
-                    return new WaveFormat(format, channels, sampleRate, bits);
+                    format = new WaveFormat(tag, channels, sampleRate, bits);
+                    stream.Seek(chunkEnd, SeekOrigin.Begin);
                 }
 
                 return null;

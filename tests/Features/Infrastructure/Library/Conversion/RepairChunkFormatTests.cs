@@ -36,7 +36,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Conversion
             Directory.CreateDirectory(_work);
         }
 
-        private string Wave(int format, int bits, bool extensible = false, bool leadingChunk = false)
+        private string Wave(int format, int bits, bool extensible = false, bool leadingChunk = false, int samples = 0)
         {
             var path = Path.Combine(_work, $"{Guid.NewGuid():N}.wav");
             using var stream = File.Create(path);
@@ -70,24 +70,34 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Conversion
             }
 
             writer.Write("data"u8);
-            writer.Write(0u);
+            writer.Write((uint)(samples * bits / 8));
+            writer.Write(new byte[samples * bits / 8]);
             return path;
         }
 
         [Fact]
         public void TheLocalModelsFloatOutput_IsTheCommonFormat()
         {
-            Assert.Equal(ConversionJobProcessor.WaveFormat.Canonical, ConversionJobProcessor.ReadWaveFormat(Wave(3, 32)));
-            Assert.Equal(ConversionJobProcessor.WaveFormat.Canonical, ConversionJobProcessor.ReadWaveFormat(Wave(3, 32, extensible: true)));
-            Assert.Equal(ConversionJobProcessor.WaveFormat.Canonical, ConversionJobProcessor.ReadWaveFormat(Wave(3, 32, leadingChunk: true)));
+            Assert.Equal(ConversionJobProcessor.WaveFormat.Canonical, ConversionJobProcessor.ReadWaveHeader(Wave(3, 32))?.Format);
+            Assert.Equal(ConversionJobProcessor.WaveFormat.Canonical, ConversionJobProcessor.ReadWaveHeader(Wave(3, 32, extensible: true))?.Format);
+            Assert.Equal(ConversionJobProcessor.WaveFormat.Canonical, ConversionJobProcessor.ReadWaveHeader(Wave(3, 32, leadingChunk: true))?.Format);
         }
 
         [Fact]
         public void A16BitChunk_FromTheGpuOrAnOriginalSplicedBack_IsNot()
         {
-            var format = ConversionJobProcessor.ReadWaveFormat(Wave(1, 16));
+            var format = ConversionJobProcessor.ReadWaveHeader(Wave(1, 16))?.Format;
             Assert.Equal(new ConversionJobProcessor.WaveFormat(1, 1, 44_100, 16), format);
             Assert.NotEqual(ConversionJobProcessor.WaveFormat.Canonical, format);
+        }
+
+        [Fact]
+        public void TheSamplesLength_IsReadFromTheDataChunk()
+        {
+            // A tenth of a second over, as the CPU model sometimes returns: past the
+            // millisecond a chunk may differ from its planned length.
+            var header = ConversionJobProcessor.ReadWaveHeader(Wave(3, 32, extensible: true, samples: 44_100 + 4_410));
+            Assert.Equal(TimeSpan.FromSeconds(1.1), header!.Value.Duration);
         }
 
         [Fact]
@@ -95,7 +105,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Conversion
         {
             var path = Path.Combine(_work, "not.wav");
             File.WriteAllText(path, "<html>not audio</html>");
-            Assert.Null(ConversionJobProcessor.ReadWaveFormat(path));
+            Assert.Null(ConversionJobProcessor.ReadWaveHeader(path));
         }
 
         public override async Task DisposeAsync()
