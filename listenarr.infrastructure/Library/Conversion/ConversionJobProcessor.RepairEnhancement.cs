@@ -216,6 +216,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 var chunkPath = Path.Combine(workDirectory, $"chunk-{chunk.Index:D4}.wav");
                 if (manifest.Done.Contains(chunk.Index) && File.Exists(chunkPath) && new FileInfo(chunkPath).Length > 0)
                 {
+                    // Counted, or a resumed book reads 1% done with half its chunks finished.
+                    enhancedDurationSoFar += chunk.Length.TotalSeconds;
                     continue;
                 }
 

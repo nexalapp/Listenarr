@@ -22,9 +22,16 @@ namespace Listenarr.Infrastructure.Library.Repair
     /// <summary>
     /// Drives the repair lane of the conversion queue on its own timer. Its own worker,
     /// not conversion's: a repair runs the enhancement model for a day or two, and a
-    /// single serial loop would park every ordinary conversion behind it. The lane is
-    /// still serial within itself — the model holds five to ten gigabytes while it works,
-    /// and two at once is a machine that falls over.
+    /// single serial loop would park every ordinary conversion behind it.
+    ///
+    /// <para>
+    /// Two lanes, each its own book. The model itself still runs one chunk at a time —
+    /// <see cref="Listenarr.Application.Audiobooks.Repair.EnhancerGate"/> guarantees it,
+    /// because it holds five to ten gigabytes while it works — but a repair spends its
+    /// last stretch encoding, tagging and publishing, none of which needs the model. On
+    /// the GPU a book enhances at twenty times realtime, so that tail became a third of
+    /// each book; with a second lane the next book is enhancing while the last encodes.
+    /// </para>
     /// </summary>
     public sealed class RepairBackgroundService(
         IConversionJobProcessor processor,
@@ -40,12 +47,20 @@ namespace Listenarr.Infrastructure.Library.Repair
             await filesystemReadiness.WaitUntilReadyAsync(stoppingToken);
             logger.LogInformation("Repair worker started");
 
-            await cycleRunner.RunPeriodicAsync(
-                "repair",
-                initialDelay: TimeSpan.FromSeconds(25),
-                intervalProvider: () => PollInterval,
-                runCycle: processor.RunRepairCycleAsync,
-                cancellationToken: stoppingToken);
+            await Task.WhenAll(
+                cycleRunner.RunPeriodicAsync(
+                    "repair",
+                    initialDelay: TimeSpan.FromSeconds(25),
+                    intervalProvider: () => PollInterval,
+                    runCycle: processor.RunRepairCycleAsync,
+                    cancellationToken: stoppingToken),
+                // Staggered so the two do not claim in the same instant.
+                cycleRunner.RunPeriodicAsync(
+                    "repair-2",
+                    initialDelay: TimeSpan.FromSeconds(40),
+                    intervalProvider: () => PollInterval,
+                    runCycle: processor.RunRepairCycleAsync,
+                    cancellationToken: stoppingToken));
         }
     }
 }

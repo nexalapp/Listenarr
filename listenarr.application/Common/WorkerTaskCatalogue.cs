@@ -104,6 +104,10 @@ namespace Listenarr.Application.Common
                     "Repair audio and chapters",
                     "Works through the repair queue, cleaning up hiss and bandwidth problems and "
                     + "rebuilding chapter marks."),
+                ["repair-2"] = new(
+                    "Repair audio (second lane)",
+                    "A second book from the repair queue, so one can be encoding while the next "
+                    + "is being cleaned up."),
                 ["SeriesMonitoringBackgroundService"] = new(
                     "Check monitored series",
                     "Looks through the series you follow for books the library does not have."),
