@@ -407,7 +407,11 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 var prober = services.GetService<Listenarr.Application.Audiobooks.Quality.IAudioQualityService>();
                 if (prober != null)
                 {
-                    await prober.EnqueueAsync(audiobookId, Domain.Audiobooks.Tagging.TagTrigger.Automatic, CancellationToken.None);
+                    // Manual, so it goes ahead of the scan-time probes: a repair was
+                    // approved by someone, and this probe is what tells them whether it
+                    // worked — the book stays flagged for repair until it runs. Behind
+                    // a day's downloads it ran eight hours after the repair.
+                    await prober.EnqueueAsync(audiobookId, Domain.Audiobooks.Tagging.TagTrigger.Manual, CancellationToken.None);
                 }
 
                 var auditor = services.GetService<Listenarr.Application.Audiobooks.Audit.IAudioAuditService>();
