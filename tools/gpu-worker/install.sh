@@ -40,7 +40,7 @@ chmod +x fakecuda/bin/nvcc
 CUDA_HOME="$DIR/fakecuda" DS_BUILD_OPS=0 "$UV" pip install -q --python venv \
   --no-build-isolation --no-deps deepspeed==0.17.6
 
-install -m 0755 "$HERE/listenarr_gpu_worker.py" "$DIR/listenarr_gpu_worker.py"
+[ "$HERE" = "$DIR" ] || install -m 0755 "$HERE/listenarr_gpu_worker.py" "$DIR/listenarr_gpu_worker.py"
 
 if [ ! -f worker.env ]; then
   umask 077
