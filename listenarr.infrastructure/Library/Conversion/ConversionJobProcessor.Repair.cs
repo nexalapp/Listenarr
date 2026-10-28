@@ -32,6 +32,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
     {
         public async Task RunRepairCycleAsync(CancellationToken cancellationToken)
         {
+            using var shutdown = LinkToShutdown(ref cancellationToken);
             using var scope = scopeFactory.CreateScope();
             var queue = scope.ServiceProvider.GetRequiredService<IConversionQueueService>();
 
