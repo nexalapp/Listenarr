@@ -260,6 +260,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                 .Where(source => pathComparer.Equals(source.FullPath, destinationPath))
                 .ToList();
             string? collidingWarning = null;
+            var archivedOriginals = new List<(string From, string To)>();
             if (colliding.Count > 0)
             {
                 await queue.ReportProgressAsync(job.Id, ConversionJobPhase.RetiringSources, 94, cancellationToken);
@@ -271,7 +272,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     fileRepository,
                     fileSystem,
                     cancellationToken,
-                    settings.RepairSourceDisposition);
+                    settings.RepairSourceDisposition,
+                    archivedOriginals);
             }
 
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.Publishing, 95, cancellationToken);
@@ -295,16 +297,9 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             if (!publication.Success)
             {
-                // "The original files have been left alone" is conversion's truth, not a
-                // repair's: a colliding original is in the archive by now.
                 return ExecutionOutcome.Failed(
                     ConversionFailureKind.OutputRejected,
-                    colliding.Count > 0
-                        ? publication.Error!.Replace(
-                            "The original files have been left alone.",
-                            "The original is in the archive and the verified repair is kept; Retry publishes it.",
-                            StringComparison.Ordinal)
-                        : publication.Error!);
+                    await RestoreArchivedOriginalsAsync(audiobook, archivedOriginals, publication.Error!, services));
             }
 
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.RetiringSources, 98, cancellationToken);

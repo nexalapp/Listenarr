@@ -229,7 +229,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
             CancellationToken cancellationToken,
             // The caller names the disposition because conversion and repair each have
             // their own setting; the archive location is shared.
-            ConversionSourceDisposition? disposition = null)
+            ConversionSourceDisposition? disposition = null,
+            ICollection<(string From, string To)>? archived = null)
         {
             // The library record drops the sources in every case: they are no longer what
             // the book is, whatever happens to the bytes.
@@ -252,7 +253,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
                 case ConversionSourceDisposition.Archive:
                 default:
-                    return ArchiveSources(audiobook, sources, settings, rootFolders, fileSystem);
+                    return ArchiveSources(audiobook, sources, settings, rootFolders, fileSystem, archived);
             }
         }
 
@@ -261,7 +262,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
             IReadOnlyList<SourceFileReference> sources,
             ApplicationSettings settings,
             IReadOnlyList<RootFolder> rootFolders,
-            IFileSystem fileSystem)
+            IFileSystem fileSystem,
+            ICollection<(string From, string To)>? archived)
         {
             var archiveRoot = settings.ConversionArchivePath;
             if (string.IsNullOrWhiteSpace(archiveRoot))
@@ -322,6 +324,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                     }
 
                     File.Move(source.FullPath, target);
+                    archived?.Add((source.FullPath, target));
                     moved++;
                 }
                 catch (Exception ex) when (IsNonFatal(ex))
