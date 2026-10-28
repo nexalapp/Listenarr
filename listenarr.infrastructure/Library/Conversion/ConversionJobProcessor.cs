@@ -70,23 +70,6 @@ namespace Listenarr.Infrastructure.Library.Conversion
             }
         }
 
-        /// <summary>
-        /// Shutdown starts with ApplicationStopping, before any hosted service is asked to
-        /// stop. The services then stop one at a time and Docker kills the process soon
-        /// after, so a lane that waited for its own turn never got to hand its job back:
-        /// three repairs sat "Running" under dead leases after two deploys. Both the job and
-        /// the loop that claims jobs listen for it — a loop that did not would claim the job
-        /// it had just released, again, until its own turn came.
-        /// </summary>
-        private CancellationTokenSource LinkToShutdown(ref CancellationToken cancellationToken)
-        {
-            var linked = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                applicationLifetime?.ApplicationStopping ?? CancellationToken.None);
-            cancellationToken = linked.Token;
-            return linked;
-        }
-
         private async Task RunJobAsync(ConversionJob job, CancellationToken cancellationToken)
         {
             using var shutdown = LinkToShutdown(ref cancellationToken);

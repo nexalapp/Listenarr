@@ -51,32 +51,50 @@ namespace Listenarr.Infrastructure.Library.Conversion
             // the file it can still see. That has to become a reported failure with the
             // reason attached, or it escapes as an unclassified error.
             PublicationOutcome outcome;
-            try
+            for (var attempt = 1; ; attempt++)
             {
-                outcome = await PublishConvertedFileCoreAsync(
-                    jobId,
-                    audiobook,
-                    scratchPath,
-                    destinationPath,
-                    fileMover,
-                    audiobookFileService,
-                    cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
-                throw;
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                logger.LogWarning(
-                    ex,
-                    "Publishing the converted file for audiobook {AudiobookId} was rejected",
-                    audiobook.Id);
+                try
+                {
+                    outcome = await PublishConvertedFileCoreAsync(
+                        jobId,
+                        audiobook,
+                        scratchPath,
+                        destinationPath,
+                        fileMover,
+                        audiobookFileService,
+                        cancellationToken);
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
+                    throw;
+                }
+                catch (Exception ex) when (IsDatabaseContention(ex) && attempt < PublishAttempts)
+                {
+                    // Another writer held the database past the busy timeout. Nothing is
+                    // wrong with the file, and for a repair the original is already in the
+                    // archive: failing here left Valis with no audio in the library until
+                    // someone pressed Retry. Clean up and publish again shortly.
+                    logger.LogWarning(
+                        "Publishing the converted file for audiobook {AudiobookId} met a busy database (attempt {Attempt} of {Attempts}); trying again",
+                        audiobook.Id,
+                        attempt,
+                        PublishAttempts);
+                    DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
+                    await Task.Delay(PublishContentionBackoff * attempt, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "Publishing the converted file for audiobook {AudiobookId} was rejected",
+                        audiobook.Id);
 
-                DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
-                return PublicationOutcome.Failed(
-                    $"The converted file could not be published into the library: {ex.Message} The original files have been left alone.");
+                    DiscardAbandonedDestination(destinationPath, destinationExistedBefore);
+                    return PublicationOutcome.Failed(
+                        $"The converted file could not be published into the library: {ex.Message} The original files have been left alone.");
+                }
             }
 
             if (!outcome.Success)

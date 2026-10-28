@@ -295,7 +295,16 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
             if (!publication.Success)
             {
-                return ExecutionOutcome.Failed(ConversionFailureKind.OutputRejected, publication.Error!);
+                // "The original files have been left alone" is conversion's truth, not a
+                // repair's: a colliding original is in the archive by now.
+                return ExecutionOutcome.Failed(
+                    ConversionFailureKind.OutputRejected,
+                    colliding.Count > 0
+                        ? publication.Error!.Replace(
+                            "The original files have been left alone.",
+                            "The original is in the archive and the verified repair is kept; Retry publishes it.",
+                            StringComparison.Ordinal)
+                        : publication.Error!);
             }
 
             await queue.ReportProgressAsync(job.Id, ConversionJobPhase.RetiringSources, 98, cancellationToken);
