@@ -4,6 +4,10 @@ services:
     # server only moves when this file changes. Roll back by editing this line.
     image: ghcr.io/nexalapp/listenarr:deploy-1.29.9-d3771d3
     container_name: listenarr
+    # Time to hand running conversions and repairs back to the queue on a restart.
+    # Docker's default is ten seconds, after which it kills the process and every job
+    # in flight sits "Running" until its ten-minute lease runs out.
+    stop_grace_period: 45s
 
     # Listenarr shares gluetun's network namespace, as every other *arr here does.
     # A container in that namespace cannot publish its own port, so gluetun publishes

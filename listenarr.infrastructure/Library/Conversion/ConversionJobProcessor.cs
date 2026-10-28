@@ -29,7 +29,8 @@ namespace Listenarr.Infrastructure.Library.Conversion
     /// </summary>
     public sealed partial class ConversionJobProcessor(
         IServiceScopeFactory scopeFactory,
-        ILogger<ConversionJobProcessor> logger) : IConversionJobProcessor
+        ILogger<ConversionJobProcessor> logger,
+        IHostApplicationLifetime? applicationLifetime = null) : IConversionJobProcessor
     {
         /// <summary>
         /// Identifies this process as a lease holder. Includes a per-start GUID so a
@@ -70,6 +71,15 @@ namespace Listenarr.Infrastructure.Library.Conversion
 
         private async Task RunJobAsync(ConversionJob job, CancellationToken cancellationToken)
         {
+            // Shutdown starts with ApplicationStopping, before any hosted service is asked
+            // to stop. The services then stop one at a time and Docker kills the process
+            // ten seconds in, so a lane that waited for its own turn never got to hand its
+            // job back: three repairs sat "Running" under dead leases after two deploys.
+            using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                applicationLifetime?.ApplicationStopping ?? CancellationToken.None);
+            cancellationToken = shutdown.Token;
+
             // A fresh scope per job: an encode can run for an hour, and holding one
             // DbContext open across that would keep a connection and a change tracker
             // alive for the whole run.
