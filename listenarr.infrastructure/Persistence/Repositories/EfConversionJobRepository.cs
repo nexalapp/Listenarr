@@ -87,7 +87,8 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             // what detects that. Retrying moves on to the next candidate.
             for (var attempt = 0; attempt < 5; attempt++)
             {
-                var candidate = await db.ConversionJobs
+                var candidateId = await db.ConversionJobs
+                    .AsNoTracking()
                     .Where(job =>
                         job.Kind == kind
                         && (job.Status == ConversionJobStatus.Queued
@@ -101,11 +102,19 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                     .OrderBy(job => job.StartedAt == null)
                     .ThenBy(job => job.StartedAt)
                     .ThenBy(job => job.EnqueuedAt)
+                    .Select(job => (Guid?)job.Id)
                     .FirstOrDefaultAsync(cancellationToken);
 
-                if (candidate == null)
+                if (candidateId == null)
                 {
                     return null;
+                }
+
+                var candidate = await LoadFreshAsync(candidateId.Value, cancellationToken);
+                if (candidate == null
+                    || candidate.Status is not (ConversionJobStatus.Queued or ConversionJobStatus.RetryScheduled))
+                {
+                    continue;
                 }
 
                 var observedGeneration = candidate.LeaseGeneration;
@@ -215,6 +224,27 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
             return rows.Count;
         }
 
+        /// <summary>
+        /// The job as the database holds it now, tracked for saving. A job this context
+        /// already tracks may be stale: lease recovery and release are ExecuteUpdates,
+        /// which write past the change tracker, and a query hands back the tracked
+        /// instance with its old values. Saving that skips every column whose new value
+        /// equals the stale original — which is how a restart once claimed a repair
+        /// "Running" in memory while the row still said Queued: the lease could not be
+        /// renewed, the lane dropped the book without a word, and took the next one.
+        /// </summary>
+        private async Task<ConversionJob?> LoadFreshAsync(Guid id, CancellationToken cancellationToken)
+        {
+            var tracked = db.ChangeTracker.Entries<ConversionJob>().FirstOrDefault(entry => entry.Entity.Id == id);
+            if (tracked != null)
+            {
+                await tracked.ReloadAsync(cancellationToken);
+                return tracked.State == EntityState.Detached ? null : tracked.Entity;
+            }
+
+            return await db.ConversionJobs.FirstOrDefaultAsync(job => job.Id == id, cancellationToken);
+        }
+
         public async Task<bool> UpdateAsync(
             Guid id,
             Action<ConversionJob> mutate,
@@ -222,7 +252,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
         {
             ArgumentNullException.ThrowIfNull(mutate);
 
-            var job = await db.ConversionJobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+            var job = await LoadFreshAsync(id, cancellationToken);
             if (job == null)
             {
                 return false;

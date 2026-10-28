@@ -107,6 +107,35 @@ public sealed class EfConversionJobRepositoryResumeTests : BaseTests, IDisposabl
         Assert.Equal(ConversionJobStatus.Running, (await db.ConversionJobs.SingleAsync()).Status);
     }
 
+    [Fact]
+    public async Task AJobRecoveredAfterACrash_IsClaimedRunningInTheDatabase_NotOnlyInMemory()
+    {
+        // The crashed process's lease has lapsed, and this context already holds the job
+        // from an earlier read — the repair lane's scratch sweep loads every job first.
+        var crashed = Repair(1, enqueuedMinutesAgo: 300, startedMinutesAgo: 120);
+        crashed.Status = ConversionJobStatus.Running;
+        crashed.Phase = ConversionJobPhase.Enhancing;
+        crashed.LeaseOwner = "crashed-process";
+        crashed.LeaseExpiresAt = Now.AddMinutes(-1);
+        await SeedAsync(crashed);
+
+        await using (var db = new ListenArrDbContext(Options))
+        {
+            var repository = new EfConversionJobRepository(db);
+            _ = await db.ConversionJobs.ToListAsync();
+            Assert.Equal(1, await repository.ReleaseExpiredLeasesAsync(Now));
+
+            var claimed = await repository.ClaimNextAsync("new-process", ConversionJobKind.Repair, Now, TimeSpan.FromMinutes(10));
+            Assert.Equal(1, claimed!.AudiobookId);
+            Assert.True(await repository.RenewLeaseAsync(claimed.Id, "new-process", Now.AddMinutes(20)));
+        }
+
+        await using var check = new ListenArrDbContext(Options);
+        var row = await check.ConversionJobs.SingleAsync();
+        Assert.Equal(ConversionJobStatus.Running, row.Status);
+        Assert.Equal("new-process", row.LeaseOwner);
+    }
+
     public void Dispose()
     {
         try
