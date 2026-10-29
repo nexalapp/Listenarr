@@ -1447,6 +1447,28 @@ describe('AudiobooksView Filter Persistence', () => {
     expect(wrapper.text()).not.toContain('Answered Book')
   })
 
+  /**
+   * "How many books do I actually have" had no answer on this page: Missing showed the
+   * gaps, and the header counted every record, gaps included.
+   */
+  it('shows only the books that are actually on disk', async () => {
+    localStorage.setItem(SELECTED_FILTER_KEY, 'owned')
+
+    const wrapper = await mountView([
+      { id: 1, title: 'Counted By Files', authors: ['A'], monitored: true, files: [{ id: 9 }] },
+      { id: 2, title: 'Counted By FileCount', authors: ['B'], monitored: true, fileCount: 3 },
+      { id: 3, title: 'Nothing On Disk', authors: ['C'], monitored: true, files: [] },
+      { id: 4, title: 'Still Downloading', authors: ['D'], monitored: true, fileCount: 0 },
+    ] as unknown as import('@/types').Audiobook[])
+
+    expect(wrapper.text()).toContain('Counted By Files')
+    expect(wrapper.text()).toContain('Counted By FileCount')
+    expect(wrapper.text()).not.toContain('Nothing On Disk')
+    // A book being fetched has no file yet, so it is not owned either - Owned is not
+    // merely the inverse of Missing.
+    expect(wrapper.text()).not.toContain('Still Downloading')
+  })
+
   it('restores a custom filter that still exists', async () => {
     localStorage.setItem(
       CUSTOM_FILTERS_KEY,

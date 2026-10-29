@@ -1061,7 +1061,7 @@ import { useTagJobsStore } from '@/stores/tagJobs'
 import { useToast } from '@/services/toastService'
 import { preparePhysicalDeleteRetry } from '@/composables/useMutationSemanticsConfirmation'
 import type { Audiobook, AudiobookStatus, QualityProfile } from '@/types'
-import { evaluateRules } from '@/utils/customFilterEvaluator'
+import { evaluateRules, resolveFileCount } from '@/utils/customFilterEvaluator'
 import type { RuleLike } from '@/utils/customFilterEvaluator'
 import type { BulkConversionResponse } from '@/types'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
@@ -1335,6 +1335,7 @@ const SELECTED_FILTER_KEY = 'listenarr.selectedFilter'
 const BUILT_IN_FILTER_IDS = [
   'monitored',
   'unmonitored',
+  'owned',
   'missing',
   'not-found',
   'recent',
@@ -1448,6 +1449,11 @@ const filteredAndSortedAudiobooks = computed(() => {
       filtered = filtered.filter((b) => !!b.monitored)
     } else if (sid === 'unmonitored') {
       filtered = filtered.filter((b) => !b.monitored)
+    } else if (sid === 'owned') {
+      // The books actually on disk. Deliberately not the inverse of Missing: a book
+      // being downloaded has no file yet either, and counting it as owned would make
+      // the total disagree with what the library holds.
+      filtered = filtered.filter((b) => resolveFileCount(b) > 0)
     } else if (sid === 'missing') {
       filtered = filtered.filter((b) => getAudiobookStatus(b) === 'no-file')
     } else if (sid === 'not-found') {
