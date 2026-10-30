@@ -44,6 +44,7 @@ internal static class WorkerRegistrationExtensions
         AddHostedProcessor<DownloadMonitorProcessor, IDownloadMonitorProcessor, DownloadMonitorService>(services);
         AddHostedProcessor<DirectDownloadProcessor, IDirectDownloadProcessor, DirectDownloadService>(services);
         AddHostedProcessor<MovedDownloadCleanupProcessor, IMovedDownloadCleanupProcessor, MovedDownloadCleanupService>(services);
+        AddHostedProcessor<StalledImportRecoveryProcessor, IStalledImportRecoveryProcessor, StalledImportRecoveryBackgroundService>(services);
 
         AddProcessor<QueueMonitorProcessor, IQueueMonitorProcessor>(services);
         services.AddHostedService<QueueMonitorService>();

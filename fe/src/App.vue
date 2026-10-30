@@ -289,6 +289,9 @@
             >
               <PhBooks />
               <span>Audiobooks</span>
+              <Pill variant="count" size="small" class="nav-count" v-if="audiobookCount > 0">{{
+                audiobookCount
+              }}</Pill>
             </RouterLink>
             <!-- Sub-navigation for Audiobooks grouping (stacked under Audiobooks) -->
             <div
@@ -959,6 +962,12 @@ const activityCount = computed(() => {
 
   return count
 })
+
+// The library total, shown on the Audiobooks nav item the way Activity shows its
+// own count. The store already holds every book — App.vue hydrates it on mount
+// and re-syncs on SignalR reconnect — so this is the list's length, not a second
+// request that could disagree with what the Audiobooks page shows.
+const audiobookCount = computed(() => libraryStore.audiobooks.length)
 
 // Notification dropdown state
 const nzbKingTokens = useNzbKingTokensStore()

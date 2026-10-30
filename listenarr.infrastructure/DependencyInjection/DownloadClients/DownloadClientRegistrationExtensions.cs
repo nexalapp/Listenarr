@@ -89,6 +89,7 @@ internal static class DownloadClientRegistrationExtensions
             sp.GetRequiredService<NzbgetConnectionTester>(),
             sp.GetRequiredService<NzbgetAddWorkflow>(),
             sp.GetRequiredService<NzbgetRemovalWorkflow>(),
+            sp.GetRequiredService<NzbgetResumeWorkflow>(),
             sp.GetRequiredService<NzbgetQueueFetchWorkflow>(),
             sp.GetRequiredService<NzbgetHistoryFetchWorkflow>(),
             sp.GetRequiredService<NzbgetItemFetchWorkflow>(),
@@ -244,6 +245,10 @@ internal static class DownloadClientRegistrationExtensions
                 sp.GetRequiredService<ILogger<NzbgetAdapter>>()));
         services.AddScoped<NzbgetRemovalWorkflow>(sp =>
             new NzbgetRemovalWorkflow(
+                sp.GetRequiredService<NzbgetXmlRpcClient>(),
+                sp.GetRequiredService<ILogger<NzbgetAdapter>>()));
+        services.AddScoped<NzbgetResumeWorkflow>(sp =>
+            new NzbgetResumeWorkflow(
                 sp.GetRequiredService<NzbgetXmlRpcClient>(),
                 sp.GetRequiredService<ILogger<NzbgetAdapter>>()));
         services.AddScoped<NzbgetQueueFetchWorkflow>(sp =>

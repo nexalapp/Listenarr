@@ -184,6 +184,17 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<Download>> GetAwaitingImportAsync(CancellationToken ct = default)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync(ct);
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.Status == DownloadStatus.ImportPending
+                         || d.Status == DownloadStatus.ImportBlocked
+                         || d.Status == DownloadStatus.Paused)
+                .ToListAsync(ct);
+        }
+
         public async Task<List<Download>> GetActiveAsync()
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();

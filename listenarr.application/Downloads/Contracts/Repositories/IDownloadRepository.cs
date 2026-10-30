@@ -50,6 +50,17 @@ namespace Listenarr.Application.Downloads.Contracts.Repositories
         /// </summary>
         Task<List<Download>> GetActiveAsync();
 
+        /// <summary>
+        /// The downloads that are waiting on an import: ImportPending, ImportBlocked, and
+        /// Paused - a download paused at the client is waiting on an import that will
+        /// never be asked for.
+        ///
+        /// Its own query rather than a filter over everything, because it runs on a timer
+        /// and the download table only grows - reading the whole of it on a schedule is
+        /// how the queue snapshot became unusable.
+        /// </summary>
+        Task<List<Download>> GetAwaitingImportAsync(CancellationToken ct = default);
+
         /// <summary>Returns the most recent <paramref name="count"/> downloads ordered by StartedAt descending.</summary>
         Task<List<Download>> GetRecentAsync(int count);
         /// <summary>Returns distinct audiobook IDs for downloads whose status is in <paramref name="statuses"/>.</summary>

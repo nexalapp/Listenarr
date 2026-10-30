@@ -20,6 +20,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
         private readonly NzbgetConnectionTester _connectionTester;
         private readonly NzbgetAddWorkflow _addWorkflow;
         private readonly NzbgetRemovalWorkflow _removalWorkflow;
+        private readonly NzbgetResumeWorkflow _resumeWorkflow;
         private readonly NzbgetQueueFetchWorkflow _queueFetchWorkflow;
         private readonly NzbgetHistoryFetchWorkflow _historyFetchWorkflow;
         private readonly NzbgetItemFetchWorkflow _itemFetchWorkflow;
@@ -29,6 +30,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             NzbgetConnectionTester connectionTester,
             NzbgetAddWorkflow addWorkflow,
             NzbgetRemovalWorkflow removalWorkflow,
+            NzbgetResumeWorkflow resumeWorkflow,
             NzbgetQueueFetchWorkflow queueFetchWorkflow,
             NzbgetHistoryFetchWorkflow historyFetchWorkflow,
             NzbgetItemFetchWorkflow itemFetchWorkflow,
@@ -37,6 +39,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             _connectionTester = connectionTester ?? throw new ArgumentNullException(nameof(connectionTester));
             _addWorkflow = addWorkflow ?? throw new ArgumentNullException(nameof(addWorkflow));
             _removalWorkflow = removalWorkflow ?? throw new ArgumentNullException(nameof(removalWorkflow));
+            _resumeWorkflow = resumeWorkflow ?? throw new ArgumentNullException(nameof(resumeWorkflow));
             _queueFetchWorkflow = queueFetchWorkflow ?? throw new ArgumentNullException(nameof(queueFetchWorkflow));
             _historyFetchWorkflow = historyFetchWorkflow ?? throw new ArgumentNullException(nameof(historyFetchWorkflow));
             _itemFetchWorkflow = itemFetchWorkflow ?? throw new ArgumentNullException(nameof(itemFetchWorkflow));
@@ -76,6 +79,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             _connectionTester = new NzbgetConnectionTester(xmlRpcClient, logger);
             _addWorkflow = new NzbgetAddWorkflow(xmlRpcClient, logger);
             _removalWorkflow = new NzbgetRemovalWorkflow(xmlRpcClient, logger);
+            _resumeWorkflow = new NzbgetResumeWorkflow(xmlRpcClient, logger);
             _queueFetchWorkflow = new NzbgetQueueFetchWorkflow(xmlRpcClient, historyEnrichmentWorkflow, logger);
             _historyFetchWorkflow = new NzbgetHistoryFetchWorkflow(xmlRpcClient, logger);
             _itemFetchWorkflow = new NzbgetItemFetchWorkflow(xmlRpcClient, historyEnrichmentWorkflow, logger);
@@ -97,6 +101,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 
         public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
             => _removalWorkflow.RemoveAsync(client, id, deleteFiles, ct);
+
+        public Task<bool> ResumeAsync(DownloadClientConfiguration client, string id, CancellationToken ct = default)
+            => _resumeWorkflow.ResumeAsync(client, id, ct);
 
         public Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
             => _queueFetchWorkflow.GetQueueAsync(client, ids, ct);

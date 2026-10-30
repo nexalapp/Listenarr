@@ -101,6 +101,7 @@ const root = ref<HTMLElement | null>(null)
 const builtInOptions = [
   { value: 'monitored', label: 'Monitored Only' },
   { value: 'unmonitored', label: 'Unmonitored Only' },
+  { value: 'owned', label: 'Owned' },
   { value: 'missing', label: 'Missing' },
   { value: 'not-found', label: 'Not Found' },
   { value: 'recent', label: 'Recently Added' },

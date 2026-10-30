@@ -50,6 +50,13 @@ namespace Listenarr.Application.Downloads.Contracts
         Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default);
 
         /// <summary>
+        /// Asks the client to resume a paused item, for a download that has stalled with
+        /// nothing left to do but be resumed. Returns false when the client did not, or
+        /// cannot, resume it.
+        /// </summary>
+        Task<bool> ResumeAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default);
+
+        /// <summary>
         /// Given a list of downloads, update their data based on reported download client information
         /// </summary>
         /// <param name="client"></param>

@@ -789,4 +789,84 @@ describe('App.vue activity badge', () => {
     expect(getLibrary).toHaveBeenCalledTimes(2)
     expect(useLibraryStore().audiobooks.filter((book) => book.wanted).length).toBe(1)
   })
+  // ---- the Audiobooks nav count ------------------------------------------------
+
+  const mountWithLibrary = async (library: Array<Record<string, unknown>>) => {
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getBootstrapConfig: async () => ({ authenticationRequired: false }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary: async () => library,
+        getScanJobStatus: scanJobStatusMock,
+        getConversionJobs: async () => [],
+        getTagJobs: async () => [],
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/:pathMatch(.*)*', name: 'catchall', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/')
+    await router.isReady().catch(() => {})
+
+    // The count renders inside the Audiobooks link, so RouterLink has to render
+    // its slot. The default stub swallows it and the real one resolves every
+    // named route in the nav, so this stub keeps the slot and just the href.
+    const mounted = mount(AppComponent, {
+      global: {
+        stubs: {
+          RouterView: true,
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : undefined"><slot /></a>',
+          },
+        },
+        plugins: [createPinia(), router],
+      },
+    })
+
+    await new Promise((r) => setTimeout(r, 20))
+    return mounted
+  }
+
+  const audiobooksNavCount = (mounted: VueWrapper) =>
+    mounted
+      .findAll('a')
+      .find((link) => link.attributes('href') === '/books')
+      ?.find('.nav-count')
+
+  it('shows the library total on the Audiobooks nav item', async () => {
+    wrapper = await mountWithLibrary([
+      { id: 1, title: 'Columbus Day' },
+      { id: 2, title: 'SpecOps' },
+      { id: 3, title: 'Paradise' },
+    ])
+
+    expect(audiobooksNavCount(wrapper)?.text()).toBe('3')
+  })
+
+  it('counts every book, not just the ones still wanted', async () => {
+    // The Activity count next to it means "in progress"; this one means "in the
+    // library", so a book already on disk still counts.
+    wrapper = await mountWithLibrary([
+      { id: 1, title: 'Columbus Day', wanted: false },
+      { id: 2, title: 'Paradise', wanted: true },
+    ])
+
+    expect(audiobooksNavCount(wrapper)?.text()).toBe('2')
+  })
+
+  it('shows no count beside Audiobooks when the library is empty', async () => {
+    wrapper = await mountWithLibrary([])
+
+    expect(audiobooksNavCount(wrapper)?.exists() ?? false).toBe(false)
+  })
 })

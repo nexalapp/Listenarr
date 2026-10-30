@@ -30,7 +30,15 @@ function normalizeString(s: unknown) {
   return (s ?? '').toString().toLowerCase()
 }
 
-function resolveFileCount(a: Audiobook): number {
+/**
+ * How many files a book has, from whichever shape the payload carries: the library
+ * list sends a count, a single book's record sends the files themselves.
+ *
+ * Exported because "has a file" is also what the library's Owned filter means, and a
+ * book counted one way there and another way here would be the same book owned on one
+ * screen and missing on the next.
+ */
+export function resolveFileCount(a: Audiobook): number {
   if (Array.isArray(a.files)) {
     return a.files.length
   }
