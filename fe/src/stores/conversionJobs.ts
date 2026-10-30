@@ -221,7 +221,15 @@ export const useConversionJobsStore = defineStore('conversionJobs', () => {
       return
     }
 
-    unsubscribe = signalRService.onConversionJobUpdate(apply)
+    const offUpdate = signalRService.onConversionJobUpdate(apply)
+    // Updates sent while the connection was down -- a sleeping laptop, a server
+    // restart -- are never replayed, so a job that finished in the gap would stay
+    // "Processing" in its last phase until a reload. Re-read the list on reconnect.
+    const offConnected = signalRService.onConnected(() => void refresh())
+    unsubscribe = () => {
+      offUpdate()
+      offConnected()
+    }
     void refresh()
   }
 
