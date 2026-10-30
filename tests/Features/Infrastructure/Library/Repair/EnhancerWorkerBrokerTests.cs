@@ -166,6 +166,24 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Repair
         }
 
         [Fact]
+        public async Task AWorkerThatAsksAgainWhileHoldingAChunk_HasLostIt_AndGetsItAgainAtOnce()
+        {
+            // Measured on 2026-10-30: the worker was OOM-killed mid-chunk, restarted in ten
+            // seconds, and both repair lanes then sat 25 minutes waiting out the deadline.
+            await _broker.ClaimAsync("codegen", ready: true, TimeSpan.Zero, CancellationToken.None);
+            var enhancing = _broker.TryEnhanceAsync(Input(), Output, TimeSpan.FromMinutes(20), CancellationToken.None);
+            var lost = await Within(_broker.ClaimAsync("codegen", ready: true, TimeSpan.FromSeconds(5), CancellationToken.None));
+
+            var retry = await Within(_broker.ClaimAsync("codegen", ready: true, TimeSpan.FromSeconds(5), CancellationToken.None));
+            Assert.NotEqual(lost!.Id, retry!.Id);
+            Assert.False(await _broker.CompleteAsync(lost.Id, "codegen", new MemoryStream(Wave(9)), CancellationToken.None));
+
+            Assert.True(await _broker.CompleteAsync(retry.Id, "codegen", new MemoryStream(Wave(6)), CancellationToken.None));
+            Assert.True(await Within(enhancing));
+            Assert.Equal(1, Assert.Single(_broker.Workers).Failed);
+        }
+
+        [Fact]
         public async Task AnUploadThatIsNotAWave_IsRefused_AndTheChunkOfferedAgain()
         {
             await _broker.ClaimAsync("codegen", ready: true, TimeSpan.Zero, CancellationToken.None);

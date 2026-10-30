@@ -17,6 +17,8 @@ Settings come from the environment:
   ENHANCER_RUN_DIR    the model directory (enhancer_stage2)
   ENHANCER_NEED_MB    free card memory needed to take a chunk (default 12500)
   ENHANCER_IDLE_UNLOAD_S  unload the model after this long without work (default 600)
+  ENHANCER_RECYCLE_MB exit between chunks past this resident size, for systemd to
+                      restart (default 10000; the unit's MemoryMax is 16G)
 """
 
 from __future__ import annotations
@@ -150,6 +152,14 @@ class Model:
         log.info("model unloaded after idling; the card is free")
 
 
+def rss_mb() -> float:
+    with open("/proc/self/status") as status:
+        for line in status:
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) / 1024
+    return 0.0
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     base = os.environ["LISTENARR_URL"]
@@ -158,6 +168,7 @@ def main() -> int:
     run_dir = Path(os.environ["ENHANCER_RUN_DIR"])
     need_mb = float(os.environ.get("ENHANCER_NEED_MB", "12500"))
     idle_unload = float(os.environ.get("ENHANCER_IDLE_UNLOAD_S", "600"))
+    recycle_mb = float(os.environ.get("ENHANCER_RECYCLE_MB", "10000"))
 
     api = Api(base, key, worker)
     model = Model(run_dir)
@@ -216,6 +227,14 @@ def main() -> int:
             for f in (src, dst):
                 f.unlink(missing_ok=True)
             last_work = time.monotonic()
+
+        # The process grows slowly over thousands of chunks (16 GB after ~2,700) and the
+        # unit's MemoryMax then kills it mid-chunk. Restarting between chunks costs a
+        # model load; systemd brings it straight back.
+        rss = rss_mb()
+        if rss > recycle_mb:
+            log.info("restarting to give back memory (%.0f MB resident, limit %.0f)", rss, recycle_mb)
+            return 0
 
 
 if __name__ == "__main__":

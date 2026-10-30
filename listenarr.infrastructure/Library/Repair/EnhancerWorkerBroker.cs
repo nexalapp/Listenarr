@@ -254,6 +254,17 @@ namespace Listenarr.Infrastructure.Library.Repair
 
                     worker.LastSeenUtc = Now;
                     worker.Ready = ready;
+                    // A worker takes one chunk at a time, so one asking again while it still
+                    // holds a chunk has lost it -- killed and restarted mid-chunk. Waiting out
+                    // the deadline would hold the enhancer, and every lane behind it, for 25 min.
+                    foreach (var lost in _chunks.Where(chunk =>
+                        string.Equals(chunk.ClaimedBy, workerId, StringComparison.Ordinal) && !chunk.Result.Task.IsCompleted))
+                    {
+                        worker.Failed++;
+                        logger.LogWarning("GPU worker {Worker} came back without returning {Chunk}", workerId, Path.GetFileName(lost.Input));
+                        lost.Result.TrySetResult(false);
+                    }
+
                     if (!ready)
                     {
                         return null;
