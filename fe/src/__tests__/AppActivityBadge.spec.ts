@@ -780,9 +780,11 @@ describe('App.vue activity badge', () => {
     await new Promise((r) => setTimeout(r, 20))
 
     expect(getLibrary).toHaveBeenCalledTimes(1)
-    expect(connectedCallbacks).toHaveLength(1)
+    // Every store that re-reads on reconnect registers here (library, conversion jobs);
+    // a reconnect fires them all.
+    expect(connectedCallbacks.length).toBeGreaterThanOrEqual(1)
 
-    connectedCallbacks[0]!()
+    connectedCallbacks.forEach((callback) => callback())
     await new Promise((r) => setTimeout(r, 20))
 
     const { useLibraryStore } = await import('@/stores/library')

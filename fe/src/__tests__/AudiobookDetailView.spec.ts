@@ -50,6 +50,7 @@ vi.mock('@/services/api', () => ({
 vi.mock('@/services/signalr', () => ({
   signalRService: {
     connect: vi.fn(async () => undefined),
+    onConnected: vi.fn(() => () => undefined),
     onQueueUpdate: vi.fn(() => () => undefined),
     onFilesRemoved: vi.fn(() => () => undefined),
     onToast: vi.fn(() => () => undefined),
