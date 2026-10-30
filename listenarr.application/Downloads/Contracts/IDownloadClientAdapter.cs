@@ -103,5 +103,19 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <returns>True if the operation succeeded or was a no-op</returns>
         Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string id, CancellationToken ct = default)
             => Task.FromResult(true); // Default no-op
+
+        /// <summary>
+        /// Resumes a paused item so the client can finish it.
+        ///
+        /// Default implementation reports that nothing was resumed, which is the honest
+        /// answer for a client that cannot do this - unlike marking as imported, there is
+        /// no sense in which a no-op here succeeded.
+        /// </summary>
+        /// <param name="client">Download client configuration</param>
+        /// <param name="id">The client-specific download ID</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns>True only when the client actually resumed the item</returns>
+        Task<bool> ResumeAsync(DownloadClientConfiguration client, string id, CancellationToken ct = default)
+            => Task.FromResult(false);
     }
 }

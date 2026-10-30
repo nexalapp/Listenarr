@@ -132,6 +132,30 @@ namespace Listenarr.Application.Downloads.Common
             return await adapter.MarkItemAsImportedAsync(client, externalId, ct);
         }
 
+        public async Task<bool> ResumeAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(client);
+            ArgumentNullException.ThrowIfNull(download);
+
+            var externalId = download.GetExternalId();
+            if (string.IsNullOrEmpty(externalId))
+            {
+                return false;
+            }
+
+            if (!client.IsEnabled)
+            {
+                logger.LogDebug(
+                    "Skipping resume for download {DownloadId}: download client {ClientId} is disabled",
+                    download.Id,
+                    client.Id);
+                return false;
+            }
+
+            var adapter = ResolveAdapter(client);
+            return await adapter.ResumeAsync(client, externalId, ct);
+        }
+
         public async Task<QueueItem> GetQueueItemAsync(
             DownloadClientConfiguration client,
             Download download,

@@ -77,6 +77,19 @@ namespace Listenarr.Tests.Mocks
             return Task.FromResult(MarkImportedResult);
         }
 
+        /// <summary>Whether the fake client reports that it resumed the item.</summary>
+        public bool ResumeResult { get; set; } = true;
+
+        public List<string> ResumedDownloadIds { get; } = [];
+
+        public Task<bool> ResumeAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
+        {
+            RegisterMethodCall(nameof(ResumeAsync));
+            ResumedDownloadIds.Add(download.Id);
+
+            return Task.FromResult(ResumeResult);
+        }
+
         public Task<QueueItem> GetQueueItemAsync(DownloadClientConfiguration client, Download download, QueueItem queueItem, CancellationToken ct = default)
         {
             RegisterMethodCall(nameof(GetQueueItemAsync));

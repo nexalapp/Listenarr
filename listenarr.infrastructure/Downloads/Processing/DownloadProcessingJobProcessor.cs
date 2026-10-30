@@ -219,6 +219,19 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             var historyRepository = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
             var correlationId = job.GetOrCreateCorrelationId();
 
+            // The check at the top of this method read the download before any of the
+            // work above; another job for the same download can finish importing in that
+            // window. Writing ImportPending now would undo it, leaving the download in
+            // Activity as unfinished work for an import that is already done - which is
+            // exactly how downloads came to sit there for a day at a time.
+            var currentStatus = (await downloadRepository.GetByIdAsync(download.Id))?.Status;
+            if (currentStatus == DownloadStatus.Moved)
+            {
+                job.AddLogEntry($"Download {download.Id} was imported while this job was starting; completing without work");
+                await downloadProcessingJobService.UpdateJobAsync(job.MarkAsCompleted());
+                return;
+            }
+
             await downloadService.UpdateAsync(download.Importing());
             await downloadProcessingJobService.UpdateJobAsync(job.MarkAsProcessing());
             await RecordHistoryAsync(
