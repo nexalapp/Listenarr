@@ -46,6 +46,7 @@ namespace Listenarr.Infrastructure.Persistence
         public DbSet<User> Users { get; set; } = null!;
         public DbSet<Download> Downloads { get; set; } = null!;
         public DbSet<DownloadProcessingJob> DownloadProcessingJobs { get; set; } = null!;
+        public DbSet<BlockedRelease> BlockedReleases { get; set; } = null!;
         public DbSet<FileMutationJournal> FileMutationJournals { get; set; } = null!;
         public DbSet<CompatibilityFilePublicationJournal> CompatibilityFilePublicationJournals { get; set; } = null!;
         public DbSet<DownloadHistory> DownloadHistories { get; set; } = null!;

@@ -84,6 +84,14 @@ namespace Listenarr.Domain.Downloads
         public DateTime StartedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
         public string? ErrorMessage { get; set; }
+
+        /// <summary>
+        /// What went wrong, in the terms the next decision needs. Null until a download
+        /// fails: the message beside it is the client's own words, while this is the
+        /// classification the retry policy reads and the Activity row shows in place of
+        /// the word "Failed".
+        /// </summary>
+        public DownloadFailureReason? FailureReason { get; set; }
         public string DownloadClientId { get; set; } = string.Empty;
         public Dictionary<string, object> Metadata { get; set; } = [];
 
@@ -197,10 +205,11 @@ namespace Listenarr.Domain.Downloads
             return this;
         }
 
-        public Download Failed(string message)
+        public Download Failed(string message, DownloadFailureReason reason = DownloadFailureReason.Unknown)
         {
             SetStatus(DownloadStatus.Failed);
             ErrorMessage = message;
+            FailureReason = reason;
             Metadata["ClientFailureReason"] = message;
             return this;
         }
@@ -311,6 +320,7 @@ namespace Listenarr.Domain.Downloads
                 StartedAt = StartedAt,
                 CompletedAt = CompletedAt,
                 ErrorMessage = ErrorMessage,
+                FailureReason = FailureReason,
                 DownloadClientId = DownloadClientId
             };
         }
@@ -340,6 +350,12 @@ namespace Listenarr.Domain.Downloads
         public string DownloadClientType { get; set; } = string.Empty; // qbittorrent, transmission, etc
         public DateTime AddedAt { get; set; } = DateTime.UtcNow;
         public string? ErrorMessage { get; set; }
+
+        /// <summary>
+        /// What went wrong, classified. The client's message says it in its own words;
+        /// this is what the Activity row shows in place of "Failed".
+        /// </summary>
+        public DownloadFailureReason? FailureReason { get; set; }
         public bool IsStaleSnapshot { get; set; }
         public string? SnapshotState { get; set; } // live, cached
         public string? SnapshotFailureReason { get; set; } // timeout, error, canceled

@@ -159,6 +159,8 @@ export interface Download {
   startedAt: string
   completedAt?: string
   errorMessage?: string
+  /** Why it failed, classified: 'Health', 'Damaged', 'Password', 'Duplicate', … */
+  failureReason?: DownloadFailureReason
   downloadClientId: string
   metadata: Record<string, unknown>
   // Optional link to an audiobook record when the download was queued for a specific audiobook
@@ -168,6 +170,20 @@ export interface Download {
   importBlockMessages?: string[]
   importAttempts?: number
 }
+
+/**
+ * What went wrong with a download, as the backend classifies it. "Failed" on its own
+ * tells nobody whether to wait, retry or go looking for another copy.
+ */
+export type DownloadFailureReason =
+  | 'Unknown'
+  | 'Health'
+  | 'Damaged'
+  | 'Password'
+  | 'Duplicate'
+  | 'DiskSpace'
+  | 'PostProcessing'
+  | 'MissingFiles'
 
 export interface QueueItem {
   id: string
@@ -198,6 +214,8 @@ export interface QueueItem {
   downloadClientType: string
   addedAt: string
   errorMessage?: string
+  /** Why it failed, classified: 'Health', 'Damaged', 'Password', 'Duplicate', … */
+  failureReason?: DownloadFailureReason
   // Set when a blocked import can be retried from the activity row
   canRetryImport?: boolean
   isStaleSnapshot?: boolean

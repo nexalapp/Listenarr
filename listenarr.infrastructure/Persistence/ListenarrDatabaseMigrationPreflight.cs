@@ -58,11 +58,21 @@ internal static class ListenarrDatabaseMigrationPreflight
             WHERE "AudioAuditVerdict" = 'RuntimeMismatch';
             """);
 
+        // Failures recorded before the reason was a column kept the client's status in
+        // their metadata and nothing else, so the Activity page says "Failed" for all of
+        // them and a person has to open each one. The classifier can read those statuses,
+        // so the backlog is given the reason it was missing. Nothing is blocked and nothing
+        // is grabbed by this - it only names what already happened.
+        var failureReasonsClassified = ClassifyRecordedFailures(context);
+
         var applied = context.Database.GetAppliedMigrations()
             .ToHashSet(StringComparer.Ordinal);
         if (!applied.Contains(DurableFilesystemRecoveryMigrationId))
         {
-            return new ListenarrDatabasePostMigrationRepairResult(0, auditVerdictsRenamed);
+            return new ListenarrDatabasePostMigrationRepairResult(
+                0,
+                auditVerdictsRenamed,
+                failureReasonsClassified);
         }
 
         using var transaction = context.Database.BeginTransaction();
@@ -86,7 +96,53 @@ internal static class ListenarrDatabaseMigrationPreflight
             """);
         transaction.Commit();
 
-        return new ListenarrDatabasePostMigrationRepairResult(moveJobsRepaired, auditVerdictsRenamed);
+        return new ListenarrDatabasePostMigrationRepairResult(
+            moveJobsRepaired,
+            auditVerdictsRenamed,
+            failureReasonsClassified);
+    }
+
+    /// <summary>
+    /// Gives each failure already on record the reason it was recorded without.
+    ///
+    /// Done in C# rather than SQL so the one classifier decides, here as everywhere: a
+    /// CASE over status prefixes would be a second copy of that mapping, written in the
+    /// one language where nothing checks it against the first. A failure whose status
+    /// means nothing to the classifier is left alone rather than written as Unknown, so a
+    /// later build that understands it can still have its say.
+    /// </summary>
+    internal static int ClassifyRecordedFailures(ListenArrDbContext context)
+    {
+        var unclassified = context.Downloads
+            .Where(download =>
+                download.Status == DownloadStatus.Failed &&
+                download.FailureReason == null)
+            .ToList();
+        if (unclassified.Count == 0)
+        {
+            return 0;
+        }
+
+        var classified = 0;
+        foreach (var download in unclassified)
+        {
+            var reason = NzbgetFailureMessageMapper.Classify(
+                download.GetMetadataString("ClientFailureReason"));
+            if (reason == DownloadFailureReason.Unknown)
+            {
+                continue;
+            }
+
+            download.FailureReason = reason;
+            classified++;
+        }
+
+        if (classified > 0)
+        {
+            context.SaveChanges();
+        }
+
+        return classified;
     }
 }
 
@@ -95,4 +151,5 @@ internal readonly record struct ListenarrDatabaseMigrationPreflightResult(
 
 internal readonly record struct ListenarrDatabasePostMigrationRepairResult(
     int MoveJobsRepaired,
-    int AuditVerdictsRenamed);
+    int AuditVerdictsRenamed,
+    int FailureReasonsClassified);

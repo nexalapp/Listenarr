@@ -1,3 +1,4 @@
+global using Listenarr.Application.Downloads.Blocklist;
 global using Listenarr.Application.Downloads.Cleanup;
 global using Listenarr.Application.Downloads.Common;
 global using Listenarr.Application.Downloads.Processing;

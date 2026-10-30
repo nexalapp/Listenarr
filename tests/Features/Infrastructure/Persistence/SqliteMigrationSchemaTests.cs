@@ -132,6 +132,8 @@ public class SqliteMigrationSchemaTests : BaseTests
         "20261026032435_AddAutoGrabAndReleasePreparation";
     private const string AbookThankBudgetMigrationId =
         "20261026234325_AddAbookThankBudget";
+    private const string ReleaseBlocklistMigrationId =
+        "20261030221038_AddReleaseBlocklistAndFailureReason";
 
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
@@ -297,7 +299,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 UnobtainableRecheckDaysMigrationId,
                 AutoRepairSettingsMigrationId,
                 AutoGrabAndReleasePreparationMigrationId,
-                AbookThankBudgetMigrationId
+                AbookThankBudgetMigrationId,
+                ReleaseBlocklistMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

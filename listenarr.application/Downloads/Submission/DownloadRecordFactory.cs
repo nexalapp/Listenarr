@@ -46,7 +46,11 @@ namespace Listenarr.Application.Downloads.Submission
                 DownloadClientId = downloadClientId,
                 Metadata = new Dictionary<string, object>
                 {
-                    ["Source"] = candidate.Source,
+                    [BlockedRelease.ReleaseIndexerKey] = candidate.Source,
+                    // Kept so a release that fails can be blocked by the indexer's own
+                    // id, which survives a title an indexer lists differently. An id that
+                    // is really a link is dropped: it may carry the indexer's API key.
+                    [BlockedRelease.ReleaseIdKey] = BlockedRelease.SafeReleaseId(candidate.Id) ?? string.Empty,
                     ["Seeders"] = candidate.Seeders ?? 0,
                     ["Quality"] = candidate.Quality ?? string.Empty,
                     ["Language"] = candidate.Language ?? string.Empty,

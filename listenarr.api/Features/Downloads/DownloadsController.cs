@@ -152,6 +152,7 @@ public class DownloadsController : ControllerBase
                 startedAt = download.StartedAt,
                 completedAt = download.CompletedAt,
                 errorMessage = download.ErrorMessage,
+                failureReason = download.FailureReason?.ToString(),
                 downloadClientId = download.DownloadClientId,
                 metadata = download.Metadata,
                 importBlockReason = download.ImportBlockReason,
@@ -391,6 +392,7 @@ public class DownloadsController : ControllerBase
                 startedAt = d.StartedAt,
                 completedAt = d.CompletedAt,
                 errorMessage = d.ErrorMessage,
+                failureReason = d.FailureReason?.ToString(),
                 downloadClientId = d.DownloadClientId,
                 downloadClientName = d.DownloadClientId == "DDL" ? "Direct Download" :
                                    clientLookup.TryGetValue(d.DownloadClientId, out var clientName) ? clientName : "Unknown Client",

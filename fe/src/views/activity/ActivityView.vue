@@ -142,14 +142,14 @@
               <button
                 v-if="item.errorMessage"
                 :class="['status-badge', item.status, 'status-badge-actionable']"
-                :title="`${formatStatus(item.status)} — click for details`"
+                :title="`${statusLabel(item)} — click for details`"
                 @click="openBlockDetails(item)"
               >
-                {{ formatStatus(item.status) }}
+                {{ statusLabel(item) }}
                 <PhInfo class="status-badge-hint" />
               </button>
               <span v-else :class="['status-badge', item.status]">
-                {{ formatStatus(item.status) }}
+                {{ statusLabel(item) }}
               </span>
               <span
                 v-if="item.isStaleSnapshot"
@@ -383,6 +383,7 @@ import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 import { sortActivity } from '@/utils/activityOrder'
+import { failureReasonLabel } from '@/utils/downloadFailures'
 
 const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
@@ -620,6 +621,7 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
     canPause: false,
     canRemove: true,
     errorMessage: blockDetail || download.errorMessage,
+    failureReason: download.failureReason,
     canRetryImport: status === 'importblocked',
   }
 }
@@ -1349,6 +1351,18 @@ const formatStatus = (status: string): string => {
     imported: 'Imported',
   }
   return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+/**
+ * What the row's badge says. A failure names itself - "Damaged", "Health" - because a
+ * page of rows all reading "Failed" cannot be triaged without opening every one.
+ */
+const statusLabel = (item: QueueItem): string => {
+  if (item.status === 'failed') {
+    const reason = failureReasonLabel(item.failureReason)
+    if (reason) return reason
+  }
+  return formatStatus(item.status)
 }
 
 const formatEta = (seconds: number): string => {
