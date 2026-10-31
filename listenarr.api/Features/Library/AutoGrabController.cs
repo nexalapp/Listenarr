@@ -112,7 +112,7 @@ namespace Listenarr.Api.Features.Library
                     result.SeriesName, result.SeriesPosition, seriesNumber),
                 candidate = SuggestionReleaseMatch.AbookPostMatchesAllowingBranding(
                     result.Asin, result.Album, result.Artist, result.SeriesName,
-                    asin, title, [author])
+                    result.SeriesPosition, asin, title, [author], seriesNumber)
             }).ToList();
 
             return Ok(new

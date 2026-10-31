@@ -125,9 +125,11 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             string? postTitle,
             string? postAuthor,
             string? postSeries,
+            string? postSeriesPosition,
             string? bookAsin,
             string? bookTitle,
-            IReadOnlyList<string>? authors)
+            IReadOnlyList<string>? authors,
+            string? bookSeriesNumber = null)
         {
             if (!string.IsNullOrWhiteSpace(postAsin))
             {
@@ -135,14 +137,32 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             }
 
             var surname = Surname(authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)));
-            if (surname.Length == 0
-                || !(" " + Normalize(postAuthor) + " ").Contains(" " + surname + " ", StringComparison.Ordinal))
+            if (surname.Length == 0)
             {
                 return false;
             }
 
+            // The real author is often not in the author field. abook posts the Clancy
+            // continuations as "Tom Clancy" with "[with Marc Cameron]" left inside the
+            // title, so a name in a bracket counts as the post naming that person.
+            var named = " " + Normalize(postAuthor) + " "
+                + Normalize(string.Join(' ', RoleInBrackets().Matches(postTitle ?? string.Empty)
+                    .Select(match => match.Value))) + " ";
+            if (!named.Contains(" " + surname + " ", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // A bracket is an annotation about people, never part of the title.
+            var bare = RoleInBrackets().Replace(postTitle ?? string.Empty, " ").Trim();
+
+            if (TitlesMatch(bare, bookTitle))
+            {
+                return !TitleIsOnlyTheSeries(bare, postSeries, postSeriesPosition, bookSeriesNumber);
+            }
+
             var book = Words(bookTitle);
-            var post = Words(postTitle);
+            var post = Words(bare);
             if (book.Count == 0 || post.Count == 0 || post.Count > book.Count)
             {
                 return false;

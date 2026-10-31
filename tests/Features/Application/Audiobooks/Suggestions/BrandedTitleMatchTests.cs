@@ -43,7 +43,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             string postTitle, string postAuthor, string? postSeries,
             string bookTitle, string author, string? postAsin = null, string? bookAsin = null) =>
             SuggestionReleaseMatch.AbookPostMatchesAllowingBranding(
-                postAsin, postTitle, postAuthor, postSeries, bookAsin, bookTitle, [author]);
+                postAsin, postTitle, postAuthor, postSeries, null, bookAsin, bookTitle, [author]);
 
         [Fact]
         public void TheBrandInTheCataloguesTitleMayComeFromThePostsAuthor()
@@ -54,6 +54,19 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
                 postSeries: "Jack Ryan",
                 bookTitle: "Tom Clancy Red Winter",
                 author: "Marc Cameron"));
+        }
+
+        [Fact]
+        public void TheRealAuthorMayBeNamedOnlyInsideABracketInTheTitle()
+        {
+            // What abook actually posts, measured: the author field carries the brand
+            // and the writer is annotated inside the title.
+            Assert.True(Candidate(
+                postTitle: "Weapons Grade [with Don Bentley]",
+                postAuthor: "Tom Clancy",
+                postSeries: null,
+                bookTitle: "Tom Clancy Weapons Grade",
+                author: "Don Bentley"));
         }
 
         [Fact]
