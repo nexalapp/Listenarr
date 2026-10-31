@@ -104,6 +104,64 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         [GeneratedRegex(@"\d+(?:\.\d+)?")]
         private static partial Regex PositionNumber();
 
+        /// <summary>
+        /// A candidate rule, not yet the one in force: whether a post is this book once
+        /// the catalogue's branding is allowed to come from the post's other fields.
+        ///
+        /// Audible titles a continuation novel after the franchise's dead author - "Tom
+        /// Clancy Red Winter", written by Marc Cameron - while abook.link puts that name
+        /// in the author and titles the book "Red Winter". Comparing the two titles can
+        /// never succeed, though between them the post says every word of it. Thirty-four
+        /// books in this library have that shape and all thirty-four read as unavailable.
+        ///
+        /// The post may not be a bigger thing than the book: every word of the post's
+        /// title must be in the book's. That is what keeps "Sten 08 - Empires End" from
+        /// answering for Sten book one. What is left over in the book's title must then
+        /// be accounted for by the post's author or its series - the branding - and not
+        /// merely be absent.
+        /// </summary>
+        public static bool AbookPostMatchesAllowingBranding(
+            string? postAsin,
+            string? postTitle,
+            string? postAuthor,
+            string? postSeries,
+            string? bookAsin,
+            string? bookTitle,
+            IReadOnlyList<string>? authors)
+        {
+            if (!string.IsNullOrWhiteSpace(postAsin))
+            {
+                return AsinMatches(postAsin, bookAsin);
+            }
+
+            var surname = Surname(authors?.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)));
+            if (surname.Length == 0
+                || !(" " + Normalize(postAuthor) + " ").Contains(" " + surname + " ", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var book = Words(bookTitle);
+            var post = Words(postTitle);
+            if (book.Count == 0 || post.Count == 0 || post.Count > book.Count)
+            {
+                return false;
+            }
+
+            // The post cannot name anything the book does not.
+            if (post.Any(word => !book.Contains(word)))
+            {
+                return false;
+            }
+
+            // Whatever the catalogue added must be branding the post states elsewhere.
+            var elsewhere = Words(postAuthor).Concat(Words(postSeries)).ToHashSet(StringComparer.Ordinal);
+            return book.Where(word => !post.Contains(word)).All(elsewhere.Contains);
+        }
+
+        private static HashSet<string> Words(string? value) =>
+            Normalize(value).Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+
         public static bool TitleAndAuthorMatch(
             string? releaseTitle,
             string? bookTitle,
