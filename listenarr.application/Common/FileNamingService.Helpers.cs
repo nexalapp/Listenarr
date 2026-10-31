@@ -118,19 +118,27 @@ namespace Listenarr.Application.Common
                 // standalone book so the surrounding pattern collapses around it.
                 { "SeriesBrackets", BuildSeriesBrackets(metadata, sanitizeForPath) },
                 // Prefer the position exactly as the source gave it. A non-numeric but real
-                // position (an omnibus at "1-4") does not survive the decimal parse, and
-                // falling through to TrackNumber here would write a track number into the
+                // position (an omnibus at "1-4") does not survive the decimal parse, so
+                // falling back to the parsed decimal would write a track number into the
                 // filename as if it were the series number.
+                //
+                // The track number stands in only for a book that is in a series and did not
+                // say where, which is deliberate. A book in no series has
+                // no position for it to stand in for, and reading it as one named a
+                // standalone "[1] Theo of Golden" - a position in a series that does not
+                // exist, which also stopped "[{Series} {SeriesNumber}]" collapsing the way
+                // it does for every other standalone book.
+                //
                 // Widened to the series' own longest position, so a plain string sort --
                 // a folder listing, Plex's album sort tag -- stops putting book 10 before
                 // book 2. A series that never reaches ten is unchanged.
                 { "SeriesNumber", SeriesNumberFormatting.Pad(
-                    FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()),
+                    SeriesPosition(metadata),
                     metadata.SeriesPositionStyleFor(metadata.Series)) ?? string.Empty },
                 // The position with no widening at all, for the places that want the
                 // value rather than something that sorts: a tag a player parses as a
                 // number should say what the source said, not "01".
-                { "SeriesNumberRaw", FirstNonEmpty(metadata.SeriesPositionRaw, metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture), metadata.TrackNumber?.ToString()) },
+                { "SeriesNumberRaw", SeriesPosition(metadata) },
                 { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
                 { "Quality", FirstNonEmpty(metadata.BitRate.HasValue ? metadata.BitRate + "kbps" : null, metadata.Format) },
                 { "DiskNumber", metadata.DiscNumber?.ToString() ?? string.Empty },
@@ -155,6 +163,29 @@ namespace Listenarr.Application.Common
         /// could swallow the title.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Where this book sits in its series, as the source stated it, or null.
+        ///
+        /// The track number is the last resort and only for a book that has a series: it
+        /// says which file this is within a release, which is a position in a series only
+        /// if there is one to be positioned in.
+        /// </summary>
+        private static string? SeriesPosition(AudioMetadata metadata)
+        {
+            var stated = FirstNonEmpty(
+                metadata.SeriesPositionRaw,
+                metadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture));
+
+            return !string.IsNullOrWhiteSpace(stated) || !HasAnySeries(metadata)
+                ? stated
+                : metadata.TrackNumber?.ToString();
+        }
+
+        /// <summary>Whether the book is in any series at all, under any of the shapes one can arrive in.</summary>
+        private static bool HasAnySeries(AudioMetadata metadata) =>
+            !string.IsNullOrWhiteSpace(metadata.Series)
+            || metadata.AllSeries?.Any(s => !string.IsNullOrWhiteSpace(s.Name)) == true;
+
         private string BuildSeriesBrackets(AudioMetadata metadata, bool sanitizeForPath)
         {
             var series = metadata.AllSeries;
