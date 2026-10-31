@@ -889,6 +889,25 @@ export interface StartupConfigDto {
   ApiVersion?: string | number
 }
 
+/** One abook.link post as the forum parses it, without revealing its payload. */
+export interface AbookTopic {
+  topicId: number
+  topicTitle: string
+  outcome: string
+  title?: string
+  author?: string
+  narrator?: string
+  seriesName?: string
+  seriesPosition?: string
+  year?: number
+  asin?: string
+  format?: string
+  fileCount?: number
+  sizeBytes?: number
+  duration?: string
+  genre?: string
+}
+
 export interface AudibleBookMetadata {
   title: string
   subtitle?: string
