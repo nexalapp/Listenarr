@@ -16,13 +16,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import type { Audiobook } from '@/types'
 import { errorTracking } from '@/services/errorTracking'
 import { buildApiPath } from '@/services/apiBase'
 import { useLibraryDeleteOperationsStore } from '@/stores/libraryDeleteOperations'
+import { resolveFileCount } from '@/utils/customFilterEvaluator'
 
 export const useLibraryStore = defineStore('library', () => {
   const audiobooks = ref<Audiobook[]>([])
@@ -259,6 +260,46 @@ export const useLibraryStore = defineStore('library', () => {
     audiobooks.value[bookIndex] = updated
   }
 
+  /**
+   * Books the library owns: those with a file, which is also what the library's Owned
+   * filter means. A wanted book has no file yet.
+   */
+  const ownedCount = computed(
+    () => audiobooks.value.filter((book) => resolveFileCount(book) > 0).length,
+  )
+
+  /** Merges a server update into the list, or adds a book the list does not hold yet. */
+  function applyAudiobookUpdate(updatedAudiobook: Audiobook) {
+    const index = audiobooks.value.findIndex((b) => b.id === updatedAudiobook.id)
+    if (index !== -1) {
+      // Update the audiobook in the store, preserving reactivity
+      audiobooks.value = audiobooks.value.slice()
+      const prev = audiobooks.value[index]
+      if (!prev) return
+      const merged = { ...prev, ...updatedAudiobook }
+      // Preserve basePath if server payload omits or clears it
+      if ((!('basePath' in updatedAudiobook) || !updatedAudiobook.basePath) && prev.basePath) {
+        merged.basePath = prev.basePath
+      }
+      audiobooks.value[index] = normalizeLibraryImageUrl(merged)
+    } else if (typeof updatedAudiobook.id === 'number' && updatedAudiobook.id > 0) {
+      // A book added after the list loaded - from another tab, a found book, or an
+      // import - arrives here first; without it the sidebar count and the Audiobooks
+      // page would miss it until a reload.
+      audiobooks.value = [...audiobooks.value, normalizeLibraryImageUrl(updatedAudiobook)]
+    }
+  }
+
+  /** Drops a book the server says was deleted, wherever the delete came from. */
+  function applyAudiobookDeleted(audiobookId: number) {
+    if (audiobooks.value.some((b) => b.id === audiobookId)) {
+      audiobooks.value = audiobooks.value.filter((b) => b.id !== audiobookId)
+    }
+    if (selectedIds.value.has(audiobookId)) {
+      selectedIds.value.delete(audiobookId)
+    }
+  }
+
   // Register SignalR subscriptions, but skip during unit tests to avoid noisy logs
   // and test-time side effects. Vitest exposes markers on import.meta or globalThis.
   const isVitest = !!(
@@ -285,22 +326,7 @@ export const useLibraryStore = defineStore('library', () => {
 
       signalRService.onAudiobookUpdate((updatedAudiobook) => {
         try {
-          const index = audiobooks.value.findIndex((b) => b.id === updatedAudiobook.id)
-          if (index !== -1) {
-            // Update the audiobook in the store, preserving reactivity
-            audiobooks.value = audiobooks.value.slice()
-            const prev = audiobooks.value[index]
-            if (!prev) return
-            const merged = { ...prev, ...updatedAudiobook }
-            // Preserve basePath if server payload omits or clears it
-            if (
-              (!('basePath' in updatedAudiobook) || !updatedAudiobook.basePath) &&
-              prev.basePath
-            ) {
-              merged.basePath = prev.basePath
-            }
-            audiobooks.value[index] = normalizeLibraryImageUrl(merged)
-          }
+          applyAudiobookUpdate(updatedAudiobook)
         } catch (e) {
           // Defensive: don't allow signal handler errors to break the app
           errorTracking.captureException(e as Error, {
@@ -309,6 +335,8 @@ export const useLibraryStore = defineStore('library', () => {
           })
         }
       })
+
+      signalRService.onAudiobookDeleted(applyAudiobookDeleted)
     } catch {
       // If signalRService isn't ready at module import time, this will be a no-op; we'll still sync on next fetchLibrary
     }
@@ -341,6 +369,9 @@ export const useLibraryStore = defineStore('library', () => {
 
   return {
     audiobooks,
+    ownedCount,
+    applyAudiobookUpdate,
+    applyAudiobookDeleted,
     loading,
     error,
     selectedIds,

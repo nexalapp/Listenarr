@@ -15,7 +15,8 @@ public sealed class AudiobookDeletionCommitService(
     ITagQueueService tagQueue,
     IConversionJobRepository conversionJobs,
     ITagJobRepository tagJobs,
-    ILogger<AudiobookDeletionCommitService> logger) : IAudiobookDeletionCommitService
+    ILogger<AudiobookDeletionCommitService> logger,
+    IAudiobookUpdatePublisher? updatePublisher = null) : IAudiobookDeletionCommitService
 {
     public Task<AudiobookDeletionCommitResult> DeleteAsync(
         int id,
@@ -79,6 +80,8 @@ public sealed class AudiobookDeletionCommitService(
             {
                 logger.LogInformation("Removed {Count} job row(s) of deleted audiobook {AudiobookId}", removedJobs, id);
             }
+
+            await TryPublishDeletedAsync(id);
         }
 
         return new AudiobookDeletionCommitResult(
@@ -86,6 +89,27 @@ public sealed class AudiobookDeletionCommitService(
                 ? AudiobookDeletionCommitOutcome.Deleted
                 : AudiobookDeletionCommitOutcome.Failed,
             audiobook);
+    }
+
+    /// <summary>
+    /// Tells open pages the book is gone. The delete has committed; failing to say so
+    /// leaves a count one too high until a reload, not a delete half done.
+    /// </summary>
+    private async Task TryPublishDeletedAsync(int id)
+    {
+        if (updatePublisher == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await updatePublisher.PublishDeletedAsync(id);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            logger.LogWarning(ex, "Could not announce the deletion of audiobook {AudiobookId}", id);
+        }
     }
 
     private async Task CancelActiveJobsAsync(int id, CancellationToken cancellationToken)

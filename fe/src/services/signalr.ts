@@ -201,6 +201,7 @@ class SignalRService {
   private downloadListCallbacks: Set<DownloadListCallback> = new Set()
   private queueUpdateCallbacks: Set<QueueUpdateCallback> = new Set()
   private audiobookUpdateCallbacks: Set<(a: Audiobook) => void> = new Set()
+  private audiobookDeletedCallbacks: Set<(audiobookId: number) => void> = new Set()
   private scanJobCallbacks: Set<ScanJobCallback> = new Set()
   private moveJobCallbacks: Set<
     (job: {
@@ -432,6 +433,14 @@ class SignalRService {
           this.audiobookUpdateCallbacks.forEach((cb) => cb(ab))
         }
         break
+      case 'AudiobookDeleted': {
+        const payload = args?.[0] as { audiobookId?: number } | undefined
+        if (typeof payload?.audiobookId === 'number') {
+          const id = payload.audiobookId
+          this.audiobookDeletedCallbacks.forEach((cb) => cb(id))
+        }
+        break
+      }
       case 'ScanJobUpdate':
         if (args && args[0]) {
           const job = args[0] as unknown as {
@@ -762,6 +771,14 @@ class SignalRService {
     this.audiobookUpdateCallbacks.add(callback)
     return () => {
       this.audiobookUpdateCallbacks.delete(callback)
+    }
+  }
+
+  // Subscribe to a book being deleted, by its id
+  onAudiobookDeleted(callback: (audiobookId: number) => void): () => void {
+    this.audiobookDeletedCallbacks.add(callback)
+    return () => {
+      this.audiobookDeletedCallbacks.delete(callback)
     }
   }
 

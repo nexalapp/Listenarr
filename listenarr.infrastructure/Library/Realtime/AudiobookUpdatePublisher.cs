@@ -39,4 +39,17 @@ internal sealed class AudiobookUpdatePublisher(
             "Published current AudiobookUpdate for audiobook {AudiobookId}",
             audiobookId);
     }
+
+    public async Task PublishDeletedAsync(
+        int audiobookId,
+        CancellationToken cancellationToken = default)
+    {
+        await hubContext.Clients.All.SendAsync(
+            "AudiobookDeleted",
+            new { audiobookId },
+            cancellationToken);
+        logger.LogInformation(
+            "Published AudiobookDeleted for audiobook {AudiobookId}",
+            audiobookId);
+    }
 }

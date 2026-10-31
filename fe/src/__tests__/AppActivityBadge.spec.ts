@@ -845,25 +845,25 @@ describe('App.vue activity badge', () => {
       .find((link) => link.attributes('href') === '/books')
       ?.find('.nav-count')
 
-  it('shows the library total on the Audiobooks nav item', async () => {
+  it('shows the number of books owned on the Audiobooks nav item', async () => {
     wrapper = await mountWithLibrary([
-      { id: 1, title: 'Columbus Day' },
-      { id: 2, title: 'SpecOps' },
-      { id: 3, title: 'Paradise' },
+      { id: 1, title: 'Columbus Day', fileCount: 1 },
+      { id: 2, title: 'SpecOps', fileCount: 3 },
+      { id: 3, title: 'Paradise', fileCount: 1 },
     ])
 
     expect(audiobooksNavCount(wrapper)?.text()).toBe('3')
   })
 
-  it('counts every book, not just the ones still wanted', async () => {
-    // The Activity count next to it means "in progress"; this one means "in the
-    // library", so a book already on disk still counts.
+  it('counts the books owned, not the ones still wanted', async () => {
+    // A wanted book has no file yet; the count is what the library holds, which is
+    // also what the library's Owned filter shows.
     wrapper = await mountWithLibrary([
-      { id: 1, title: 'Columbus Day', wanted: false },
-      { id: 2, title: 'Paradise', wanted: true },
+      { id: 1, title: 'Columbus Day', wanted: false, fileCount: 1 },
+      { id: 2, title: 'Paradise', wanted: true, fileCount: 0 },
     ])
 
-    expect(audiobooksNavCount(wrapper)?.text()).toBe('2')
+    expect(audiobooksNavCount(wrapper)?.text()).toBe('1')
   })
 
   it('shows no count beside Audiobooks when the library is empty', async () => {

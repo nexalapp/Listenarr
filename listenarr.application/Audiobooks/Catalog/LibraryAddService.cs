@@ -38,6 +38,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
         private readonly INotificationService? _notificationService;
         private readonly ISuggestionRefreshService? _suggestionRefresh;
         private readonly ISuggestionReleaseService? _suggestionReleases;
+        private readonly IAudiobookUpdatePublisher? _updatePublisher;
 
         public LibraryAddService(
             IAudiobookRepository repo,
@@ -55,7 +56,8 @@ namespace Listenarr.Application.Audiobooks.Catalog
             IFilesystemMutationCoordinator mutationCoordinator,
             INotificationService? notificationService = null,
             ISuggestionRefreshService? suggestionRefresh = null,
-            ISuggestionReleaseService? suggestionReleases = null)
+            ISuggestionReleaseService? suggestionReleases = null,
+            IAudiobookUpdatePublisher? updatePublisher = null)
         {
             _repo = repo;
             _commitStore = commitStore;
@@ -75,6 +77,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
             _notificationService = notificationService;
             _suggestionRefresh = suggestionRefresh;
             _suggestionReleases = suggestionReleases;
+            _updatePublisher = updatePublisher;
         }
 
         public async Task<LibraryAddOperationResult> AddToLibraryAsync(
@@ -193,6 +196,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 preparedImage,
                 preparedAuthorImages);
             await TrySendAddedNotificationAsync(audiobook);
+            await TryPublishAddedAsync(audiobook);
             // Whatever this book's author and series have that the library does not is
             // now worth knowing, so make sure their catalogs are cached.
             _suggestionRefresh?.QueueIfMissing(
@@ -253,6 +257,28 @@ namespace Listenarr.Application.Audiobooks.Catalog
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Tells open pages about the new book, so a library count kept in the browser
+        /// includes it straight away. Post-commit like the notification: failing to say so
+        /// leaves the count stale until a reload, not the add undone.
+        /// </summary>
+        private async Task TryPublishAddedAsync(Audiobook audiobook)
+        {
+            if (_updatePublisher == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _updatePublisher.PublishCurrentAsync(audiobook.Id);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Could not announce added audiobook {AudiobookId}", audiobook.Id);
+            }
         }
 
         private async Task<LibraryAddOperationResult> CommitAsync(
