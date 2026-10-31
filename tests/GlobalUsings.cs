@@ -26,6 +26,7 @@ global using Listenarr.Application.Audiobooks.Moving;
 global using Listenarr.Application.Audiobooks.Quality;
 global using Listenarr.Application.Audiobooks.Renaming;
 global using Listenarr.Application.Audiobooks.RootFolders;
+global using Listenarr.Application.Downloads.Blocklist;
 global using Listenarr.Application.Downloads.Common;
 global using Listenarr.Application.Downloads.Import;
 global using Listenarr.Application.Downloads.Processing;

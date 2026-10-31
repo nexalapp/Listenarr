@@ -89,13 +89,45 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             // Only consider non-rejected, score > 0 results
-            var topResult = scoredResults
+            var acceptable = scoredResults
                 .Where(s => !s.IsRejected && s.TotalScore > 0)
                 .OrderByDescending(s => s.TotalScore)
-                .FirstOrDefault();
+                .ToList();
+
+            // Releases that already failed for this book are out, however well they
+            // score. Without this the search is deterministic in the worst way: the same
+            // ranking picks the release that just failed, it fails again, and the failure
+            // starts the search once more. The whole point of searching again after a
+            // failure is to reach a different release.
+            var blocklist = new ReleaseBlocklist(
+                await releaseBlocklistRepository.GetForAudiobookAsync(audiobookId));
+            var topResult = acceptable.FirstOrDefault(scored =>
+                !blocklist.IsBlocked(
+                    scored.SearchResult.Title,
+                    scored.SearchResult.Id,
+                    scored.SearchResult.Size));
 
             if (topResult == null)
             {
+                var blocked = acceptable.Count;
+                if (blocked > 0 && blocklist.Count > 0)
+                {
+                    // Every release this book has is one that already failed. Saying so
+                    // is the difference between "nothing holds it" and "everything that
+                    // holds it is broken", and only the second is worth a person's time.
+                    logger.LogInformation(
+                        "Every one of the {Count} acceptable release(s) for audiobook '{Title}' is blocked after an earlier failure; nothing left to grab",
+                        blocked,
+                        LogRedaction.SanitizeText(audiobook.Title));
+                    return new SearchAndDownloadResult
+                    {
+                        Success = false,
+                        Message = blocked == 1
+                            ? "The only release found for this book already failed"
+                            : $"All {blocked} releases found for this book have already failed"
+                    };
+                }
+
                 logger.LogWarning("No acceptable search results found for audiobook '{Title}' after quality filtering", audiobook.Title);
                 return new SearchAndDownloadResult
                 {

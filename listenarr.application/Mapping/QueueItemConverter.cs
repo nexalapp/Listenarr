@@ -57,7 +57,9 @@ namespace Listenarr.Application.Mapping
             var normalizedState = (item.Status ?? string.Empty).ToLowerInvariant();
             if (normalizedState is "error" or "failed" or "failure" or "missingfiles" or "missing_files")
             {
-                download.Failed(item.ErrorMessage ?? $"Download client state: {item.Status}");
+                download.Failed(
+                    item.ErrorMessage ?? $"Download client state: {item.Status}",
+                    item.FailureReason ?? ReasonFromClientState(normalizedState));
                 if (!string.IsNullOrWhiteSpace(item.ClientFailureReason))
                 {
                     download.SetMetadata("ClientFailureReason", item.ClientFailureReason);
@@ -83,6 +85,20 @@ namespace Listenarr.Application.Mapping
 
             return download;
         }
+
+        /// <summary>
+        /// What a client that says nothing more specific is reporting.
+        ///
+        /// Only a client that names its failures - NZBGet does - can say which failure it
+        /// was; the rest offer a state and nothing else. "Missing files" is the one such
+        /// state that means something on its own: the client still lists the download but
+        /// no longer has what it fetched, which is not the release's fault and must not
+        /// get the release blocked.
+        /// </summary>
+        private static DownloadFailureReason ReasonFromClientState(string normalizedState) =>
+            normalizedState is "missingfiles" or "missing_files"
+                ? DownloadFailureReason.MissingFiles
+                : DownloadFailureReason.Unknown;
 
         /// <summary>
         /// Used for old adapter implementation

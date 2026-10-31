@@ -86,6 +86,12 @@ public static class InfrastructureStartupCompositionExtensions
                     "[Startup] Renamed {Count} audio audit verdict(s) written under a name this build no longer knows",
                     repairedPostMigrationData.AuditVerdictsRenamed);
             }
+            if (repairedPostMigrationData.FailureReasonsClassified > 0)
+            {
+                Log.Logger.Information(
+                    "[Startup] Named the reason for {Count} download(s) recorded as failed before the reason was kept",
+                    repairedPostMigrationData.FailureReasonsClassified);
+            }
             Log.Logger.Information("[Startup] EF Core migrations applied successfully");
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

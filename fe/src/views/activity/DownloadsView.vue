@@ -109,7 +109,7 @@
 
               <div class="download-status-section">
                 <div class="download-status" :class="download.status.toLowerCase()">
-                  {{ download.status }}
+                  {{ downloadStatusLabel(download) }}
                 </div>
 
                 <div v-if="download.status === 'Downloading'" class="download-progress">
@@ -188,10 +188,23 @@ import { PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
 import InspectTorrentModal from '@/components/domain/download/InspectTorrentModal.vue'
 import { apiService } from '@/services/api'
 import { EmptyState, ProgressBar } from '@/components/base'
+import { failureReasonLabel } from '@/utils/downloadFailures'
 
 const downloadsStore = useDownloadsStore()
 const toast = useToast()
 const activeTab = ref<'active' | 'completed' | 'failed'>('active')
+
+/**
+ * What the status chip says. A failure names its reason, so a page of failures can be
+ * told apart without opening each one.
+ */
+const downloadStatusLabel = (download: Download): string => {
+  if (download.status === 'Failed') {
+    const reason = failureReasonLabel(download.failureReason)
+    if (reason) return reason
+  }
+  return download.status
+}
 
 const mobileTabOptions = computed(() => [
   { value: 'active', label: 'Active', icon: PhDownloadSimple },

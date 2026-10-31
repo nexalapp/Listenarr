@@ -10,85 +10,111 @@
 
 namespace Listenarr.Infrastructure.DownloadClients.Nzbget;
 
+/// <summary>
+/// Turns NZBGet's status word into a reason Listenarr can act on, and the sentence it
+/// shows beside it.
+///
+/// Both come from one classification on purpose: the message a person reads and the
+/// decision about blocking and re-searching have to be about the same failure, and when
+/// they were derived separately they drifted - a release could be described as damaged
+/// and treated as a local problem.
+/// </summary>
 internal static class NzbgetFailureMessageMapper
 {
+    /// <summary>
+    /// Which failure NZBGet is reporting. Its statuses are "CATEGORY/DETAIL" and the
+    /// detail is what matters: HEALTH arrives as FAILURE/HEALTH, WARNING/HEALTH and
+    /// DELETED/HEALTH depending on which setting caught it, and all three mean the same
+    /// thing about the release.
+    /// </summary>
+    public static DownloadFailureReason Classify(string? rawStatus)
+    {
+        var status = (rawStatus ?? string.Empty).Trim();
+        if (status.Length == 0)
+        {
+            return DownloadFailureReason.Unknown;
+        }
+
+        if (Is(status, "FAILURE/MOVE") || Is(status, "FAILURE/POSTPROCESS"))
+        {
+            return DownloadFailureReason.PostProcessing;
+        }
+
+        // The password is tested before unpacking, because NZBGet reports a wrong
+        // password as a warning while the unpack it belongs to reports as a failure.
+        if (Is(status, "WARNING/PASSWORD"))
+        {
+            return DownloadFailureReason.Password;
+        }
+
+        if (Is(status, "FAILURE/HEALTH") || Is(status, "WARNING/HEALTH") || Is(status, "DELETED/HEALTH"))
+        {
+            return DownloadFailureReason.Health;
+        }
+
+        if (Is(status, "FAILURE/PAR") ||
+            Is(status, "FAILURE/REPAIR") ||
+            Is(status, "FAILURE/UNPACK") ||
+            Is(status, "WARNING/DAMAGED") ||
+            Is(status, "DELETED/BAD"))
+        {
+            return DownloadFailureReason.Damaged;
+        }
+
+        if (Is(status, "WARNING/SPACE"))
+        {
+            return DownloadFailureReason.DiskSpace;
+        }
+
+        if (Is(status, "DELETED/COPY") || Is(status, "DELETED/DUPE"))
+        {
+            return DownloadFailureReason.Duplicate;
+        }
+
+        return DownloadFailureReason.Unknown;
+    }
+
     public static string Map(NzbgetHistoryEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
         var status = entry.RawStatus.Trim();
-
-        if (status.StartsWith("FAILURE/MOVE", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("FAILURE/POSTPROCESS", StringComparison.OrdinalIgnoreCase))
-        {
-            return "NZBGet failed during post-processing or final move. Check the NZBGet completed folder for existing files, permissions, or path conflicts.";
-        }
-
-        if (status.StartsWith("FAILURE/UNPACK", StringComparison.OrdinalIgnoreCase))
-        {
-            return "NZBGet failed while unpacking the download. The archive may be damaged, incomplete, password-protected, or missing parts.";
-        }
-
-        if (status.StartsWith("FAILURE/PAR", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("FAILURE/REPAIR", StringComparison.OrdinalIgnoreCase))
-        {
-            return "NZBGet failed while verifying or repairing the download. The release may be incomplete or damaged.";
-        }
-
-        if (status.StartsWith("FAILURE/HEALTH", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("WARNING/HEALTH", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("DELETED/HEALTH", StringComparison.OrdinalIgnoreCase))
-        {
-            return "NZBGet marked the download failed because its health dropped below the required threshold.";
-        }
-
-        if (status.StartsWith("WARNING/PASSWORD", StringComparison.OrdinalIgnoreCase))
-        {
-            return "NZBGet could not unpack the download because the archive password was wrong. The NZB may not be the release the password belongs to.";
-        }
-
-        if (status.StartsWith("WARNING/DAMAGED", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("DELETED/BAD", StringComparison.OrdinalIgnoreCase))
-        {
-            return "NZBGet finished the download but its files are damaged and could not be repaired.";
-        }
-
-        if (status.StartsWith("WARNING/SPACE", StringComparison.OrdinalIgnoreCase))
-        {
-            return "NZBGet ran out of disk space before the download could be unpacked.";
-        }
-
-        if (status.StartsWith("DELETED/COPY", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("DELETED/DUPE", StringComparison.OrdinalIgnoreCase))
-        {
-            // Usually the same NZB grabbed again after the first copy failed, so the
-            // first copy's failure is the one to look at.
-            return "NZBGet discarded the download as a duplicate of one already in its history, so nothing new was fetched.";
-        }
-
-        return string.IsNullOrWhiteSpace(status)
-            ? "NZBGet reported a failed download."
-            : $"NZBGet reported a failed download: {status}";
+        return Describe(Classify(status), status);
     }
 
     /// <summary>
-    /// Failures that grabbing again cannot cure. A search after one of these finds the
-    /// same release first, NZBGet discards it as a copy of the job that just failed, and
-    /// that failure starts another search - a loop that grabs nothing. The archive
-    /// password is the post's, so a wrong one stays wrong however often it is tried.
+    /// The sentence shown beside the reason. An unrecognised status is quoted rather than
+    /// paraphrased: NZBGet's own word is more use than a guess at what it meant.
     /// </summary>
-    public static bool IsRepeatProof(string? rawStatus)
+    public static string Describe(DownloadFailureReason reason, string? rawStatus)
     {
         var status = (rawStatus ?? string.Empty).Trim();
-        return status.StartsWith("DELETED/COPY", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("DELETED/DUPE", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("WARNING/PASSWORD", StringComparison.OrdinalIgnoreCase);
+        return reason switch
+        {
+            DownloadFailureReason.PostProcessing =>
+                "NZBGet failed during post-processing or final move. Check the NZBGet completed folder for existing files, permissions, or path conflicts.",
+            DownloadFailureReason.Password =>
+                "NZBGet could not unpack the download because the archive password was wrong. The NZB may not be the release the password belongs to.",
+            DownloadFailureReason.Health =>
+                "NZBGet marked the download failed because its health dropped below the required threshold.",
+            DownloadFailureReason.Damaged when Is(status, "FAILURE/UNPACK") =>
+                "NZBGet failed while unpacking the download. The archive may be damaged, incomplete, password-protected, or missing parts.",
+            DownloadFailureReason.Damaged when Is(status, "WARNING/DAMAGED") || Is(status, "DELETED/BAD") =>
+                "NZBGet finished the download but its files are damaged and could not be repaired.",
+            DownloadFailureReason.Damaged =>
+                "NZBGet failed while verifying or repairing the download. The release may be incomplete or damaged.",
+            DownloadFailureReason.DiskSpace =>
+                "NZBGet ran out of disk space before the download could be unpacked.",
+            // Usually the same NZB grabbed again after the first copy failed, so the
+            // first copy's failure is the one to look at.
+            DownloadFailureReason.Duplicate =>
+                "NZBGet discarded the download as a duplicate of one already in its history, so nothing new was fetched.",
+            _ => status.Length == 0
+                ? "NZBGet reported a failed download."
+                : $"NZBGet reported a failed download: {status}"
+        };
     }
 
-    public static bool IsMoveOrPostProcessingFailure(string? rawStatus)
-    {
-        var status = (rawStatus ?? string.Empty).Trim();
-        return status.StartsWith("FAILURE/MOVE", StringComparison.OrdinalIgnoreCase) ||
-            status.StartsWith("FAILURE/POSTPROCESS", StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool Is(string status, string prefix) =>
+        status.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
 }

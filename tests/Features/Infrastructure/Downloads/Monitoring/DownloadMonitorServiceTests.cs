@@ -324,61 +324,121 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             Assert.True(DownloadMonitorProcessor.ShouldRemoveFailedClientItem(client));
         }
 
+        /// <summary>
+        /// A local failure is still left alone: another release would be moved to the same
+        /// place and fail there too.
+        /// </summary>
         [Fact]
-        public void OnDownloadFailed_NzbgetMoveFailure_SuppressesImmediateAutoSearch()
+        public void OnDownloadFailed_NzbgetMoveFailure_IsLeftForAPerson()
         {
-            var client = new DownloadClientConfiguration
-            {
-                Id = "nzbget-1",
-                Type = "nzbget"
-            };
-            var download = new DownloadBuilder().Build();
-            download.Metadata["ClientFailureReason"] = "FAILURE/MOVE";
+            var download = Failed("FAILURE/MOVE");
 
-            Assert.True(DownloadMonitorProcessor.ShouldSuppressFailedDownloadAutoSearch(
-                client,
+            var reason = DownloadMonitorProcessor.ResolveFailureReason(
+                Nzbget,
                 download,
-                "NZBGet failed during post-processing or final move."));
+                "NZBGet failed during post-processing or final move.");
+
+            Assert.Equal(DownloadFailureReason.PostProcessing, reason);
+            Assert.False(DownloadFailurePolicy.For(reason).SearchAgain);
         }
 
-        [Fact]
-        public void OnDownloadFailed_NzbgetUnpackFailure_AllowsImmediateAutoSearch()
-        {
-            var client = new DownloadClientConfiguration
-            {
-                Id = "nzbget-1",
-                Type = "nzbget"
-            };
-            var download = new DownloadBuilder().Build();
-            download.Metadata["ClientFailureReason"] = "FAILURE/UNPACK";
-
-            Assert.False(DownloadMonitorProcessor.ShouldSuppressFailedDownloadAutoSearch(
-                client,
-                download,
-                "NZBGet failed while unpacking."));
-        }
-
+        /// <summary>
+        /// These three used to suppress the search, on the grounds that grabbing again
+        /// found the same release and NZBGet discarded it. Both halves are now dealt with
+        /// - the release is blocked so the search reaches a different one, and the record
+        /// that caused the discard is deleted - so the search is what they get. 183 of the
+        /// 195 books stranded by the old rule had a release available when asked.
+        /// </summary>
         [Theory]
-        // Grabbing again finds the same release, NZBGet discards it as a copy of the job
-        // that just failed, and that failure starts another search: a loop.
-        [InlineData("DELETED/COPY")]
-        [InlineData("DELETED/DUPE")]
-        // The password is the post's; it is as wrong the second time.
-        [InlineData("WARNING/PASSWORD")]
-        public void OnDownloadFailed_NzbgetFailureARepeatCannotCure_SuppressesImmediateAutoSearch(string status)
+        // A duplicate says the release belongs to some other book, which is a reason to
+        // pass over it rather than to stop.
+        [InlineData("DELETED/COPY", DownloadFailureReason.Duplicate)]
+        [InlineData("DELETED/DUPE", DownloadFailureReason.Duplicate)]
+        // The password belongs to the post, so a wrong one says the NZB is the wrong
+        // release - which is a reason to block it and look for the right one.
+        [InlineData("WARNING/PASSWORD", DownloadFailureReason.Password)]
+        public void OnDownloadFailed_AFailureARepeatCannotCure_SetsTheReleaseAsideAndSearchesAgain(
+            string status,
+            DownloadFailureReason expected)
         {
-            var client = new DownloadClientConfiguration
-            {
-                Id = "nzbget-1",
-                Type = "nzbget"
-            };
-            var download = new DownloadBuilder().Build();
-            download.Metadata["ClientFailureReason"] = status;
+            var download = Failed(status);
 
-            Assert.True(DownloadMonitorProcessor.ShouldSuppressFailedDownloadAutoSearch(
-                client,
+            var reason = DownloadMonitorProcessor.ResolveFailureReason(
+                Nzbget,
                 download,
-                "NZBGet discarded the download."));
+                "NZBGet discarded the download.");
+            var response = DownloadFailurePolicy.For(reason);
+
+            Assert.Equal(expected, reason);
+            Assert.True(response.SearchAgain);
+            Assert.True(response.BlockRelease);
+            // A duplicate keeps the client's record: it is what refuses a release the
+            // search matched to the wrong book. Every other release-caused failure
+            // deletes it, because there the record only blocks the next grab.
+            Assert.Equal(expected != DownloadFailureReason.Duplicate, response.PurgeClientRecord);
+        }
+
+        /// <summary>
+        /// The classification is made when the client is read, so a download that already
+        /// carries one is taken at its word rather than re-derived from a raw status that
+        /// may not be there.
+        /// </summary>
+        [Fact]
+        public void OnDownloadFailed_AReasonAlreadyOnTheRecordIsUsed()
+        {
+            var download = new DownloadBuilder().Build();
+            download.Failed("whatever the client said", DownloadFailureReason.Damaged);
+
+            Assert.Equal(
+                DownloadFailureReason.Damaged,
+                DownloadMonitorProcessor.ResolveFailureReason(Nzbget, download, "whatever the client said"));
+        }
+
+        /// <summary>
+        /// A download that failed before the classification existed carries no reason, and
+        /// the raw status NZBGet gave is still on it. Reading that is what lets the backlog
+        /// be understood rather than re-failed.
+        /// </summary>
+        [Fact]
+        public void OnDownloadFailed_AnOlderRowIsClassifiedFromItsRawStatus()
+        {
+            var download = Failed("FAILURE/HEALTH");
+            download.FailureReason = null;
+
+            Assert.Equal(
+                DownloadFailureReason.Health,
+                DownloadMonitorProcessor.ResolveFailureReason(Nzbget, download, "health too low"));
+        }
+
+        /// <summary>
+        /// A client that names no failure of its own must not have NZBGet's vocabulary
+        /// read into whatever it said.
+        /// </summary>
+        [Fact]
+        public void OnDownloadFailed_AnotherClientsMessageIsNotReadAsNzbgetStatus()
+        {
+            var download = new DownloadBuilder().Build();
+            download.Metadata["ClientFailureReason"] = "FAILURE/HEALTH";
+
+            var reason = DownloadMonitorProcessor.ResolveFailureReason(
+                new DownloadClientConfiguration { Id = "qbittorrent-1", Type = "qbittorrent" },
+                download,
+                "errored");
+
+            Assert.Equal(DownloadFailureReason.Unknown, reason);
+        }
+
+        private static DownloadClientConfiguration Nzbget => new()
+        {
+            Id = "nzbget-1",
+            Type = "nzbget"
+        };
+
+        private static Download Failed(string rawStatus)
+        {
+            var download = new DownloadBuilder().Build();
+            download.Metadata["ClientFailureReason"] = rawStatus;
+            return download;
         }
 
         private sealed class MutableTimeProvider(DateTimeOffset currentTime) : TimeProvider

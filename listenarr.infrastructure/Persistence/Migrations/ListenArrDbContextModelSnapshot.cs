@@ -2722,6 +2722,57 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.ToTable("ApplicationSettings");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Downloads.BlockedRelease", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("BlockedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DownloadId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Indexer")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Reason")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReleaseId")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleaseTitle")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudiobookId", "Fingerprint");
+
+                    b.ToTable("BlockedReleases");
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Downloads.CompatibilityFilePublicationJournal", b =>
                 {
                     b.Property<Guid>("OperationId")
@@ -2833,6 +2884,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("ExpectedFileSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("FailureReason")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("FinalPath")
