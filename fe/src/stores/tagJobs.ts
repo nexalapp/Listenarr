@@ -211,7 +211,15 @@ export const useTagJobsStore = defineStore('tagJobs', () => {
       return
     }
 
-    unsubscribe = signalRService.onTagJobUpdate(apply)
+    const offUpdate = signalRService.onTagJobUpdate(apply)
+    // Updates sent while the connection was down - a server restart, a sleeping
+    // laptop - are never replayed, so a job that finished in the gap would go on
+    // counting in the Activity badge until a reload. Re-read the list on reconnect.
+    const offConnected = signalRService.onConnected(() => void refresh())
+    unsubscribe = () => {
+      offUpdate()
+      offConnected()
+    }
     void refresh()
   }
 

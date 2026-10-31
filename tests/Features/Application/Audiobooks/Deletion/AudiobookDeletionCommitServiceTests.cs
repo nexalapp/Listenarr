@@ -188,6 +188,7 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
     private readonly Mock<ITagQueueService> _tags = new();
     private readonly Mock<IConversionJobRepository> _conversionJobs = new();
     private readonly Mock<ITagJobRepository> _tagJobs = new();
+    private readonly Mock<IAudiobookUpdatePublisher> _updates = new();
 
     private AudiobookDeletionCommitService Build(IAudiobookRepository repository) =>
         new(
@@ -196,7 +197,8 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
             _tags.Object,
             _conversionJobs.Object,
             _tagJobs.Object,
-            NullLogger<AudiobookDeletionCommitService>.Instance);
+            NullLogger<AudiobookDeletionCommitService>.Instance,
+            _updates.Object);
 
     [Fact]
     public async Task DeleteAsync_StopsAJobStillWorkingOnTheBook_BeforeTheBookGoes()
@@ -240,5 +242,35 @@ public sealed class AudiobookDeletionCommitServiceTests : BaseTests
         Assert.Equal(AudiobookDeletionCommitOutcome.Failed, result.Outcome);
         _conversionJobs.Verify(r => r.DeleteForAudiobookAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         _tagJobs.Verify(r => r.DeleteForAudiobookAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ThatCommitted_AnnouncesTheDeletion()
+    {
+        // Open pages keep a copy of the library, and the sidebar counts it; a delete
+        // nobody hears about leaves the book on screen and in the count.
+        const int audiobookId = 4105;
+        var repository = new Mock<IAudiobookRepository>();
+        repository.Setup(r => r.GetForUpdateSnapshotAsync(audiobookId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Audiobook { Id = audiobookId, Title = "Goes" });
+        repository.Setup(r => r.DeleteByIdAsync(audiobookId)).ReturnsAsync(true);
+
+        await Build(repository.Object).DeleteAsync(audiobookId);
+
+        _updates.Verify(u => u.PublishDeletedAsync(audiobookId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ThatDidNotCommit_AnnouncesNothing()
+    {
+        const int audiobookId = 4106;
+        var repository = new Mock<IAudiobookRepository>();
+        repository.Setup(r => r.GetForUpdateSnapshotAsync(audiobookId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Audiobook { Id = audiobookId, Title = "Stays" });
+        repository.Setup(r => r.DeleteByIdAsync(audiobookId)).ReturnsAsync(false);
+
+        await Build(repository.Object).DeleteAsync(audiobookId);
+
+        _updates.Verify(u => u.PublishDeletedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

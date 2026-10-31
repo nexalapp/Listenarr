@@ -963,11 +963,12 @@ const activityCount = computed(() => {
   return count
 })
 
-// The library total, shown on the Audiobooks nav item the way Activity shows its
-// own count. The store already holds every book — App.vue hydrates it on mount
+// The books owned - those with a file, which is also what the library's Owned filter
+// means - shown on the Audiobooks nav item the way Activity shows its own count. A
+// wanted book has no file yet and is not counted. The store already holds every book — App.vue hydrates it on mount
 // and re-syncs on SignalR reconnect — so this is the list's length, not a second
 // request that could disagree with what the Audiobooks page shows.
-const audiobookCount = computed(() => libraryStore.audiobooks.length)
+const audiobookCount = computed(() => libraryStore.ownedCount)
 
 // Notification dropdown state
 const nzbKingTokens = useNzbKingTokensStore()
@@ -1495,6 +1496,16 @@ onMounted(async () => {
       if (auth.user.authenticated) {
         void syncLibrarySnapshot()
         void moveJobsStore.loadActiveJobs()
+        // Queue and download updates sent while the connection was down are not
+        // replayed, so the Activity badge re-reads both rather than keep counting
+        // what was in flight before a server restart.
+        void downloadsStore.loadDownloads()
+        void apiService
+          .getQueue()
+          .then((queue) => {
+            queueItems.value = normalizeQueueSnapshot(queue).items
+          })
+          .catch((err) => logger.debug('Queue re-read after reconnect failed', err))
       }
     })
 
