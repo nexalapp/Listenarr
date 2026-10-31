@@ -124,6 +124,18 @@ namespace Listenarr.Application.Downloads.Queue
                             }
 
                             var matchedDownload = DownloadQueueMetadataMatcher.FindBestMatchingDownload(queueItem, client, allDownloadsForMatching, logger);
+
+                            // An imported download is history, not activity. NZBGet keeps finished
+                            // jobs in its history, and every one that matches a download Listenarr
+                            // has already imported used to come back as a "completed" row - 2,133
+                            // of them once the library had grown, burying the handful still
+                            // waiting on an import. The job still matches its download, so it is
+                            // not mistaken for an untracked external item either.
+                            if (matchedDownload is { Status: DownloadStatus.Moved })
+                            {
+                                continue;
+                            }
+
                             if (matchedDownload != null)
                             {
                                 var originalClientId = queueItem.Id;
