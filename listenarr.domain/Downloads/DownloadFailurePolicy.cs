@@ -68,10 +68,21 @@ namespace Listenarr.Domain.Downloads
             DownloadFailureReason.Password =>
                 new(BlockRelease: true, PurgeClientRecord: true, SearchAgain: true),
 
-            // Nothing was fetched and the release is not implicated. Clearing the record
-            // that caused the discard is the whole remedy.
+            // Nothing was fetched, and what the client recognised is a release it has
+            // already taken for some book - which says the release belongs to a book
+            // other than this one. Measured on this library: of 70 discarded duplicates,
+            // 45 collided with a release already fetched and imported for another record,
+            // 19 of those because the search had matched a different book in the same
+            // series. So the release is set aside for this book and a different one is
+            // looked for.
+            //
+            // The client's own record is deliberately left alone, unlike every other
+            // failure here. It is what refused those 19 grabs, and on a library whose
+            // search cannot yet tell one book in a series from another it is the last
+            // thing standing between a mis-identified release and an import under the
+            // wrong book.
             DownloadFailureReason.Duplicate =>
-                new(BlockRelease: false, PurgeClientRecord: true, SearchAgain: true),
+                new(BlockRelease: true, PurgeClientRecord: false, SearchAgain: true),
 
             // Local failures. Another release lands in the same place, so leave it to a
             // person and keep the client's record for them to look at.

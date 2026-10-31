@@ -350,15 +350,16 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         /// 195 books stranded by the old rule had a release available when asked.
         /// </summary>
         [Theory]
-        [InlineData("DELETED/COPY", DownloadFailureReason.Duplicate, false)]
-        [InlineData("DELETED/DUPE", DownloadFailureReason.Duplicate, false)]
+        // A duplicate says the release belongs to some other book, which is a reason to
+        // pass over it rather than to stop.
+        [InlineData("DELETED/COPY", DownloadFailureReason.Duplicate)]
+        [InlineData("DELETED/DUPE", DownloadFailureReason.Duplicate)]
         // The password belongs to the post, so a wrong one says the NZB is the wrong
         // release - which is a reason to block it and look for the right one.
-        [InlineData("WARNING/PASSWORD", DownloadFailureReason.Password, true)]
-        public void OnDownloadFailed_AFailureARepeatCannotCure_ClearsTheWayAndSearchesAgain(
+        [InlineData("WARNING/PASSWORD", DownloadFailureReason.Password)]
+        public void OnDownloadFailed_AFailureARepeatCannotCure_SetsTheReleaseAsideAndSearchesAgain(
             string status,
-            DownloadFailureReason expected,
-            bool blocksTheRelease)
+            DownloadFailureReason expected)
         {
             var download = Failed(status);
 
@@ -370,8 +371,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
 
             Assert.Equal(expected, reason);
             Assert.True(response.SearchAgain);
-            Assert.True(response.PurgeClientRecord);
-            Assert.Equal(blocksTheRelease, response.BlockRelease);
+            Assert.True(response.BlockRelease);
+            // A duplicate keeps the client's record: it is what refuses a release the
+            // search matched to the wrong book. Every other release-caused failure
+            // deletes it, because there the record only blocks the next grab.
+            Assert.Equal(expected != DownloadFailureReason.Duplicate, response.PurgeClientRecord);
         }
 
         /// <summary>

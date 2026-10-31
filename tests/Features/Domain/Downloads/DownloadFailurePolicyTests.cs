@@ -47,18 +47,22 @@ namespace Listenarr.Tests.Features.Domain.Downloads
         }
 
         /// <summary>
-        /// A discarded duplicate fetched nothing, so it says nothing about the release:
-        /// blocking it would take away a release that may be perfectly good. What has to
-        /// go is the client's record of the earlier attempt, which is what caused the
-        /// discard.
+        /// A discarded duplicate says the release is one the client has already taken for
+        /// some book, so it belongs to a book other than this one: set it aside and look
+        /// for a different release.
+        ///
+        /// Its record at the client is kept, which no other failure here does. Measured on
+        /// this library, 19 of 70 duplicates were a release the search had matched to the
+        /// wrong book in a series, and that record is what refused them - deleting it
+        /// would let the next grab import the wrong book.
         /// </summary>
         [Fact]
-        public void ADiscardedDuplicateClearsTheClientRecordWithoutBlockingTheRelease()
+        public void ADiscardedDuplicateSetsTheReleaseAsideAndKeepsTheClientRecord()
         {
             var response = DownloadFailurePolicy.For(DownloadFailureReason.Duplicate);
 
-            Assert.False(response.BlockRelease);
-            Assert.True(response.PurgeClientRecord);
+            Assert.True(response.BlockRelease);
+            Assert.False(response.PurgeClientRecord);
             Assert.True(response.SearchAgain);
         }
 
