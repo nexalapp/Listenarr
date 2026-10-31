@@ -393,7 +393,8 @@ namespace Listenarr.Api.Features.Search
             [FromQuery] string? mamLanguage = null,
             [FromQuery] string? mamFreeleechWedge = null,
             [FromQuery] bool? mamEnrichResults = null,
-            [FromQuery] int? mamEnrichTopResults = null)
+            [FromQuery] int? mamEnrichTopResults = null,
+            [FromQuery] bool includeEnrichment = true)
         {
             try
             {
@@ -417,6 +418,14 @@ namespace Listenarr.Api.Features.Search
 
                 // Use the raw indexer results when the caller expects indexer-specific fields. SearchIndexerResultsAsync will
                 // apply any MyAnonamouse options found in the indexer's AdditionalSettings if no explicit request was supplied.
+                // Opening every hit to read its NFO costs fifteen requests to abook.link.
+                // A caller that only wants to know what came back can say so.
+                if (!includeEnrichment)
+                {
+                    request ??= new SearchRequest { Query = query };
+                    request.IncludeEnrichment = false;
+                }
+
                 var idxResults = await _searchService.SearchIndexerResultsAsync(apiId, query, category, request);
 
                 // If the underlying indexer implementation indicates MyAnonamouse (set on results by SearchIndexerAsync), return Prowlarr-like DTO shape

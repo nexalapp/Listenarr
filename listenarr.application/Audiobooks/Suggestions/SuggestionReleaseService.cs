@@ -260,9 +260,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             string? seriesNumber)
         {
             bool ParsedFieldsMatch(IndexerSearchResult result) =>
-                SuggestionReleaseMatch.AbookPostMatches(
-                    result.Asin, result.Album, result.Artist, asin, title, authors,
-                    result.SeriesName, result.SeriesPosition, seriesNumber);
+                SuggestionReleaseMatch.AbookPostMatchesAllowingBranding(
+                    result.Asin, result.Album, result.Artist, result.SeriesName,
+                    result.SeriesPosition, asin, title, authors, seriesNumber);
 
             return
             [
@@ -300,9 +300,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             // only shortlisted because its title line reads right does not survive that.
             void KeepIfAlreadyAMatch(IndexerSearchResult result)
             {
-                if (SuggestionReleaseMatch.AbookPostMatches(
-                    result.Asin, result.Album, result.Artist, asin, title, authors,
-                    result.SeriesName, result.SeriesPosition, seriesNumber))
+                if (SuggestionReleaseMatch.AbookPostMatchesAllowingBranding(
+                    result.Asin, result.Album, result.Artist, result.SeriesName,
+                    result.SeriesPosition, asin, title, authors, seriesNumber))
                 {
                     confirmed.Add(result);
                 }
@@ -349,9 +349,9 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
                 // The size is one of the things the post was read for, so a release too
                 // small to be the recording is only visible now.
-                if (SuggestionReleaseMatch.AbookPostMatches(
-                        result.Asin, result.Album, result.Artist, asin, title, authors,
-                        result.SeriesName, result.SeriesPosition, seriesNumber)
+                if (SuggestionReleaseMatch.AbookPostMatchesAllowingBranding(
+                        result.Asin, result.Album, result.Artist, result.SeriesName,
+                        result.SeriesPosition, asin, title, authors, seriesNumber)
                     && SuggestionReleaseMatch.CouldBeTheRecording(result.Size, runtimeMinutes))
                 {
                     confirmed.Add(result);

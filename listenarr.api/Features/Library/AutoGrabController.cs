@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Application.Audiobooks.AutoGrab;
 using Microsoft.AspNetCore.Mvc;
 
@@ -37,6 +38,8 @@ namespace Listenarr.Api.Features.Library
         IAutoGrabService autoGrab,
         IAutoGrabBackfillService backfill,
         IAbookThankBudget thanks,
+        ISearchService search,
+        IIndexerRepository indexers,
         IConfigurationService configuration) : ControllerBase
     {
         [HttpGet("settings")]
@@ -63,6 +66,65 @@ namespace Listenarr.Api.Features.Library
         [HttpGet("preview")]
         public async Task<ActionResult<AutoGrabPlan>> Preview(CancellationToken cancellationToken = default) =>
             Ok(await autoGrab.PreviewAsync(cancellationToken));
+
+        /// <summary>
+        /// Reports what a candidate matching rule would do, against what the rule in
+        /// force does, for one book. Reads abook.link without opening any topic and
+        /// without thanking anything; adds nothing, grabs nothing, stores nothing.
+        ///
+        /// It exists so a change to the matcher can be measured on this library before
+        /// it is switched on, rather than after a wrong book is in the library.
+        /// </summary>
+        [HttpGet("match-trial")]
+        public async Task<ActionResult<object>> MatchTrial(
+            [FromQuery] string title,
+            [FromQuery] string author,
+            [FromQuery] string? asin = null,
+            [FromQuery] string? seriesNumber = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(author))
+            {
+                return BadRequest(new { message = "A title and an author are required." });
+            }
+
+            var abook = (await indexers.GetEnabledAsync(isAutomaticSearch: false, cancellationToken))
+                .FirstOrDefault(indexer =>
+                    string.Equals(indexer.Implementation, "AbookLink", StringComparison.OrdinalIgnoreCase));
+            if (abook is null)
+            {
+                return BadRequest(new { message = "No abook.link indexer is enabled." });
+            }
+
+            var query = SuggestionReleaseMatch.QueryFor(title, [author]);
+            var results = await search.SearchIndexerResultsAsync(
+                abook.Id.ToString(), query, null,
+                new SearchRequest { Query = query, IncludeEnrichment = false });
+
+            var rows = results.Select(result => new
+            {
+                postTitle = result.Album,
+                postAuthor = result.Artist,
+                postSeries = result.SeriesName,
+                postPosition = result.SeriesPosition,
+                inForce = SuggestionReleaseMatch.AbookPostMatches(
+                    result.Asin, result.Album, result.Artist, asin, title, [author],
+                    result.SeriesName, result.SeriesPosition, seriesNumber),
+                candidate = SuggestionReleaseMatch.AbookPostMatchesAllowingBranding(
+                    result.Asin, result.Album, result.Artist, result.SeriesName,
+                    result.SeriesPosition, asin, title, [author], seriesNumber)
+            }).ToList();
+
+            return Ok(new
+            {
+                query,
+                hits = rows.Count,
+                matchedInForce = rows.Count(r => r.inForce),
+                matchedByCandidate = rows.Count(r => r.candidate),
+                newlyMatched = rows.Where(r => r.candidate && !r.inForce).ToList(),
+                lostByCandidate = rows.Where(r => r.inForce && !r.candidate).ToList()
+            });
+        }
 
         /// <summary>
         /// Sends the release already found for books that were added but never
