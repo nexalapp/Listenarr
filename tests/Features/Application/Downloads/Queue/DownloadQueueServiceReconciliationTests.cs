@@ -122,6 +122,71 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
         }
 
         [Fact]
+        [Trait("Scenario", "ImportedDownloadIsHistoryNotActivity")]
+        public async Task GetQueueAsync_LeavesOutAClientJobWhoseDownloadIsAlreadyImported()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "nzbget-1",
+                Name = "NZBGet",
+                Type = "nzbget",
+                IsEnabled = true
+            };
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetDownloadClientConfigurationsAsync())
+                .ReturnsAsync(new List<DownloadClientConfiguration> { client });
+            configMock.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { ShowCompletedExternalDownloads = true });
+
+            // NZBGet still lists both finished jobs in its history; only one is still work.
+            var imported = new Download
+            {
+                Id = "imported",
+                DownloadClientId = "nzbget-1",
+                Title = "Stanislaw Lem - Fiasco (1988) [mp3]",
+                Status = DownloadStatus.Moved,
+                StartedAt = DateTime.UtcNow.AddDays(-9),
+                Metadata = new Dictionary<string, object> { ["ClientDownloadId"] = "37605" }
+            };
+            var awaitingImport = new Download
+            {
+                Id = "awaiting",
+                DownloadClientId = "nzbget-1",
+                Title = "Matt Dinniman - Dungeon Crawler Carl 05 - The Butcher's Masquerade",
+                Status = DownloadStatus.Completed,
+                StartedAt = DateTime.UtcNow.AddHours(-1),
+                Metadata = new Dictionary<string, object> { ["ClientDownloadId"] = "37812" }
+            };
+
+            var downloadRepoMock = new Mock<IDownloadRepository>();
+            SetupQueueRepository(downloadRepoMock, new List<Download> { imported, awaitingImport });
+
+            var processingJobRepoMock = new Mock<IDownloadProcessingJobRepository>();
+            processingJobRepoMock.Setup(r => r.GetPendingDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+            processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<QueueItem>
+                {
+                    new QueueItem { Id = "37605", Title = "Stanislaw Lem - Fiasco (1988) [mp3]", Status = "completed", AddedAt = DateTime.UtcNow.AddDays(-9) },
+                    new QueueItem { Id = "37812", Title = "Matt Dinniman - Dungeon Crawler Carl 05", Status = "completed", AddedAt = DateTime.UtcNow.AddHours(-1) }
+                });
+
+            var service = CreateService(
+                configMock.Object,
+                downloadRepoMock.Object,
+                processingJobRepoMock.Object,
+                gatewayMock.Object,
+                new Mock<IAppMetricsService>().Object);
+
+            var result = await service.GetQueueAsync();
+
+            Assert.Equal(["awaiting"], result.Select(item => item.Id));
+        }
+
+        [Fact]
         [Trait("Scenario", "QueueRebindPrefersIdBeforeTitle")]
         public async Task GetQueueAsync_RebindsByIdBeforeTitle_WhenMultipleMatchesExist()
         {
