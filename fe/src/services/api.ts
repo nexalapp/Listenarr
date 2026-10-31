@@ -54,6 +54,7 @@ import type {
   SearchSortDirection,
   AudibleSearchResponse,
   AudibleBookMetadata,
+  AbookTopic,
   AudibleSeriesSearchItem,
   AuthorCatalogResponse,
   SuggestionSnapshot,
@@ -913,6 +914,22 @@ class ApiService {
       downloadClientUsed?: string
       searchResult?: SearchResult
     }>('/download/search-and-download', {
+      method: 'POST',
+      body: JSON.stringify({ audiobookId }),
+    })
+  }
+
+  /** Parses one abook.link post without thanking it, so nothing public happens. */
+  async getAbookTopic(topicId: number): Promise<AbookTopic> {
+    return this.request<AbookTopic>(`/abook/topic/${topicId}`)
+  }
+
+  /**
+   * Sends one abook.link post as the download for a library book. The post is thanked
+   * (publicly) and resolved to an NZB on the server, exactly as for a search result.
+   */
+  async sendAbookTopic(topicId: number, audiobookId: number): Promise<{ downloadId: string }> {
+    return this.request<{ downloadId: string }>(`/abook/topic/${topicId}/send`, {
       method: 'POST',
       body: JSON.stringify({ audiobookId }),
     })

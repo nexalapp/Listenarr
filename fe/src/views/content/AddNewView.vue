@@ -22,6 +22,8 @@
     </div>
 
     <!-- Unified Search -->
+    <AddFromAbookLink />
+
     <div class="search-section">
       <div class="search-container">
         <div class="search-bar-section">
@@ -1165,6 +1167,7 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useLibraryStore } from '@/stores/library'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
+import AddFromAbookLink from '@/components/domain/search/AddFromAbookLink.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import { useAudiobookActions } from '@/composables/useAudiobookActions'
 import { describeApiError, getAlreadyExistingAudiobook } from '@/utils/apiError'

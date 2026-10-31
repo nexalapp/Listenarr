@@ -21,6 +21,12 @@ namespace Listenarr.Api.Features.AbookLink
     // file has to be read to understand the other, and so the controller stays within the
     // size the architecture tests hold every source file to.
 
+    /// <summary>Which library book an abook.link post is being sent for.</summary>
+    public sealed class AbookSendTopicRequest
+    {
+        public int AudiobookId { get; set; }
+    }
+
     public sealed class AbookCandidateResponse
     {
         public int TopicId { get; set; }

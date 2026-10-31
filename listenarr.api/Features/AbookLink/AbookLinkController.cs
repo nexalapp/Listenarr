@@ -31,7 +31,7 @@ namespace Listenarr.Api.Features.AbookLink
     [ApiController]
     [Route("api/v{version:apiVersion}/abook")]
     [Tags("abook.link")]
-    public class AbookLinkController : ControllerBase
+    public partial class AbookLinkController : ControllerBase
     {
         private const int DefaultInspect = 10;
 
