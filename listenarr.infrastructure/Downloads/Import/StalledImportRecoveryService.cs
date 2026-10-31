@@ -109,6 +109,7 @@ namespace Listenarr.Infrastructure.Downloads.Import
 
             var recovered = 0;
             var nudged = 0;
+            var blocked = 0;
             foreach (var download in awaiting)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -130,6 +131,13 @@ namespace Listenarr.Infrastructure.Downloads.Import
 
                     if (!await ImportAlreadyCommittedAsync(jobService, download.Id))
                     {
+                        // The import did not commit. If its job has also given up, the
+                        // row is not pending anything and must stop saying that it is.
+                        if (await BlockAbandonedImportAsync(scope, jobService, download, cancellationToken))
+                        {
+                            blocked++;
+                        }
+
                         continue;
                     }
 
@@ -166,12 +174,13 @@ namespace Listenarr.Infrastructure.Downloads.Import
                 }
             }
 
-            if (recovered > 0 || nudged > 0)
+            if (recovered > 0 || nudged > 0 || blocked > 0)
             {
                 logger.LogInformation(
-                    "Stalled import recovery corrected {Recovered} and resumed {Nudged} of {Candidates} download(s) awaiting import",
+                    "Stalled import recovery corrected {Recovered}, resumed {Nudged} and blocked {Blocked} of {Candidates} download(s) awaiting import",
                     recovered,
                     nudged,
+                    blocked,
                     awaiting.Count);
             }
         }
@@ -241,6 +250,69 @@ namespace Listenarr.Infrastructure.Downloads.Import
             }
 
             return resumed;
+        }
+
+        /// <summary>
+        /// Stops a download claiming to be importing when its import has given up.
+        ///
+        /// A processing job that exhausts its retries is marked failed, and the download
+        /// is supposed to follow it to ImportBlocked - the state that means "a person has
+        /// to look at this". Two rows on this library sat in ImportPending since 2026-10-28
+        /// with their jobs failed at 3 of 3 retries and their source directories long
+        /// gone, indistinguishable in Activity from an import still running. Whatever
+        /// missed the transition, a row whose only job has stopped is not pending
+        /// anything, and the reason the job gave is what the operator needs to see.
+        ///
+        /// A job still pending, processing or waiting to retry means the import is alive,
+        /// and a download with no job at all is left to the rule above - this one only
+        /// speaks when every job has stopped and at least one of them failed for good.
+        /// </summary>
+        private async Task<bool> BlockAbandonedImportAsync(
+            IServiceScope scope,
+            IDownloadProcessingJobService jobService,
+            Download download,
+            CancellationToken cancellationToken)
+        {
+            if (download.Status != DownloadStatus.ImportPending)
+            {
+                return false;
+            }
+
+            var jobs = await jobService.GetJobsForDownloadAsync(download.Id);
+            if (jobs.Count == 0)
+            {
+                return false;
+            }
+
+            if (jobs.Any(job => job.Status is ProcessingJobStatus.Pending
+                or ProcessingJobStatus.Processing
+                or ProcessingJobStatus.Retry))
+            {
+                return false;
+            }
+
+            var abandoned = jobs.FirstOrDefault(job =>
+                job.Status == ProcessingJobStatus.Failed
+                && job.RetryCount >= job.MaxRetries);
+            if (abandoned == null)
+            {
+                return false;
+            }
+
+            var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
+            download.Blocked(
+                "Unable to import the download",
+                abandoned.ErrorMessage ?? "The import job stopped without saying why.");
+            await downloadService.UpdateAsync(download);
+
+            logger.LogInformation(
+                "Blocked '{Title}' ({DownloadId}): its import job gave up after {Retries} attempt(s) and the download was still marked as importing. {Reason}",
+                download.Title,
+                download.Id,
+                abandoned.RetryCount,
+                abandoned.ErrorMessage);
+
+            return true;
         }
 
         /// <summary>

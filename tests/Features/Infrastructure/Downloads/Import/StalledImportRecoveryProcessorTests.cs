@@ -78,6 +78,34 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Import
             StartedAt = DateTime.UtcNow - (age ?? TimeSpan.FromHours(2))
         };
 
+        /// <summary>A job that has stopped for good: failed with its retries spent.</summary>
+        private void AbandonedJobFor(string downloadId, string error, int retries = 3)
+        {
+            var job = new DownloadProcessingJob
+            {
+                Id = $"job-{downloadId}",
+                DownloadId = downloadId,
+                MaxRetries = retries,
+                RetryCount = retries
+            };
+            job.MarkAsFailed(error);
+            _jobs.Setup(s => s.GetJobsForDownloadAsync(downloadId)).ReturnsAsync([job]);
+        }
+
+        /// <summary>A job still working, or waiting to try again.</summary>
+        private void LiveJobFor(string downloadId, ProcessingJobStatus status)
+        {
+            var job = new DownloadProcessingJob
+            {
+                Id = $"job-{downloadId}",
+                DownloadId = downloadId,
+                MaxRetries = 3,
+                RetryCount = 3,
+                Status = status
+            };
+            _jobs.Setup(s => s.GetJobsForDownloadAsync(downloadId)).ReturnsAsync([job]);
+        }
+
         /// <summary>A job as the import leaves it when it commits.</summary>
         private void JobsFor(string downloadId, bool completed, bool committed)
         {
@@ -253,6 +281,88 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Import
             _gateway.Verify(
                 g => g.ResumeAsync(It.IsAny<DownloadClientConfiguration>(), It.IsAny<Download>(), It.IsAny<CancellationToken>()),
                 Times.Never);
+        }
+
+        /// <summary>
+        /// A job that has spent its retries is not pending anything, and a row that goes
+        /// on saying "Importing" hides that from the operator. Two rows on this library
+        /// sat like that from 2026-10-28 until it was noticed by eye.
+        /// </summary>
+        [Fact]
+        public async Task ADownloadWhoseImportJobGaveUpIsBlockedWithItsReason()
+        {
+            var download = Awaiting("abandoned", DownloadStatus.ImportPending);
+            AbandonedJobFor("abandoned", "No importable files found (max retries (3) exceeded)");
+
+            await Build(download).RunCycleAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.ImportBlocked, download.Status);
+            Assert.Equal("Unable to import the download", download.ImportBlockReason);
+            Assert.Contains(
+                "No importable files found",
+                string.Join(" ", download.ImportBlockMessages ?? []));
+            Assert.Single(_saved);
+        }
+
+        /// <summary>
+        /// An import still running, or waiting out its backoff, is alive. Blocking it
+        /// would take a download away from the pipeline that is still working on it.
+        /// </summary>
+        [Theory]
+        [InlineData(ProcessingJobStatus.Pending)]
+        [InlineData(ProcessingJobStatus.Processing)]
+        [InlineData(ProcessingJobStatus.Retry)]
+        public async Task ADownloadWhoseJobIsStillAliveIsLeftAlone(ProcessingJobStatus status)
+        {
+            var download = Awaiting("alive", DownloadStatus.ImportPending);
+            LiveJobFor("alive", status);
+
+            await Build(download).RunCycleAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.ImportPending, download.Status);
+            Assert.Empty(_saved);
+        }
+
+        /// <summary>
+        /// A job that failed with retries left is between attempts, not finished.
+        /// </summary>
+        [Fact]
+        public async Task ADownloadWhoseJobCanStillRetryIsLeftAlone()
+        {
+            var download = Awaiting("retrying", DownloadStatus.ImportPending);
+            AbandonedJobFor("retrying", "a transient error", retries: 3);
+            var job = new DownloadProcessingJob
+            {
+                Id = "job-retrying",
+                DownloadId = "retrying",
+                MaxRetries = 3,
+                RetryCount = 1
+            };
+            job.MarkAsFailed("a transient error");
+            _jobs.Setup(s => s.GetJobsForDownloadAsync("retrying")).ReturnsAsync([job]);
+
+            await Build(download).RunCycleAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.ImportPending, download.Status);
+            Assert.Empty(_saved);
+        }
+
+        /// <summary>
+        /// A download already blocked is where this rule would put it, so it must not be
+        /// touched again - re-blocking would stack another copy of the reason onto it.
+        /// </summary>
+        [Fact]
+        public async Task ADownloadAlreadyBlockedIsNotBlockedAgain()
+        {
+            var download = Awaiting("already", DownloadStatus.ImportBlocked);
+            download.Blocked("Unable to import the download", "No importable files found");
+            AbandonedJobFor("already", "No importable files found (max retries (3) exceeded)");
+
+            await Build(download).RunCycleAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.ImportBlocked, download.Status);
+            Assert.Single(download.ImportBlockMessages!);
+            Assert.Empty(_saved);
         }
 
         /// <summary>A paused download never commits an import, so it must not be "recovered".</summary>
