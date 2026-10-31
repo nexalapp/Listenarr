@@ -1349,8 +1349,19 @@ export interface Audiobook {
   // Optional list of author ASINs (populated by backend when available)
   authorAsins?: string[]
   identifiers?: AudiobookExternalIdentifier[]
-  // Server-computed flag indicating if this audiobook is wanted (monitored and missing files)
+  // Server-computed flag indicating if this audiobook is wanted (monitored and missing
+  // files). A book no indexer holds is `unobtainable` instead, so it does not stand in
+  // the Wanted list as work waiting to be done.
   wanted?: boolean
+
+  /** Monitored and missing, but every indexer was asked and none holds it. */
+  unobtainable?: boolean
+
+  /** Which indexers were asked and came back empty. */
+  unobtainableReason?: string
+
+  /** When the indexers were last asked. */
+  unobtainableCheckedAt?: string
   // Server-computed list status used by slim /library responses.
   status?: AudiobookStatus
   /** The worst chapter verdict among the book's files; absent until a file has been judged. */

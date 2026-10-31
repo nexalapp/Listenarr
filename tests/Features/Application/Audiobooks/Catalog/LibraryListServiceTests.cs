@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Application.Audiobooks.Catalog
@@ -32,6 +33,18 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Catalog
         private readonly Mock<IAudiobookFileRepository> _files = new();
         private readonly Mock<IQualityProfileRepository> _profiles = new();
         private readonly Mock<IDownloadRepository> _downloads = new();
+        private readonly Mock<ISuggestionReleaseRepository> _releaseChecks = new();
+        private readonly Dictionary<string, SuggestionRelease> _availability = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Records what the background check last learned about an ASIN.</summary>
+        private void Checked(string asin, SuggestionReleaseStatus status, string? detail = null) =>
+            _availability[asin] = new SuggestionRelease
+            {
+                Asin = asin,
+                Status = status,
+                Detail = detail,
+                CheckedAt = new DateTime(2026, 10, 24, 0, 0, 0, DateTimeKind.Utc)
+            };
 
         private LibraryListService BuildService(params Audiobook[] library)
         {
@@ -50,7 +63,12 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Catalog
                 .Setup(r => r.GetActiveAudiobookIdsAsync(It.IsAny<DownloadStatus[]>()))
                 .ReturnsAsync([]);
 
-            return new LibraryListService(_audiobooks.Object, _files.Object, _profiles.Object, _downloads.Object);
+            _releaseChecks
+                .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(_availability);
+
+            return new LibraryListService(
+                _audiobooks.Object, _files.Object, _profiles.Object, _downloads.Object, _releaseChecks.Object);
         }
 
         [Fact]
@@ -91,6 +109,77 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Catalog
             Assert.Null(row.AudibleRatingOverall);
             Assert.Null(row.AudibleRatingOverallCount);
             Assert.Null(row.AudnexusRating);
+        }
+
+        /// <summary>
+        /// A book every indexer was asked about and none holds is still missing, but
+        /// nothing can be done about it, so it leaves the Wanted list rather than standing
+        /// in it as work waiting to be done.
+        /// </summary>
+        [Fact]
+        public async Task ABookNobodyHoldsLeavesTheWantedListForItsOwnGroup()
+        {
+            Checked("B001", SuggestionReleaseStatus.NotFound, "No confident match from NZBgeek.");
+            var service = BuildService(new Audiobook { Id = 1, Title = "Gone", Asin = "B001", Monitored = true });
+
+            var item = Assert.Single(await service.GetAllAsync());
+
+            Assert.False(item.Wanted);
+            Assert.True(item.Unobtainable);
+            Assert.Equal("No confident match from NZBgeek.", item.UnobtainableReason);
+            Assert.NotNull(item.UnobtainableCheckedAt);
+        }
+
+        [Fact]
+        public async Task ABookAnIndexerHoldsStaysWanted()
+        {
+            Checked("B002", SuggestionReleaseStatus.Found);
+            var service = BuildService(new Audiobook { Id = 2, Title = "Had", Asin = "B002", Monitored = true });
+
+            var item = Assert.Single(await service.GetAllAsync());
+
+            Assert.True(item.Wanted);
+            Assert.False(item.Unobtainable);
+        }
+
+        /// <summary>
+        /// An indexer outage must not read as a missing book: until something was actually
+        /// learned, the book is still worth searching for.
+        /// </summary>
+        [Fact]
+        public async Task ABookWhoseCheckLearnedNothingStaysWanted()
+        {
+            Checked("B003", SuggestionReleaseStatus.Unknown, "No indexer could be reached.");
+            var service = BuildService(new Audiobook { Id = 3, Title = "Unknown", Asin = "B003", Monitored = true });
+
+            var item = Assert.Single(await service.GetAllAsync());
+
+            Assert.True(item.Wanted);
+            Assert.False(item.Unobtainable);
+        }
+
+        [Fact]
+        public async Task ABookNobodyHasCheckedYetStaysWanted()
+        {
+            var service = BuildService(new Audiobook { Id = 4, Title = "Fresh", Asin = "B004", Monitored = true });
+
+            var item = Assert.Single(await service.GetAllAsync());
+
+            Assert.True(item.Wanted);
+            Assert.False(item.Unobtainable);
+        }
+
+        /// <summary>A book that is not missing is neither wanted nor unobtainable.</summary>
+        [Fact]
+        public async Task AnUnmonitoredBookIsNeitherWantedNorUnobtainable()
+        {
+            Checked("B005", SuggestionReleaseStatus.NotFound);
+            var service = BuildService(new Audiobook { Id = 5, Title = "Ignored", Asin = "B005", Monitored = false });
+
+            var item = Assert.Single(await service.GetAllAsync());
+
+            Assert.False(item.Wanted);
+            Assert.False(item.Unobtainable);
         }
     }
 }
