@@ -76,11 +76,11 @@ namespace Listenarr.Domain.Downloads
             // series. So the release is set aside for this book and a different one is
             // looked for.
             //
-            // The client's own record is deliberately left alone, unlike every other
-            // failure here. It is what refused those 19 grabs, and on a library whose
-            // search cannot yet tell one book in a series from another it is the last
-            // thing standing between a mis-identified release and an import under the
-            // wrong book.
+            // The client's own record is left alone, unlike every other failure here,
+            // because there is nothing in it worth deleting: it records a grab the client
+            // refused, not one it fetched. The record that did the refusing belongs to
+            // the earlier grab of that release - a different item, for another book - and
+            // was never this one's to remove.
             DownloadFailureReason.Duplicate =>
                 new(BlockRelease: true, PurgeClientRecord: false, SearchAgain: true),
 

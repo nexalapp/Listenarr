@@ -51,10 +51,9 @@ namespace Listenarr.Tests.Features.Domain.Downloads
         /// some book, so it belongs to a book other than this one: set it aside and look
         /// for a different release.
         ///
-        /// Its record at the client is kept, which no other failure here does. Measured on
-        /// this library, 19 of 70 duplicates were a release the search had matched to the
-        /// wrong book in a series, and that record is what refused them - deleting it
-        /// would let the next grab import the wrong book.
+        /// Its record at the client is kept, which no other failure here does, because it
+        /// records a refusal rather than a fetch: deleting it achieves nothing, and the
+        /// record that did the refusing belongs to an earlier grab for another book.
         /// </summary>
         [Fact]
         public void ADiscardedDuplicateSetsTheReleaseAsideAndKeepsTheClientRecord()
