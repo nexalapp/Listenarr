@@ -150,6 +150,14 @@ namespace Listenarr.Infrastructure.Downloads.Import
                         download.Unblock();
                     }
 
+                    // Completed goes straight to Moved: it is the state a download sits in
+                    // when its import finished and nothing wrote the outcome back, so
+                    // there is nothing to unblock and no attempt to reset. Five rows on
+                    // this library sat there from 2026-10-27 with their files imported,
+                    // their jobs complete and the checkpoint set, looking like unfinished
+                    // work in Activity for six days.
+
+
                     download.Imported();
                     await downloadService.UpdateAsync(download);
                     recovered++;

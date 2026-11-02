@@ -154,6 +154,57 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Import
             Assert.Single(_saved);
         }
 
+        /// <summary>
+        /// Completed is where a download sits when its import finished and nothing wrote
+        /// the outcome back to the row. Five rows on this library sat there from
+        /// 2026-10-27 with their files imported, their jobs complete and the checkpoint
+        /// set - showing in Activity as unfinished work for six days, because the
+        /// recovery query covered ImportPending, ImportBlocked and Paused but not this.
+        /// </summary>
+        [Fact]
+        public async Task ACompletedDownloadWhoseImportFinishedIsMarkedImported()
+        {
+            var download = Awaiting("completed", DownloadStatus.Completed);
+            JobsFor("completed", completed: true, committed: true);
+
+            await Build(download).RunCycleAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.Moved, download.Status);
+            Assert.Single(_saved);
+        }
+
+        /// <summary>
+        /// A download that has only just finished downloading has no import behind it yet,
+        /// and must be left for the import pipeline rather than hurried along.
+        /// </summary>
+        [Fact]
+        public async Task ACompletedDownloadWithNoFinishedImportIsLeftAlone()
+        {
+            var download = Awaiting("fresh-completed", DownloadStatus.Completed);
+            _jobs.Setup(s => s.GetJobsForDownloadAsync("fresh-completed")).ReturnsAsync([]);
+
+            await Build(download).RunCycleAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.Completed, download.Status);
+            Assert.Empty(_saved);
+        }
+
+        /// <summary>
+        /// Nor is a completed download whose import job is still running touched, which is
+        /// the ordinary case a moment after the client finishes.
+        /// </summary>
+        [Fact]
+        public async Task ACompletedDownloadWhoseImportIsStillRunningIsLeftAlone()
+        {
+            var download = Awaiting("importing-now", DownloadStatus.Completed);
+            JobsFor("importing-now", completed: false, committed: true);
+
+            await Build(download).RunCycleAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.Completed, download.Status);
+            Assert.Empty(_saved);
+        }
+
         [Fact]
         public async Task ADownloadStillBeingImportedIsLeftAlone()
         {

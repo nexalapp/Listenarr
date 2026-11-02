@@ -191,7 +191,8 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .AsNoTracking()
                 .Where(d => d.Status == DownloadStatus.ImportPending
                          || d.Status == DownloadStatus.ImportBlocked
-                         || d.Status == DownloadStatus.Paused)
+                         || d.Status == DownloadStatus.Paused
+                         || d.Status == DownloadStatus.Completed)
                 .ToListAsync(ct);
         }
 
