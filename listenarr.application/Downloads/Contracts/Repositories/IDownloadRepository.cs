@@ -51,9 +51,10 @@ namespace Listenarr.Application.Downloads.Contracts.Repositories
         Task<List<Download>> GetActiveAsync();
 
         /// <summary>
-        /// The downloads that are waiting on an import: ImportPending, ImportBlocked, and
+        /// The downloads that are waiting on an import: ImportPending, ImportBlocked,
         /// Paused - a download paused at the client is waiting on an import that will
-        /// never be asked for.
+        /// never be asked for - and Completed, which is where a download sits if its
+        /// import finished but nothing wrote the result back to the row.
         ///
         /// Its own query rather than a filter over everything, because it runs on a timer
         /// and the download table only grows - reading the whole of it on a schedule is
