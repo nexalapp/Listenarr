@@ -242,6 +242,23 @@ namespace Listenarr.Domain.Downloads
         }
 
         /// <summary>
+        /// Puts the job back in the queue to try again later without spending an attempt.
+        ///
+        /// For the case where nothing has gone wrong yet: the download client says the
+        /// bytes are in but has not finished unpacking them, so there is no final location
+        /// to import from and no files to find there. Counting that as a failed attempt
+        /// burned all three retries in minutes and blocked the import for good, while the
+        /// client was still working.
+        /// </summary>
+        public DownloadProcessingJob WaitForClient(string message, TimeSpan delay)
+        {
+            AddLogEntry(message);
+            Status = ProcessingJobStatus.Pending;
+            NextRetryAt = DateTime.UtcNow.Add(delay);
+            return this;
+        }
+
+        /// <summary>
         /// Schedule job for retry with exponential backoff
         /// </summary>
         public DownloadProcessingJob ScheduleRetry(string errorMessage = "")
