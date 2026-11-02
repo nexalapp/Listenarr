@@ -94,12 +94,23 @@ namespace Listenarr.Api.Features.Downloads
                 var downloadId = await _downloadService.SendToDownloadClientAsync(
                     candidate,
                     request.DownloadClientId,
-                    request.AudiobookId
+                    request.AudiobookId,
+                    request.AllowBlockedRelease
                 );
 
                 if (string.IsNullOrEmpty(downloadId))
                 {
-                    return Conflict(new { message = "A download for this audiobook is already active" });
+                    // Two refusals share this result: an active download for the book, and
+                    // a release on the book's blocklist. Naming both is honest - the log
+                    // line from the service says which - and the override is worth saying
+                    // out loud, because a person choosing a release that failed before is
+                    // exactly who should be able to insist.
+                    return Conflict(new
+                    {
+                        message = "Nothing was sent: either a download for this audiobook is "
+                            + "already active, or this release is on the book's blocklist after "
+                            + "an earlier failure. Send it with allowBlockedRelease to insist.",
+                    });
                 }
 
                 return Ok(new { downloadId, message = "Sent to download client successfully" });
@@ -381,6 +392,13 @@ namespace Listenarr.Api.Features.Downloads
         public string DownloadReference { get; set; } = string.Empty;
         public string? DownloadClientId { get; set; }
         public int? AudiobookId { get; set; }
+
+        /// <summary>
+        /// Sends a release that is on this book's blocklist anyway. Defaults to false, so
+        /// a script posting here is held to the same blocklist as every automatic path;
+        /// only a caller that means it has to say so.
+        /// </summary>
+        public bool AllowBlockedRelease { get; set; }
     }
 
     public class ReprocessRequest
