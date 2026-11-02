@@ -52,6 +52,10 @@ namespace Listenarr.Application.Downloads.Submission
                     // is really a link is dropped: it may carry the indexer's API key.
                     [BlockedRelease.ReleaseIdKey] = BlockedRelease.SafeReleaseId(candidate.Id) ?? string.Empty,
                     ["Seeders"] = candidate.Seeders ?? 0,
+                    // Kept so this library can answer for itself whether a release's grab
+                    // count predicts whether it imports. It counts fetches, not successes,
+                    // so nothing reads it yet.
+                    ["Grabs"] = candidate.Grabs ?? 0,
                     ["Quality"] = candidate.Quality ?? string.Empty,
                     ["Language"] = candidate.Language ?? string.Empty,
                     ["DownloadType"] = submission.Protocol.ToString()

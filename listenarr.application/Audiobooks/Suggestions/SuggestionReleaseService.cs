@@ -31,6 +31,10 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// The same check for any book that carries an ASIN, suggested or already in the
         /// library. The question - does an indexer hold this book - is the same one, and
         /// the answer is stored against the ASIN either way.
+        ///
+        /// Given the library book the check is for, releases already blocked for it are
+        /// passed over, so a book whose stored release turned out to be broken gets the
+        /// next candidate rather than the same one again.
         /// </summary>
         Task<SuggestionRelease> CheckAsync(
             string asin,
@@ -38,7 +42,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             IReadOnlyList<string> authors,
             CancellationToken cancellationToken = default,
             string? seriesNumber = null,
-            int? runtimeMinutes = null);
+            int? runtimeMinutes = null,
+            int? audiobookId = null);
 
         /// <summary>
         /// Sends the release stored for the book's ASIN to a download client. Returns false,
@@ -55,7 +60,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         ISuggestionReleaseRepository store,
         IDownloadService downloads,
         IAbookLinkBrowser abook,
-        ILogger<SuggestionReleaseService> logger) : ISuggestionReleaseService
+        ILogger<SuggestionReleaseService> logger,
+        IReleaseBlocklistRepository? releaseBlocklist = null) : ISuggestionReleaseService
     {
         private const string AbookLinkImplementation = "AbookLink";
 
@@ -84,7 +90,8 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             IReadOnlyList<string> authors,
             CancellationToken cancellationToken = default,
             string? seriesNumber = null,
-            int? runtimeMinutes = null)
+            int? runtimeMinutes = null,
+            int? audiobookId = null)
         {
             if (string.IsNullOrWhiteSpace(asin))
             {
@@ -94,6 +101,13 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             var query = SuggestionReleaseMatch.QueryFor(title, authors);
             var enabled = await indexers.GetEnabledAsync(isAutomaticSearch: false, cancellationToken);
             var profile = await qualityProfiles.GetDefaultAsync();
+
+            // What this book has already tried and lost. Without it the check re-finds the
+            // release that just failed and stores it again, which is how one unrepairable
+            // release was grabbed nine times in two days.
+            var blocked = audiobookId is int bookId && bookId > 0 && releaseBlocklist != null
+                ? new ReleaseBlocklist(await releaseBlocklist.GetForAudiobookAsync(bookId, cancellationToken))
+                : ReleaseBlocklist.Empty;
 
             // abook.link first: a post that names the book's ASIN is the most certain match
             // there is, and when it answers the Newznab indexers' allowances are not spent.
@@ -136,7 +150,7 @@ namespace Listenarr.Application.Audiobooks.Suggestions
                         SuggestionReleaseMatch.TitleAndAuthorMatch(
                             result.Title, title, authors, seriesNumber))];
 
-                var best = await BestAsync(matching, profile);
+                var best = await BestAsync(matching, profile, blocked, runtimeMinutes);
                 if (best != null)
                 {
                     return await SaveAsync(new SuggestionRelease
@@ -365,21 +379,33 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// The match to keep: the highest scoring one the default quality profile does not
         /// reject, or with no profile the largest, which for a book is the complete one.
         /// </summary>
-        private async Task<IndexerSearchResult?> BestAsync(List<IndexerSearchResult> matching, QualityProfile? profile)
+        private async Task<IndexerSearchResult?> BestAsync(
+            List<IndexerSearchResult> matching,
+            QualityProfile? profile,
+            ReleaseBlocklist blocked,
+            int? runtimeMinutes)
         {
-            if (matching.Count == 0)
+            // A release this book already failed on is not a candidate, however it scores.
+            var candidates = matching
+                .Where(result => !blocked.IsBlocked(result.Title, result.Id, result.Size))
+                .ToList();
+            if (candidates.Count == 0)
             {
                 return null;
             }
 
             if (profile == null)
             {
-                return matching.OrderByDescending(result => result.Size).First();
+                // Without a profile this used to take the largest file, which selects for
+                // padding and for par2-heavy sets rather than for the recording. The size
+                // a runtime implies is a better guess, and when the runtime is unknown the
+                // largest is as good a tie-break as any.
+                return ClosestToExpected(candidates, runtimeMinutes);
             }
 
             IndexerSearchResult? best = null;
             var bestScore = int.MinValue;
-            foreach (var result in matching)
+            foreach (var result in candidates)
             {
                 var score = await qualityProfiles.ScoreSearchResult(SearchResultConverters.ToSearchResult(result), profile);
                 if (!score.IsRejected && score.TotalScore > bestScore)
@@ -390,6 +416,29 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             }
 
             return best;
+        }
+
+        /// <summary>
+        /// The release whose size sits closest to what the runtime implies, at the bit rate
+        /// this library's books actually come in. A recording twice the expected size is
+        /// usually padded, re-encoded or carrying a second edition; one far under it is
+        /// abridged or incomplete.
+        /// </summary>
+        private static IndexerSearchResult ClosestToExpected(
+            List<IndexerSearchResult> candidates,
+            int? runtimeMinutes)
+        {
+            if (runtimeMinutes is not > 0)
+            {
+                return candidates.OrderByDescending(result => result.Size).First();
+            }
+
+            // 64 kbps, the rate most of this library is in, in bytes per minute.
+            const double expectedBytesPerMinute = 64_000 / 8.0 * 60;
+            var expected = runtimeMinutes.Value * expectedBytesPerMinute;
+            return candidates
+                .OrderBy(result => result.Size > 0 ? Math.Abs(result.Size - expected) : double.MaxValue)
+                .First();
         }
 
         private async Task<SuggestionRelease> SaveAsync(SuggestionRelease release, CancellationToken cancellationToken)
