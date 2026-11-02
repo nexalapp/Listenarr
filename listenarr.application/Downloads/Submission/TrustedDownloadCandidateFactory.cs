@@ -75,7 +75,8 @@ public static class TrustedDownloadCandidateFactory
                 result.IndexerImplementation,
                 protocol,
                 locators,
-                result.TorrentFileName));
+                result.TorrentFileName),
+            result.Grabs);
     }
 
     private static DownloadProtocol ResolveProtocol(SearchResult result)

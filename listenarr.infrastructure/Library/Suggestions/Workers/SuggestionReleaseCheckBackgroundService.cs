@@ -59,7 +59,8 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
         string Title,
         IReadOnlyList<string> Authors,
         string? SeriesNumber = null,
-        int? RuntimeMinutes = null);
+        int? RuntimeMinutes = null,
+        int? AudiobookId = null);
 
     public interface ISuggestionReleaseCheckProcessor
     {
@@ -161,7 +162,7 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
                     .GetRequiredService<ISuggestionReleaseService>()
                     .CheckAsync(
                         next.Asin, next.Title, next.Authors, cancellationToken,
-                        next.SeriesNumber, next.RuntimeMinutes);
+                        next.SeriesNumber, next.RuntimeMinutes, next.AudiobookId);
                 logger.LogDebug(
                     "Release availability check for '{Title}' ({Asin}): {Status} {Detail}",
                     next.Title, next.Asin, release.Status, release.Detail);
@@ -219,7 +220,8 @@ namespace Listenarr.Infrastructure.Library.Suggestions.Workers
                     item.Title ?? string.Empty,
                     item.Authors ?? [],
                     item.SeriesNumber,
-                    item.Runtime));
+                    item.Runtime,
+                    item.Id));
         }
 
         /// <summary>The recheck window for a book nothing held, as the settings ask for it.</summary>

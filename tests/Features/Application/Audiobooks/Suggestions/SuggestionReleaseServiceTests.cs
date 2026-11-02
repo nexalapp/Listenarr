@@ -47,6 +47,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             public string Unprotect(string protectedValue) => protectedValue["protected:".Length..];
         }
 
+        private readonly List<BlockedRelease> _blocked = [];
+
         private SuggestionReleaseService Build(params Indexer[] enabled)
         {
             _indexers.Setup(r => r.GetEnabledAsync(false, It.IsAny<CancellationToken>())).ReturnsAsync(enabled.ToList());
@@ -59,10 +61,14 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
                 .ReturnsAsync((string asin, CancellationToken _) => _stored.GetValueOrDefault(asin));
             _abook.Setup(a => a.GetTopicAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new AbookBrowseResult(false, 0, [], new AbookParseReport(), "not stubbed"));
+            var blocklist = new Mock<IReleaseBlocklistRepository>();
+            blocklist.Setup(r => r.GetForAudiobookAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(_blocked);
             return new SuggestionReleaseService(
                 _search.Object, _indexers.Object, _profiles.Object, new MarkingProtector(),
                 store.Object, _downloads.Object, _abook.Object,
-                NullLogger<SuggestionReleaseService>.Instance);
+                NullLogger<SuggestionReleaseService>.Instance,
+                blocklist.Object);
         }
 
         private void Returns(Indexer indexer, params IndexerSearchResult[] results) =>
@@ -227,7 +233,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             Assert.False(await service.GrabStoredAsync(new Audiobook { Id = 1273, Asin = "B0053ZT602" }));
             _downloads.VerifyNoOtherCalls();
         }
-    
+
         [Fact]
         public async Task TheCheckDoesNotPayToOpenEveryHitAbookLinkAnswersWith()
         {
@@ -321,7 +327,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
             Assert.Equal(300_000_000, release.SizeBytes);
         }
-    
+
         [Fact]
         public async Task ATitleLineTheParserMissplitsIsStillWorthReading()
         {
@@ -352,7 +358,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
             _abook.Verify(a => a.GetTopicAsync(4210, It.IsAny<CancellationToken>()), Times.Once);
         }
-    
+
         [Fact]
         public async Task AOneWordTitleDoesNotMatchEveryBookInItsOwnSeries()
         {
@@ -461,7 +467,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
         }
-    
+
         [Theory]
         [InlineData("Allan Cole and Chris Bunch - Sten 08 - Empires End (Unabr) - 574.11 MB")]
         [InlineData("Allan.Cole.&.Chris.Bunch-Sten.Bk.8-Empires.End-AudioBook")]
@@ -509,7 +515,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
         }
-    
+
         [Theory]
         [InlineData("Arthur C. Clarke - Islands in the Sky (1952) [mp3]", "Islands in the Sky", "1", "Arthur C. Clarke")]
         [InlineData("Mark Tufo - After the Pulse 1 - Reset (2025) [M4B]", "Reset", "1", "Mark Tufo")]
@@ -533,5 +539,104 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
 
             Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
         }
+        /// <summary>
+        /// The check stores one release per book, so when that release turns out to be
+        /// broken the check has to offer a different one. Without this it re-found the
+        /// same release and stored it again - which is how one unrepairable release was
+        /// grabbed nine times in two days.
+        /// </summary>
+        [Fact]
+        public async Task AReleaseThisBookAlreadyLostIsNotStoredAgain()
+        {
+            const string broken = "Terry Pratchett - The Last Continent (NMR 64 kbps)";
+            const string other = "Terry Pratchett - The Last Continent (2005) [M4B 128k]";
+            Returns(Geek,
+                new IndexerSearchResult { Id = "geek-1", Title = broken, Size = 387_973_120 },
+                new IndexerSearchResult { Id = "geek-2", Title = other, Size = 390_000_000 });
+            _blocked.Add(new BlockedRelease
+            {
+                AudiobookId = 2752,
+                ReleaseTitle = broken,
+                Fingerprint = BlockedReleaseMatch.Fingerprint(broken),
+                SizeBytes = 387_973_120,
+                Reason = DownloadFailureReason.Damaged
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B000FBJDJ2", "The Last Continent", ["Terry Pratchett"],
+                CancellationToken.None, null, null, 2752);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+            Assert.Equal(other, release.ReleaseTitle);
+        }
+
+        /// <summary>
+        /// A book whose every candidate it has already lost holds nothing, rather than
+        /// holding the broken one.
+        /// </summary>
+        [Fact]
+        public async Task ABookWithOnlyBlockedCandidatesStoresNoRelease()
+        {
+            const string broken = "Terry Pratchett - The Last Continent (NMR 64 kbps)";
+            Returns(Geek, new IndexerSearchResult { Id = "geek-1", Title = broken, Size = 387_973_120 });
+            _blocked.Add(new BlockedRelease
+            {
+                AudiobookId = 2752,
+                ReleaseTitle = broken,
+                Fingerprint = BlockedReleaseMatch.Fingerprint(broken),
+                SizeBytes = 387_973_120,
+                Reason = DownloadFailureReason.Damaged
+            });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B000FBJDJ2", "The Last Continent", ["Terry Pratchett"],
+                CancellationToken.None, null, null, 2752);
+
+            Assert.NotEqual(SuggestionReleaseStatus.Found, release.Status);
+            Assert.Null(release.ReleaseTitle);
+        }
+
+        /// <summary>
+        /// With no quality profile the pick used to be the largest file, which selects for
+        /// padding and for par2-heavy sets. The size a runtime implies is the better guess:
+        /// at 64 kbps a 600-minute book is about 288 MB, so the 2 GB copy is not it.
+        /// </summary>
+        [Fact]
+        public async Task WithoutAProfileTheReleaseNearestTheExpectedSizeWins()
+        {
+            Returns(Geek,
+                new IndexerSearchResult { Id = "geek-big", Title = "Craig Alanson - Breakaway (2016)", Size = 2_000_000_000 },
+                new IndexerSearchResult { Id = "geek-right", Title = "Craig Alanson - Breakaway (2016) [M4B]", Size = 288_000_000 });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B08XYZ1234", "Breakaway", ["Craig Alanson"],
+                CancellationToken.None, null, 600, 4242);
+
+            Assert.Equal(SuggestionReleaseStatus.Found, release.Status);
+            Assert.Equal(288_000_000, release.SizeBytes);
+        }
+
+        /// <summary>
+        /// With no runtime to go on there is nothing better than the largest, which is what
+        /// it did before.
+        /// </summary>
+        [Fact]
+        public async Task WithNoRuntimeTheLargestIsStillTaken()
+        {
+            Returns(Geek,
+                new IndexerSearchResult { Id = "geek-big", Title = "Craig Alanson - Breakaway (2016)", Size = 2_000_000_000 },
+                new IndexerSearchResult { Id = "geek-small", Title = "Craig Alanson - Breakaway (2016) [M4B]", Size = 288_000_000 });
+            var service = Build(Geek);
+
+            var release = await service.CheckAsync(
+                "B08XYZ1234", "Breakaway", ["Craig Alanson"],
+                CancellationToken.None, null, null, 4242);
+
+            Assert.Equal(2_000_000_000, release.SizeBytes);
+        }
+
     }
 }

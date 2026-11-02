@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Audiobooks.Suggestions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -188,12 +189,66 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                     LogRedaction.SanitizeText(download.Title),
                     download.AudiobookId.Value,
                     reason);
+
+                await MarkStoredReleaseStaleAsync(scope, download.AudiobookId.Value, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Better to search again without the block than to abandon the book: the
                 // worst case is one wasted grab of the release that just failed.
                 logger.LogWarning(ex, "Could not block the failed release for download {DownloadId}", download.Id);
+            }
+        }
+
+        /// <summary>
+        /// Makes the stored availability answer due again, so the book is offered a
+        /// different release instead of waiting out the thirty days a found release is
+        /// normally trusted for.
+        ///
+        /// The check stores one release per book. Blocking that release without this left
+        /// the book holding a pointer to something it may no longer grab, and nothing to
+        /// replace it until the next monthly pass - which is how a book could fail and
+        /// then sit idle for weeks. The re-check reads the blocklist now, so what it
+        /// stores next is a release this book has not already lost.
+        /// </summary>
+        private async Task MarkStoredReleaseStaleAsync(
+            IServiceScope scope,
+            int audiobookId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var audiobook = await scope.ServiceProvider
+                    .GetRequiredService<IAudiobookRepository>()
+                    .GetByIdAsync(audiobookId);
+                var asin = audiobook?.Asin?.Trim();
+                if (string.IsNullOrWhiteSpace(asin))
+                {
+                    return;
+                }
+
+                var store = scope.ServiceProvider.GetRequiredService<ISuggestionReleaseRepository>();
+                var stored = await store.GetAsync(asin, cancellationToken);
+                if (stored == null)
+                {
+                    return;
+                }
+
+                // Dated to the epoch rather than deleted: the row is the record of what was
+                // found, and the worker's "is this due" question only reads the date.
+                stored.CheckedAt = DateTime.MinValue;
+                await store.SaveAsync(stored, cancellationToken);
+                logger.LogInformation(
+                    "The stored release for '{Title}' ({Asin}) was blocked, so its availability check is due again",
+                    audiobook!.Title,
+                    asin);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Could not make the stored release for audiobook {AudiobookId} due again",
+                    audiobookId);
             }
         }
 

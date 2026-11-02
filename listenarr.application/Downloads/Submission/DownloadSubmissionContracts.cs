@@ -45,7 +45,14 @@ public sealed record TrustedDownloadCandidate(
     string? Language,
     long Size,
     int? Seeders,
-    DownloadSourceDescriptor SourceDescriptor);
+    DownloadSourceDescriptor SourceDescriptor,
+    /// <summary>
+    /// How many times the indexer says this release has been fetched. Recorded rather
+    /// than acted on: it counts NZB downloads, not successful ones, so it cannot be
+    /// trusted as a health signal until this library's own outcomes say whether it
+    /// predicts anything.
+    /// </summary>
+    int? Grabs = null);
 
 public abstract record PreparedDownloadSubmission(
     DownloadProtocol Protocol,
