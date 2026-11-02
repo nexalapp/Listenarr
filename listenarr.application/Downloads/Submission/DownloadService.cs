@@ -92,18 +92,24 @@ namespace Listenarr.Application.Downloads.Submission
             }
         }
 
-        public async Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null)
+        public async Task<string> SendToDownloadClientAsync(
+            SearchResult searchResult,
+            string? downloadClientId = null,
+            int? audiobookId = null,
+            bool allowBlockedRelease = false)
         {
             return await SendToDownloadClientAsync(
                 TrustedDownloadCandidateFactory.Create(searchResult),
                 downloadClientId,
-                audiobookId);
+                audiobookId,
+                allowBlockedRelease);
         }
 
         public async Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
-            int? audiobookId = null)
+            int? audiobookId = null,
+            bool allowBlockedRelease = false)
         {
             logger.LogInformation(
                 "Preparing trusted download '{Title}' using protocol {Protocol}, AudiobookId: {AudiobookId}",
@@ -114,6 +120,20 @@ namespace Listenarr.Application.Downloads.Submission
             var downloadId = Guid.NewGuid().ToString();
             if (audiobookId is int audiobookIdValue && audiobookIdValue > 0)
             {
+                // Every grab passes through here, which is the only place a block can
+                // actually hold. The automatic search filters blocked releases out of its
+                // own ranking, but it is one caller among several - a release prepared
+                // ahead of time, an abook.link topic sent by hand, a script posting to
+                // /download/send - and none of those went past that filter. Measured on
+                // this library: one release whose par2 set is short by 420 blocks, and so
+                // can never be repaired, was grabbed nine times in two days with its
+                // block sitting in the table all along, matched on fingerprint and size.
+                if (!allowBlockedRelease
+                    && await ReleaseIsBlockedAsync(audiobookIdValue, candidate))
+                {
+                    return string.Empty;
+                }
+
                 try
                 {
                     if (await DownloadDuplicateGuard.HasActiveDownloadAsync(

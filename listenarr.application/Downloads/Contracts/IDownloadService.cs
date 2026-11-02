@@ -29,12 +29,23 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <param name="downloadClientId">Optional download client ID (uses default if not specified)</param>
         /// <param name="audiobookId">Optional audiobook ID to associate</param>
         /// <returns>Download ID</returns>
-        Task<string> SendToDownloadClientAsync(SearchResult searchResult, string? downloadClientId = null, int? audiobookId = null);
+        /// <param name="allowBlockedRelease">
+        /// Sends the release even when it is on this book's blocklist. Only a person
+        /// deliberately choosing a release that already failed should set this; every
+        /// automatic caller leaves it false, which is what stops a broken release being
+        /// grabbed over and over.
+        /// </param>
+        Task<string> SendToDownloadClientAsync(
+            SearchResult searchResult,
+            string? downloadClientId = null,
+            int? audiobookId = null,
+            bool allowBlockedRelease = false);
 
         Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
-            int? audiobookId = null);
+            int? audiobookId = null,
+            bool allowBlockedRelease = false);
 
         /// <summary>
         /// Removes a download from the queue
