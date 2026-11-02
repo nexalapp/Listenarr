@@ -285,6 +285,20 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     return;
                 }
 
+                // An empty source is not evidence of an empty download while the client
+                // is still unpacking it: the only path on offer is then its working
+                // directory, where nothing has been assembled yet. Three of this library's
+                // import failures were importing from /downloads/intermediate, and the
+                // three attempts were spent inside a few minutes while NZBGet worked.
+                if (files.Count == 0
+                    && !isDirectDownload
+                    && SourceIsNotReadyYet(queueItem, job, DateTime.UtcNow))
+                {
+                    await WaitForClientAsync(job, downloadProcessingJobService, historyRepository, download, audiobook,
+                        correlationId, cancellationToken);
+                    return;
+                }
+
                 if (files.Count == 0 || files.Count != queueItem.SourceFiles.Count)
                 {
                     var reason = files.Count == 0
