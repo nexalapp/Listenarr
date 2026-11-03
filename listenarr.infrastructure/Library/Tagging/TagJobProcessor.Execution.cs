@@ -38,22 +38,12 @@ namespace Listenarr.Infrastructure.Library.Tagging
                     "That audiobook no longer exists.");
             }
 
-            // A tag write replaces what the library serves for this book, so it must not
-            // run while a move owns the book's filesystem state. Transient by design: the
-            // move finishes, and the retry then finds the files where the move left them.
-            try
-            {
-                await services.GetRequiredService<IMoveQueueService>()
-                    .EnsureFilesystemMutationAllowedAsync(job.AudiobookId, cancellationToken);
-            }
-            catch (ApplicationConflictException conflict)
-            {
-                return ExecutionOutcome.Failed(TagWriteFailureKind.Transient, conflict.SafeDetail);
-            }
-
             // Listening and planning read files of any format and publish nothing, so
             // they take none of the road below: no pending publication to resume, no
-            // narrowing to the M4Bs a tag write could rewrite.
+            // narrowing to the M4Bs a tag write could rewrite, and none of the
+            // filesystem-mutation gate either. A guard about *changing* a book's files
+            // has nothing to say about reading them, and failing a probe on it reports a
+            // tag-write conflict for work that was never going to write a tag.
             if (job.Kind == TagJobKind.Plan)
             {
                 return await ExecuteChapterPlanAsync(job, audiobook, services, queue, cancellationToken);
@@ -67,6 +57,19 @@ namespace Listenarr.Infrastructure.Library.Tagging
             if (job.Kind == TagJobKind.Probe)
             {
                 return await ExecuteAudioQualityProbeAsync(job, audiobook, services, queue, cancellationToken);
+            }
+
+            // A tag write replaces what the library serves for this book, so it must not
+            // run while a move owns the book's filesystem state. Transient by design: the
+            // move finishes, and the retry then finds the files where the move left them.
+            try
+            {
+                await services.GetRequiredService<IMoveQueueService>()
+                    .EnsureFilesystemMutationAllowedAsync(job.AudiobookId, cancellationToken);
+            }
+            catch (ApplicationConflictException conflict)
+            {
+                return ExecutionOutcome.Failed(TagWriteFailureKind.Transient, conflict.SafeDetail);
             }
 
             var tagsWritten = 0;

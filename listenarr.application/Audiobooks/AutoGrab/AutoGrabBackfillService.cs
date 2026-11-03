@@ -15,8 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Audiobooks.Contracts;
-using Listenarr.Application.Audiobooks.Contracts.Repositories;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Microsoft.Extensions.Logging;
 
@@ -25,6 +23,7 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
     /// <param name="Considered">Books wanted with a release already found for them.</param>
     /// <param name="Sent">How many went to the download client.</param>
     /// <param name="Skipped">How many could not be sent, with the reason in the log.</param>
+    /// <param name="SentTitles"></param>
     public sealed record AutoGrabBackfillReport(
         int Considered,
         int Sent,

@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Search.Contracts;
 using Listenarr.Application.Audiobooks.Discover;
 using Listenarr.Application.Audiobooks.Suggestions;
 using Listenarr.Domain.Audiobooks.Discover;

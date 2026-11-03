@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Collections.Concurrent;
-using Listenarr.Application.Common.Contracts;
 
 namespace Listenarr.Infrastructure.HostedServices
 {

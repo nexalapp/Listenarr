@@ -410,7 +410,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
         {
             public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
         }
-    
+
         [Fact]
         public async Task Preview_PutsTheReleasesThatCostNothingFirst()
         {
