@@ -81,7 +81,7 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
 
                 try
                 {
-                    if (await releases.GrabStoredAsync(audiobook, cancellationToken))
+                    if (await releases.GrabStoredAsync(audiobook, cancellationToken, automatic: true))
                     {
                         sent.Add(item.Title ?? item.Asin!);
                     }
