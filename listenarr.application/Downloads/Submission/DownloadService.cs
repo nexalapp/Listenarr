@@ -96,20 +96,23 @@ namespace Listenarr.Application.Downloads.Submission
             SearchResult searchResult,
             string? downloadClientId = null,
             int? audiobookId = null,
-            bool allowBlockedRelease = false)
+            bool allowBlockedRelease = false,
+            bool automatic = false)
         {
             return await SendToDownloadClientAsync(
                 TrustedDownloadCandidateFactory.Create(searchResult),
                 downloadClientId,
                 audiobookId,
-                allowBlockedRelease);
+                allowBlockedRelease,
+                automatic);
         }
 
         public async Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
             int? audiobookId = null,
-            bool allowBlockedRelease = false)
+            bool allowBlockedRelease = false,
+            bool automatic = false)
         {
             logger.LogInformation(
                 "Preparing trusted download '{Title}' using protocol {Protocol}, AudiobookId: {AudiobookId}",
@@ -195,7 +198,7 @@ namespace Listenarr.Application.Downloads.Submission
                 logger.LogInformation("Auto-selected download client {ClientId} for {ClientType}", downloadClientId, isTorrent ? "torrent" : "NZB");
             }
 
-            return await SubmitPreparedAsync(downloadId, candidate, prepared, downloadClientId, audiobookId, isTorrent);
+            return await SubmitPreparedAsync(downloadId, candidate, prepared, downloadClientId, audiobookId, isTorrent, automatic);
         }
 
         /// <summary>
@@ -209,7 +212,8 @@ namespace Listenarr.Application.Downloads.Submission
             PreparedDownloadSubmission prepared,
             string downloadClientId,
             int? audiobookId,
-            bool isTorrent)
+            bool isTorrent,
+            bool automatic = false)
         {
             var downloadClient = await configurationService.GetDownloadClientConfigurationAsync(downloadClientId);
             if (downloadClient == null || !downloadClient.IsEnabled)
@@ -229,7 +233,8 @@ namespace Listenarr.Application.Downloads.Submission
                 prepared,
                 downloadClient,
                 downloadClientIdForModel,
-                audiobookId);
+                audiobookId,
+                automatic);
 
             // Kept with the download, protected, because a finished download can turn out to
             // be an NZB of the real release, and its archives need the same password.

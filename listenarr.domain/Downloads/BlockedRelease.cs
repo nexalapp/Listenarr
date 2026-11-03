@@ -93,7 +93,14 @@ namespace Listenarr.Domain.Downloads
                 Fingerprint = BlockedReleaseMatch.Fingerprint(download.Title),
                 Indexer = download.GetMetadataString(ReleaseIndexerKey),
                 ReleaseId = SafeReleaseId(download.GetMetadataString(ReleaseIdKey)),
-                SizeBytes = download.TotalSize > 0 ? download.TotalSize : null,
+                // Only the advertised size, because only that can be compared with what a
+                // search result carries. TotalSize is the client's own figure by the time a
+                // download fails - for Usenet, the posting without its par2 set - and
+                // comparing the two put the gap at 9.9% against a 10% tolerance: 'Under
+                // Fire' escaped its own block by 11MB and was re-grabbed nine times in a
+                // day. Null means the fingerprint alone decides, which is right: a size
+                // that cannot be compared must not be allowed to veto a match.
+                SizeBytes = download.ExpectedFileSize is > 0 ? download.ExpectedFileSize : null,
                 Reason = reason,
                 Detail = detail,
                 DownloadId = download.Id,

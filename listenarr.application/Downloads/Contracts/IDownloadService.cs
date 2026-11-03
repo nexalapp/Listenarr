@@ -35,17 +35,23 @@ namespace Listenarr.Application.Downloads.Contracts
         /// automatic caller leaves it false, which is what stops a broken release being
         /// grabbed over and over.
         /// </param>
+        /// <param name="automatic">
+        /// Whether this library chose the release rather than a person. Recorded on the
+        /// download so a failure can know whether to clear itself out of the queue.
+        /// </param>
         Task<string> SendToDownloadClientAsync(
             SearchResult searchResult,
             string? downloadClientId = null,
             int? audiobookId = null,
-            bool allowBlockedRelease = false);
+            bool allowBlockedRelease = false,
+            bool automatic = false);
 
         Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
             int? audiobookId = null,
-            bool allowBlockedRelease = false);
+            bool allowBlockedRelease = false,
+            bool automatic = false);
 
         /// <summary>
         /// Removes a download from the queue

@@ -117,12 +117,114 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                     return;
                 }
 
-                await downloadService.SearchAndDownloadAsync(download.AudiobookId.Value);
+                var replacement = await downloadService.SearchAndDownloadAsync(download.AudiobookId.Value);
+                if (replacement.NothingObtainable)
+                {
+                    await RecordUnobtainableAsync(scope, audiobook, cancellationToken);
+                    await RetireAutomaticFailureAsync(scope, download, audiobook, cancellationToken);
+                }
+
+                // A replacement that was grabbed retires this row on its own, where the
+                // new download is recorded - the same rule, applied at the only place
+                // that knows a successor exists.
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 logger.LogDebug(ex, "Failed to auto-search after failed download {DownloadId}", download.Id);
             }
+        }
+
+        /// <summary>
+        /// Records that no indexer holds a release for this book, after a failure whose
+        /// re-search came back with nothing it could use.
+        ///
+        /// This is the other half of searching again. Without it a book whose only
+        /// release is unrepairable kept a failed row for ever: the search ran once,
+        /// found that the one posting was the one just blocked, and stopped - leaving a
+        /// row in the queue that nothing would ever clear and no record anywhere that
+        /// the book cannot currently be had. The stored answer is what the Wanted and
+        /// Suggested pages read, and it comes due again after UnobtainableRecheckDays,
+        /// so this is a statement about now rather than for ever.
+        /// </summary>
+        private async Task RecordUnobtainableAsync(
+            IServiceScope scope,
+            Audiobook audiobook,
+            CancellationToken cancellationToken)
+        {
+            var asin = audiobook.Asin?.Trim();
+            if (string.IsNullOrWhiteSpace(asin))
+            {
+                return;
+            }
+
+            try
+            {
+                var store = scope.ServiceProvider.GetRequiredService<ISuggestionReleaseRepository>();
+                var stored = await store.GetAsync(asin, cancellationToken) ?? new SuggestionRelease { Asin = asin };
+                stored.Status = SuggestionReleaseStatus.NotFound;
+                stored.CheckedAt = DateTime.UtcNow;
+                stored.Detail = "Every indexer was asked after a failed grab and none held a release this book could use.";
+                // The release it used to point at is the one that just failed and is now
+                // blocked, so keeping any of it would offer the book back its own failure.
+                stored.IndexerName = null;
+                stored.ReleaseTitle = null;
+                stored.SizeBytes = null;
+                stored.ProtectedResult = null;
+                stored.ProtectedNzbUrl = null;
+                stored.Preparation = ReleasePreparationState.NotPrepared;
+                stored.PreparationDetail = null;
+                stored.PreparedAt = null;
+                stored.PayloadFingerprint = null;
+                stored.ResolvedVia = null;
+                await store.SaveAsync(stored, cancellationToken);
+
+                logger.LogInformation(
+                    "No indexer holds a release for '{Title}' that it has not already lost; recorded as unobtainable for now",
+                    LogRedaction.SanitizeText(audiobook.Title));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogWarning(ex, "Could not record audiobook {AudiobookId} as unobtainable", audiobook.Id);
+            }
+        }
+
+        /// <summary>
+        /// Takes an automatic grab's failure out of the queue once there is nothing left
+        /// to try for it.
+        ///
+        /// The queue is for work in hand and for the books this library was asked to
+        /// find. A grab nobody asked for has now said everything it can - the release is
+        /// blocked, the book is recorded as unobtainable - and leaving the row behind
+        /// only buries the failures that do want attention. A grab made by hand stays,
+        /// because whoever made it is tracking that book; so does a row from before the
+        /// provenance was recorded, which is the safe way to be wrong.
+        /// </summary>
+        private async Task RetireAutomaticFailureAsync(
+            IServiceScope scope,
+            Download download,
+            Audiobook audiobook,
+            CancellationToken cancellationToken)
+        {
+            if (!download.GetMetadataBool(DownloadMetadataKeys.AutomaticGrab))
+            {
+                return;
+            }
+
+            try
+            {
+                await scope.ServiceProvider
+                    .GetRequiredService<IDownloadRepository>()
+                    .RemoveAsync(download.Id);
+                logger.LogInformation(
+                    "Retired the failed automatic grab for '{Title}': nothing else is on offer, and the book is recorded as unobtainable",
+                    LogRedaction.SanitizeText(audiobook.Title));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                logger.LogWarning(ex, "Could not retire the failed automatic grab {DownloadId}", download.Id);
+            }
+
+            await Task.CompletedTask;
         }
 
         internal static bool ShouldRemoveFailedClientItem(DownloadClientConfiguration client)

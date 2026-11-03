@@ -69,7 +69,10 @@ namespace Listenarr.Tests.Features.Application.Downloads.Blocklist
                 Id = "download-1",
                 AudiobookId = 42,
                 Title = "Dune - Frank Herbert [2019] M4B 128k",
-                TotalSize = 1_234_567
+                // What the indexer advertised. TotalSize is the client's own figure by
+                // the time a download fails, and the two are not comparable.
+                ExpectedFileSize = 1_234_567,
+                TotalSize = 1_100_000
             };
             download.SetMetadata(BlockedRelease.ReleaseIndexerKey, "NZBGeek");
             download.SetMetadata(BlockedRelease.ReleaseIdKey, "geek-77");
