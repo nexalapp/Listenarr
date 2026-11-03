@@ -55,10 +55,23 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         private async Task GrabSupersedesTheOldRowsAsync() =>
             await ((DownloadService)Downloads).RetireSupersededFailuresAsync(Book, "the-new-download");
 
+        /// <summary>
+        /// That the row is there before the grab retires it.
+        ///
+        /// Assert.Null afterwards is a claim about a deletion, and a deletion can only be
+        /// claimed against something that existed: with no row seeded - a typo in the id,
+        /// a seed that silently failed - the lookup returns null for the wrong reason and
+        /// the test passes having exercised nothing. The scope of a negative claim has to
+        /// be shown non-empty before the claim is worth anything.
+        /// </summary>
+        private async Task AssertPresentAsync(string id) =>
+            Assert.NotNull(await _downloadRepository.GetByIdAsync(id));
+
         [Fact]
         public async Task AFailedRowIsRetiredWhenSomethingElseIsTried()
         {
             await ExistingAsync("failed-before", DownloadStatus.Failed);
+            await AssertPresentAsync("failed-before");
 
             await GrabSupersedesTheOldRowsAsync();
 
@@ -69,6 +82,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         public async Task AnImportBlockedRowIsRetiredToo()
         {
             await ExistingAsync("blocked-before", DownloadStatus.ImportBlocked);
+            await AssertPresentAsync("blocked-before");
 
             await GrabSupersedesTheOldRowsAsync();
 
@@ -87,6 +101,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         public async Task ARowThatIsNotAFinishedFailureIsKept(DownloadStatus status)
         {
             await ExistingAsync("keep-me", status);
+            await AssertPresentAsync("keep-me");
 
             await GrabSupersedesTheOldRowsAsync();
 
@@ -106,6 +121,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
                 Metadata = []
             };
             await _downloadRepository.AddAsync(other);
+            await AssertPresentAsync("another-book");
 
             await GrabSupersedesTheOldRowsAsync();
 
