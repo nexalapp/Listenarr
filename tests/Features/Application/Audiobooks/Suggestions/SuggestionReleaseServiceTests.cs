@@ -183,8 +183,18 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             var grabbed = await service.GrabStoredAsync(new Audiobook { Id = 1273, Asin = "B0053ZT602", Title = "Solaris" });
 
             Assert.True(grabbed);
+            // The flags are spelled out rather than left to the compiler to default. An
+            // optional parameter added to this method is source-compatible but
+            // setup-incompatible: a three-argument expression tree silently becomes
+            // "and both flags are false", so a mock stops matching without anything
+            // failing to build. Adding a book by hand really is allowBlockedRelease:false
+            // and automatic:false, and saying so makes that a claim rather than an accident.
             _downloads.Verify(d => d.SendToDownloadClientAsync(
-                It.Is<TrustedDownloadCandidate>(c => c.Id == "abook:71604"), null, 1273), Times.Once);
+                It.Is<TrustedDownloadCandidate>(c => c.Id == "abook:71604"),
+                null,
+                1273,
+                false,
+                false), Times.Once);
             _search.VerifyNoOtherCalls();
         }
 
