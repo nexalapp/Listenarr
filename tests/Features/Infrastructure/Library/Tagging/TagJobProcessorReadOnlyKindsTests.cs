@@ -52,7 +52,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
             // The case that produced the bug: a committed import still owning
             // source-cleanup state for the book.
             _moves
-                .Setup(m => m.EnsureFilesystemMutationAllowedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .Setup(m => m.EnsureFilesystemMutationAllowedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()))
                 .ThrowsAsync(new ApplicationConflictException(
                     "registration_recovery_pending",
                     "A committed file import still owns source-cleanup state for this audiobook."));
@@ -131,8 +131,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
             await BuildProcessor().RunCycleAsync(CancellationToken.None);
 
             _moves.Verify(
-                m => m.EnsureFilesystemMutationAllowedAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()),
+                m => m.EnsureFilesystemMutationAllowedAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<CancellationToken>(),
+                    It.IsAny<bool>()),
                 Times.Never);
+            // Times.Never is satisfied by a call that simply does not match, so the
+            // argument list has to cover every call that could be made - the gate's third
+            // parameter is optional, and leaving it out quietly pins it to false. Without
+            // this, a read-only kind consulting the gate with allowActiveDeletionIntent:true
+            // would pass as "never consulted it". VerifyNoOtherCalls is the backstop that
+            // does not depend on getting the argument list right.
+            _moves.VerifyNoOtherCalls();
         }
 
         [Theory]
@@ -160,7 +170,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Library.Tagging
             await BuildProcessor().RunCycleAsync(CancellationToken.None);
 
             _moves.Verify(
-                m => m.EnsureFilesystemMutationAllowedAsync(1, It.IsAny<CancellationToken>()),
+                m => m.EnsureFilesystemMutationAllowedAsync(1, It.IsAny<CancellationToken>(), false),
                 Times.Once);
             _queue.Verify(
                 q => q.FailAsync(
