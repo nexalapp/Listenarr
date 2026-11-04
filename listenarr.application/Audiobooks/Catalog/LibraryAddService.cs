@@ -205,7 +205,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
 
             if (request.AutoSearch && request.Monitored)
             {
-                result.DownloadSent = await TryGrabStoredReleaseAsync(audiobook, cancellationToken);
+                result.DownloadSent = await TryGrabStoredReleaseAsync(audiobook, request.Automatic, cancellationToken);
             }
 
             _logger.LogInformation(
@@ -225,7 +225,10 @@ namespace Listenarr.Application.Audiobooks.Catalog
         /// effect like the notification: a failure here leaves the book added and says why
         /// in the log, rather than turning the add into an error.
         /// </summary>
-        private async Task<bool> TryGrabStoredReleaseAsync(Audiobook audiobook, CancellationToken cancellationToken)
+        private async Task<bool> TryGrabStoredReleaseAsync(
+            Audiobook audiobook,
+            bool automatic,
+            CancellationToken cancellationToken)
         {
             if (_suggestionReleases == null)
             {
@@ -237,7 +240,7 @@ namespace Listenarr.Application.Audiobooks.Catalog
                 // The answer matters: a false here is a book added and monitored that
                 // nothing will ever download, and discarding it is how eighty-two of
                 // them accumulated without a single line in the log.
-                if (await _suggestionReleases.GrabStoredAsync(audiobook, cancellationToken))
+                if (await _suggestionReleases.GrabStoredAsync(audiobook, cancellationToken, automatic))
                 {
                     return true;
                 }

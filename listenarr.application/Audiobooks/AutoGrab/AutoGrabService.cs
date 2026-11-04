@@ -167,7 +167,10 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
                         {
                             Metadata = metadata,
                             Monitored = true,
-                            AutoSearch = true
+                            AutoSearch = true,
+                            // Nobody asked for this book; a followed list offered it. Its
+                            // failure answers for itself and then leaves the queue.
+                            Automatic = true
                         },
                         cancellationToken);
 

@@ -214,6 +214,12 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
             // release the check already found, instead of searching again.
             Assert.True(request.Monitored);
             Assert.True(request.AutoSearch);
+            // And that nobody asked for it. Monitored+AutoSearch make the add path send
+            // the release; Automatic is what lets the failure of that send clear itself
+            // out of the queue afterwards. Without it every book a followed list brought
+            // in was stamped asked-for-by-hand - thirteen Kris Longknife failures sat in
+            // the queue on 2026-11-04 for exactly that reason.
+            Assert.True(request.Automatic);
             Assert.Equal("B1", request.Metadata.Asin);
             Assert.Equal("Drive", request.Metadata.Title);
             Assert.Equal("James S. A. Corey", Assert.Single(request.Metadata.Authors!));
@@ -221,6 +227,24 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.AutoGrab
             // same book added by hand.
             Assert.Equal("https://example.invalid/c.jpg", request.Metadata.ImageUrl);
             Assert.Equal(1, report.Added);
+        }
+
+        [Fact]
+        public async Task Run_StampsEveryBookItAddsAsAutomatic_NotJustTheFirst()
+        {
+            Configure(enabled: true, new AutoGrabSource(AutoGrabSources.Series));
+            Offer(_seriesBooks, "B1", "Drive");
+            Offer(_seriesBooks, "B2", "Mutineer");
+            Offer(_seriesBooks, "B3", "Afraid");
+            Found("B1", "B2", "B3");
+
+            await BuildService().RunAsync();
+
+            // NotEmpty before All: a universal claim over an empty list is satisfied by
+            // nothing at all, and this list is built by the run under test, so it is
+            // exactly the shape that passes while testing nothing.
+            Assert.NotEmpty(_added);
+            Assert.All(_added, request => Assert.True(request.Automatic));
         }
 
         [Fact]
