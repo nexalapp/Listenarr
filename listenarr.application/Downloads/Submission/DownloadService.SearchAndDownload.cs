@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Downloads.Submission
@@ -102,13 +103,14 @@ namespace Listenarr.Application.Downloads.Submission
             // failure is to reach a different release.
             var blocklist = new ReleaseBlocklist(
                 await releaseBlocklistRepository.GetForAudiobookAsync(audiobookId));
-            var topResult = acceptable.FirstOrDefault(scored =>
-                !blocklist.IsBlocked(
+            var sendable = acceptable
+                .Where(scored => !blocklist.IsBlocked(
                     scored.SearchResult.Title,
                     scored.SearchResult.Id,
-                    scored.SearchResult.Size));
+                    scored.SearchResult.Size))
+                .ToList();
 
-            if (topResult == null)
+            if (sendable.Count == 0)
             {
                 var blocked = acceptable.Count;
                 if (blocked > 0 && blocklist.Count > 0)
@@ -139,41 +141,90 @@ namespace Listenarr.Application.Downloads.Submission
                 };
             }
 
-            // Assign score to SearchResult
-            topResult.SearchResult.Score = topResult.TotalScore;
-
-            var candidate = TrustedDownloadCandidateFactory.Create(topResult.SearchResult);
-            var isTorrent = candidate.SourceDescriptor.Protocol == DownloadProtocol.Torrent;
-            var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(isTorrent);
-
-            if (downloadClientId == null)
+            // Down the ranking until one can actually be fetched, rather than giving up
+            // on the first. A release an indexer lists is not a release that can be had:
+            // an abook.link topic whose payload no index holds throws here, and when that
+            // was the end of the road the book kept a failed row nobody could clear - the
+            // search had found something, so "nothing obtainable" was false, and the grab
+            // had thrown, so nothing was sent either. Measured on 'Disturb' (4904).
+            DownloadClientSubmissionException? lastRefusal = null;
+            foreach (var scored in sendable)
             {
-                logger.LogWarning("No suitable download client found for type: {Type}", isTorrent ? "Torrent" : "NZB");
+                scored.SearchResult.Score = scored.TotalScore;
+
+                var candidate = TrustedDownloadCandidateFactory.Create(scored.SearchResult);
+                var isTorrent = candidate.SourceDescriptor.Protocol == DownloadProtocol.Torrent;
+                var downloadClientId = await downloadClientSelector.GetAppropriateDownloadClientAsync(isTorrent);
+
+                if (downloadClientId == null)
+                {
+                    // The client is this installation's, not this release's, so there is
+                    // nothing to be learned by trying the next one.
+                    logger.LogWarning("No suitable download client found for type: {Type}", isTorrent ? "Torrent" : "NZB");
+                    return new SearchAndDownloadResult
+                    {
+                        Success = false,
+                        Message = $"No suitable download client found for {(isTorrent ? "torrent" : "NZB")} results"
+                    };
+                }
+
+                string downloadId2;
+                try
+                {
+                    downloadId2 = await SendToDownloadClientAsync(
+                        candidate,
+                        downloadClientId,
+                        audiobookId,
+                        allowBlockedRelease: false,
+                        automatic: true);
+                }
+                catch (DownloadClientSubmissionException refusal)
+                {
+                    lastRefusal = refusal;
+                    logger.LogWarning(
+                        "'{Release}' could not be fetched for audiobook '{Title}': {Reason}. Trying the next release.",
+                        LogRedaction.SanitizeText(scored.SearchResult.Title),
+                        LogRedaction.SanitizeText(audiobook.Title),
+                        refusal.Message);
+                    continue;
+                }
+
+                // An empty id is the blocklist refusing at submission, which is a release
+                // this book has already lost rather than a reason to stop.
+                if (string.IsNullOrEmpty(downloadId2))
+                {
+                    continue;
+                }
+
+                await LogDownloadHistory(audiobook, "Search", scored.SearchResult);
+
                 return new SearchAndDownloadResult
                 {
-                    Success = false,
-                    Message = $"No suitable download client found for {(isTorrent ? "torrent" : "NZB")} results"
+                    Success = true,
+                    Message = $"Successfully sent to download client",
+                    DownloadId = downloadId2,
+                    IndexerUsed = "Search",
+                    DownloadClientUsed = downloadClientId,
+                    SearchResult = scored.SearchResult
                 };
             }
 
-            // Send to download client with audiobookId for proper metadata linking
-            var downloadId2 = await SendToDownloadClientAsync(
-                candidate,
-                downloadClientId,
-                audiobookId,
-                automatic: true);
-
-            // Log to history
-            await LogDownloadHistory(audiobook, "Search", topResult.SearchResult);
+            logger.LogWarning(
+                "None of the {Count} release(s) found for audiobook '{Title}' could be fetched",
+                sendable.Count,
+                LogRedaction.SanitizeText(audiobook.Title));
 
             return new SearchAndDownloadResult
             {
-                Success = true,
-                Message = $"Successfully sent to download client",
-                DownloadId = downloadId2,
-                IndexerUsed = "Search",
-                DownloadClientUsed = downloadClientId,
-                SearchResult = topResult.SearchResult
+                Success = false,
+                // Listed everywhere and fetchable nowhere is, for now, the same as nobody
+                // holding it: there is nothing further to try, and the book has to say so
+                // rather than keep a failed row that no later run will clear. The stored
+                // answer comes due again, so this is a statement about today.
+                NothingObtainable = true,
+                Message = lastRefusal == null
+                    ? "No release found for this book could be fetched"
+                    : $"No release found for this book could be fetched: {lastRefusal.Message}"
             };
         }
     }
