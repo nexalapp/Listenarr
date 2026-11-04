@@ -131,9 +131,13 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
     public sealed record AutoGrabSourceCount(string Kind, string? SectionId, string Label, int Available);
 
     /// <summary>What a run did.</summary>
+    /// <param name="StartedAt"></param>
+    /// <param name="FinishedAt"></param>
     /// <param name="Added">Books added to the library.</param>
     /// <param name="Downloaded">Of those, how many had a release sent. This is the
     /// number that matters, and the one a run used not to report.</param>
+    /// <param name="Failed"></param>
+    /// <param name="Outcomes"></param>
     /// <param name="Deferred">Books left for the next run because their lane was full.
     /// They are not failures and nothing was done to them.</param>
     /// <param name="StoppedBecause">Why those were left, when a lane ran out of room.</param>
@@ -147,8 +151,12 @@ namespace Listenarr.Application.Audiobooks.AutoGrab
         int Deferred = 0,
         string? StoppedBecause = null);
 
-    /// <param name="Added">The book was added to the library.</param>
+    /// <param name="Asin"></param>
+
+    /// <param name="Title"></param>
+    /// <param name="SourceLabel"></param>    /// <param name="Added">The book was added to the library.</param>
     /// <param name="Downloaded">A release was actually sent to the download client.</param>
+    /// <param name="Error"></param>
     public sealed record AutoGrabOutcome(
         string Asin, string Title, string SourceLabel, bool Added, bool Downloaded, string? Error);
 }

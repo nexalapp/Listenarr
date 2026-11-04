@@ -48,10 +48,12 @@ namespace Listenarr.Application.Search.Contracts
     /// </summary>
     public interface INzbResolverChain
     {
+        /// <param name="searchString"></param>
         /// <param name="meteredAllowed">
         /// False leaves the metered indexes unasked and says so in the attempts, for
         /// work done on a schedule rather than at somebody's request.
         /// </param>
+        /// <param name="ct"></param>
         Task<NzbResolution> ResolveAsync(
             string? searchString,
             bool meteredAllowed = true,

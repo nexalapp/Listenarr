@@ -176,14 +176,25 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             var service = Build(Abook);
             await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
             _search.Invocations.Clear();
-            _downloads.Setup(d => d.SendToDownloadClientAsync(It.IsAny<TrustedDownloadCandidate>(), null, 1273))
+            _downloads.Setup(d => d.SendToDownloadClientAsync(
+                    It.IsAny<TrustedDownloadCandidate>(), null, 1273, false, It.IsAny<bool>()))
                 .ReturnsAsync("download-1");
 
             var grabbed = await service.GrabStoredAsync(new Audiobook { Id = 1273, Asin = "B0053ZT602", Title = "Solaris" });
 
             Assert.True(grabbed);
+            // The flags are spelled out rather than left to the compiler to default. An
+            // optional parameter added to this method is source-compatible but
+            // setup-incompatible: a three-argument expression tree silently becomes
+            // "and both flags are false", so a mock stops matching without anything
+            // failing to build. Adding a book by hand really is allowBlockedRelease:false
+            // and automatic:false, and saying so makes that a claim rather than an accident.
             _downloads.Verify(d => d.SendToDownloadClientAsync(
-                It.Is<TrustedDownloadCandidate>(c => c.Id == "abook:71604"), null, 1273), Times.Once);
+                It.Is<TrustedDownloadCandidate>(c => c.Id == "abook:71604"),
+                null,
+                1273,
+                false,
+                false), Times.Once);
             _search.VerifyNoOtherCalls();
         }
 
@@ -221,6 +232,41 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Suggestions
             // Only the indexer that actually answered may be named as having looked.
             Assert.Contains("Abook.link", release.Detail);
             Assert.DoesNotContain("NZBgeek", release.Detail);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task TheGrabCarriesWhetherATimerOrAPersonAskedForIt(bool automatic)
+        {
+            // The backfill runs on a timer and passes true; adding a book by hand leaves
+            // the default. Only that flag decides whether a failure clears itself out of
+            // the queue, and stamping SearchAndDownloadAsync alone was not enough: by the
+            // time the backfill shipped it was sending most of the grabs, and eleven
+            // failed rows on live 1.43.98 were all flag=false and all from it.
+            Returns(Abook, new IndexerSearchResult
+            {
+                Id = "abook:71604",
+                Title = "Solaris",
+                Asin = "B0053ZT602",
+                DownloadType = "Usenet",
+                IndexerId = 1,
+                IndexerImplementation = "AbookLink"
+            });
+            var service = Build(Abook);
+            await service.CheckAsync(Book("B0053ZT602", "Solaris", "Stanislaw Lem"));
+            bool? sentWith = null;
+            _downloads.Setup(d => d.SendToDownloadClientAsync(
+                    It.IsAny<TrustedDownloadCandidate>(), null, 1273, false, It.IsAny<bool>()))
+                .Callback((TrustedDownloadCandidate _, string? _, int? _, bool _, bool flag) => sentWith = flag)
+                .ReturnsAsync("download-1");
+
+            await service.GrabStoredAsync(
+                new Audiobook { Id = 1273, Asin = "B0053ZT602", Title = "Solaris" },
+                CancellationToken.None,
+                automatic);
+
+            Assert.Equal(automatic, sentWith);
         }
 
         [Fact]

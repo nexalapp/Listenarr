@@ -196,6 +196,16 @@ namespace Listenarr.Domain.Search
         public string? IndexerUsed { get; set; }
         public string? DownloadClientUsed { get; set; }
         public SearchResult? SearchResult { get; set; }
+
+        /// <summary>
+        /// The search was made and no release this book could use came back - every
+        /// indexer answered and held nothing, or held only releases already blocked.
+        ///
+        /// Distinct from the other failures, which are all this installation's own
+        /// configuration: no quality profile, no download client, no such book. Those say
+        /// nothing about whether the book can be had, and must not mark it unobtainable.
+        /// </summary>
+        public bool NothingObtainable { get; set; }
     }
 
     /// <summary>

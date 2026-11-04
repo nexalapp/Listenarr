@@ -57,13 +57,6 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         /// <param name="source"></param>
         /// <param name="sectionId"></param>
         /// <param name="items"></param>
-        /// <param name="replacePage">
-        /// When set, rows previously read from that page of the section and absent from
-        /// <paramref name="items"/> are deleted. That is right for a chart, where page
-        /// two is positions 21 to 40 and a book that has left them has left the chart,
-        /// and wrong for a forum board, where a new post pushes older topics onto the
-        /// next page without anything having been withdrawn.
-        /// </param>
         /// <param name="cancellationToken"></param>
         Task<int> UpsertItemsAsync(
             string source,

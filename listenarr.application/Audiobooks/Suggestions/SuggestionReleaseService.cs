@@ -49,7 +49,15 @@ namespace Listenarr.Application.Audiobooks.Suggestions
         /// Sends the release stored for the book's ASIN to a download client. Returns false,
         /// having done nothing, when no release was found for it.
         /// </summary>
-        Task<bool> GrabStoredAsync(Audiobook audiobook, CancellationToken cancellationToken = default);
+        /// <remarks>
+        /// <paramref name="automatic"/> says whether a timer chose this book or a person did.
+        /// The backfill passes true; adding a book by hand leaves the default, because that
+        /// failure is one the person is tracking.
+        /// </remarks>
+        Task<bool> GrabStoredAsync(
+            Audiobook audiobook,
+            CancellationToken cancellationToken = default,
+            bool automatic = false);
     }
 
     public sealed class SuggestionReleaseService(
@@ -186,7 +194,10 @@ namespace Listenarr.Application.Audiobooks.Suggestions
             }, cancellationToken);
         }
 
-        public async Task<bool> GrabStoredAsync(Audiobook audiobook, CancellationToken cancellationToken = default)
+        public async Task<bool> GrabStoredAsync(
+            Audiobook audiobook,
+            CancellationToken cancellationToken = default,
+            bool automatic = false)
         {
             ArgumentNullException.ThrowIfNull(audiobook);
             if (string.IsNullOrWhiteSpace(audiobook.Asin))
@@ -225,7 +236,12 @@ namespace Listenarr.Application.Audiobooks.Suggestions
 
             var candidate = TrustedDownloadCandidateFactory.Create(SearchResultConverters.ToSearchResult(result));
 
-            var downloadId = await downloads.SendToDownloadClientAsync(candidate, null, audiobook.Id);
+            var downloadId = await downloads.SendToDownloadClientAsync(
+                candidate,
+                null,
+                audiobook.Id,
+                allowBlockedRelease: false,
+                automatic);
             if (string.IsNullOrEmpty(downloadId))
             {
                 logger.LogWarning(

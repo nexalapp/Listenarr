@@ -35,6 +35,17 @@ namespace Listenarr.Application.Audiobooks.Contracts
 
         public bool AutoSearch { get; set; }
 
+        /// <summary>
+        /// Whether a timer added this book rather than a person.
+        ///
+        /// AutoGrabService adds from the lists this library follows with AutoSearch on, so
+        /// the grab that follows is as automatic as the backfill's - but it reaches the
+        /// client through the add path, which had no way to say so. That left every book a
+        /// followed list brought in stamped as asked-for by hand, and its failure never
+        /// left the queue: thirteen Kris Longknife rows arrived in one sweep that way.
+        /// </summary>
+        public bool Automatic { get; set; }
+
         public string? DestinationPath { get; set; }
 
         /// <summary>

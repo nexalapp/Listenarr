@@ -67,6 +67,7 @@ namespace Listenarr.Application.Downloads.Submission
                 return new SearchAndDownloadResult
                 {
                     Success = false,
+                    NothingObtainable = true,
                     Message = "No search results found"
                 };
             }
@@ -122,6 +123,7 @@ namespace Listenarr.Application.Downloads.Submission
                     return new SearchAndDownloadResult
                     {
                         Success = false,
+                        NothingObtainable = true,
                         Message = blocked == 1
                             ? "The only release found for this book already failed"
                             : $"All {blocked} releases found for this book have already failed"
@@ -132,6 +134,7 @@ namespace Listenarr.Application.Downloads.Submission
                 return new SearchAndDownloadResult
                 {
                     Success = false,
+                    NothingObtainable = true,
                     Message = "No acceptable search results found"
                 };
             }
@@ -154,7 +157,11 @@ namespace Listenarr.Application.Downloads.Submission
             }
 
             // Send to download client with audiobookId for proper metadata linking
-            var downloadId2 = await SendToDownloadClientAsync(candidate, downloadClientId, audiobookId);
+            var downloadId2 = await SendToDownloadClientAsync(
+                candidate,
+                downloadClientId,
+                audiobookId,
+                automatic: true);
 
             // Log to history
             await LogDownloadHistory(audiobook, "Search", topResult.SearchResult);

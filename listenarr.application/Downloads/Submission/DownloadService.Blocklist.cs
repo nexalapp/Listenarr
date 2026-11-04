@@ -37,6 +37,53 @@ namespace Listenarr.Application.Downloads.Submission
     public partial class DownloadService
     {
         /// <summary>
+        /// Clears away the book's finished failures now that something is being tried for
+        /// it again.
+        ///
+        /// Only terminal rows go: a download that failed outright, or one whose import
+        /// gave up. Anything still in flight is left alone, and so is the grab that just
+        /// replaced them. Nothing is lost that is worth keeping - the reason is in the
+        /// history and on the blocklist entry that keeps the release from being taken
+        /// again - and a book that fails once more simply has one row again rather than a
+        /// column of them.
+        /// </summary>
+        internal async Task RetireSupersededFailuresAsync(int audiobookId, string newDownloadId)
+        {
+            try
+            {
+                var rows = await downloadRepository.GetByAudiobookIdAsync(audiobookId);
+                var superseded = rows
+                    .Where(row => !string.Equals(row.Id, newDownloadId, StringComparison.OrdinalIgnoreCase))
+                    .Where(row => row.Status is DownloadStatus.Failed or DownloadStatus.ImportBlocked)
+                    .ToList();
+                if (superseded.Count == 0)
+                {
+                    return;
+                }
+
+                foreach (var row in superseded)
+                {
+                    await downloadRepository.RemoveAsync(row.Id);
+                }
+
+                logger.LogInformation(
+                    "Retired {Count} finished failure row(s) for audiobook {AudiobookId}; download {DownloadId} supersedes them",
+                    superseded.Count,
+                    audiobookId,
+                    newDownloadId);
+            }
+            catch (Exception exception) when (exception is not (
+                OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
+                // Tidying is not worth failing a grab over.
+                logger.LogWarning(
+                    exception,
+                    "Could not retire the superseded failure rows for audiobook {AudiobookId}",
+                    audiobookId);
+            }
+        }
+
+        /// <summary>
         /// Whether this release is one that already failed for this book.
         ///
         /// A read that cannot be made lets the grab through rather than stopping it: the

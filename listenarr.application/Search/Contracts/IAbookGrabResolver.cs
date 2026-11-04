@@ -55,10 +55,12 @@ namespace Listenarr.Application.Search.Contracts
     /// </summary>
     public interface IAbookGrabResolver
     {
+        /// <param name="topicId"></param>
         /// <param name="meteredAllowed">
         /// False leaves a metered index unasked, for work done on a schedule rather than
         /// at somebody's request. Thanking and the free indexes happen either way.
         /// </param>
+        /// <param name="ct"></param>
         Task<AbookGrabResult> ResolveAsync(
             int topicId,
             bool meteredAllowed = true,

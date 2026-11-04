@@ -20,6 +20,17 @@ public static class DownloadMetadataKeys
     /// </summary>
     public const string ProtectedArchivePassword = "ProtectedArchivePassword";
 
+    /// <summary>
+    /// Whether the grab was this library's own doing rather than a person's.
+    ///
+    /// A grab nobody asked for has to resolve itself: a replacement supersedes it, or
+    /// the book is recorded as unobtainable, and either way the failure leaves the queue.
+    /// A grab asked for by hand stays visible, because whoever asked is tracking it.
+    /// Absent on every row written before this existed, which reads as "by hand" - the
+    /// safe way round, since it only ever keeps a row that might have gone.
+    /// </summary>
+    public const string AutomaticGrab = "AutomaticGrab";
+
     /// <summary>The downloads an NZB found inside this one was submitted as.</summary>
     public const string ContinuedAs = "ContinuedAs";
 

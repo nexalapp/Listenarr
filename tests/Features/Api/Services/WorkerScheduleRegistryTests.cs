@@ -15,10 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Common.Contracts;
 using Listenarr.Infrastructure.HostedServices;
 using Listenarr.Tests.Common;
-using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Tests.Features.Api.Services
 {
@@ -148,7 +146,7 @@ namespace Listenarr.Tests.Features.Api.Services
 
             Assert.Equal(2, cycles);
         }
-    
+
         [Fact]
         public async Task AWorkerStillSittingOutItsStartupDelayIsOnTheList()
         {

@@ -96,20 +96,23 @@ namespace Listenarr.Application.Downloads.Submission
             SearchResult searchResult,
             string? downloadClientId = null,
             int? audiobookId = null,
-            bool allowBlockedRelease = false)
+            bool allowBlockedRelease = false,
+            bool automatic = false)
         {
             return await SendToDownloadClientAsync(
                 TrustedDownloadCandidateFactory.Create(searchResult),
                 downloadClientId,
                 audiobookId,
-                allowBlockedRelease);
+                allowBlockedRelease,
+                automatic);
         }
 
         public async Task<string> SendToDownloadClientAsync(
             TrustedDownloadCandidate candidate,
             string? downloadClientId = null,
             int? audiobookId = null,
-            bool allowBlockedRelease = false)
+            bool allowBlockedRelease = false,
+            bool automatic = false)
         {
             logger.LogInformation(
                 "Preparing trusted download '{Title}' using protocol {Protocol}, AudiobookId: {AudiobookId}",
@@ -195,82 +198,7 @@ namespace Listenarr.Application.Downloads.Submission
                 logger.LogInformation("Auto-selected download client {ClientId} for {ClientType}", downloadClientId, isTorrent ? "torrent" : "NZB");
             }
 
-            return await SubmitPreparedAsync(downloadId, candidate, prepared, downloadClientId, audiobookId, isTorrent);
-        }
-
-        /// <summary>
-        /// Submits an NZB found inside a finished Usenet download as the download it points
-        /// to. Some uploaders post the real release under obfuscated names and an NZB of it
-        /// under the forum's search code, so grabbing the code fetches only that NZB. It goes
-        /// to the same client, for the same book, with the archive password the outer grab
-        /// was given.
-        /// </summary>
-        public async Task<string> SendNestedNzbAsync(Download outer, string fileName, byte[] nzbBytes)
-        {
-            ArgumentNullException.ThrowIfNull(outer);
-            ArgumentNullException.ThrowIfNull(nzbBytes);
-            if (string.IsNullOrWhiteSpace(outer.DownloadClientId))
-            {
-                throw new DownloadClientSubmissionException("The finished download has no client to send its NZB to.");
-            }
-
-            var protectedPassword = outer.GetMetadataString(DownloadMetadataKeys.ProtectedArchivePassword);
-            var password = string.IsNullOrWhiteSpace(protectedPassword) || secretProtector == null
-                ? null
-                : secretProtector.Unprotect(protectedPassword);
-            var source = outer.GetMetadataString("Source") ?? "Nested NZB";
-            var quality = outer.GetMetadataString("Quality");
-            var locator = $"nested-nzb:{outer.Id}/{fileName}";
-
-            var candidate = new TrustedDownloadCandidate(
-                locator,
-                outer.Title ?? fileName,
-                outer.Artist ?? string.Empty,
-                outer.Album ?? string.Empty,
-                source,
-                quality,
-                outer.Language,
-                0,
-                null,
-                new DownloadSourceDescriptor(
-                    null,
-                    null,
-                    DownloadProtocol.Usenet,
-                    [new DownloadSourceLocator(DownloadSourceLocatorKind.ReleaseId, locator)]));
-            var prepared = new PreparedUsenetSubmission(
-                candidate.Title,
-                candidate.Artist,
-                candidate.Album,
-                source,
-                quality,
-                outer.Language,
-                0,
-                locator,
-                nzbBytes,
-                fileName,
-                password);
-
-            logger.LogInformation(
-                "Submitting the NZB found inside download {DownloadId} ('{FileName}') as the release it points to",
-                outer.Id,
-                fileName);
-            var downloadId = await SubmitPreparedAsync(
-                Guid.NewGuid().ToString(),
-                candidate,
-                prepared,
-                outer.DownloadClientId,
-                outer.AudiobookId,
-                isTorrent: false);
-
-            var continued = await downloadRepository.FindAsync(downloadId);
-            if (continued != null)
-            {
-                continued.Metadata ??= new Dictionary<string, object>();
-                continued.Metadata[DownloadMetadataKeys.ContinuesFrom] = outer.Id;
-                await UpdateAsync(continued);
-            }
-
-            return downloadId;
+            return await SubmitPreparedAsync(downloadId, candidate, prepared, downloadClientId, audiobookId, isTorrent, automatic);
         }
 
         /// <summary>
@@ -284,7 +212,8 @@ namespace Listenarr.Application.Downloads.Submission
             PreparedDownloadSubmission prepared,
             string downloadClientId,
             int? audiobookId,
-            bool isTorrent)
+            bool isTorrent,
+            bool automatic = false)
         {
             var downloadClient = await configurationService.GetDownloadClientConfigurationAsync(downloadClientId);
             if (downloadClient == null || !downloadClient.IsEnabled)
@@ -304,7 +233,8 @@ namespace Listenarr.Application.Downloads.Submission
                 prepared,
                 downloadClient,
                 downloadClientIdForModel,
-                audiobookId);
+                audiobookId,
+                automatic);
 
             // Kept with the download, protected, because a finished download can turn out to
             // be an NZB of the real release, and its archives need the same password.
@@ -325,6 +255,16 @@ namespace Listenarr.Application.Downloads.Submission
                 return string.Empty;
             }
             logger.LogInformation("Created download record in database: {DownloadId} for '{Title}'", downloadId, candidate.Title);
+
+            // A failure this book has moved on from is not news any more. The grab that
+            // replaces it is the answer to it, and leaving both behind is how a book ends
+            // up with nine rows saying the same thing: 151 rows on this library were 35
+            // books. The reason survives where it belongs - in the history, and on the
+            // blocklist entry that stops the release being taken again.
+            if (audiobookId is int supersededBook && supersededBook > 0)
+            {
+                await RetireSupersededFailuresAsync(supersededBook, downloadId);
+            }
 
             DownloadClientSubmissionResult submissionResult;
             try

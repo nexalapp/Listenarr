@@ -26,7 +26,8 @@ namespace Listenarr.Application.Downloads.Submission
             PreparedDownloadSubmission submission,
             DownloadClientConfiguration downloadClient,
             string downloadClientId,
-            int? audiobookId)
+            int? audiobookId,
+            bool automatic = false)
         {
             return new Download
             {
@@ -39,6 +40,11 @@ namespace Listenarr.Application.Downloads.Submission
                 OriginalUrl = submission.OriginalLocator,
                 Progress = 0,
                 TotalSize = candidate.Size,
+                // The size the indexer advertised, kept apart from TotalSize because the
+                // client overwrites that with its own figure once it has the job. For
+                // Usenet the two differ by the par2 set - about a tenth of the posting -
+                // and only this one can be compared with a later search result.
+                ExpectedFileSize = candidate.Size > 0 ? candidate.Size : null,
                 DownloadedSize = 0,
                 DownloadPath = downloadClient.DownloadPath ?? string.Empty,
                 FinalPath = string.Empty,
@@ -58,7 +64,13 @@ namespace Listenarr.Application.Downloads.Submission
                     ["Grabs"] = candidate.Grabs ?? 0,
                     ["Quality"] = candidate.Quality ?? string.Empty,
                     ["Language"] = candidate.Language ?? string.Empty,
-                    ["DownloadType"] = submission.Protocol.ToString()
+                    ["DownloadType"] = submission.Protocol.ToString(),
+                    // Whether this library asked for the book or merely took what was
+                    // offered. A grab nobody asked for has to answer for itself: it finds
+                    // a replacement or the book is marked unobtainable, and either way its
+                    // failure leaves the queue. A grab asked for by hand stays, because
+                    // the person who asked is tracking it.
+                    [DownloadMetadataKeys.AutomaticGrab] = automatic
                 }
             };
         }
