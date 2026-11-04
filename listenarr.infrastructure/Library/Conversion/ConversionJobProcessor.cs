@@ -103,6 +103,7 @@ namespace Listenarr.Infrastructure.Library.Conversion
                         CancellationToken.None);
 
                     await NotifyAsync(services, outcome, job);
+                    await QueuePostConversionWorkAsync(job, services);
                 }
                 else
                 {
