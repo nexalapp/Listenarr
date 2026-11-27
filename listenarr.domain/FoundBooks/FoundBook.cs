@@ -36,7 +36,14 @@ namespace Listenarr.Domain.FoundBooks
         Incomplete,
 
         /// <summary>ffprobe could not read at least one audio file.</summary>
-        Corrupt
+        Corrupt,
+
+        /// <summary>
+        /// Far more audio than the declared length: the files are more than one book.
+        /// A pack of a whole series imported against one record looks exactly like this,
+        /// and it is the only verdict that says "too much" rather than "not enough".
+        /// </summary>
+        Overrun
     }
 
     /// <summary>Whether the library already holds what this looks like.</summary>

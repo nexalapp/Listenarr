@@ -57,6 +57,17 @@ namespace Listenarr.Domain.FoundBooks
         private const double DeclaredTolerance = 0.03;
         private const double SingleFileMinimumSeconds = 20 * 60;
 
+        /// <summary>
+        /// How many times the declared length counts as more than one book.
+        ///
+        /// A modest over-run proves nothing: the declared time routinely describes
+        /// another edition, and a recording longer than the record claims is ordinary.
+        /// Measured on this library, no single book exceeded 1.03x its runtime, while
+        /// the packs that held a whole series ran 2.0x, 2.3x and 19x. 1.8 sits clear of
+        /// both, so an edition mismatch is never called an over-run.
+        /// </summary>
+        private const double OverrunMultiple = 1.8;
+
         public static FoundBookCompletenessVerdict Analyze(
             IReadOnlyList<FoundBookAudioObservation> files,
             double? declaredDurationSeconds)
@@ -85,6 +96,18 @@ namespace Listenarr.Domain.FoundBooks
             if (declaredDurationSeconds is > 0)
             {
                 var ratio = total / declaredDurationSeconds.Value;
+                if (ratio >= OverrunMultiple)
+                {
+                    // Returned rather than collected: nothing a numbering run could add
+                    // changes what this is, and "more than one book" is the only reason
+                    // worth showing. Deciding it here also keeps it out of the
+                    // positive/negative tally, where it would read as a shortfall.
+                    return new(
+                        FoundBookCompleteness.Overrun,
+                        $"{Clock(total)} against a declared {Clock(declaredDurationSeconds.Value)} — "
+                        + $"{ratio:0.#}x, so these files are more than one book.");
+                }
+
                 if (ratio < 1 - DeclaredTolerance)
                 {
                     negatives.Add($"{Clock(total)} of the declared {Clock(declaredDurationSeconds.Value)}.");
