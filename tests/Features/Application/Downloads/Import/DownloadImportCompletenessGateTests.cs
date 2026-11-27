@@ -37,7 +37,13 @@ namespace Listenarr.Tests.Features.Application.Downloads.Import
         public override async Task InitializeAsync()
         {
             Init();
-            await AddAuthorizedRootAsync(FileService.GetTempPath());
+            // Sensitive explicitly: `Auto` asks the host, and a host that cannot answer
+            // `pathconf(_PC_CASE_SENSITIVE)` — overlayfs in a container, for one — resolves
+            // Unavailable and fails setup. Nothing here turns on case sensitivity, so
+            // naming it keeps the gate's assertions independent of the filesystem.
+            await AddAuthorizedRootAsync(
+                FileService.GetTempPath(),
+                caseSensitivityMode: FileSystemCaseSensitivityMode.Sensitive);
         }
 
         [Fact]
