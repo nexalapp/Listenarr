@@ -2569,6 +2569,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("GateImportOnCompleteness")
+                        .HasColumnType("INTEGER");
+
                     b.Property<double>("GenerativeOfferThresholdDb")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("REAL")

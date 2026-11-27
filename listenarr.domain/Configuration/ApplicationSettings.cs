@@ -91,6 +91,14 @@ namespace Listenarr.Domain.Configuration
         // Whether to extract archive files (zip/rar/7z) when discovered in a completed download
         public bool ExtractArchives { get; set; } = true;
 
+        // Whether a completed download is judged against the book's runtime before any file
+        // is moved, and refused when the files are unreadable, short of the runtime, or far
+        // longer than it. On by default: without it a release holding a whole series imports
+        // as one book, and a release missing its last part imports as a complete one. A
+        // refusal leaves everything in the download directory, where the found-on-disk
+        // scanner clusters it by tag into the books it really holds.
+        public bool GateImportOnCompleteness { get; set; } = true;
+
         // Whether an imported MP3 audiobook is automatically queued for conversion to a
         // single chaptered M4B. Off until the conversion has been proven against the real
         // library: it is slow, IO-heavy, and rewrites what the library serves.

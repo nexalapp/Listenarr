@@ -237,6 +237,27 @@
       </FormRow>
 
       <FormRow
+        label="Check Downloads Are the Whole Book"
+        help="Before any file is moved, read the audio and compare it with the book's runtime. A download with unreadable files, with parts missing, or holding far more audio than the book runs is refused and left in the download directory, where Found on Disk can sort it into the books it really holds."
+      >
+        <label class="completeness-toggle">
+          <input
+            type="checkbox"
+            :checked="settings.gateImportOnCompleteness !== false"
+            @change="
+              (e) =>
+                updateField('gateImportOnCompleteness', (e.target as HTMLInputElement).checked)
+            "
+          />
+          <span>Refuse an import that is not the whole book</span>
+        </label>
+        <p class="completeness-note">
+          Turning this off imports whatever the download holds, which is how a release
+          containing a whole series ends up as one book.
+        </p>
+      </FormRow>
+
+      <FormRow
         v-if="showConversion"
         label="Convert MP3 Audiobooks to M4B"
         help="Fold a book that arrived in pieces — MP3, MP4, M4A, FLAC — into a single M4B with one chapter per file. Conversion runs as a background job, and the originals are left alone until the result is verified."
@@ -1088,20 +1109,23 @@ h3 svg {
   color: #6c757d;
 }
 
-.conversion-toggle {
+.conversion-toggle,
+.completeness-toggle {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
 }
 
-.conversion-toggle input {
+.conversion-toggle input,
+.completeness-toggle input {
   width: auto;
   margin: 0;
   cursor: pointer;
 }
 
-.conversion-note {
+.conversion-note,
+.completeness-note {
   margin: 0.5rem 0 0;
   font-size: 0.8rem;
   color: #6c757d;

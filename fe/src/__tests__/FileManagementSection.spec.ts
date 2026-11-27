@@ -250,4 +250,24 @@ describe('FileManagementSection - conversion settings', () => {
 
     expect(lastEmitted(wrapper).convertMp3ToM4b).toBe(true)
   })
+
+  it('shows the completeness gate as on when the setting is absent', async () => {
+    // Defaults on, so an older settings payload that predates the column must not
+    // render as though the gate were off.
+    const wrapper = await mountWith({})
+    const checkbox = wrapper.find(
+      '.completeness-toggle input[type="checkbox"]',
+    ).element as HTMLInputElement
+
+    expect(checkbox.checked).toBe(true)
+  })
+
+  it('emits the completeness gate toggle', async () => {
+    const wrapper = await mountWith({ gateImportOnCompleteness: true })
+    const checkbox = wrapper.find('.completeness-toggle input[type="checkbox"]')
+
+    await checkbox.setValue(false)
+
+    expect(lastEmitted(wrapper).gateImportOnCompleteness).toBe(false)
+  })
 })

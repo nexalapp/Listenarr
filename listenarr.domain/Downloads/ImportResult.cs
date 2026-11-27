@@ -120,5 +120,24 @@ namespace Listenarr.Domain.Downloads
                 Message = message
             };
         }
+
+        /// <summary>
+        /// The batch was refused before any file was touched, and the reason is the whole
+        /// of what the operator will see.
+        /// </summary>
+        /// <remarks>
+        /// Distinct from <see cref="Skipped"/>, which succeeds: a skip passes one file over
+        /// and lets the rest import, while a rejection stops the batch and leaves every
+        /// file where the download client put it. That is the point — the files stay
+        /// available for the found-on-disk scanner to cluster properly.
+        /// </remarks>
+        public static ImportResult Rejected(string message)
+        {
+            return new ImportResult
+            {
+                Success = false,
+                Message = message
+            };
+        }
     }
 }

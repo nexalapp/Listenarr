@@ -179,6 +179,70 @@ namespace Listenarr.Tests.Features.Domain.FoundBooks
 
             Assert.Equal(FoundBookCompleteness.Complete, FoundBookCompletenessAnalyzer.Analyze(files, null).Completeness);
         }
+
+        [Fact]
+        public void FarMoreAudioThanDeclared_IsOverrunAndSaysSo()
+        {
+            // Jack Reacher 11 as it sits in the library: 776 parts, 211 hours, against a
+            // record that runs 11. Twenty Reacher novels in one folder, imported as one
+            // book, and the numbering closes perfectly - so only the length tells.
+            var files = Enumerable.Range(1, 776)
+                .Select(i => File($"Lee Child - Bad Luck and Trouble {i:000} of 776.mp3", seconds: 980))
+                .ToList();
+
+            var verdict = FoundBookCompletenessAnalyzer.Analyze(files, 11 * 3600.0);
+
+            Assert.Equal(FoundBookCompleteness.Overrun, verdict.Completeness);
+            Assert.Contains("more than one book", verdict.Reason);
+        }
+
+        [Theory]
+        // Two books' worth, both measured on the live library: Clone Wars: Stories of
+        // Light and Dark (851 min against a declared 425) and Trojan Odyssey (862/375).
+        [InlineData(851, 425)]
+        [InlineData(862, 375)]
+        public void TwiceTheDeclaredLength_IsOverrun(int audioMinutes, int declaredMinutes)
+        {
+            var files = new[] { File("one.mp3", seconds: audioMinutes * 60.0, chapters: 40) };
+
+            Assert.Equal(
+                FoundBookCompleteness.Overrun,
+                FoundBookCompletenessAnalyzer.Analyze(files, declaredMinutes * 60.0).Completeness);
+        }
+
+        [Theory]
+        // An edition mismatch is not an over-run. 1.03x was the worst any single book in
+        // the library managed; 1.5x is a plausible unabridged-against-abridged runtime,
+        // and neither may cost the book its import.
+        [InlineData(1.03)]
+        [InlineData(1.25)]
+        [InlineData(1.5)]
+        [InlineData(1.79)]
+        public void ModestOverrun_IsNotOverrun(double multiple)
+        {
+            var declared = 10 * 3600.0;
+            var files = new[] { File("one.m4b", seconds: declared * multiple, chapters: 30) };
+
+            Assert.NotEqual(
+                FoundBookCompleteness.Overrun,
+                FoundBookCompletenessAnalyzer.Analyze(files, declared).Completeness);
+        }
+
+        [Fact]
+        public void UnreadableFile_StillWinsOverAnOverrun()
+        {
+            // Corrupt is the more actionable reason: the operator has to replace a file
+            // either way, and a length computed without it is not evidence of anything.
+            var files = new[]
+            {
+                File("one.mp3", seconds: 40 * 3600.0),
+                File("two.mp3", failed: true)
+            };
+
+            Assert.Equal(
+                FoundBookCompleteness.Corrupt,
+                FoundBookCompletenessAnalyzer.Analyze(files, 10 * 3600.0).Completeness);
+        }
     }
 
     [Trait("Name", "DeclaredLengthParserTests")]
